@@ -102,17 +102,26 @@ class RealtimeCommandListener:
         max_backoff = 60
 
         while not self._stop_event.is_set():
+            connect_start = time.time()
             try:
                 self._connect_and_listen()
             except Exception as e:
                 if self._stop_event.is_set():
                     break
                 self.logger.warning(f"[Realtime] Conexão perdida: {e}. Reconectando em {backoff}s...")
-                time.sleep(backoff)
+
+            # Smart backoff: only reset if connection was stable (>30s)
+            elapsed = time.time() - connect_start
+            if elapsed < 5:
                 backoff = min(backoff * 2, max_backoff)
+                self.logger.warning(
+                    f"[Realtime] Desconexão rápida ({elapsed:.1f}s). Backoff: {backoff}s"
+                )
             else:
-                # Clean disconnect, reset backoff
                 backoff = 2
+
+            if not self._stop_event.is_set():
+                self._stop_event.wait(timeout=backoff)
 
     def _connect_and_listen(self):
         """Connect to Supabase Realtime and listen for broadcasts."""
@@ -125,22 +134,47 @@ class RealtimeCommandListener:
 
         self.logger.info(f"[Realtime] Conectado. Joining channel {self.topic}")
 
-        # Join the broadcast channel
+        # Join the broadcast channel (access_token required by Supabase Realtime)
         join_ref = self._next_ref()
         join_payload = {
             "config": {
                 "broadcast": {"self": False},
                 "presence": {"key": ""},
                 "postgres_changes": []
-            }
+            },
+            "access_token": self.supabase_key
         }
         self._send(ws, self.topic, "phx_join", join_payload, join_ref=join_ref)
 
+        # Wait for join confirmation before proceeding
+        try:
+            raw = ws.recv()
+            if raw:
+                msg = json.loads(raw)
+                if isinstance(msg, list) and len(msg) >= 5:
+                    _, _, _, event, payload = msg
+                    if event == "phx_reply":
+                        status = payload.get("status", "")
+                        if status == "ok":
+                            self.logger.info("[Realtime] Channel joined com sucesso, aguardando comandos...")
+                        else:
+                            error_reason = payload.get("response", {})
+                            self.logger.error(f"[Realtime] Join rejeitado pelo servidor: {error_reason}")
+                            ws.close()
+                            self._ws = None
+                            raise Exception(f"Channel join rejected: {error_reason}")
+                    else:
+                        self.logger.warning(f"[Realtime] Resposta inesperada ao join: event={event}")
+                else:
+                    self.logger.warning(f"[Realtime] Formato de mensagem inesperado: {raw[:200]}")
+            else:
+                raise Exception("Empty reply to join")
+        except websocket.WebSocketConnectionClosedException:
+            self._ws = None
+            raise Exception("Connection closed during join")
+
         # Start Phoenix heartbeat thread
         self._start_phoenix_heartbeat(ws)
-
-        # Reset backoff on successful connection
-        self.logger.info("[Realtime] Channel joined, aguardando comandos...")
 
         while not self._stop_event.is_set():
             try:
@@ -156,7 +190,7 @@ class RealtimeCommandListener:
                 _, _, topic, event, payload = msg
 
                 if event == "phx_reply":
-                    # Join reply or heartbeat reply
+                    # Heartbeat reply
                     status = payload.get("status", "")
                     if status == "ok":
                         continue

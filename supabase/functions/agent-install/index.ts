@@ -10,6 +10,8 @@ const corsHeaders = {
 const PROJECT_REF = "akbosdbyheezghieiefz";
 const API_BASE_URL = `https://${PROJECT_REF}.supabase.co/functions/v1`;
 const RELEASE_BASE_URL = `https://${PROJECT_REF}.supabase.co/storage/v1/object/public/agent-releases`;
+const SUPABASE_URL = `https://${PROJECT_REF}.supabase.co`;
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrYm9zZGJ5aGVlemdoaWVpZWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTEyODAsImV4cCI6MjA4NTE4NzI4MH0.9n-nUenSCwYIGztsfgVAbgis9wEakQDKX3Oe2xBiNvo";
 
 function script(): string {
   // Keep this as a single-file bash script.
@@ -19,6 +21,8 @@ set -euo pipefail
 
 API_BASE_URL="${API_BASE_URL}"
 RELEASE_BASE_URL="${RELEASE_BASE_URL}"
+SUPABASE_URL="${SUPABASE_URL}"
+SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}"
 
 ACTIVATION_CODE=""
 AGENT_VERSION="latest"
@@ -784,6 +788,8 @@ AGENT_STATE_FILE=\${STATE_DIR}/state.json
 AGENT_LOG_FILE=/var/log/iscope-agent/agent.log
 AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
 SUPERVISOR_HEARTBEAT_INTERVAL=120
+SUPABASE_URL=\${SUPABASE_URL}
+SUPABASE_ANON_KEY=\${SUPABASE_ANON_KEY}
 EOF
 
   chmod 600 "$env_file"

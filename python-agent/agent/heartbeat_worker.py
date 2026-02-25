@@ -104,7 +104,7 @@ class HeartbeatWorker(threading.Thread):
             self.logger.info("[HB Worker] Flag de verificação criada. Solicitando restart...")
 
             proc = subprocess.run(
-                ['sudo', 'systemctl', 'restart', 'iscope-agent'],
+                ['sudo', 'systemctl', 'restart', 'iscope-supervisor'],
                 capture_output=True,
                 timeout=30
             )

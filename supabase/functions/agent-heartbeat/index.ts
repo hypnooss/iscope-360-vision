@@ -423,7 +423,6 @@ async function uploadAgentCertificate(
 
     console.error(`Failed to upload certificate to App Registration: ${result.error}`);
     return null;
-    return null;
   } catch (error) {
     console.error('Error uploading certificate:', error);
     return null;
