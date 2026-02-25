@@ -349,6 +349,11 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       sendCommand.mutate("__signal__ SIGINT", {
         onSettled: () => { signalInFlightRef.current = false; },
       });
+      // Fallback: force-clear pending after 3s so prompt reappears
+      setTimeout(() => {
+        setPendingCommandIds(new Set());
+        streamedCommandIds.current.clear();
+      }, 3000);
       return;
     }
   };
