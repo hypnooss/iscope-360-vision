@@ -1,82 +1,106 @@
 
 
-## Análise: SSH encapsulado em HTTPS via Edge Function
+## 4 Issues Identified + Fixes
 
-### Por que SSH direto não funciona neste cenário
+### Issue 1: Prompt available before agent is ready
+**Current:** `handleConnect` immediately sets `connected=true` and shows the input prompt. The agent may not have started its poller yet (depends on next heartbeat, up to 60s).
 
-O conceito de "SSH tunelado por HTTPS" pressupõe que a Edge Function consegue **abrir uma conexão TCP direta ao agente**. Isso não é possível por três razões:
+**Fix:** After setting `shell_session_active=true`, keep the UI in "connecting" state. Transition to "connected" only when the `postgres_changes` subscription confirms `SUBSCRIBED`. Commands will queue in the DB and be picked up when the poller starts, so the user can type immediately after subscription is ready. Add a subtle indicator showing "Aguardando agente..." until the first command result arrives.
 
-```text
-                    ┌──────────────┐
-  Browser ──HTTPS──▶│ Edge Function │──SSH──▶ Agent ???
-                    └──────────────┘
-                                         ▲
-                                         │
-                                    BLOQUEADO:
-                                    • Agent atrás de NAT/firewall
-                                    • Sem porta SSH exposta à internet
-                                    • Edge Function não suporta TCP raw
+### Issue 2: `cd` doesn't work (can't change directory)
+**Root cause:** Each command runs in its own `subprocess.run()` call, which spawns a new shell. `cd /opt` only changes the directory in that ephemeral subprocess — the next command starts fresh in the default working directory.
+
+**Fix in `remote_commands.py`:** Maintain a persistent `self._cwd` (working directory) state. Detect `cd` commands and update `_cwd` accordingly. Pass `cwd=self._cwd` to every `subprocess.run()` call:
+
+```python
+class RemoteCommandHandler:
+    def __init__(self, api, logger):
+        self._cwd = "/"  # Start at root
+        
+    def _execute_command(self, cmd):
+        command_text = cmd["command"]
+        
+        # Handle cd specially
+        if command_text.strip().startswith("cd "):
+            target = command_text.strip()[3:].strip()
+            # Use subprocess to resolve the path (handles ~, .., etc.)
+            result = subprocess.run(
+                f"cd {target} && pwd",
+                shell=True, capture_output=True, text=True,
+                cwd=self._cwd, timeout=5,
+            )
+            if result.returncode == 0:
+                self._cwd = result.stdout.strip()
+                self._report_result(cmd["id"], "", "", 0, "completed")
+            else:
+                self._report_result(cmd["id"], "", result.stderr, 1, "failed")
+            return
+        
+        # Regular command — run in current cwd
+        result = subprocess.run(
+            command_text, shell=True, capture_output=True, text=True,
+            timeout=timeout, cwd=self._cwd,
+        )
 ```
 
-1. **O agente está atrás de NAT/firewall** — não aceita conexões de entrada. Toda a arquitetura foi desenhada com o agente fazendo conexões de SAÍDA (polling, heartbeat). Expor SSH do agente à internet seria um risco de segurança enorme.
+Also update the frontend prompt to reflect the current directory: the agent should return `cwd` in its command result, and the frontend should update the prompt accordingly (`root@agent:/opt/iscope-agent#` instead of always `root@agent:~#`).
 
-2. **Edge Functions não suportam conexões TCP raw** — rodam em Deno Deploy, que só permite HTTP/HTTPS outbound. Não é possível abrir um socket SSH.
+### Issue 3: First command delay (up to 60s)
+**Root cause:** The first command goes into the DB. The agent only discovers `shell_session_active=true` on the next heartbeat (60s interval). Until then, the command sits as `pending`.
 
-3. **Edge Functions têm timeout de ~60 segundos** — uma sessão SSH interativa precisa ficar aberta indefinidamente.
+**Current mitigation:** The heartbeat also checks `has_pending_commands` and calls `process_pending_commands()` even without the poller. So the first command executes on the next heartbeat tick.
 
-### O que realmente causa a lentidão atual
-
-O problema NÃO é a via de comunicação, é o **intervalo de polling**:
-
-```text
-Fluxo atual (lento):
-  Comando inserido no DB
-    → Agent espera heartbeat (60s) para saber que tem comando
-    → Executa em ~1s
-    → Resultado volta ao DB
-    → Frontend recebe via postgres_changes (instantâneo)
-
-Gargalo: os 60 segundos de espera do heartbeat
+**The first command already ran within ~1 second of the heartbeat.** The logs show:
+```
+16:36:49,253 [Supervisor] Heartbeat OK → GET /agent-commands → 1 comando pendente → executed
+16:36:50,134 [Supervisor] Heartbeat solicitou início do Shell Poller
 ```
 
-Os logs comprovam: quando o agente **encontra** o comando, executa em ~1 segundo:
+This is working as designed. The initial delay is the time until the next heartbeat fires. To reduce this, we could lower the heartbeat interval when the GUI opens a session, but 60s is acceptable for the initial connection.
+
+### Issue 4: Agent keeps polling after `exit`
+**Root cause:** When the user types `exit`, the frontend sets `shell_session_active=false` in the DB. But the agent only reads this flag via heartbeat (every 60s). The `ShellCommandPoller` keeps calling `GET /agent-commands` for up to 60s after the session ends.
+
+**Fix:** Have the `agent-commands` edge function return a `session_active` field by reading the `shell_session_active` column. The poller checks this on every poll (every 2s) and stops immediately when it's `false`:
+
+```typescript
+// In agent-commands GET handler, after fetching commands:
+const { data: agentStatus } = await supabase
+  .from('agents')
+  .select('shell_session_active')
+  .eq('id', agentId)
+  .single();
+
+return Response.json({
+  commands: commands || [],
+  session_active: agentStatus?.shell_session_active ?? false,
+});
 ```
-16:20:36,829 [RemoteCmd] 1 comando(s) pendente(s)
-16:20:36,830 [RemoteCmd] Executando: systemctl status iscope-supervisor...
-16:20:37,592 [RemoteCmd] Comando 27664088... finalizado (exit=0)
+
+```python
+# In ShellCommandPoller._poll_once():
+response = self.handler.api.get("/agent-commands")
+if not response.get("session_active", True):
+    self.logger.info("[ShellPoll] Sessão encerrada pelo GUI. Parando poller.")
+    self._session_closed = True
+    return False
 ```
 
-### Solução já aprovada: polling rápido (2s)
+---
 
-O plano aprovado anteriormente (substituir WebSocket por polling HTTP de 2s) resolve o problema de forma simples e confiável:
+## Summary of Changes
 
-```text
-Fluxo com polling rápido:
-  Comando inserido no DB
-    → Agent descobre em ≤2s (poll rápido)
-    → Executa em ~1s
-    → Resultado volta ao DB
-    → Frontend recebe via postgres_changes (instantâneo)
-    
-Total: ~3 segundos (máximo)
-```
+| File | Change |
+|------|--------|
+| `python-agent/agent/remote_commands.py` | Add `_cwd` state, handle `cd` commands, pass `cwd` to all `subprocess.run()`, return `cwd` in result |
+| `python-agent/agent/realtime_commands.py` | Check `session_active` response field; stop poller immediately when false |
+| `supabase/functions/agent-commands/index.ts` | Return `session_active` field in GET response by reading `shell_session_active` from agents table |
+| `src/components/agents/RemoteTerminal.tsx` | Wait for `realtimeConnected` before showing prompt; update prompt with cwd from command results; show "Aguardando agente..." indicator |
 
-- Usa a mesma infraestrutura REST que **já funciona perfeitamente**
-- Sem WebSocket, sem Phoenix protocol, sem problemas de join
-- O agente simplesmente chama `GET /agent-commands` a cada 2 segundos enquanto o shell está ativo
+### Expected Behavior After Fix
 
-### Resumo
-
-| Abordagem | Latência | Viável? | Complexidade |
-|-----------|----------|---------|--------------|
-| SSH direto via Edge Function | ~0s | Não (NAT/firewall) | — |
-| WebSocket Realtime (atual) | ~1s | Não (join falha) | Alta |
-| **Polling rápido (2s)** | **≤3s** | **Sim** | **Baixa** |
-| HTTP Long-polling | ~1s | Possível | Média-alta |
-
-A abordagem de polling rápido (2s) é a mais pragmática. Se 3 segundos ainda for inaceitável no futuro, podemos evoluir para HTTP long-polling, mas isso adiciona complexidade significativa nas Edge Functions.
-
-### Próximo passo
-
-Implementar o plano já aprovado: substituir o `RealtimeCommandListener` (WebSocket) por um `ShellCommandPoller` (HTTP polling 2s), adicionar loading state no frontend, e remover o broadcast.
+1. **Click "Conectar"** → Loading spinner until postgres_changes is SUBSCRIBED → prompt appears
+2. **`cd /opt`** → Works. Next `ls` shows `/opt` contents. Prompt updates to `root@agent:/opt#`
+3. **First command** → Queued immediately, picked up on next heartbeat (~60s max), then poller starts for subsequent commands (~2-3s)
+4. **`exit`** → GUI disconnects immediately. Agent detects `session_active=false` within 2 seconds and stops polling. No lingering `GET /agent-commands` calls.
 
