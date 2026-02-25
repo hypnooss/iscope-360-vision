@@ -34,6 +34,7 @@ from agent.auth import AuthManager
 from agent.heartbeat import AgentHeartbeat
 from agent.logger import setup_logger
 from agent.components import ensure_system_components
+from agent.remote_commands import RemoteCommandHandler
 
 
 def main():
@@ -60,6 +61,7 @@ def main():
     hb_loop = SupervisorHeartbeatLoop(heartbeat, auth, logger)
     updater = SupervisorUpdater(logger, WORKER_INSTALL_DIR)
     worker = WorkerManager(logger, WORKER_INSTALL_DIR, WORKER_HEALTH_FILE, WORKER_PID_FILE)
+    remote_cmds = RemoteCommandHandler(api, logger)
 
     # --- Start worker on boot ---
     worker.start()
@@ -100,6 +102,13 @@ def main():
             # Handle component check
             if result.get("check_components"):
                 _handle_check_components(logger, worker)
+
+            # Handle remote commands
+            if result.get("has_pending_commands"):
+                try:
+                    remote_cmds.process_pending_commands()
+                except Exception as e:
+                    logger.error(f"[Supervisor] Erro ao processar comandos remotos: {e}")
 
         # Monitor worker health
         if not worker.is_running():

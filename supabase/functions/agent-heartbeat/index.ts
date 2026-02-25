@@ -34,6 +34,7 @@ interface HeartbeatSuccessResponse {
   azure_certificate_key_id?: string;
   check_components?: boolean;
   request_certificate?: boolean;
+  has_pending_commands?: boolean;
 }
 
 interface HeartbeatErrorResponse {
@@ -679,6 +680,19 @@ serve(async (req: Request) => {
 
     console.log(`Heartbeat OK: agent=${agentId}, version=${agentVersion}, latest=${latestVersion}, update=${updateAvailable}, config_flag=${result.config_flag}, pending=${result.has_pending_tasks}, cert=${azureCertificateKeyId ? 'registered' : 'none'}`);
 
+    // Check for pending remote commands
+    let hasPendingCommands = false;
+    try {
+      const { count } = await supabase
+        .from('agent_commands')
+        .select('id', { count: 'exact', head: true })
+        .eq('agent_id', agentId)
+        .eq('status', 'pending');
+      hasPendingCommands = (count || 0) > 0;
+    } catch (cmdErr) {
+      console.error('Error checking pending commands:', cmdErr);
+    }
+
     // Build success response
     const response: HeartbeatSuccessResponse = {
       success: true,
@@ -704,6 +718,11 @@ serve(async (req: Request) => {
     if (requestCertificate) {
       response.request_certificate = true;
       console.log(`Agent ${agentId}: requesting certificate re-upload for linked tenants`);
+    }
+
+    // Include pending commands flag
+    if (hasPendingCommands) {
+      response.has_pending_commands = true;
     }
 
     // Include update info if available
