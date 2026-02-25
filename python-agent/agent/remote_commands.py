@@ -57,6 +57,10 @@ class RemoteCommandHandler:
         try:
             stripped = command_text.strip()
 
+            # Strip __probe__ prefix (silent readiness check from UI)
+            if stripped.startswith("__probe__ "):
+                stripped = stripped[len("__probe__ "):]
+
             # Handle bare "cd" (go to home/root)
             if stripped == "cd" or stripped == "cd ~":
                 home = os.path.expanduser("~")
