@@ -332,7 +332,22 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     sendCommand.mutate(trimmed);
   };
 
+  const handleTerminalKeyDown = (e: React.KeyboardEvent) => {
+    if (e.ctrlKey && e.key === "c" && hasPending) {
+      e.preventDefault();
+      setLines((prev) => [...prev, { type: "system", text: "^C" }]);
+      sendCommand.mutate("__signal__ SIGINT");
+      return;
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.ctrlKey && e.key === "c" && hasPending) {
+      e.preventDefault();
+      setLines((prev) => [...prev, { type: "system", text: "^C" }]);
+      sendCommand.mutate("__signal__ SIGINT");
+      return;
+    }
     if (e.ctrlKey && e.key === "l") {
       e.preventDefault();
       setLines([]);
@@ -435,8 +450,10 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
 
       {/* Terminal body */}
       <div
-        className="flex-1 overflow-y-auto p-3 font-mono text-sm cursor-text"
+        className="flex-1 overflow-y-auto p-3 font-mono text-sm cursor-text outline-none"
         onClick={focusInput}
+        onKeyDown={handleTerminalKeyDown}
+        tabIndex={0}
       >
         {lines.map((line, i) => (
           <div key={i} className="leading-5 whitespace-pre-wrap break-all">
