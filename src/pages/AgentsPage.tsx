@@ -276,10 +276,8 @@ export default function AgentsPage() {
 
       if (agentError) throw agentError;
 
-      setActivationCode(code);
-      setActivationExpiresAt(expiresAt);
       toast.success("Agent criado com sucesso!");
-      fetchData();
+      navigate(`/agents/${agentData.id}`);
     } catch (error: any) {
       toast.error("Erro ao criar agent: " + error.message);
     } finally {
