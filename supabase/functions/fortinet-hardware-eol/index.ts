@@ -51,7 +51,7 @@ async function fetchRssItems() {
 }
 
 function normalize(s: string): string {
-  return s.toLowerCase().replace(/[-\s_]/g, '').replace(/fortigate/i, 'fg');
+  return s.toLowerCase().replace(/[-\s_]/g, '').replace(/fortigate/i, 'fg').replace(/^fgt/, 'fg');
 }
 
 Deno.serve(async (req) => {
