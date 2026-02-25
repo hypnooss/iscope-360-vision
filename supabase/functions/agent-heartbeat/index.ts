@@ -12,6 +12,7 @@ interface HeartbeatRequest {
   agent_version: string;
   certificate_thumbprint?: string;
   certificate_public_key?: string;
+  capabilities?: string[];
 }
 
 interface UpdateInfo {
@@ -578,6 +579,19 @@ serve(async (req: Request) => {
 
     // Update agent version in database (fire and forget)
     await updateAgentVersion(supabase, agentId, agentVersion);
+
+    // Persist capabilities if provided
+    if (Array.isArray(body.capabilities)) {
+      try {
+        await supabase
+          .from('agents')
+          .update({ capabilities: body.capabilities })
+          .eq('id', agentId);
+        console.log(`Agent ${agentId}: capabilities updated (${body.capabilities.length} items)`);
+      } catch (capErr) {
+        console.error('Failed to update capabilities:', capErr);
+      }
+    }
 
     // Process certificate upload if provided
     let azureCertificateKeyId: string | null = null;
