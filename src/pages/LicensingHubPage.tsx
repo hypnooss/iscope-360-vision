@@ -126,8 +126,12 @@ export default function LicensingHubPage() {
     if (activeTab === 'tls') {
       return countStatus(tlsCertificates);
     }
-    // m365
-    return countStatus(m365Licenses);
+    // m365 — exclude suspended and long-expired from summary
+    const relevantM365 = m365Licenses.filter(lic =>
+      lic.capabilityStatus !== 'Suspended' &&
+      (lic.daysLeft === null || lic.daysLeft >= -60)
+    );
+    return countStatus(relevantM365);
   }, [activeTab, firewallLicenses, tlsCertificates, m365Licenses]);
 
   const toggleFilter = (status: LicenseStatus) => {
@@ -153,9 +157,13 @@ export default function LicensingHubPage() {
     return m365Licenses.filter(lic => matchesFilter(lic.daysLeft, activeFilter));
   }, [m365Licenses, activeFilter]);
 
+  const shouldHideM365 = (lic: { daysLeft: number | null; capabilityStatus: string }) =>
+    lic.capabilityStatus === 'Suspended' ||
+    (lic.daysLeft !== null && lic.daysLeft < -60);
+
   const { visibleM365, hiddenM365Count } = useMemo(() => {
-    const visible = filteredM365.filter(lic => lic.daysLeft === null || lic.daysLeft >= -60);
-    const hidden = filteredM365.filter(lic => lic.daysLeft !== null && lic.daysLeft < -60);
+    const visible = filteredM365.filter(lic => !shouldHideM365(lic));
+    const hidden = filteredM365.filter(lic => shouldHideM365(lic));
     return { visibleM365: showOldExpired ? filteredM365 : visible, hiddenM365Count: hidden.length };
   }, [filteredM365, showOldExpired]);
 
@@ -357,7 +365,22 @@ export default function LicensingHubPage() {
 
           {/* M365 Tab */}
           <TabsContent value="m365">
-            <div className="flex justify-end mb-4">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                {hiddenM365Count > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1.5"
+                    onClick={() => setShowOldExpired(prev => !prev)}
+                  >
+                    {showOldExpired ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    {showOldExpired
+                      ? 'Ocultar licenças suspensas/antigas'
+                      : `${hiddenM365Count} licença(s) oculta(s) (suspensas ou expiradas há mais de 60 dias)`}
+                  </Button>
+                )}
+              </div>
               <Button
                 variant="outline"
                 size="sm"
@@ -421,21 +444,6 @@ export default function LicensingHubPage() {
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
-                )}
-                {hiddenM365Count > 0 && (
-                  <div className="flex items-center gap-2 mt-3 text-muted-foreground">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1.5"
-                      onClick={() => setShowOldExpired(prev => !prev)}
-                    >
-                      {showOldExpired ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      {showOldExpired
-                        ? 'Ocultar licenças antigas'
-                        : `${hiddenM365Count} licença(s) expirada(s) há mais de 60 dias oculta(s)`}
-                    </Button>
                   </div>
                 )}
               </>
