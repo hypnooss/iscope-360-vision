@@ -402,28 +402,24 @@ export default function LicensingHubPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <TooltipProvider>
-                            <div className="space-y-1.5">
-                              {groupServicesByExpiry(fw.services).map((group, i) => (
-                                <div key={i} className="flex items-center gap-2">
-                                  <ExpiryBadge daysLeft={group.daysLeft} expiresAt={group.expiresAt} />
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="text-xs text-muted-foreground cursor-default">
-                                        {group.names.length} serviço{group.names.length !== 1 ? 's' : ''}
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="bottom" className="max-w-xs">
-                                      <p className="text-xs">{group.names.join(', ')}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </div>
-                              ))}
-                              {fw.services.length === 0 && (
-                                <span className="text-xs text-muted-foreground">Sem serviços</span>
-                              )}
-                            </div>
-                          </TooltipProvider>
+                          <div className="space-y-1.5">
+                            {groupServicesByExpiry(fw.services).map((group, i) => (
+                              <div key={i} className="flex items-center gap-2">
+                                <ExpiryBadge daysLeft={group.daysLeft} expiresAt={group.expiresAt} />
+                                <Tooltip>
+                                  <TooltipTrigger className="text-xs text-muted-foreground cursor-default">
+                                    {group.names.length} serviço{group.names.length !== 1 ? 's' : ''}
+                                  </TooltipTrigger>
+                                  <TooltipContent side="bottom" className="max-w-xs">
+                                    <p className="text-xs">{group.names.join(', ')}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                            ))}
+                            {fw.services.length === 0 && (
+                              <span className="text-xs text-muted-foreground">Sem serviços</span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <EolBadges eol={fw.model && eolMap ? eolMap[fw.model] : (loadingEol ? undefined : null)} />
