@@ -1,102 +1,57 @@
 
+# Arquitetura Supervisor + Worker — Implementado
 
-# Diagnostico: Arquitetura Atual vs. Arquitetura Ideal
-
-## Como o Agent funciona HOJE
-
-O Agent e um **processo unico** com **duas threads**:
-
-```text
-systemd (iscope-agent.service)
-  └── main.py (PID unico)
-        ├── Thread Principal: AgentScheduler → agent_loop() → TaskExecutor
-        └── Thread Daemon: HeartbeatWorker → heartbeat + AutoUpdater
-```
-
-O `AutoUpdater` roda **dentro** do mesmo processo que ele tenta atualizar. Quando precisa fazer update:
-
-1. Baixa o `.tar.gz`
-2. Substitui os proprios arquivos em `/opt/iscope-agent/`
-3. Chama `systemctl restart iscope-agent` ou `sys.exit(0)`
-
-## Por que os agents nao atualizam de 1.2.10 para 1.3.x
-
-O problema e exatamente o que voce suspeitou. A versao 1.2.10 **nao tem** o `HeartbeatWorker`. O codigo de auto-update em 1.2.10 pode ate baixar e substituir os arquivos, mas quando o processo reinicia com o codigo novo (1.3.x), a estrutura mudou drasticamente — novo `main.py`, novas classes, nova logica de inicializacao. Se qualquer incompatibilidade surgir (dependencias novas, configs novas), o agent quebra silenciosamente e volta a rodar a versao antiga, ou simplesmente nao reinicia.
-
-**Para transicoes arquiteturais como essa, um `--update` manual e obrigatorio**, porque o installer bash faz coisas que o AutoUpdater interno nao faz: recria o venv, ajusta o systemd unit, instala componentes como root.
-
-## O que falta: Arquitetura de dois processos (Supervisor + Worker)
-
-O padrao que voce descreveu e o correto para updates confiaveis:
+## Estrutura final
 
 ```text
 systemd
-  ├── iscope-supervisor.service (Processo 1 - LEVE, raramente muda)
-  │     ├── Heartbeat
-  │     ├── Auto-Update (baixa, valida, substitui arquivos do Worker)
-  │     ├── Gerencia ciclo de vida do Worker (start/stop/restart)
-  │     └── Reporta status e versao
-  │
-  └── iscope-agent.service (Processo 2 - WORKER, atualizado frequentemente)
-        ├── TaskExecutor
-        ├── Scheduler
-        └── Toda logica de coleta/analise
+  └── iscope-supervisor.service (root)
+        ├── Heartbeat (envia status ao backend)
+        ├── SupervisorUpdater (para Worker → atualiza → reinicia Worker)
+        ├── WorkerManager (start/stop/restart do Worker via subprocess)
+        └── Worker process (subprocess)
+              ├── Auth + Token refresh
+              ├── AgentScheduler → TaskExecutor
+              └── Escreve health file a cada tick
 ```
 
-**Vantagens:**
+## Arquivos criados
 
-- O Supervisor e pequeno e estavel — raramente precisa de update manual
-- O Worker pode ser atualizado, parado e reiniciado pelo Supervisor sem risco
-- Mudancas arquiteturais no Worker (como adicionar HeartbeatWorker) sao transparentes
-- Instalacao de dependencias e componentes do SO podem ser feitas pelo Supervisor como root antes de iniciar o Worker
-- Se o Worker crashar, o Supervisor detecta e reinicia
-
-## Plano de implementacao
-
-### Fase 1: Criar o Supervisor (`python-agent/supervisor/`)
-
-| Arquivo | Descricao |
+| Arquivo | Descrição |
 |---|---|
-| `supervisor/main.py` | Entrypoint do supervisor |
-| `supervisor/heartbeat.py` | Heartbeat dedicado (reutiliza logica existente) |
-| `supervisor/updater.py` | AutoUpdater melhorado — para o Worker antes de atualizar |
-| `supervisor/worker_manager.py` | Start/stop/restart do processo Worker via subprocess |
-| `supervisor/version.py` | Versao do Supervisor (independente do Worker) |
+| `supervisor/__init__.py` | Package init |
+| `supervisor/main.py` | Entrypoint do Supervisor |
+| `supervisor/config.py` | Configuração (lê mesmos envs do agent) |
+| `supervisor/version.py` | Versão independente (1.0.0) |
+| `supervisor/heartbeat.py` | Loop de heartbeat usando classes do agent |
+| `supervisor/updater.py` | Download, validação, para Worker, substitui, reinicia |
+| `supervisor/worker_manager.py` | Start/stop/restart do Worker via subprocess |
+| `systemd/iscope-supervisor.service` | Unit do Supervisor (root) |
+| `systemd/iscope-agent.service` | Unit do Worker (fallback/migração) |
 
-### Fase 2: Refatorar o Worker (`python-agent/agent/`)
+## Alterações no Worker (main.py)
 
-- Remover `HeartbeatWorker` e `AutoUpdater` do Worker
-- Worker foca exclusivamente em: auth, fetch tasks, execute tasks
-- Worker expoe um health endpoint local (ex: arquivo PID + timestamp) para o Supervisor monitorar
+- Removidos: `HeartbeatWorker`, `AutoUpdater`, `AgentHeartbeat`
+- Worker agora foca exclusivamente em: auth, fetch tasks, execute tasks
+- Escreve `/var/lib/iscope-agent/worker.health` a cada tick para monitoramento
 
-### Fase 3: Dois services no systemd
+## Migração
 
-```text
-[Unit] iscope-supervisor.service
-  - Sempre ativo
-  - Inicia antes do agent
-  - Reinicia automaticamente
+Para migrar agents existentes, executar **uma última vez** o installer manual:
 
-[Unit] iscope-agent.service  
-  - Gerenciado pelo Supervisor (nao pelo systemd directly)
-  - Type=notify ou Type=simple
+```bash
+curl -fsSL <install-url> | sudo bash -s -- --update
 ```
 
-### Fase 4: Atualizar o installer bash
+O installer precisa ser atualizado para:
+1. Instalar o Supervisor como serviço adicional
+2. Desativar o antigo `iscope-agent.service` (gerenciado pelo systemd)
+3. Ativar `iscope-supervisor.service` (que gerencia o Worker internamente)
 
-- Instala ambos os processos
-- Flag `--update` atualiza o Supervisor primeiro, depois o Worker
-- Para updates futuros, so o Supervisor precisa do `--update` manual (e ele e estavel)
+A partir daí, updates futuros do Worker são automáticos via Supervisor.
 
-### Fase 5: UI — Trigger de update pela GUI
+## Próximos passos
 
-- Na pagina Super Agents, botao "Forcar Update" por agent
-- Backend seta flag no heartbeat response → Supervisor recebe e executa update do Worker
-- Botao "Reinstalar Supervisor" para casos extremos (gera comando curl para copiar)
-
-## Escopo desta implementacao
-
-Esta e uma mudanca significativa no agente Python. Sugiro comecar pela **Fase 1 e 2** (Supervisor + refatoracao do Worker) como codigo, e depois voce faz deploy manual nos agents com `--update` pela ultima vez. A partir dai, updates futuros do Worker serao automaticos via Supervisor.
-
-Quer que eu avance com este plano?
-
+- [ ] Atualizar installer bash para instalar Supervisor
+- [ ] UI: Botão "Forçar Update" na página Super Agents
+- [ ] UI: Indicador de versão desatualizada + cores no Last Seen
