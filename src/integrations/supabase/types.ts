@@ -208,6 +208,7 @@ export type Database = {
           name: string
           revoked: boolean
           shell_session_active: boolean
+          supervisor_version: string | null
         }
         Insert: {
           activation_code?: string | null
@@ -230,6 +231,7 @@ export type Database = {
           name: string
           revoked?: boolean
           shell_session_active?: boolean
+          supervisor_version?: string | null
         }
         Update: {
           activation_code?: string | null
@@ -252,6 +254,7 @@ export type Database = {
           name?: string
           revoked?: boolean
           shell_session_active?: boolean
+          supervisor_version?: string | null
         }
         Relationships: [
           {

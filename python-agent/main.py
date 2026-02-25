@@ -5,6 +5,7 @@ This process focuses exclusively on:
 - Authentication
 - Fetching and executing tasks
 - Writing a health file for the Supervisor to monitor
+- Cross-update: applying pending Supervisor updates
 
 Heartbeats and updates are handled by the Supervisor process.
 """
@@ -17,6 +18,7 @@ from agent.scheduler import AgentScheduler
 from agent.tasks import TaskExecutor
 from agent.logger import setup_logger
 from agent.version import get_version
+from agent.supervisor_updater import SupervisorUpdater
 
 import argparse
 import json
@@ -78,6 +80,7 @@ class AgentApp:
         self.auth = AuthManager(self.state, self.api, logger)
         self.api.set_auth_manager(self.auth)
         self.task_executor = TaskExecutor(self.api, self.state, logger)
+        self.supervisor_updater = SupervisorUpdater(logger)
 
     def start(self):
         """Register then enter task loop."""
@@ -91,7 +94,7 @@ class AgentApp:
         scheduler.start()
 
     def agent_loop(self):
-        """Main loop: only processes tasks."""
+        """Main loop: processes tasks + checks for pending supervisor updates."""
         self.logger.info(f"Início do loop de tarefas v{get_version()}")
 
         # Write health file each tick
@@ -113,6 +116,12 @@ class AgentApp:
                 self.auth.refresh_tokens()
             else:
                 self.logger.error(f"Erro ao processar tarefas: {e}")
+
+        # Cross-update: check if Supervisor left a pending update for us to apply
+        try:
+            self.supervisor_updater.check_and_apply()
+        except Exception as e:
+            self.logger.error(f"Erro ao verificar update do supervisor: {e}")
 
         return POLL_INTERVAL
 
