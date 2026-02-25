@@ -69,10 +69,11 @@ class RemoteCommandHandler:
                 if self._running_proc and self._running_proc.poll() is None:
                     try:
                         pid = self._running_proc.pid
-                        self._running_proc.send_signal(signal.SIGINT)
-                        self.logger.info(f"[RemoteCmd] SIGINT enviado ao PID {pid} (cmd {self._running_cmd_id[:8] if self._running_cmd_id else '?'}...)")
+                        pgid = os.getpgid(pid)
+                        os.killpg(pgid, signal.SIGINT)
+                        self.logger.info(f"[RemoteCmd] SIGINT enviado ao grupo {pgid} (PID {pid}, cmd {self._running_cmd_id[:8] if self._running_cmd_id else '?'}...)")
                     except Exception as sig_err:
-                        self.logger.warning(f"[RemoteCmd] Erro ao enviar SIGINT, tentando terminate(): {sig_err}")
+                        self.logger.warning(f"[RemoteCmd] Erro ao enviar SIGINT ao grupo, tentando terminate(): {sig_err}")
                         try:
                             self._running_proc.terminate()
                         except Exception:
@@ -153,6 +154,7 @@ class RemoteCommandHandler:
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=self._cwd,
+                preexec_fn=os.setsid,
             )
             self._running_proc = proc
             self._running_cmd_id = command_id
@@ -186,7 +188,10 @@ class RemoteCommandHandler:
             while proc.poll() is None:
                 elapsed_since_last_output = time.time() - last_output_time
                 if elapsed_since_last_output > timeout:
-                    proc.kill()
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except Exception:
+                        proc.kill()
                     proc.wait()
                     self.logger.warning(f"[RemoteCmd] Comando {command_id[:8]}... timeout ({timeout}s)")
                     self._report_result(
