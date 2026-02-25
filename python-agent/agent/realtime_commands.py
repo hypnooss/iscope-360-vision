@@ -1,296 +1,93 @@
 """
-Realtime Command Listener — WebSocket-based instant command execution.
+Shell Command Poller — High-frequency HTTP polling for remote commands.
 
-Uses Supabase Realtime Broadcast channels to receive commands instantly
-instead of waiting for heartbeat polling (~120s).
+Replaces the previous WebSocket-based RealtimeCommandListener with a simple
+HTTP polling loop that checks for pending commands every 2 seconds.
 
 Architecture:
-- Connects via raw WebSocket to Supabase Realtime (Phoenix protocol)
-- Subscribes to a broadcast channel specific to this agent
-- Frontend broadcasts command payload when inserting into agent_commands
-- Agent receives, executes, and reports result via REST API
-- Heartbeat remains as fallback for missed commands
-- Connection is ON-DEMAND: only started when GUI sets shell_session_active=true
-- Auto-closes after 120s of inactivity (no commands received)
-
-Protocol: Phoenix Channels over WebSocket
-- Connect to wss://<ref>.supabase.co/realtime/v1/websocket?apikey=<key>&vsn=1.0.0
-- Messages: [join_ref, ref, topic, event, payload]
+- Started on-demand when shell_session_active=true (via heartbeat flag)
+- Polls GET /agent-commands every 2 seconds
+- Reuses the existing RemoteCommandHandler for execution
+- Auto-stops after 120s of inactivity (no commands found)
+- Supervisor manages lifecycle based on heartbeat response
 """
 
-import json
 import time
 import threading
 
-try:
-    import websocket  # websocket-client library
-    HAS_WEBSOCKET = True
-except ImportError:
-    HAS_WEBSOCKET = False
-
+POLL_INTERVAL = 2  # seconds
 INACTIVITY_TIMEOUT = 120  # seconds
 
 
-class RealtimeCommandListener:
-    """Listens for commands via Supabase Realtime Broadcast channel."""
+class ShellCommandPoller:
+    """Polls for pending shell commands at high frequency when shell is active."""
 
-    def __init__(self, agent_id, supabase_url, supabase_key, command_handler, logger):
-        self.agent_id = agent_id
-        self.supabase_url = supabase_url
-        self.supabase_key = supabase_key
+    def __init__(self, command_handler, logger):
         self.handler = command_handler
         self.logger = logger
         self._thread = None
         self._stop_event = threading.Event()
-        self._ref_counter = 0
-        self._ws = None
         self._last_activity = time.time()
         self._timed_out = False
-
-        # Build WebSocket URL
-        self.ws_url = None
-        self.topic = f"realtime:agent-cmd-{agent_id}"
-        if supabase_url:
-            ws_base = supabase_url.replace("https://", "wss://").replace("http://", "ws://")
-            self.ws_url = f"{ws_base}/realtime/v1/websocket?apikey={supabase_key}&vsn=1.0.0"
 
     @property
     def timed_out(self):
-        """Check if the listener stopped due to inactivity timeout."""
+        """Check if the poller stopped due to inactivity timeout."""
         return self._timed_out
 
     def start(self):
-        """Start the listener in a daemon thread."""
-        if not HAS_WEBSOCKET:
-            self.logger.warning(
-                "[Realtime] websocket-client não instalado. "
-                "Comandos remotos usarão apenas heartbeat (fallback)."
-            )
-            return
-
-        if not self.supabase_url or not self.supabase_key:
-            self.logger.warning(
-                "[Realtime] SUPABASE_URL ou SUPABASE_ANON_KEY não configurados. "
-                "Comandos remotos usarão apenas heartbeat (fallback)."
-            )
-            return
-
+        """Start the poller in a daemon thread."""
         self._timed_out = False
         self._last_activity = time.time()
         self._stop_event.clear()
-        self._thread = threading.Thread(target=self._listen_loop, daemon=True, name="realtime-cmd")
+        self._thread = threading.Thread(
+            target=self._poll_loop, daemon=True, name="shell-poller"
+        )
         self._thread.start()
-        self.logger.info(f"[Realtime] Listener iniciado para agent {self.agent_id[:8]}...")
+        self.logger.info("[ShellPoll] Poller iniciado (intervalo: 2s, timeout: 120s)")
 
     def stop(self):
-        """Stop the listener."""
+        """Stop the poller."""
         self._stop_event.set()
-        if self._ws:
-            try:
-                self._ws.close()
-            except Exception:
-                pass
+        self.logger.info("[ShellPoll] Poller parado")
 
-    def _next_ref(self):
-        self._ref_counter += 1
-        return str(self._ref_counter)
-
-    def _send(self, ws, topic, event, payload, join_ref=None):
-        """Send a Phoenix protocol message."""
-        msg = json.dumps([join_ref, self._next_ref(), topic, event, payload])
-        ws.send(msg)
-
-    def _listen_loop(self):
-        """Main loop with reconnection. Stops on inactivity timeout."""
-        backoff = 2
-        max_backoff = 60
-
-        while not self._stop_event.is_set():
-            # Check inactivity before reconnecting
-            if time.time() - self._last_activity > INACTIVITY_TIMEOUT:
-                self.logger.info(
-                    f"[Realtime] Nenhum comando em {INACTIVITY_TIMEOUT}s. "
-                    "Encerrando conexão por inatividade."
-                )
-                self._timed_out = True
-                break
-
-            connect_start = time.time()
-            try:
-                self._connect_and_listen()
-            except Exception as e:
-                if self._stop_event.is_set():
-                    break
-                # Check if we timed out inside _connect_and_listen
-                if self._timed_out:
-                    break
-                self.logger.warning(f"[Realtime] Conexão perdida: {e}. Reconectando em {backoff}s...")
-
-            elapsed = time.time() - connect_start
-            if elapsed < 5:
-                backoff = min(backoff * 2, max_backoff)
-                self.logger.warning(
-                    f"[Realtime] Desconexão rápida ({elapsed:.1f}s). Backoff: {backoff}s"
-                )
-            else:
-                backoff = 2
-
-            if not self._stop_event.is_set():
-                self._stop_event.wait(timeout=backoff)
-
-    def _connect_and_listen(self):
-        """Connect to Supabase Realtime and listen for broadcasts."""
-        self.logger.info("[Realtime] Conectando ao Supabase Realtime...")
-
-        ws = websocket.WebSocket()
-        ws.settimeout(10)  # Short timeout to check inactivity frequently
-        ws.connect(self.ws_url)
-        self._ws = ws
-
-        self.logger.info(f"[Realtime] Conectado. Joining channel {self.topic}")
-
-        # Join the broadcast channel
-        join_ref = self._next_ref()
-        join_payload = {
-            "config": {
-                "broadcast": {"self": False},
-                "presence": {"key": ""},
-                "postgres_changes": []
-            },
-            "access_token": self.supabase_key
-        }
-        self._send(ws, self.topic, "phx_join", join_payload, join_ref=join_ref)
-
-        # Wait for join confirmation
-        try:
-            raw = ws.recv()
-            if raw:
-                msg = json.loads(raw)
-                if isinstance(msg, list) and len(msg) >= 5:
-                    _, _, _, event, payload = msg
-                    if event == "phx_reply":
-                        status = payload.get("status", "")
-                        if status == "ok":
-                            self.logger.info("[Realtime] Channel joined com sucesso, aguardando comandos...")
-                        else:
-                            error_reason = payload.get("response", {})
-                            self.logger.error(f"[Realtime] Join rejeitado pelo servidor: {error_reason}")
-                            ws.close()
-                            self._ws = None
-                            raise Exception(f"Channel join rejected: {error_reason}")
-                    else:
-                        self.logger.warning(f"[Realtime] Resposta inesperada ao join: event={event}")
-                else:
-                    self.logger.warning(f"[Realtime] Formato de mensagem inesperado: {raw[:200]}")
-            else:
-                raise Exception("Empty reply to join")
-        except websocket.WebSocketConnectionClosedException:
-            self._ws = None
-            raise Exception("Connection closed during join")
-
-        # Start Phoenix heartbeat thread
-        self._start_phoenix_heartbeat(ws)
-
+    def _poll_loop(self):
+        """Main polling loop. Exits on stop or inactivity timeout."""
         while not self._stop_event.is_set():
             # Check inactivity timeout
             if time.time() - self._last_activity > INACTIVITY_TIMEOUT:
                 self.logger.info(
-                    f"[Realtime] Timeout de inatividade ({INACTIVITY_TIMEOUT}s). Encerrando WebSocket."
+                    f"[ShellPoll] Nenhum comando em {INACTIVITY_TIMEOUT}s. "
+                    "Encerrando por inatividade."
                 )
                 self._timed_out = True
                 break
 
             try:
-                raw = ws.recv()
-                if not raw:
-                    continue
-
-                msg = json.loads(raw)
-                if not isinstance(msg, list) or len(msg) < 5:
-                    continue
-
-                _, _, topic, event, payload = msg
-
-                if event == "phx_reply":
-                    status = payload.get("status", "")
-                    if status == "ok":
-                        continue
-                    elif status == "error":
-                        self.logger.error(f"[Realtime] Erro no canal: {payload}")
-                        break
-
-                elif event == "broadcast" and topic == self.topic:
-                    self._handle_broadcast(payload)
-
-                elif event == "phx_error":
-                    self.logger.error(f"[Realtime] Canal com erro: {payload}")
-                    break
-
-                elif event == "phx_close":
-                    self.logger.info("[Realtime] Canal fechado pelo servidor")
-                    break
-
-            except websocket.WebSocketTimeoutException:
-                continue
-            except websocket.WebSocketConnectionClosedException:
-                self.logger.warning("[Realtime] Conexão WebSocket fechada")
-                break
+                found = self._poll_once()
+                if found:
+                    self._last_activity = time.time()
             except Exception as e:
-                self.logger.error(f"[Realtime] Erro ao processar mensagem: {e}")
-                break
+                self.logger.error(f"[ShellPoll] Erro no polling: {e}")
 
-        # Cleanup
-        self._ws = None
+            self._stop_event.wait(timeout=POLL_INTERVAL)
+
+    def _poll_once(self) -> bool:
+        """Poll for commands once. Returns True if commands were found."""
         try:
-            ws.close()
-        except Exception:
-            pass
+            response = self.handler.api.get("/agent-commands")
+            commands = response.get("commands", [])
 
-    def _start_phoenix_heartbeat(self, ws):
-        """Send Phoenix heartbeat every 30s to keep connection alive."""
-        def _heartbeat():
-            while not self._stop_event.is_set() and self._ws == ws:
-                try:
-                    self._send(ws, "phoenix", "heartbeat", {})
-                except Exception:
-                    break
-                for _ in range(30):
-                    if self._stop_event.is_set():
-                        return
-                    time.sleep(1)
+            if not commands:
+                return False
 
-        t = threading.Thread(target=_heartbeat, daemon=True, name="realtime-hb")
-        t.start()
+            self.logger.info(f"[ShellPoll] {len(commands)} comando(s) encontrado(s)")
 
-    def _handle_broadcast(self, payload):
-        """Handle a broadcast message containing a command."""
-        try:
-            event_type = payload.get("event", "")
-            data = payload.get("payload", {})
+            for cmd in commands:
+                self.handler._execute_command(cmd)
 
-            if event_type != "command":
-                return
-
-            cmd = {
-                "id": data.get("id"),
-                "command": data.get("command"),
-                "timeout_seconds": data.get("timeout_seconds", 60),
-            }
-
-            if not cmd["id"] or not cmd["command"]:
-                self.logger.warning("[Realtime] Broadcast recebido sem id ou command")
-                return
-
-            # Reset inactivity timer on every command received
-            self._last_activity = time.time()
-
-            self.logger.info(
-                f"[Realtime] Comando recebido em tempo real: "
-                f"{cmd['command'][:80]}... (id={cmd['id'][:8]}...)"
-            )
-
-            # Execute using the shared handler
-            self.handler._execute_command(cmd)
+            return True
 
         except Exception as e:
-            self.logger.error(f"[Realtime] Erro ao processar broadcast: {e}")
+            self.logger.error(f"[ShellPoll] Erro ao buscar comandos: {e}")
+            return False

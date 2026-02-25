@@ -22,8 +22,6 @@ from supervisor.config import (
     WORKER_INSTALL_DIR,
     WORKER_HEALTH_FILE,
     WORKER_PID_FILE,
-    SUPABASE_URL,
-    SUPABASE_ANON_KEY,
 )
 from supervisor.heartbeat import SupervisorHeartbeatLoop
 from supervisor.updater import SupervisorUpdater
@@ -37,7 +35,7 @@ from agent.heartbeat import AgentHeartbeat
 from agent.logger import setup_logger
 from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
-from agent.realtime_commands import RealtimeCommandListener
+from agent.realtime_commands import ShellCommandPoller
 
 
 def main():
@@ -70,8 +68,8 @@ def main():
     worker.start()
 
     # --- Realtime: on-demand only (started via heartbeat flag) ---
-    realtime = None
-    realtime_active = False
+    poller = None
+    poller_active = False
 
     # --- Check for component flag (from previous check_components request) ---
     _check_component_flag(logger)
@@ -117,32 +115,29 @@ def main():
                 except Exception as e:
                     logger.error(f"[Supervisor] Erro ao processar comandos remotos: {e}")
 
-            # Handle on-demand Realtime WebSocket
+            # Handle on-demand shell command poller
             should_realtime = result.get("start_realtime", False)
-            if should_realtime and not realtime_active:
-                logger.info("[Supervisor] Heartbeat solicitou início do Realtime. Conectando...")
-                realtime = RealtimeCommandListener(
-                    agent_id=state.data.get("agent_id", ""),
-                    supabase_url=SUPABASE_URL,
-                    supabase_key=SUPABASE_ANON_KEY,
+            if should_realtime and not poller_active:
+                logger.info("[Supervisor] Heartbeat solicitou início do Shell Poller.")
+                poller = ShellCommandPoller(
                     command_handler=remote_cmds,
                     logger=logger,
                 )
-                realtime.start()
-                realtime_active = True
-            elif not should_realtime and realtime_active:
-                logger.info("[Supervisor] Heartbeat solicitou parada do Realtime. Desconectando...")
-                if realtime:
-                    realtime.stop()
-                    realtime = None
-                realtime_active = False
+                poller.start()
+                poller_active = True
+            elif not should_realtime and poller_active:
+                logger.info("[Supervisor] Heartbeat solicitou parada do Shell Poller.")
+                if poller:
+                    poller.stop()
+                    poller = None
+                poller_active = False
 
-            # Also check if realtime timed out on its own
-            if realtime_active and realtime and realtime.timed_out:
-                logger.info("[Supervisor] Realtime encerrado por inatividade (120s). Limpando flag...")
-                realtime.stop()
-                realtime = None
-                realtime_active = False
+            # Check if poller timed out on its own
+            if poller_active and poller and poller.timed_out:
+                logger.info("[Supervisor] Shell Poller encerrado por inatividade (120s).")
+                poller.stop()
+                poller = None
+                poller_active = False
 
         # Monitor worker health
         if not worker.is_running():
