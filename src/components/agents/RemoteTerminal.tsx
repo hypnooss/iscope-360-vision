@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Terminal, Send, Loader2, CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
+import { Terminal, Send, Loader2, CheckCircle, XCircle, Clock, AlertTriangle, Wifi, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -45,6 +45,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   const [command, setCommand] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const isSuperAdminUser = isSuperAdmin();
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
 
   // Fetch recent commands
   const { data: commands = [] } = useQuery({
@@ -61,6 +62,8 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       return (data || []) as AgentCommand[];
     },
     refetchInterval: (query) => {
+      // With Realtime connected, poll less frequently (fallback only)
+      if (realtimeConnected) return 30000;
       // Poll every 2s if there are pending/running commands
       const cmds = query.state.data as AgentCommand[] | undefined;
       const hasActive = cmds?.some(c => c.status === 'pending' || c.status === 'running');
@@ -69,10 +72,39 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     enabled: isSuperAdminUser,
   });
 
+  // Subscribe to Realtime postgres_changes for instant result updates
+  useEffect(() => {
+    if (!isSuperAdminUser) return;
+
+    const channel = supabase
+      .channel(`agent-commands-results-${agentId}`)
+      .on(
+        'postgres_changes' as any,
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'agent_commands',
+          filter: `agent_id=eq.${agentId}`,
+        },
+        () => {
+          // Invalidate query to refresh the list instantly
+          queryClient.invalidateQueries({ queryKey: ['agent-commands', agentId] });
+        }
+      )
+      .subscribe((status: string) => {
+        setRealtimeConnected(status === 'SUBSCRIBED');
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+      setRealtimeConnected(false);
+    };
+  }, [agentId, isSuperAdminUser, queryClient]);
+
   // Send command mutation
   const sendCommand = useMutation({
     mutationFn: async (cmd: string) => {
-      const { error } = await (supabase
+      const { data, error } = await (supabase
         .from('agent_commands' as any)
         .insert({
           agent_id: agentId,
@@ -80,9 +112,25 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           created_by: user?.id,
           status: 'pending',
           timeout_seconds: 60,
-        }) as any);
+        })
+        .select()
+        .single() as any);
 
       if (error) throw error;
+
+      // Broadcast command to the agent's Realtime channel for instant delivery
+      const broadcastChannel = supabase.channel(`agent-cmd-${agentId}`);
+      await broadcastChannel.send({
+        type: 'broadcast',
+        event: 'command',
+        payload: {
+          id: data.id,
+          command: cmd,
+          timeout_seconds: 60,
+        },
+      });
+      // Clean up the broadcast channel
+      supabase.removeChannel(broadcastChannel);
     },
     onSuccess: () => {
       setCommand("");
@@ -114,9 +162,23 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
         <CardTitle className="flex items-center gap-2 text-lg">
           <Terminal className="w-5 h-5" />
           Terminal Remoto
+          {realtimeConnected ? (
+            <Badge variant="secondary" className="bg-success/10 text-success text-xs ml-auto">
+              <Wifi className="w-3 h-3 mr-1" />
+              Realtime
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="bg-muted text-muted-foreground text-xs ml-auto">
+              <WifiOff className="w-3 h-3 mr-1" />
+              Polling
+            </Badge>
+          )}
         </CardTitle>
         <CardDescription>
-          Execute comandos no servidor do agent "{agentName}". Os comandos são executados como root via supervisor.
+          Execute comandos no servidor do agent "{agentName}".
+          {realtimeConnected
+            ? " Conexão em tempo real ativa — comandos executados instantaneamente."
+            : " Usando polling — comandos executados no próximo heartbeat (~120s)."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -150,7 +212,9 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
                 <Terminal className="w-8 h-8 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">Nenhum comando executado ainda.</p>
                 <p className="text-xs mt-1">
-                  O comando será executado no próximo heartbeat do agent (até ~120s).
+                  {realtimeConnected
+                    ? "O comando será executado em tempo real (~1-2s)."
+                    : "O comando será executado no próximo heartbeat do agent (até ~120s)."}
                 </p>
               </div>
             ) : (
@@ -206,7 +270,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
                       <div className="p-3 flex items-center gap-2 text-xs text-muted-foreground">
                         <Loader2 className="w-3 h-3 animate-spin" />
                         {cmd.status === 'pending'
-                          ? 'Aguardando próximo heartbeat do agent...'
+                          ? (realtimeConnected ? 'Enviando para o agent...' : 'Aguardando próximo heartbeat do agent...')
                           : 'Executando no servidor...'}
                       </div>
                     )}
