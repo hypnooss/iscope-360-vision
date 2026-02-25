@@ -30,7 +30,8 @@ INSTALL_DIR="/opt/iscope-agent"
 CONFIG_DIR="/etc/iscope-agent"
 STATE_DIR="/var/lib/iscope-agent"
 
-SERVICE_NAME="iscope-agent"
+SERVICE_NAME="iscope-supervisor"
+LEGACY_SERVICE_NAME="iscope-agent"
 SERVICE_USER="iscope"
 
 UPDATE="0"
@@ -608,16 +609,21 @@ install_m365_modules() {
 }
 
 stop_service_if_exists() {
-  if systemctl list-unit-files | grep -q "^\${SERVICE_NAME}\\.service"; then
-    systemctl stop "$SERVICE_NAME" || true
-    systemctl disable "$SERVICE_NAME" || true
-  fi
+  # Stop both legacy (iscope-agent) and new (iscope-supervisor) services
+  for svc in "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"; do
+    if systemctl list-unit-files | grep -q "^\${svc}\\.service"; then
+      echo "Parando serviço \${svc}..."
+      systemctl stop "\$svc" || true
+      systemctl disable "\$svc" || true
+    fi
+  done
 }
 
 uninstall_all() {
-  echo "Removendo \${SERVICE_NAME}..."
+  echo "Removendo serviços iScope..."
   stop_service_if_exists
   rm -f "/etc/systemd/system/\${SERVICE_NAME}.service"
+  rm -f "/etc/systemd/system/\${LEGACY_SERVICE_NAME}.service"
   systemctl daemon-reload || true
   rm -rf "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR"
   echo "Uninstall concluído."
@@ -777,14 +783,10 @@ AGENT_POLL_INTERVAL=\${POLL_INTERVAL}
 AGENT_STATE_FILE=\${STATE_DIR}/state.json
 AGENT_LOG_FILE=/var/log/iscope-agent/agent.log
 AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
+SUPERVISOR_HEARTBEAT_INTERVAL=120
 EOF
 
   chmod 600 "$env_file"
-  
-  # Ensure the service user can read the config file
-  if id "$SERVICE_USER" >/dev/null 2>&1; then
-    chown "$SERVICE_USER":"$SERVICE_USER" "$env_file"
-  fi
 }
 
 ensure_state_file() {
@@ -1142,29 +1144,25 @@ write_systemd_service() {
 
   cat > "$unit_file" <<EOF
 [Unit]
-Description=iScope Agent
+Description=iScope 360 Supervisor
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
+User=root
+Group=root
 EnvironmentFile=\${CONFIG_DIR}/agent.env
 WorkingDirectory=\${INSTALL_DIR}
-# Run component check as root before starting agent (- prefix = ignore failures)
 ExecStartPre=-/bin/bash \${INSTALL_DIR}/check-deps.sh
-ExecStart=\${INSTALL_DIR}/venv/bin/python \${INSTALL_DIR}/main.py
+ExecStart=\${INSTALL_DIR}/venv/bin/python -m supervisor.main
 Restart=always
-RestartSec=5
-EOF
-
-  if id "$SERVICE_USER" >/dev/null 2>&1; then
-    cat >> "$unit_file" <<EOF
-User=\${SERVICE_USER}
-Group=\${SERVICE_USER}
-EOF
-  fi
-
-  cat >> "$unit_file" <<EOF
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=iscope-supervisor
+NoNewPrivileges=false
+ProtectSystem=false
 
 [Install]
 WantedBy=multi-user.target
@@ -1174,13 +1172,25 @@ EOF
 setup_sudoers() {
   local sudoers_file="/etc/sudoers.d/iscope-agent"
   echo "Configurando permissão sudoers para restart do serviço..."
-  echo "$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $SERVICE_NAME" > "$sudoers_file"
+  cat > "$sudoers_file" << SUDOERS
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $SERVICE_NAME
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $LEGACY_SERVICE_NAME
+SUDOERS
   chmod 440 "$sudoers_file"
   echo "Sudoers configurado: $sudoers_file"
 }
 
 start_service() {
   systemctl daemon-reload
+
+  # Disable legacy iscope-agent service if it exists
+  if systemctl list-unit-files | grep -q "^\${LEGACY_SERVICE_NAME}\\.service"; then
+    echo "Desabilitando serviço legado \${LEGACY_SERVICE_NAME}..."
+    systemctl stop "\${LEGACY_SERVICE_NAME}" 2>/dev/null || true
+    systemctl disable "\${LEGACY_SERVICE_NAME}" 2>/dev/null || true
+  fi
+
+  # Enable and start the Supervisor service
   systemctl enable --now "$SERVICE_NAME"
 }
 
@@ -1216,7 +1226,9 @@ main() {
   start_service
 
   echo ""
-  echo "Instalado com sucesso!"
+  echo "Supervisor instalado com sucesso!"
+  echo "  O Supervisor gerencia heartbeats, updates e inicia o Worker automaticamente."
+  echo ""
   echo "Verificar status: systemctl status \${SERVICE_NAME} --no-pager"
   echo "Ver logs:       journalctl -u \${SERVICE_NAME} -f --no-pager"
   
