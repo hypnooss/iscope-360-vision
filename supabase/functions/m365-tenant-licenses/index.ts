@@ -139,6 +139,28 @@ Deno.serve(async (req) => {
 
     console.log(`[m365-tenant-licenses] Found ${skus.length} SKUs`);
 
+    // 5b. Fetch directory subscriptions for expiry dates (graceful fallback)
+    let expiryMap = new Map<string, string>();
+    try {
+      const subRes = await fetch('https://graph.microsoft.com/v1.0/directory/subscriptions', {
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+      if (subRes.ok) {
+        const subData = await subRes.json();
+        const subs = subData.value || [];
+        for (const sub of subs) {
+          if (sub.skuId && sub.nextLifecycleDateTime) {
+            expiryMap.set(sub.skuId, sub.nextLifecycleDateTime);
+          }
+        }
+        console.log(`[m365-tenant-licenses] Found ${expiryMap.size} subscription expiry dates`);
+      } else {
+        console.warn(`[m365-tenant-licenses] /directory/subscriptions returned ${subRes.status}, skipping expiry dates`);
+      }
+    } catch (subErr) {
+      console.warn(`[m365-tenant-licenses] Failed to fetch /directory/subscriptions:`, subErr);
+    }
+
     // 6. Delete old licenses for this tenant and insert new ones
     await supabase
       .from('m365_tenant_licenses')
@@ -156,7 +178,7 @@ Deno.serve(async (req) => {
       consumed_units: sku.consumedUnits || 0,
       warning_units: sku.prepaidUnits?.warning || 0,
       suspended_units: sku.prepaidUnits?.suspended || 0,
-      expires_at: null, // subscribedSkus doesn't expose expiry directly
+      expires_at: expiryMap.get(sku.skuId) || null,
       collected_at: collectedAt,
     }));
 
