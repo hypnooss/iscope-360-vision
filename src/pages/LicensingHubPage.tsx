@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useLicensingHub, getLicenseStatus, LicenseStatus, FirewallLicense } from '@/hooks/useLicensingHub';
 import { supabase } from '@/integrations/supabase/client';
@@ -163,6 +163,7 @@ function EolBadges({ eol }: { eol: EolData | null | undefined }) {
 // ====== Page ======
 
 export default function LicensingHubPage() {
+  const queryClient = useQueryClient();
   const {
     workspaces,
     selectedWorkspaceId,
@@ -354,6 +355,21 @@ export default function LicensingHubPage() {
 
           {/* Firewalls Tab */}
           <TabsContent value="firewalls">
+            <div className="flex items-center justify-end mb-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => queryClient.invalidateQueries({ queryKey: ['fortinet-eol'] })}
+                disabled={loadingEol}
+              >
+                {loadingEol ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                Atualizar Ciclo de Vida
+              </Button>
+            </div>
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -386,19 +402,28 @@ export default function LicensingHubPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="space-y-1.5">
-                            {groupServicesByExpiry(fw.services).map((group, i) => (
-                              <div key={i} className="flex items-start gap-2">
-                                <ExpiryBadge daysLeft={group.daysLeft} expiresAt={group.expiresAt} />
-                                <span className="text-xs text-muted-foreground leading-5">
-                                  {group.names.join(', ')}
-                                </span>
-                              </div>
-                            ))}
-                            {fw.services.length === 0 && (
-                              <span className="text-xs text-muted-foreground">Sem serviços</span>
-                            )}
-                          </div>
+                          <TooltipProvider>
+                            <div className="space-y-1.5">
+                              {groupServicesByExpiry(fw.services).map((group, i) => (
+                                <div key={i} className="flex items-center gap-2">
+                                  <ExpiryBadge daysLeft={group.daysLeft} expiresAt={group.expiresAt} />
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="text-xs text-muted-foreground cursor-default">
+                                        {group.names.length} serviço{group.names.length !== 1 ? 's' : ''}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom" className="max-w-xs">
+                                      <p className="text-xs">{group.names.join(', ')}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </div>
+                              ))}
+                              {fw.services.length === 0 && (
+                                <span className="text-xs text-muted-foreground">Sem serviços</span>
+                              )}
+                            </div>
+                          </TooltipProvider>
                         </TableCell>
                         <TableCell>
                           <EolBadges eol={fw.model && eolMap ? eolMap[fw.model] : (loadingEol ? undefined : null)} />
