@@ -41,12 +41,15 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const [agentReady, setAgentReady] = useState(false);
   const [lines, setLines] = useState<TerminalLine[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [pendingCommandIds, setPendingCommandIds] = useState<Set<string>>(new Set());
   const [currentCwd, setCurrentCwd] = useState("/");
+  // Track which command IDs have already had streaming lines added
+  const streamedCommandIds = useRef<Set<string>>(new Set());
 
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -92,15 +95,54 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
         },
         (payload: any) => {
           const cmd = payload.new as AgentCommand;
-          if (cmd.status === "completed" || cmd.status === "failed" || cmd.status === "timeout") {
-            // Update cwd from agent response
-            if (cmd.cwd) {
-              setCurrentCwd(cmd.cwd);
-            }
 
-            // Add output lines
+          // Streaming partial output — status="running"
+          if (cmd.status === "running") {
+            // Mark agent as ready on first sign of life
+            if (!agentReady) setAgentReady(true);
+
+            if (cmd.cwd) setCurrentCwd(cmd.cwd);
+
+            // Replace all previous streaming lines for this command with full accumulated output
             setLines((prev) => {
-              const newLines = [...prev];
+              // Remove old streaming lines for this command
+              const filtered = prev.filter(
+                (l) => !(l.commandId === cmd.id && (l.type === "output" || l.type === "error") && streamedCommandIds.current.has(cmd.id))
+              );
+              streamedCommandIds.current.add(cmd.id);
+
+              const newLines = [...filtered];
+              if (cmd.stdout) {
+                cmd.stdout.split("\n").forEach((line) => {
+                  newLines.push({ type: "output", text: line, commandId: cmd.id });
+                });
+              }
+              if (cmd.stderr) {
+                cmd.stderr.split("\n").forEach((line) => {
+                  newLines.push({ type: "error", text: line, commandId: cmd.id });
+                });
+              }
+              return newLines;
+            });
+            return;
+          }
+
+          if (cmd.status === "completed" || cmd.status === "failed" || cmd.status === "timeout") {
+            // Mark agent as ready
+            if (!agentReady) setAgentReady(true);
+
+            // Update cwd from agent response
+            if (cmd.cwd) setCurrentCwd(cmd.cwd);
+
+            // Replace streaming lines with final output
+            setLines((prev) => {
+              // Remove old streaming lines for this command
+              const filtered = prev.filter(
+                (l) => !(l.commandId === cmd.id && (l.type === "output" || l.type === "error") && streamedCommandIds.current.has(cmd.id))
+              );
+              streamedCommandIds.current.delete(cmd.id);
+
+              const newLines = [...filtered];
               if (cmd.stdout) {
                 cmd.stdout.split("\n").forEach((line) => {
                   newLines.push({ type: "output", text: line, commandId: cmd.id });
@@ -128,7 +170,6 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
         const isSubscribed = status === "SUBSCRIBED";
         setRealtimeConnected(isSubscribed);
         if (isSubscribed) {
-          // Now that realtime is ready, show the prompt
           setConnecting(false);
           setLines((prev) => [
             ...prev,
@@ -180,12 +221,12 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
 
   const handleConnect = async () => {
     setConnecting(true);
+    setAgentReady(false);
     setLines([
       { type: "system", text: `Conectando ao agent "${agentName}"...` },
       { type: "system", text: "Aguardando canal de comunicação..." },
     ]);
 
-    // Signal agent to start shell polling
     try {
       await (supabase
         .from("agents" as any)
@@ -195,8 +236,6 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       console.error("Failed to set shell_session_active:", e);
     }
 
-    // Set connected to trigger the realtime subscription useEffect
-    // The UI stays in "connecting" state until realtime is SUBSCRIBED
     setConnected(true);
   };
 
@@ -212,12 +251,14 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
 
     setConnected(false);
     setConnecting(false);
+    setAgentReady(false);
     setLines([]);
     setCommandHistory([]);
     setHistoryIndex(-1);
     setPendingCommandIds(new Set());
     setInputValue("");
     setCurrentCwd("/");
+    streamedCommandIds.current.clear();
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -225,15 +266,12 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
 
-    // Add input line
     setLines((prev) => [...prev, { type: "input", text: `${prompt} ${trimmed}` }]);
     setInputValue("");
     setHistoryIndex(-1);
 
-    // Update command history
     setCommandHistory((prev) => [...prev, trimmed]);
 
-    // Local commands
     if (trimmed === "clear") {
       setLines([]);
       return;
@@ -243,19 +281,16 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       return;
     }
 
-    // Send to agent
     sendCommand.mutate(trimmed);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Ctrl+L = clear
     if (e.ctrlKey && e.key === "l") {
       e.preventDefault();
       setLines([]);
       return;
     }
 
-    // Arrow up/down for history
     if (e.key === "ArrowUp") {
       e.preventDefault();
       if (commandHistory.length === 0) return;
@@ -278,7 +313,6 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
 
   if (!isSuperAdminUser) return null;
 
-  // Disconnected state - show connect button
   if (!connected && !connecting) {
     return (
       <div className="lg:col-span-2 rounded-lg border border-border/50 bg-black/90 p-6 flex flex-col items-center justify-center gap-4 min-h-[200px]">
@@ -292,7 +326,6 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     );
   }
 
-  // Connecting state - show loading (waiting for realtime subscription)
   if (connecting) {
     return (
       <div className="lg:col-span-2 rounded-lg border border-border/50 bg-black/90 p-6 flex flex-col items-center justify-center gap-4 min-h-[200px]">
@@ -342,12 +375,21 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
         </div>
       </div>
 
+      {/* Agent not ready banner */}
+      {!agentReady && realtimeConnected && (
+        <div className="px-4 py-2 bg-amber-950/40 border-b border-amber-800/30 flex items-center gap-2">
+          <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+          <span className="text-amber-400 text-xs font-mono">
+            Aguardando agente conectar... (comandos serão executados quando o agente responder)
+          </span>
+        </div>
+      )}
+
       {/* Terminal body */}
       <div
         className="flex-1 overflow-y-auto p-3 font-mono text-sm cursor-text"
         onClick={focusInput}
       >
-        {/* Rendered lines */}
         {lines.map((line, i) => (
           <div key={i} className="leading-5 whitespace-pre-wrap break-all">
             {line.type === "input" && (
@@ -365,14 +407,12 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           </div>
         ))}
 
-        {/* Pending indicator */}
         {hasPending && (
           <div className="leading-5 text-gray-500">
             <span className="animate-pulse">▌</span>
           </div>
         )}
 
-        {/* Active prompt + input */}
         {!hasPending && inputReady && (
           <form onSubmit={handleSubmit} className="flex leading-5">
             <span className="text-green-400 shrink-0">{prompt}&nbsp;</span>

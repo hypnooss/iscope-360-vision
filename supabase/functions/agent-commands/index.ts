@@ -40,7 +40,6 @@ async function verifyAgentToken(req: Request, supabase: any): Promise<{ agentId:
     );
   }
 
-  // Check expiration
   if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
     return new Response(
       JSON.stringify({ error: 'Token expired' }),
@@ -48,7 +47,6 @@ async function verifyAgentToken(req: Request, supabase: any): Promise<{ agentId:
     );
   }
 
-  // Get jwt_secret from agents table
   const { data: agent, error: agentError } = await supabase
     .from('agents')
     .select('jwt_secret, revoked')
@@ -69,7 +67,6 @@ async function verifyAgentToken(req: Request, supabase: any): Promise<{ agentId:
     );
   }
 
-  // Verify signature
   try {
     const encoder = new TextEncoder();
     const keyData = encoder.encode(agent.jwt_secret);
@@ -98,12 +95,10 @@ serve(async (req: Request) => {
 
   try {
     if (req.method === 'GET') {
-      // Agent fetches pending commands
       const authResult = await verifyAgentToken(req, supabase);
       if (authResult instanceof Response) return authResult;
       const { agentId } = authResult;
 
-      // Fetch pending commands and mark as running
       const { data: commands, error } = await supabase
         .from('agent_commands')
         .select('id, command, timeout_seconds')
@@ -120,14 +115,13 @@ serve(async (req: Request) => {
         );
       }
 
-      // Mark fetched commands as running
       if (commands && commands.length > 0) {
         const ids = commands.map((c: any) => c.id);
         await supabase
           .from('agent_commands')
           .update({ status: 'running', started_at: new Date().toISOString() })
           .in('id', ids);
-        
+
         console.log(`Agent ${agentId}: ${commands.length} command(s) marked as running`);
       }
 
@@ -148,7 +142,6 @@ serve(async (req: Request) => {
     }
 
     if (req.method === 'POST') {
-      // Agent submits command result
       const authResult = await verifyAgentToken(req, supabase);
       if (authResult instanceof Response) return authResult;
       const { agentId } = authResult;
@@ -163,6 +156,7 @@ serve(async (req: Request) => {
         );
       }
 
+      const isPartial = status === 'running';
       const finalStatus = status || (exit_code === 0 ? 'completed' : 'failed');
 
       const updatePayload: Record<string, any> = {
@@ -170,9 +164,13 @@ serve(async (req: Request) => {
         stderr: stderr || null,
         exit_code: exit_code ?? null,
         status: finalStatus,
-        completed_at: new Date().toISOString(),
         cwd: cwd || null,
       };
+
+      // Only set completed_at for final statuses
+      if (!isPartial) {
+        updatePayload.completed_at = new Date().toISOString();
+      }
 
       const { error } = await supabase
         .from('agent_commands')
