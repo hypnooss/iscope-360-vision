@@ -1,10 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
-import { Json } from '@/integrations/supabase/types';
 
 // ====== TYPES ======
 
@@ -61,6 +60,166 @@ export function getDaysLeft(dateStr: string | null): number | null {
   return Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+// ====== HELPERS ======
+
+function unixToIso(ts: number | null | undefined): string | null {
+  if (!ts || typeof ts !== 'number') return null;
+  // Detect if seconds or milliseconds
+  const ms = ts > 1e12 ? ts : ts * 1000;
+  const d = new Date(ms);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+const SERVICE_DISPLAY_NAMES: Record<string, string> = {
+  antivirus: 'Antivirus',
+  appctrl: 'App Control',
+  ips: 'IPS',
+  industrial_db: 'Industrial DB',
+  webfilter: 'Web Filter',
+  forticloud_sandbox: 'Cloud Sandbox',
+  botnet_domain: 'Botnet Domain',
+  botnet_ip: 'Botnet IP',
+  mobile_malware: 'Mobile Malware',
+  forticlient_outbreak_prevention_ems_threat_feed: 'Outbreak Prevention',
+};
+
+function extractFirewallFromRawData(rawData: any): { forticare: FirewallLicense['forticare']; services: FirewallLicense['services'] } | null {
+  const results = rawData?.license_status?.results;
+  if (!results) return null;
+
+  // FortiCare
+  const fcExpires = results.forticare?.support?.enhanced?.expires
+    || results.forticare?.support?.hardware?.expires
+    || results.forticare?.expires;
+  const fcIso = unixToIso(fcExpires);
+  const forticare = {
+    status: results.forticare?.status === 'licensed' ? 'pass' : (results.forticare?.status || 'unknown'),
+    expiresAt: fcIso,
+    daysLeft: getDaysLeft(fcIso),
+  };
+
+  // Services
+  const services: FirewallLicense['services'] = [];
+  for (const [key, val] of Object.entries(results)) {
+    if (key === 'forticare') continue;
+    const svc = val as any;
+    if (!svc || typeof svc !== 'object') continue;
+    if (svc.expires) {
+      const iso = unixToIso(svc.expires);
+      services.push({
+        name: SERVICE_DISPLAY_NAMES[key] || key.replace(/_/g, ' '),
+        status: svc.status === 'licensed' ? 'pass' : (svc.status || 'unknown'),
+        expiresAt: iso,
+        daysLeft: getDaysLeft(iso),
+      });
+    }
+  }
+
+  return { forticare, services };
+}
+
+function extractExpiryFromCheck(check: any): string | null {
+  if (!check) return null;
+  const evidence = check.evidence || check.details || {};
+  for (const key of Object.keys(evidence)) {
+    const lower = key.toLowerCase();
+    if (lower.includes('expir') || lower.includes('validade') || lower.includes('vencimento') || lower.includes('end_date')) {
+      const val = evidence[key];
+      if (typeof val === 'string' && val.match(/\d{4}/)) return val;
+    }
+  }
+  const desc = check.description || check.fail_description || '';
+  const dateMatch = desc.match(/(\d{4}-\d{2}-\d{2})/);
+  if (dateMatch) return dateMatch[1];
+  return null;
+}
+
+function extractTlsFromSnapshot(results: any, clientName: string): TlsCertificate[] {
+  const certs: TlsCertificate[] = [];
+  const seen = new Set<string>();
+
+  for (const [ip, ipData] of Object.entries(results as Record<string, any>)) {
+    if (!ipData || typeof ipData !== 'object') continue;
+
+    // 1. web_services[].tls
+    const webServices = (ipData as any).web_services || [];
+    for (const ws of webServices) {
+      const tls = ws?.tls;
+      if (!tls?.not_after) continue;
+      const cn = tls.subject_cn || tls.common_name || ip;
+      const dedup = `${ip}:${cn}`;
+      if (seen.has(dedup)) continue;
+      seen.add(dedup);
+
+      const issuerArr = tls.issuer;
+      const issuerStr = Array.isArray(issuerArr) ? issuerArr.join(', ') : (issuerArr || 'Unknown');
+
+      certs.push({
+        ip,
+        port: ws.port || 443,
+        subjectCn: cn,
+        issuer: issuerStr,
+        expiresAt: tls.not_after,
+        daysLeft: getDaysLeft(tls.not_after),
+        clientName,
+      });
+    }
+
+    // 2. services[].scripts["ssl-cert"]
+    const services = (ipData as any).services || [];
+    for (const svc of services) {
+      const sslCert = svc?.scripts?.['ssl-cert'];
+      if (!sslCert || typeof sslCert !== 'string') continue;
+
+      const notAfterMatch = sslCert.match(/Not valid after:\s*(\S+)/i);
+      if (!notAfterMatch) continue;
+
+      const subjectMatch = sslCert.match(/(?:Subject|commonName)[=:]\s*([^\n,/]+)/i);
+      const issuerMatch = sslCert.match(/Issuer[^:]*:\s*commonName[=:]([^\n,/]+)/i);
+
+      const cn = subjectMatch?.[1]?.trim() || ip;
+      const dedup = `${ip}:${cn}`;
+      if (seen.has(dedup)) continue;
+      seen.add(dedup);
+
+      const expiresAt = notAfterMatch[1];
+      certs.push({
+        ip,
+        port: svc.port || svc.portid || 443,
+        subjectCn: cn,
+        issuer: issuerMatch?.[1]?.trim() || 'Unknown',
+        expiresAt,
+        daysLeft: getDaysLeft(expiresAt),
+        clientName,
+      });
+    }
+
+    // 3. Fallback: old structure ports[].tls.certificate
+    const ports = (ipData as any).ports || (ipData as any).scan?.ports || [];
+    for (const port of ports) {
+      const cert = port?.tls?.certificate || port?.ssl?.certificate;
+      if (!cert) continue;
+      const cn = cert.subject?.cn || cert.subject?.common_name || cert.subject_cn || ip;
+      const dedup = `${ip}:${cn}`;
+      if (seen.has(dedup)) continue;
+      seen.add(dedup);
+
+      const expiresAt = cert.not_after || cert.validity?.not_after || null;
+      certs.push({
+        ip,
+        port: port.port || port.portid || 0,
+        subjectCn: cn,
+        issuer: cert.issuer?.cn || cert.issuer?.common_name || cert.issuer_cn || 'Unknown',
+        expiresAt,
+        daysLeft: getDaysLeft(expiresAt),
+        clientName,
+      });
+    }
+  }
+
+  return certs;
+}
+
 // ====== HOOK ======
 
 export function useLicensingHub() {
@@ -69,7 +228,6 @@ export function useLicensingHub() {
   const displayRole = effectiveRole || role;
   const isSuperRole = displayRole === 'super_admin' || displayRole === 'super_suporte';
 
-  // Fetch workspaces
   const { data: workspaces } = useQuery({
     queryKey: ['licensing-hub-workspaces'],
     queryFn: async () => {
@@ -80,7 +238,6 @@ export function useLicensingHub() {
 
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(workspaces, isSuperRole);
 
-  // For non-super users, get their workspace
   const { data: userWorkspaces } = useQuery({
     queryKey: ['licensing-hub-user-workspaces'],
     queryFn: async () => {
@@ -104,7 +261,6 @@ export function useLicensingHub() {
     queryFn: async () => {
       if (!activeClientIds.length) return [];
 
-      // Get firewalls for the workspace(s)
       const { data: firewalls } = await supabase
         .from('firewalls')
         .select('id, name, client_id')
@@ -112,7 +268,6 @@ export function useLicensingHub() {
 
       if (!firewalls?.length) return [];
 
-      // Get workspace names
       const clientIds = [...new Set(firewalls.map(f => f.client_id))];
       const { data: clients } = await supabase
         .from('clients')
@@ -120,7 +275,6 @@ export function useLicensingHub() {
         .in('id', clientIds);
       const clientMap = new Map(clients?.map(c => [c.id, c.name]) || []);
 
-      // Get latest analysis for each firewall
       const results: FirewallLicense[] = [];
       for (const fw of firewalls) {
         const { data: history } = await supabase
@@ -133,12 +287,25 @@ export function useLicensingHub() {
         if (!history?.length) continue;
 
         const reportData = history[0].report_data as any;
+
+        // Try rawData first (Unix timestamps)
+        const rawExtracted = extractFirewallFromRawData(reportData?.rawData);
+        if (rawExtracted) {
+          results.push({
+            firewallId: fw.id,
+            firewallName: fw.name,
+            workspaceName: clientMap.get(fw.client_id) || '',
+            ...rawExtracted,
+          });
+          continue;
+        }
+
+        // Fallback: categories text parsing
         const categories = reportData?.categories || {};
         const licensingChecks = categories['Licenciamento'] || [];
-
         if (!licensingChecks.length) continue;
 
-        const forticareCheck = licensingChecks.find((c: any) => 
+        const forticareCheck = licensingChecks.find((c: any) =>
           c.name?.toLowerCase().includes('forticare') || c.code?.toLowerCase().includes('forticare')
         );
 
@@ -146,12 +313,11 @@ export function useLicensingHub() {
         for (const check of licensingChecks) {
           if (check === forticareCheck) continue;
           const expDate = extractExpiryFromCheck(check);
-          const days = getDaysLeft(expDate);
           services.push({
             name: check.name || check.code || 'Unknown',
             status: check.status || 'unknown',
             expiresAt: expDate,
-            daysLeft: days,
+            daysLeft: getDaysLeft(expDate),
           });
         }
 
@@ -180,14 +346,13 @@ export function useLicensingHub() {
     queryFn: async () => {
       if (!activeClientIds.length) return [];
 
-      // Get workspace names
       const { data: clients } = await supabase
         .from('clients')
         .select('id, name')
         .in('id', activeClientIds);
       const clientMap = new Map(clients?.map(c => [c.id, c.name]) || []);
 
-      const certs: TlsCertificate[] = [];
+      const allCerts: TlsCertificate[] = [];
 
       for (const clientId of activeClientIds) {
         const { data: snapshots } = await supabase
@@ -199,32 +364,14 @@ export function useLicensingHub() {
           .limit(1);
 
         if (!snapshots?.length) continue;
-
         const results = snapshots[0].results as any;
         if (!results) continue;
 
-        // results is keyed by IP
-        for (const [ip, ipData] of Object.entries(results as Record<string, any>)) {
-          const ports = ipData?.ports || ipData?.scan?.ports || [];
-          for (const port of ports) {
-            const cert = port?.tls?.certificate || port?.ssl?.certificate;
-            if (!cert) continue;
-
-            const expiresAt = cert.not_after || cert.validity?.not_after || null;
-            certs.push({
-              ip,
-              port: port.port || port.portid || 0,
-              subjectCn: cert.subject?.cn || cert.subject?.common_name || cert.subject_cn || ip,
-              issuer: cert.issuer?.cn || cert.issuer?.common_name || cert.issuer_cn || 'Unknown',
-              expiresAt,
-              daysLeft: getDaysLeft(expiresAt),
-              clientName: clientMap.get(clientId) || '',
-            });
-          }
-        }
+        const certs = extractTlsFromSnapshot(results, clientMap.get(clientId) || '');
+        allCerts.push(...certs);
       }
 
-      return certs;
+      return allCerts;
     },
     enabled: activeClientIds.length > 0,
   });
@@ -266,7 +413,6 @@ export function useLicensingHub() {
     if (!activeClientIds.length) return;
     setRefreshingM365(true);
     try {
-      // Get tenants for the active clients
       const { data: tenants } = await supabase
         .from('m365_tenants')
         .select('id')
@@ -300,16 +446,11 @@ export function useLicensingHub() {
       else if (status === 'active') active++;
     };
 
-    // Firewalls
     for (const fw of firewallLicenses) {
       countItem(fw.forticare.daysLeft);
       for (const svc of fw.services) countItem(svc.daysLeft);
     }
-
-    // TLS
     for (const cert of tlsCertificates) countItem(cert.daysLeft);
-
-    // M365
     for (const lic of m365Licenses) countItem(lic.daysLeft);
 
     return { expired, expiring, active, total: expired + expiring + active };
@@ -328,26 +469,4 @@ export function useLicensingHub() {
     refreshM365Licenses,
     refreshingM365,
   };
-}
-
-// ====== HELPERS ======
-
-function extractExpiryFromCheck(check: any): string | null {
-  if (!check) return null;
-  // Try evidence fields first
-  const evidence = check.evidence || check.details || {};
-  // Look for expiry-related fields
-  for (const key of Object.keys(evidence)) {
-    const lower = key.toLowerCase();
-    if (lower.includes('expir') || lower.includes('validade') || lower.includes('vencimento') || lower.includes('end_date')) {
-      const val = evidence[key];
-      if (typeof val === 'string' && val.match(/\d{4}/)) return val;
-    }
-  }
-  // Try description parsing
-  const desc = check.description || check.fail_description || '';
-  const dateMatch = desc.match(/(\d{4}-\d{2}-\d{2})/);
-  if (dateMatch) return dateMatch[1];
-
-  return null;
 }
