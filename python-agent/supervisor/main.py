@@ -22,6 +22,8 @@ from supervisor.config import (
     WORKER_INSTALL_DIR,
     WORKER_HEALTH_FILE,
     WORKER_PID_FILE,
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
 )
 from supervisor.heartbeat import SupervisorHeartbeatLoop
 from supervisor.updater import SupervisorUpdater
@@ -35,6 +37,7 @@ from agent.heartbeat import AgentHeartbeat
 from agent.logger import setup_logger
 from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
+from agent.realtime_commands import RealtimeCommandListener
 
 
 def main():
@@ -65,6 +68,16 @@ def main():
 
     # --- Start worker on boot ---
     worker.start()
+
+    # --- Start Realtime command listener ---
+    realtime = RealtimeCommandListener(
+        agent_id=state.data.get("agent_id", ""),
+        supabase_url=SUPABASE_URL,
+        supabase_key=SUPABASE_ANON_KEY,
+        command_handler=remote_cmds,
+        logger=logger,
+    )
+    realtime.start()
 
     # --- Check for component flag (from previous check_components request) ---
     _check_component_flag(logger)
