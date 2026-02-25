@@ -1,5 +1,24 @@
+import shutil
+import time
+
 from agent.version import get_version
 from agent.auth import get_certificate_thumbprint, get_certificate_public_key, CERT_FILE
+
+CAPABILITIES_INTERVAL = 43200  # 12 hours in seconds
+
+CAPABILITY_CHECKS = [
+    ("nmap", "nmap"),
+    ("amass", "amass"),
+    ("powershell", "pwsh"),
+    ("ssh", "ssh"),
+    ("snmp", "snmpwalk"),
+    ("python3", "python3"),
+    ("openssl", "openssl"),
+    ("masscan", "masscan"),
+    ("curl", "curl"),
+    ("httpx", "httpx"),
+    ("dns_query", "dig"),
+]
 
 
 class AgentStopped(Exception):
@@ -11,6 +30,19 @@ class AgentHeartbeat:
         self.api = api
         self.state = state
         self.logger = logger
+
+    def _detect_capabilities(self):
+        """Detect installed tools using shutil.which()."""
+        capabilities = []
+        for capability_name, binary_name in CAPABILITY_CHECKS:
+            if shutil.which(binary_name):
+                capabilities.append(capability_name)
+        return capabilities
+
+    def _should_send_capabilities(self):
+        """Check if capabilities should be included (every 12h)."""
+        last_sent = self.state.data.get("last_capabilities_sent", 0)
+        return (time.time() - last_sent) > CAPABILITIES_INTERVAL
 
     def _get_pending_certificate(self, force=False):
         """Check if there's a certificate that needs to be uploaded to Azure.
@@ -60,6 +92,13 @@ class AgentHeartbeat:
                 "agent_version": version
             }
             
+            # Include capabilities if 12h interval elapsed
+            send_caps = self._should_send_capabilities()
+            if send_caps:
+                caps = self._detect_capabilities()
+                payload["capabilities"] = caps
+                self.logger.info(f"Incluindo capabilities no heartbeat: {caps}")
+
             # Include pending certificate if exists (or if forced by backend)
             pending_cert = self._get_pending_certificate(force=force_certificate)
             if pending_cert:
@@ -71,6 +110,12 @@ class AgentHeartbeat:
                 json=payload
             )
             
+            # Update capabilities timestamp if sent successfully
+            if send_caps and response.get("success"):
+                self.state.data["last_capabilities_sent"] = time.time()
+                self.state.save()
+                self.logger.info("Timestamp de capabilities atualizado")
+
             # Check if certificate was registered
             if pending_cert and response.get("azure_certificate_key_id"):
                 self.state.data["azure_certificate_key_id"] = response["azure_certificate_key_id"]
