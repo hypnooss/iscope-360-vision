@@ -60,16 +60,26 @@ class RemoteCommandHandler:
         try:
             stripped = command_text.strip()
 
-            # Handle __signal__ SIGINT — send signal to running process
-            if stripped == "__signal__ SIGINT":
+            # Handle __signal__ <TYPE> — send signal to running process
+            if stripped.startswith("__signal__"):
+                parts = stripped.split()
+                sig_name = parts[1] if len(parts) > 1 else "SIGINT"
+                self.logger.info(f"[RemoteCmd] Signal command interceptado: {sig_name}")
+
                 if self._running_proc and self._running_proc.poll() is None:
                     try:
+                        pid = self._running_proc.pid
                         self._running_proc.send_signal(signal.SIGINT)
-                        self.logger.info(f"[RemoteCmd] SIGINT enviado ao processo (cmd {self._running_cmd_id[:8] if self._running_cmd_id else '?'}...)")
+                        self.logger.info(f"[RemoteCmd] SIGINT enviado ao PID {pid} (cmd {self._running_cmd_id[:8] if self._running_cmd_id else '?'}...)")
                     except Exception as sig_err:
-                        self.logger.warning(f"[RemoteCmd] Erro ao enviar SIGINT: {sig_err}")
+                        self.logger.warning(f"[RemoteCmd] Erro ao enviar SIGINT, tentando terminate(): {sig_err}")
+                        try:
+                            self._running_proc.terminate()
+                        except Exception:
+                            pass
                 else:
-                    self.logger.info("[RemoteCmd] __signal__ SIGINT recebido, mas nenhum processo ativo")
+                    self.logger.info("[RemoteCmd] Nenhum processo ativo para sinal")
+
                 self._report_result(
                     command_id=command_id,
                     stdout="",
@@ -134,10 +144,10 @@ class RemoteCommandHandler:
                 return
 
             # Regular command — use Popen for streaming support
-            self.logger.info(f"[RemoteCmd] Executando: {command_text[:80]}... (timeout={timeout}s, cwd={self._cwd})")
+            self.logger.info(f"[RemoteCmd] Executando: {stripped[:80]}... (timeout={timeout}s, cwd={self._cwd})")
 
             proc = subprocess.Popen(
-                command_text,
+                stripped,
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -242,8 +252,10 @@ class RemoteCommandHandler:
             )
 
         finally:
-            self._running_proc = None
-            self._running_cmd_id = None
+            # Only clear running proc if this command is still the active one
+            if self._running_cmd_id == command_id:
+                self._running_proc = None
+                self._running_cmd_id = None
             with self._lock:
                 self._running_ids.discard(command_id)
 
