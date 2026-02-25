@@ -9,6 +9,7 @@ Flow:
 """
 
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -22,6 +23,8 @@ class RemoteCommandHandler:
         self._running_ids = set()
         self._lock = threading.Lock()
         self._cwd = "/"  # Persistent working directory
+        self._running_proc = None
+        self._running_cmd_id = None
 
     def process_pending_commands(self):
         """Fetch and execute all pending commands."""
@@ -56,6 +59,26 @@ class RemoteCommandHandler:
 
         try:
             stripped = command_text.strip()
+
+            # Handle __signal__ SIGINT — send signal to running process
+            if stripped == "__signal__ SIGINT":
+                if self._running_proc and self._running_proc.poll() is None:
+                    try:
+                        self._running_proc.send_signal(signal.SIGINT)
+                        self.logger.info(f"[RemoteCmd] SIGINT enviado ao processo (cmd {self._running_cmd_id[:8] if self._running_cmd_id else '?'}...)")
+                    except Exception as sig_err:
+                        self.logger.warning(f"[RemoteCmd] Erro ao enviar SIGINT: {sig_err}")
+                else:
+                    self.logger.info("[RemoteCmd] __signal__ SIGINT recebido, mas nenhum processo ativo")
+                self._report_result(
+                    command_id=command_id,
+                    stdout="",
+                    stderr="",
+                    exit_code=0,
+                    status="completed",
+                    cwd=self._cwd,
+                )
+                return
 
             # Strip __probe__ prefix (silent readiness check from UI)
             if stripped.startswith("__probe__ "):
@@ -121,6 +144,8 @@ class RemoteCommandHandler:
                 text=True,
                 cwd=self._cwd,
             )
+            self._running_proc = proc
+            self._running_cmd_id = command_id
 
             # Wait briefly for fast commands (1 second)
             try:
@@ -217,6 +242,8 @@ class RemoteCommandHandler:
             )
 
         finally:
+            self._running_proc = None
+            self._running_cmd_id = None
             with self._lock:
                 self._running_ids.discard(command_id)
 
