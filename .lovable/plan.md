@@ -1,49 +1,63 @@
 
 
-# Melhorias na aba Firewalls: botao Atualizar EOL + coluna Servicos mais limpa
+# Corrigir Tooltip na coluna Servicos FortiGuard
 
-## 1. Adicionar botao "Atualizar" para invalidar cache EOL
+## Problema
 
-Adicionar um botao acima da tabela de Firewalls (similar ao "Atualizar Licencas" do M365) que invalida o cache do react-query para `fortinet-eol`, forcando nova consulta ao RSS da Fortinet.
+O tooltip na coluna "Servicos FortiGuard" nao aparece ao passar o mouse sobre o texto "X servico(s)".
 
-- Usar `useQueryClient().invalidateQueries({ queryKey: ['fortinet-eol'] })`
-- Botao com icone `RefreshCw` e texto "Atualizar Ciclo de Vida"
-- Mostrar spinner enquanto `isLoading` ou `isFetching`
+## Causa raiz
 
-## 2. Reduzir poluicao visual na coluna "Servicos FortiGuard"
+Ha um `TooltipProvider` redundante envolvendo os tooltips dentro da celula da tabela (linha 405). O app ja possui um `TooltipProvider` global em `App.tsx` (linha 86). O aninhamento duplicado pode causar conflito no gerenciamento de estado dos tooltips do Radix.
 
-Atualmente a coluna lista todos os nomes dos servicos por extenso (ex: "IPS, App Control, antispam, Antivirus, device os id, Botnet Domain, web filtering, malicious urls, Mobile Malware, Cloud Sandbox, outbreak prevention, ai malware detection, blacklisted certificates"). Isso ocupa muito espaco.
+## Solucao
 
-Solucao: mostrar apenas o badge de data + quantidade de servicos, com tooltip mostrando os nomes completos ao passar o mouse.
+Remover o `TooltipProvider` interno na celula da tabela de servicos (linhas 405 e 426), mantendo apenas a estrutura `Tooltip > TooltipTrigger > TooltipContent` que ja funciona com o provider global.
 
-Exemplo visual:
-- `28/07/2026 (154d)  13 servicos` (com tooltip listando todos)
-- `14/02/2026 (expirado)  1 servico` (com tooltip)
+Tambem trocar `asChild` no `TooltipTrigger` por renderizacao direta (sem `asChild`), garantindo que o Radix crie seu proprio elemento wrapper com os handlers de evento corretos.
 
-## Detalhamento tecnico
-
-### Arquivo a modificar
+## Arquivo a modificar
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/pages/LicensingHubPage.tsx` | Adicionar botao refresh EOL, compactar coluna servicos com contagem + tooltip |
+| `src/pages/LicensingHubPage.tsx` | Remover `TooltipProvider` interno (linhas 405 e 426); remover `asChild` do `TooltipTrigger` (linha 411) |
 
-### Alteracoes especificas
+## Alteracao especifica
 
-**Botao Atualizar (linhas 356-411)**: Adicionar `div` com botao antes da tabela, importar `useQueryClient` do react-query.
-
-**Coluna Servicos (linhas 388-401)**: Substituir listagem de nomes por:
+De:
+```tsx
+<TooltipProvider>
+  <div className="space-y-1.5">
+    {groupServicesByExpiry(fw.services).map((group, i) => (
+      <div key={i} className="flex items-center gap-2">
+        <ExpiryBadge ... />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="...">...</span>
+          </TooltipTrigger>
+          <TooltipContent>...</TooltipContent>
+        </Tooltip>
+      </div>
+    ))}
+  </div>
+</TooltipProvider>
 ```
-<ExpiryBadge ... />
-<Tooltip>
-  <TooltipTrigger>
-    <span>{count} servico(s)</span>
-  </TooltipTrigger>
-  <TooltipContent>
-    <p>{nomes dos servicos}</p>
-  </TooltipContent>
-</Tooltip>
+
+Para:
+```tsx
+<div className="space-y-1.5">
+  {groupServicesByExpiry(fw.services).map((group, i) => (
+    <div key={i} className="flex items-center gap-2">
+      <ExpiryBadge ... />
+      <Tooltip>
+        <TooltipTrigger className="text-xs text-muted-foreground cursor-default">
+          {group.names.length} servico{group.names.length !== 1 ? 's' : ''}
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs">
+          <p className="text-xs">{group.names.join(', ')}</p>
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  ))}
+</div>
 ```
-
-Isso reduz drasticamente a altura de cada linha mantendo toda a informacao acessivel via hover.
-
