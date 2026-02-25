@@ -1,123 +1,160 @@
 
 
-# Terminal Remoto via Agents — Plano de Implementação
+# Terminal Remoto em Tempo Real via Supabase Realtime
 
-## Conceito
+## Problema
 
-Criar um mecanismo de "Remote Shell" que permite ao super_admin enviar comandos ao servidor do agent pela GUI, sem precisar fazer SSH direto. O fluxo usa a infraestrutura existente de tarefas (agent_tasks + heartbeat polling) como canal de comunicação.
+Atualmente o agent só detecta comandos pendentes durante o heartbeat (a cada ~120s). Isso torna a experiência do terminal remoto lenta e impraticável para tarefas urgentes como `systemctl stop iscope-agent`.
 
-## Arquitetura
+## Solução: Supabase Realtime Channel
+
+O Supabase oferece **Realtime Channels** via WebSocket. O agent pode se inscrever em um canal dedicado e receber comandos instantaneamente, sem depender do heartbeat.
 
 ```text
-GUI (super_admin)              Supabase                    Agent (Python)
-┌──────────────────┐    ┌─────────────────────┐    ┌──────────────────────┐
-│ Terminal UI       │    │                     │    │                      │
-│ $ systemctl stop  │───▶│ agent_commands      │    │ heartbeat tick       │
-│                   │    │   status: pending   │───▶│   → poll commands    │
-│                   │    │                     │    │   → subprocess.run() │
-│ stdout/stderr ◀───│────│   status: completed │◀───│   → POST result      │
-│                   │    │   output: "..."     │    │                      │
-└──────────────────┘    └─────────────────────┘    └──────────────────────┘
+GUI (super_admin)              Supabase Realtime              Agent (Python)
+┌──────────────────┐    ┌───────────────────────────┐    ┌──────────────────────┐
+│ Terminal UI       │    │                           │    │                      │
+│ $ systemctl stop  │───▶│ INSERT agent_commands     │    │ WebSocket listener   │
+│                   │    │                           │    │   (supabase-py)      │
+│                   │    │ postgres_changes event ───│───▶│   → subprocess.run() │
+│ stdout/stderr ◀───│────│ UPDATE agent_commands     │◀───│   → UPDATE result    │
+└──────────────────┘    └───────────────────────────┘    └──────────────────────┘
+
+Latência: ~1-2 segundos (vs 0-120s atual)
 ```
 
-O agent NÃO abre um socket/porta. Ele simplesmente busca comandos pendentes durante o heartbeat e executa via `subprocess.run()` com timeout, retornando stdout/stderr.
+### Como funciona
 
-## Segurança
+1. O Supervisor inicia uma **thread de Realtime** que abre uma conexão WebSocket persistente com o Supabase
+2. Essa thread escuta eventos `INSERT` na tabela `agent_commands` filtrados pelo `agent_id` do agent
+3. Quando um comando chega, a thread executa imediatamente via `subprocess.run()` e faz UPDATE do resultado
+4. Se o WebSocket cair, a thread reconecta automaticamente com backoff exponencial
+5. O heartbeat continua como **fallback** — se houver comandos pendentes não processados pelo Realtime, o heartbeat os captura
 
-- Somente `super_admin` pode criar comandos (RLS + frontend guard)
-- Comandos executados como o usuário do processo (root no supervisor)
-- Timeout de 60s por comando para evitar travamento
-- Histórico de todos os comandos ficam logados na tabela
-- Comandos são one-shot (não é uma sessão interativa persistente)
+### Vantagens
+
+- Execução quase instantânea (~1-2s)
+- Sem polling desnecessário
+- Fallback via heartbeat garante que nenhum comando se perde
+- A infraestrutura Realtime já existe no Supabase, sem custo adicional
 
 ## Mudanças
 
-### 1. Nova tabela: `agent_commands`
+### 1. Dependência Python: `supabase` ou `realtime-py`
 
-```sql
-CREATE TABLE public.agent_commands (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  agent_id uuid NOT NULL REFERENCES public.agents(id) ON DELETE CASCADE,
-  command text NOT NULL,
-  status text NOT NULL DEFAULT 'pending',  -- pending, running, completed, failed, timeout
-  stdout text,
-  stderr text,
-  exit_code integer,
-  created_by uuid NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  started_at timestamptz,
-  completed_at timestamptz,
-  timeout_seconds integer NOT NULL DEFAULT 60
-);
+Adicionar `realtime-py` (cliente Realtime do Supabase para Python) ao `requirements.txt`. Este pacote usa `websockets` internamente.
 
-ALTER TABLE public.agent_commands ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Super admins can manage commands"
-  ON public.agent_commands FOR ALL
-  USING (has_role(auth.uid(), 'super_admin'));
-
-CREATE POLICY "Service role can manage commands"
-  ON public.agent_commands FOR ALL
-  USING ((auth.jwt() ->> 'role') = 'service_role');
+```
+realtime-py>=2.0.0
+websockets>=12.0
 ```
 
-### 2. Edge Function: `agent-heartbeat/index.ts`
+### 2. Novo módulo: `python-agent/agent/realtime_commands.py`
 
-Na resposta do heartbeat, incluir flag `has_pending_commands: true` quando existirem comandos pendentes para o agent. O agent então faz GET em uma nova Edge Function para buscar os comandos.
+Thread dedicada que:
+- Conecta ao Supabase Realtime usando a URL do projeto e a `anon_key` (ou service_role key)
+- Inscreve-se no canal `postgres_changes` para `INSERT` em `agent_commands` com filtro `agent_id=eq.<agent_id>`
+- Ao receber evento, executa o comando via `subprocess.run(shell=True, timeout=N)`
+- Atualiza o resultado diretamente via REST API (POST `/agent-commands`)
+- Implementa reconexão automática com backoff exponencial (2s, 4s, 8s, max 60s)
 
-### 3. Nova Edge Function: `agent-commands/index.ts`
-
-Dois endpoints:
-- **GET** (chamado pelo agent): Retorna comandos pendentes para o agent autenticado, marca como `running`
-- **POST** (chamado pelo agent): Recebe resultado (stdout, stderr, exit_code), marca como `completed`
-
-### 4. Python Agent: `python-agent/agent/remote_commands.py` (novo)
-
-Módulo que:
-1. Verifica no heartbeat response se `has_pending_commands == true`
-2. Busca comandos via GET `/agent-commands`
-3. Executa cada comando com `subprocess.run(command, shell=True, timeout=60, capture_output=True)`
-4. Envia resultado via POST `/agent-commands`
-
-### 5. Integração no Supervisor: `python-agent/supervisor/main.py`
-
-No loop principal, após processar o heartbeat:
 ```python
-if result.get("has_pending_commands"):
-    _handle_remote_commands(logger, api, state)
+# Pseudocódigo simplificado
+class RealtimeCommandListener:
+    def __init__(self, agent_id, supabase_url, supabase_key, api, logger):
+        self.agent_id = agent_id
+        self.channel = None
+        self._thread = None
+        
+    def start(self):
+        """Inicia thread de escuta Realtime."""
+        self._thread = Thread(target=self._listen_loop, daemon=True)
+        self._thread.start()
+    
+    def _listen_loop(self):
+        """Loop com reconexão automática."""
+        while True:
+            try:
+                client = RealtimeClient(url, key)
+                channel = client.channel("agent-commands")
+                channel.on_postgres_changes(
+                    event="INSERT",
+                    schema="public", 
+                    table="agent_commands",
+                    filter=f"agent_id=eq.{self.agent_id}",
+                    callback=self._on_command
+                )
+                channel.subscribe()
+                client.listen()  # blocking
+            except Exception:
+                time.sleep(backoff)
+                
+    def _on_command(self, payload):
+        """Executa comando recebido em tempo real."""
+        # Reutiliza RemoteCommandHandler._execute_command()
 ```
 
-### 6. Frontend: Componente `RemoteTerminal` no `AgentDetailPage.tsx`
+### 3. Editar: `python-agent/supervisor/main.py`
 
-Card na página de detalhe do agent com:
-- Input de comando + botão "Executar"
-- Lista de comandos recentes com status (pending → running → completed)
-- Exibição de stdout/stderr em bloco `<pre>` estilo terminal
-- Polling a cada 2s enquanto houver comandos pendentes
-- Somente visível para super_admin
+Iniciar o `RealtimeCommandListener` como daemon thread logo após o boot do worker:
+
+```python
+from agent.realtime_commands import RealtimeCommandListener
+
+realtime = RealtimeCommandListener(
+    agent_id=state.data["agent_id"],
+    supabase_url=SUPABASE_URL,
+    supabase_key=SUPABASE_KEY,
+    api=api,
+    logger=logger,
+)
+realtime.start()
+```
+
+### 4. Editar: `python-agent/supervisor/config.py`
+
+Adicionar variáveis para Realtime:
+
+```python
+SUPABASE_URL = os.getenv("SUPABASE_URL")       # ex: https://akbosdbyheezghieiefz.supabase.co
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+```
+
+Essas variáveis já existem no `.env` do projeto e precisam ser adicionadas ao `agent.env` de cada servidor.
+
+### 5. Editar: `python-agent/agent/remote_commands.py`
+
+Extrair a lógica de execução (`_execute_command` + `_report_result`) para ser reutilizável tanto pelo handler de heartbeat quanto pelo listener Realtime.
+
+### 6. Frontend: Sem mudanças
+
+O `RemoteTerminal.tsx` já faz polling a cada 2s e exibe o resultado. Com Realtime, o resultado aparece quase instantaneamente sem necessidade de alterar o frontend. Opcionalmente, podemos trocar o polling por Supabase Realtime no frontend também (subscribe a changes na tabela `agent_commands`), mas isso é uma melhoria futura.
+
+### 7. Manter heartbeat como fallback
+
+O código existente que verifica `has_pending_commands` no heartbeat continua funcionando. Se o WebSocket estiver desconectado temporariamente, o heartbeat captura comandos perdidos. Isso garante resiliência.
 
 ## Arquivos afetados
 
 | Arquivo | Tipo | Descrição |
 |---------|------|-----------|
-| Migração SQL | Novo | Tabela `agent_commands` |
-| `supabase/functions/agent-commands/index.ts` | Novo | Edge Function GET/POST |
-| `supabase/functions/agent-heartbeat/index.ts` | Edição | Adicionar `has_pending_commands` na resposta |
-| `supabase/config.toml` | Edição | Registrar nova function |
-| `python-agent/agent/remote_commands.py` | Novo | Executor de comandos remotos |
-| `python-agent/supervisor/main.py` | Edição | Integrar checagem de comandos |
-| `src/components/agents/RemoteTerminal.tsx` | Novo | Componente UI do terminal |
-| `src/pages/AgentDetailPage.tsx` | Edição | Incluir RemoteTerminal |
+| `python-agent/requirements.txt` | Edição | Adicionar `realtime-py`, `websockets` |
+| `python-agent/agent/realtime_commands.py` | Novo | Thread de escuta Realtime |
+| `python-agent/agent/remote_commands.py` | Edição | Extrair lógica de execução reutilizável |
+| `python-agent/supervisor/config.py` | Edição | Adicionar `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
+| `python-agent/supervisor/main.py` | Edição | Iniciar listener Realtime |
 
-## Fluxo completo
+## Configuração necessária nos servidores
 
-1. Admin digita `systemctl stop iscope-agent` na GUI
-2. INSERT em `agent_commands` com status `pending`
-3. Próximo heartbeat retorna `has_pending_commands: true`
-4. Agent faz GET `/agent-commands` → recebe o comando
-5. Agent executa `subprocess.run("systemctl stop iscope-agent", shell=True, timeout=60)`
-6. Agent faz POST `/agent-commands` com stdout, stderr, exit_code
-7. Frontend polling detecta `completed` e exibe o output
+Adicionar ao `/etc/iscope/agent.env`:
+```
+SUPABASE_URL=https://akbosdbyheezghieiefz.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
+```
 
-Latência esperada: entre 0 e `heartbeat_interval` segundos (default 120s) para o agent captar o comando. Para comandos urgentes, o heartbeat interval pode ser reduzido temporariamente.
+## Segurança
+
+- O canal Realtime usa a `anon_key` mas filtra apenas pelos eventos do `agent_id` específico
+- A RLS na tabela `agent_commands` garante que apenas `super_admin` ou `service_role` podem inserir/ver comandos
+- O agent só recebe notificações de INSERT — ele não tem acesso de escrita via Realtime, apenas via REST API autenticada com JWT
 
