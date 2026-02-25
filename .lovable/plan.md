@@ -1,63 +1,38 @@
 
 
-# Corrigir Tooltip na coluna Servicos FortiGuard
+# Atualizar Agent para v1.3.2 + Diagnostico OCI-01/OCI-04
 
-## Problema
+## 1. Bump de versao
 
-O tooltip na coluna "Servicos FortiGuard" nao aparece ao passar o mouse sobre o texto "X servico(s)".
+Alterar `python-agent/agent/version.py` de `"1.3.1"` para `"1.3.2"`.
 
-## Causa raiz
+## 2. Por que OCI-01 e OCI-04 estao em 1.2.10
 
-Ha um `TooltipProvider` redundante envolvendo os tooltips dentro da celula da tabela (linha 405). O app ja possui um `TooltipProvider` global em `App.tsx` (linha 86). O aninhamento duplicado pode causar conflito no gerenciamento de estado dos tooltips do Radix.
+O mecanismo de auto-update funciona assim:
 
-## Solucao
+```text
+agent-heartbeat Edge Function
+  ├── Le system_settings['agent_latest_version']   (ex: "1.3.1")
+  ├── Compara com agent_version reportado pelo agent (ex: "1.2.10")
+  ├── Se agent < latest → update_available = true
+  └── Envia download_url = storage/agent-releases/iscope-agent-{version}.tar.gz
+```
 
-Remover o `TooltipProvider` interno na celula da tabela de servicos (linhas 405 e 426), mantendo apenas a estrutura `Tooltip > TooltipTrigger > TooltipContent` que ja funciona com o provider global.
+Para os agents se atualizarem, **duas condicoes** precisam existir:
 
-Tambem trocar `asChild` no `TooltipTrigger` por renderizacao direta (sem `asChild`), garantindo que o Radix crie seu proprio elemento wrapper com os handlers de evento corretos.
+1. **`system_settings.agent_latest_version`** precisa estar configurado com a versao desejada (ex: `"1.3.1"` ou `"1.3.2"`)
+2. **O arquivo `iscope-agent-{version}.tar.gz`** precisa existir no bucket `agent-releases`
+
+Se o valor de `agent_latest_version` no banco nao foi atualizado apos o deploy 1.3.1, ou se o pacote `.tar.gz` nao foi carregado no bucket, os agents nunca recebem a instrucao de update — continuam reportando a versao antiga (1.2.10).
+
+**Acoes manuais necessarias (fora do codigo):**
+- Gerar o `iscope-agent-1.3.2.tar.gz` com o codigo atualizado e fazer upload ao bucket `agent-releases`
+- Atualizar `system_settings` no Supabase: `agent_latest_version` = `"1.3.2"`
+- Opcionalmente setar `agent_force_update` = `true` para forcar update mesmo com tarefas pendentes
 
 ## Arquivo a modificar
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/pages/LicensingHubPage.tsx` | Remover `TooltipProvider` interno (linhas 405 e 426); remover `asChild` do `TooltipTrigger` (linha 411) |
+| `python-agent/agent/version.py` | `__version__` de `"1.3.1"` para `"1.3.2"` |
 
-## Alteracao especifica
-
-De:
-```tsx
-<TooltipProvider>
-  <div className="space-y-1.5">
-    {groupServicesByExpiry(fw.services).map((group, i) => (
-      <div key={i} className="flex items-center gap-2">
-        <ExpiryBadge ... />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="...">...</span>
-          </TooltipTrigger>
-          <TooltipContent>...</TooltipContent>
-        </Tooltip>
-      </div>
-    ))}
-  </div>
-</TooltipProvider>
-```
-
-Para:
-```tsx
-<div className="space-y-1.5">
-  {groupServicesByExpiry(fw.services).map((group, i) => (
-    <div key={i} className="flex items-center gap-2">
-      <ExpiryBadge ... />
-      <Tooltip>
-        <TooltipTrigger className="text-xs text-muted-foreground cursor-default">
-          {group.names.length} servico{group.names.length !== 1 ? 's' : ''}
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="max-w-xs">
-          <p className="text-xs">{group.names.join(', ')}</p>
-        </TooltipContent>
-      </Tooltip>
-    </div>
-  ))}
-</div>
-```
