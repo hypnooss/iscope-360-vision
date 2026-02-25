@@ -288,8 +288,23 @@ export function useLicensingHub() {
 
         const reportData = history[0].report_data as any;
 
-        // Try rawData first (Unix timestamps)
-        const rawExtracted = extractFirewallFromRawData(reportData?.rawData);
+        // Try rawData from checks[] first (Unix timestamps)
+        let rawExtracted: ReturnType<typeof extractFirewallFromRawData> = null;
+        
+        // Search inside report_data.checks[] for Licenciamento category
+        const checks = reportData?.checks || [];
+        for (const check of checks) {
+          if (check?.rawData?.license_status?.results) {
+            rawExtracted = extractFirewallFromRawData(check.rawData);
+            if (rawExtracted) break;
+          }
+        }
+        
+        // Fallback: try top-level rawData
+        if (!rawExtracted) {
+          rawExtracted = extractFirewallFromRawData(reportData?.rawData);
+        }
+
         if (rawExtracted) {
           results.push({
             firewallId: fw.id,
