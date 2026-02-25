@@ -1,104 +1,99 @@
 
 
-# HUB de Licenciamento
+# Correcoes do HUB de Licenciamento
 
-## Visao Geral
+## 4 problemas identificados
 
-Nova pagina "HUB de Licenciamento" no menu lateral, acima de "Ambiente", consolidando informacoes de licenciamento de tres fontes, segregadas por workspace.
+### 1. Espacamento da pagina
 
-## Fontes de Dados
+A pagina atual usa `<div className="space-y-6">` sem padding. Todos os outros modulos usam `<div className="p-6 lg:p-8 space-y-6">`.
 
-| Aba | Fonte | Dados |
-|---|---|---|
-| **Firewalls** | `analysis_history.report_data` categoria "Licenciamento" | FortiCare, FortiGuard (AV, IPS, WebFilter, AppControl), datas de expiracao |
-| **Certificados TLS** | `attack_surface_snapshots.results` | Certificados TLS encontrados pelo Surface Analyzer por IP/porta — subject, issuer, dias restantes |
-| **Microsoft 365** | Nova Edge Function `m365-tenant-licenses` via Graph API `/subscribedSkus` | Licencas do tenant (E3, E5, Business Premium, etc.), quantidade de licencas totais/usadas, datas de vencimento |
+**Arquivo:** `src/pages/LicensingHubPage.tsx`
+- Alterar `className="space-y-6"` para `className="p-6 lg:p-8 space-y-6"`
 
-## Secao Tecnica
+---
 
-### 1. Nova Edge Function: `supabase/functions/m365-tenant-licenses/index.ts`
+### 2. Firewalls sem datas de vencimento
 
-Busca licencas do tenant via Graph API:
-- Endpoint: `GET https://graph.microsoft.com/v1.0/subscribedSkus`
-- Retorna: `skuPartNumber`, `prepaidUnits.enabled`, `consumedUnits`, `capabilityStatus`, datas de validade
-- Autentica usando credenciais do `m365_app_credentials` (mesmo fluxo do posture)
-- Recebe `tenant_record_id` como parametro
-- Retorna JSON normalizado com array de licencas
+**Causa raiz:** Os dados de expiracao estao dentro de `rawData.license_status.results`, como Unix timestamps (ex: `expires: 1780099200`). A funcao `extractExpiryFromCheck` busca apenas nos campos `evidence` e `description`, ignorando completamente o `rawData`.
 
-### 2. Nova tabela: `m365_tenant_licenses`
-
-Armazena cache das licencas coletadas para exibicao sem necessidade de chamada ao Graph em tempo real:
-
+Exemplo real do ITJ-FW:
 ```text
-id               uuid  PK
-tenant_record_id uuid  FK -> m365_tenants.id
-client_id        uuid
-sku_id           text
-sku_part_number  text  (ex: "ENTERPRISEPACK", "SPE_E5")
-display_name     text  (ex: "Office 365 E3", "Microsoft 365 E5")
-capability_status text (ex: "Enabled", "Suspended", "Deleted")
-total_units      integer
-consumed_units   integer
-warning_units    integer
-suspended_units  integer
-expires_at       timestamptz  (nullable - nem todas tem data de expiracao)
-collected_at     timestamptz
-created_at       timestamptz  DEFAULT now()
+rawData.license_status.results.forticare.support.enhanced.expires = 1780099200
+rawData.license_status.results.antivirus.expires = 1780099200
+rawData.license_status.results.appctrl.expires = 1780099200
 ```
 
-RLS: mesmas politicas dos outros dados M365 (acesso por client via `has_client_access`).
+**Correcao no `src/hooks/useLicensingHub.ts`:**
 
-### 3. Nova pagina: `src/pages/LicensingHubPage.tsx`
+Reescrever a extracao de dados de firewall para usar o `rawData.license_status.results` diretamente em vez de depender dos campos textuais de `evidence`:
 
-Layout:
+1. Extrair `forticare` de `rawData.license_status.results.forticare.support.enhanced.expires` (Unix timestamp)
+2. Extrair cada servico FortiGuard (antivirus, appctrl, ips, webfilter, etc.) de `rawData.license_status.results.[service].expires`
+3. Converter Unix timestamps para datas ISO (`new Date(ts * 1000).toISOString()`)
+4. Manter fallback para a logica atual caso `rawData` nao exista
+
+Os servicos a extrair do `rawData.license_status.results`:
+- `forticare` -> `support.enhanced.expires`
+- `antivirus` -> `expires`
+- `appctrl` -> `expires`  
+- `industrial_db` / `ips` -> `expires`
+- `forticloud_sandbox` -> `expires`
+- `botnet_domain` -> `expires`
+- Qualquer servico com campo `expires` e `status: "licensed"`
+
+---
+
+### 3. Certificados TLS nao encontrados
+
+**Causa raiz:** O hook busca `port.tls.certificate` e `port.ssl.certificate`, mas a estrutura real dos dados tem:
+
+- `services[].tls.not_after` (nos objetos `web_services`)
+- `services[].scripts.ssl-cert` (output textual do nmap com `Not valid after: 2026-05-08T23:59:59`)
+
+A estrutura real e:
 ```text
-+-------------------------------------------------------+
-| HUB de Licenciamento          [Seletor Workspace]     |
-+-------------------------------------------------------+
-| [Expirados: 3]  [Expirando: 5]  [Ativos: 42]         |
-+-------------------------------------------------------+
-| [Firewalls] [Certificados TLS] [Microsoft 365]        |
-+-------------------------------------------------------+
-| Tabela com dados da aba selecionada                   |
-+-------------------------------------------------------+
+{
+  "54.146.68.85": {
+    "services": [ { port: 443, scripts: { "ssl-cert": "...Not valid after: 2026-05-08..." } } ],
+    "web_services": [ { tls: { not_after: "2026-05-08T23:59:59Z", subject_cn: "dealerspace.ai", issuer: ["Amazon"] } } ]
+  }
+}
 ```
 
-- **Aba Firewalls**: Tabela com nome do firewall, workspace, FortiCare (status/data), FortiGuard services (AV, IPS, WebFilter, AppControl) com datas e badges coloridos
-- **Aba Certificados TLS**: Tabela com dominio/IP, subject_cn, issuer, data expiracao, dias restantes, status (expirado/expirando/ok)
-- **Aba Microsoft 365**: Tabela com tenant, nome da licenca, status, licencas totais/usadas, data de vencimento, dias restantes
+**Correcao no `src/hooks/useLicensingHub.ts`:**
 
-Badges: Vermelho (expirado), Amarelo (expirando em 30 dias), Verde (ativo)
+Reescrever a extracao de certificados TLS para:
 
-### 4. Novo hook: `src/hooks/useLicensingHub.ts`
+1. Iterar `web_services[]` e extrair de `tls.not_after`, `tls.subject_cn`, `tls.issuer`
+2. Iterar `services[]` e parsear `scripts["ssl-cert"]` para extrair `Subject: commonName=...`, `Issuer: commonName=...`, `Not valid after: ...`
+3. Deduplicar por combinacao de IP + subject_cn (evitar duplicatas entre web_services e services)
 
-- Busca ultimo `analysis_history` de cada firewall do workspace, extrai checks da categoria "Licenciamento"
-- Busca ultimo `attack_surface_snapshots` (completed) de cada client, extrai certificados TLS dos results
-- Busca `m365_tenant_licenses` dos tenants do workspace
-- Retorna dados normalizados para cada aba
+---
 
-### 5. Alteracoes em arquivos existentes
+### 4. M365 sem data de vencimento
+
+**Causa raiz:** O endpoint `/subscribedSkus` da Graph API nao retorna data de expiracao diretamente. O campo `expires_at` e salvo como `null` pela Edge Function.
+
+**Solucao:** Adicionar uma segunda chamada na Edge Function para buscar o endpoint `/organization` ou `/subscribedSkus` + complementar com `/directory/subscriptions` (Microsoft Commerce) que contem datas de renovacao:
+
+- Endpoint: `GET https://graph.microsoft.com/v1.0/directory/subscriptions` (requer `Directory.Read.All`)
+- Retorna: `nextLifecycleDateTime`, `status`, `skuPartNumber`
+
+**Correcao no `supabase/functions/m365-tenant-licenses/index.ts`:**
+
+1. Apos buscar `/subscribedSkus`, buscar tambem `/directory/subscriptions`
+2. Fazer matching por `skuId` entre os dois endpoints
+3. Usar `nextLifecycleDateTime` como `expires_at` na tabela `m365_tenant_licenses`
+4. Caso o endpoint `/directory/subscriptions` nao esteja disponivel (403), manter `expires_at` como null (graceful fallback)
+
+---
+
+## Resumo de arquivos
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/App.tsx` | Adicionar rota `/licensing-hub` com lazy import |
-| `src/components/layout/AppLayout.tsx` | Adicionar item "HUB de Licenciamento" com icone `Key` acima de "Ambiente" (antes da linha 662), visivel para `canAccessUsers`. Adicionar `/licensing-hub` no controle de estado do sidebar (linha 215) |
+| `src/pages/LicensingHubPage.tsx` | Adicionar padding `p-6 lg:p-8` |
+| `src/hooks/useLicensingHub.ts` | Reescrever extracao de firewalls (usar rawData Unix timestamps) e certificados TLS (usar web_services/scripts) |
+| `supabase/functions/m365-tenant-licenses/index.ts` | Adicionar chamada a `/directory/subscriptions` para obter datas de vencimento |
 
-### 6. Coleta das licencas M365
-
-A Edge Function `m365-tenant-licenses` sera chamada:
-- Manualmente via botao "Atualizar" na aba M365
-- Pode ser integrada futuramente ao fluxo de posture analysis
-
-A permissao necessaria no Graph API eh `Organization.Read.All` (ja listada como required no `get-m365-config`).
-
-## Arquivos a criar
-
-1. `supabase/functions/m365-tenant-licenses/index.ts`
-2. `src/pages/LicensingHubPage.tsx`
-3. `src/hooks/useLicensingHub.ts`
-4. Migracao SQL para tabela `m365_tenant_licenses`
-
-## Arquivos a alterar
-
-1. `src/App.tsx`
-2. `src/components/layout/AppLayout.tsx`
