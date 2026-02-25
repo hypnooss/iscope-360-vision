@@ -1,16 +1,11 @@
-import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Terminal, Send, Loader2, CheckCircle, XCircle, Clock, AlertTriangle, Wifi, WifiOff } from "lucide-react";
+import { Terminal, Power, PowerOff, Wifi, WifiOff } from "lucide-react";
 import { toast } from "sonner";
-import { formatDistanceToNow } from "date-fns";
-import { ptBR } from "date-fns/locale";
 
 interface AgentCommand {
   id: string;
@@ -26,91 +21,115 @@ interface AgentCommand {
   timeout_seconds: number;
 }
 
+interface TerminalLine {
+  type: "input" | "output" | "error" | "system";
+  text: string;
+  commandId?: string;
+}
+
 interface RemoteTerminalProps {
   agentId: string;
   agentName: string;
 }
 
-const statusConfig: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  pending: { label: "Pendente", icon: <Clock className="w-3 h-3" />, color: "bg-warning/10 text-warning" },
-  running: { label: "Executando", icon: <Loader2 className="w-3 h-3 animate-spin" />, color: "bg-primary/10 text-primary" },
-  completed: { label: "Concluído", icon: <CheckCircle className="w-3 h-3" />, color: "bg-success/10 text-success" },
-  failed: { label: "Falhou", icon: <XCircle className="w-3 h-3" />, color: "bg-destructive/10 text-destructive" },
-  timeout: { label: "Timeout", icon: <AlertTriangle className="w-3 h-3" />, color: "bg-warning/10 text-warning" },
-};
-
 export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   const { user, isSuperAdmin } = useAuth();
   const queryClient = useQueryClient();
-  const [command, setCommand] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
   const isSuperAdminUser = isSuperAdmin();
+
+  const [connected, setConnected] = useState(false);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const [lines, setLines] = useState<TerminalLine[]>([]);
+  const [inputValue, setInputValue] = useState("");
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [pendingCommandIds, setPendingCommandIds] = useState<Set<string>>(new Set());
 
-  // Fetch recent commands
-  const { data: commands = [] } = useQuery({
-    queryKey: ['agent-commands', agentId],
-    queryFn: async () => {
-      const { data, error } = await (supabase
-        .from('agent_commands' as any)
-        .select('*')
-        .eq('agent_id', agentId)
-        .order('created_at', { ascending: false })
-        .limit(50) as any);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
-      if (error) throw error;
-      return (data || []) as AgentCommand[];
-    },
-    refetchInterval: (query) => {
-      // With Realtime connected, poll less frequently (fallback only)
-      if (realtimeConnected) return 30000;
-      // Poll every 2s if there are pending/running commands
-      const cmds = query.state.data as AgentCommand[] | undefined;
-      const hasActive = cmds?.some(c => c.status === 'pending' || c.status === 'running');
-      return hasActive ? 2000 : 10000;
-    },
-    enabled: isSuperAdminUser,
-  });
+  const prompt = `root@${agentName}:~#`;
 
-  // Subscribe to Realtime postgres_changes for instant result updates
+  // Auto-scroll to bottom
   useEffect(() => {
-    if (!isSuperAdminUser) return;
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [lines]);
+
+  // Focus input when clicking terminal area
+  const focusInput = useCallback(() => {
+    if (connected) inputRef.current?.focus();
+  }, [connected]);
+
+  // Handle realtime subscription for command results
+  useEffect(() => {
+    if (!connected || !isSuperAdminUser) return;
 
     const channel = supabase
-      .channel(`agent-commands-results-${agentId}`)
+      .channel(`shell-results-${agentId}`)
       .on(
-        'postgres_changes' as any,
+        "postgres_changes" as any,
         {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'agent_commands',
+          event: "UPDATE",
+          schema: "public",
+          table: "agent_commands",
           filter: `agent_id=eq.${agentId}`,
         },
-        () => {
-          // Invalidate query to refresh the list instantly
-          queryClient.invalidateQueries({ queryKey: ['agent-commands', agentId] });
+        (payload: any) => {
+          const cmd = payload.new as AgentCommand;
+          if (cmd.status === "completed" || cmd.status === "failed" || cmd.status === "timeout") {
+            // Add output lines
+            setLines((prev) => {
+              const newLines = [...prev];
+              if (cmd.stdout) {
+                cmd.stdout.split("\n").forEach((line) => {
+                  newLines.push({ type: "output", text: line, commandId: cmd.id });
+                });
+              }
+              if (cmd.stderr) {
+                cmd.stderr.split("\n").forEach((line) => {
+                  newLines.push({ type: "error", text: line, commandId: cmd.id });
+                });
+              }
+              if (cmd.status === "timeout") {
+                newLines.push({ type: "error", text: "Erro: comando excedeu o tempo limite.", commandId: cmd.id });
+              }
+              if (!cmd.stdout && !cmd.stderr && cmd.status !== "timeout") {
+                // Command completed with no output - that's fine, just show next prompt
+              }
+              return newLines;
+            });
+            setPendingCommandIds((prev) => {
+              const next = new Set(prev);
+              next.delete(cmd.id);
+              return next;
+            });
+          }
         }
       )
       .subscribe((status: string) => {
-        setRealtimeConnected(status === 'SUBSCRIBED');
+        setRealtimeConnected(status === "SUBSCRIBED");
       });
+
+    channelRef.current = channel;
 
     return () => {
       supabase.removeChannel(channel);
+      channelRef.current = null;
       setRealtimeConnected(false);
     };
-  }, [agentId, isSuperAdminUser, queryClient]);
+  }, [connected, agentId, isSuperAdminUser]);
 
   // Send command mutation
   const sendCommand = useMutation({
     mutationFn: async (cmd: string) => {
       const { data, error } = await (supabase
-        .from('agent_commands' as any)
+        .from("agent_commands" as any)
         .insert({
           agent_id: agentId,
           command: cmd,
           created_by: user?.id,
-          status: 'pending',
+          status: "pending",
           timeout_seconds: 60,
         })
         .select()
@@ -118,169 +137,239 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
 
       if (error) throw error;
 
-      // Broadcast command to the agent's Realtime channel for instant delivery
+      // Broadcast for instant delivery
       const broadcastChannel = supabase.channel(`agent-cmd-${agentId}`);
       await broadcastChannel.send({
-        type: 'broadcast',
-        event: 'command',
-        payload: {
-          id: data.id,
-          command: cmd,
-          timeout_seconds: 60,
-        },
+        type: "broadcast",
+        event: "command",
+        payload: { id: data.id, command: cmd, timeout_seconds: 60 },
       });
-      // Clean up the broadcast channel
       supabase.removeChannel(broadcastChannel);
+
+      return data as AgentCommand;
     },
-    onSuccess: () => {
-      setCommand("");
-      queryClient.invalidateQueries({ queryKey: ['agent-commands', agentId] });
+    onSuccess: (data) => {
+      setPendingCommandIds((prev) => new Set(prev).add(data.id));
+      queryClient.invalidateQueries({ queryKey: ["agent-commands", agentId] });
     },
     onError: (error: any) => {
-      toast.error("Erro ao enviar comando: " + error.message);
+      setLines((prev) => [...prev, { type: "error", text: `Erro ao enviar comando: ${error.message}` }]);
     },
   });
 
+  const handleConnect = async () => {
+    setConnected(true);
+    setLines([
+      { type: "system", text: `Conectando ao agent "${agentName}"...` },
+      { type: "system", text: "Sessão remota iniciada. Digite comandos abaixo." },
+      { type: "system", text: 'Digite "clear" para limpar ou "exit" para desconectar.' },
+      { type: "system", text: "" },
+    ]);
+
+    // Load recent commands as context
+    try {
+      const { data } = await (supabase
+        .from("agent_commands" as any)
+        .select("*")
+        .eq("agent_id", agentId)
+        .order("created_at", { ascending: true })
+        .limit(20) as any);
+
+      if (data && data.length > 0) {
+        const historyLines: TerminalLine[] = [
+          { type: "system", text: "── Histórico recente ──" },
+        ];
+        (data as AgentCommand[]).forEach((cmd) => {
+          historyLines.push({ type: "input", text: `${prompt} ${cmd.command}` });
+          if (cmd.stdout) {
+            cmd.stdout.split("\n").forEach((l) => historyLines.push({ type: "output", text: l }));
+          }
+          if (cmd.stderr) {
+            cmd.stderr.split("\n").forEach((l) => historyLines.push({ type: "error", text: l }));
+          }
+        });
+        historyLines.push({ type: "system", text: "── Fim do histórico ──" });
+        historyLines.push({ type: "system", text: "" });
+        setLines((prev) => [...prev, ...historyLines]);
+        setCommandHistory(data.map((c: AgentCommand) => c.command));
+      }
+    } catch {
+      // Ignore history load errors
+    }
+
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
+
+  const handleDisconnect = () => {
+    setConnected(false);
+    setLines([]);
+    setCommandHistory([]);
+    setHistoryIndex(-1);
+    setPendingCommandIds(new Set());
+    setInputValue("");
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = command.trim();
+    const trimmed = inputValue.trim();
     if (!trimmed) return;
+
+    // Add input line
+    setLines((prev) => [...prev, { type: "input", text: `${prompt} ${trimmed}` }]);
+    setInputValue("");
+    setHistoryIndex(-1);
+
+    // Update command history
+    setCommandHistory((prev) => [...prev, trimmed]);
+
+    // Local commands
+    if (trimmed === "clear") {
+      setLines([]);
+      return;
+    }
+    if (trimmed === "exit") {
+      handleDisconnect();
+      return;
+    }
+
+    // Send to agent
     sendCommand.mutate(trimmed);
   };
 
-  // Auto-scroll on new commands
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [commands.length]);
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Ctrl+L = clear
+    if (e.ctrlKey && e.key === "l") {
+      e.preventDefault();
+      setLines([]);
+      return;
+    }
 
-  // Only super_admin can use this
+    // Arrow up/down for history
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (commandHistory.length === 0) return;
+      const newIndex = historyIndex === -1 ? commandHistory.length - 1 : Math.max(0, historyIndex - 1);
+      setHistoryIndex(newIndex);
+      setInputValue(commandHistory[newIndex]);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (historyIndex === -1) return;
+      const newIndex = historyIndex + 1;
+      if (newIndex >= commandHistory.length) {
+        setHistoryIndex(-1);
+        setInputValue("");
+      } else {
+        setHistoryIndex(newIndex);
+        setInputValue(commandHistory[newIndex]);
+      }
+    }
+  };
+
   if (!isSuperAdminUser) return null;
 
+  // Disconnected state - show connect button
+  if (!connected) {
+    return (
+      <div className="lg:col-span-2 rounded-lg border border-border/50 bg-black/90 p-6 flex flex-col items-center justify-center gap-4 min-h-[200px]">
+        <Terminal className="w-10 h-10 text-green-500 opacity-60" />
+        <p className="text-sm text-gray-400 font-mono">Terminal Remoto — {agentName}</p>
+        <Button onClick={handleConnect} variant="outline" className="border-green-600 text-green-500 hover:bg-green-950 hover:text-green-400">
+          <Power className="w-4 h-4 mr-2" />
+          Conectar
+        </Button>
+      </div>
+    );
+  }
+
+  const hasPending = pendingCommandIds.size > 0;
+
   return (
-    <Card className="glass-card lg:col-span-2">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Terminal className="w-5 h-5" />
-          Terminal Remoto
+    <div className="lg:col-span-2 rounded-lg border border-gray-700 bg-black overflow-hidden flex flex-col" style={{ height: "500px" }}>
+      {/* Title bar */}
+      <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700">
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-red-500 cursor-pointer hover:brightness-125" onClick={handleDisconnect} title="Desconectar" />
+            <div className="w-3 h-3 rounded-full bg-yellow-500 opacity-50" />
+            <div className="w-3 h-3 rounded-full bg-green-500 opacity-50" />
+          </div>
+          <span className="text-gray-400 text-xs font-mono ml-2">
+            Terminal Remoto — {agentName}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
           {realtimeConnected ? (
-            <Badge variant="secondary" className="bg-success/10 text-success text-xs ml-auto">
-              <Wifi className="w-3 h-3 mr-1" />
+            <Badge variant="secondary" className="bg-green-900/50 text-green-400 text-[10px] border-green-700/50 px-1.5 py-0.5">
+              <Wifi className="w-2.5 h-2.5 mr-1" />
               Realtime
             </Badge>
           ) : (
-            <Badge variant="secondary" className="bg-muted text-muted-foreground text-xs ml-auto">
-              <WifiOff className="w-3 h-3 mr-1" />
+            <Badge variant="secondary" className="bg-gray-800 text-gray-500 text-[10px] border-gray-700 px-1.5 py-0.5">
+              <WifiOff className="w-2.5 h-2.5 mr-1" />
               Polling
             </Badge>
           )}
-        </CardTitle>
-        <CardDescription>
-          Execute comandos no servidor do agent "{agentName}".
-          {realtimeConnected
-            ? " Conexão em tempo real ativa — comandos executados instantaneamente."
-            : " Usando polling — comandos executados no próximo heartbeat (~120s)."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Command input */}
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <div className="flex-1 relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">$</span>
-            <Input
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              placeholder="systemctl status iscope-agent"
-              className="pl-7 font-mono text-sm"
-              disabled={sendCommand.isPending}
+          <button
+            onClick={handleDisconnect}
+            className="text-gray-500 hover:text-red-400 transition-colors"
+            title="Desconectar"
+          >
+            <PowerOff className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Terminal body */}
+      <div
+        className="flex-1 overflow-y-auto p-3 font-mono text-sm cursor-text"
+        onClick={focusInput}
+      >
+        {/* Rendered lines */}
+        {lines.map((line, i) => (
+          <div key={i} className="leading-5 whitespace-pre-wrap break-all">
+            {line.type === "input" && (
+              <span className="text-green-400">{line.text}</span>
+            )}
+            {line.type === "output" && (
+              <span className="text-gray-300">{line.text}</span>
+            )}
+            {line.type === "error" && (
+              <span className="text-red-400">{line.text}</span>
+            )}
+            {line.type === "system" && (
+              <span className="text-yellow-600 italic">{line.text}</span>
+            )}
+          </div>
+        ))}
+
+        {/* Pending indicator */}
+        {hasPending && (
+          <div className="leading-5 text-gray-500">
+            <span className="animate-pulse">▌</span>
+          </div>
+        )}
+
+        {/* Active prompt + input */}
+        {!hasPending && (
+          <form onSubmit={handleSubmit} className="flex leading-5">
+            <span className="text-green-400 shrink-0">{prompt}&nbsp;</span>
+            <input
+              ref={inputRef}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="flex-1 bg-transparent text-green-300 outline-none border-none caret-green-400 font-mono text-sm p-0 m-0"
+              autoFocus
+              spellCheck={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
             />
-          </div>
-          <Button type="submit" disabled={!command.trim() || sendCommand.isPending} size="default">
-            {sendCommand.isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-            <span className="ml-2 hidden sm:inline">Executar</span>
-          </Button>
-        </form>
+          </form>
+        )}
 
-        {/* Commands list */}
-        <ScrollArea className="h-[400px]" ref={scrollRef}>
-          <div className="space-y-3">
-            {commands.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Terminal className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Nenhum comando executado ainda.</p>
-                <p className="text-xs mt-1">
-                  {realtimeConnected
-                    ? "O comando será executado em tempo real (~1-2s)."
-                    : "O comando será executado no próximo heartbeat do agent (até ~120s)."}
-                </p>
-              </div>
-            ) : (
-              commands.map((cmd) => {
-                const cfg = statusConfig[cmd.status] || statusConfig.pending;
-                return (
-                  <div
-                    key={cmd.id}
-                    className="rounded-lg border border-border/50 bg-muted/20 overflow-hidden"
-                  >
-                    {/* Command header */}
-                    <div className="flex items-center justify-between px-3 py-2 bg-muted/30 border-b border-border/30">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <code className="text-sm font-mono truncate text-foreground">$ {cmd.command}</code>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(cmd.created_at), { locale: ptBR, addSuffix: true })}
-                        </span>
-                        <Badge variant="secondary" className={`text-xs ${cfg.color}`}>
-                          {cfg.icon}
-                          <span className="ml-1">{cfg.label}</span>
-                        </Badge>
-                      </div>
-                    </div>
-
-                    {/* Output */}
-                    {(cmd.status === 'completed' || cmd.status === 'failed' || cmd.status === 'timeout') && (
-                      <div className="p-3">
-                        {cmd.stdout && (
-                          <pre className="text-xs font-mono whitespace-pre-wrap text-foreground/80 max-h-48 overflow-auto">
-                            {cmd.stdout}
-                          </pre>
-                        )}
-                        {cmd.stderr && (
-                          <pre className="text-xs font-mono whitespace-pre-wrap text-destructive/80 max-h-32 overflow-auto mt-1">
-                            {cmd.stderr}
-                          </pre>
-                        )}
-                        {cmd.exit_code !== null && cmd.exit_code !== 0 && (
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            Exit code: {cmd.exit_code}
-                          </div>
-                        )}
-                        {!cmd.stdout && !cmd.stderr && (
-                          <p className="text-xs text-muted-foreground italic">Sem output</p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Loading state */}
-                    {(cmd.status === 'pending' || cmd.status === 'running') && (
-                      <div className="p-3 flex items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        {cmd.status === 'pending'
-                          ? (realtimeConnected ? 'Enviando para o agent...' : 'Aguardando próximo heartbeat do agent...')
-                          : 'Executando no servidor...'}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </ScrollArea>
-      </CardContent>
-    </Card>
+        <div ref={bottomRef} />
+      </div>
+    </div>
   );
 }
