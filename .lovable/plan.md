@@ -1,57 +1,39 @@
 
 
-# Correcoes do HUB de Licenciamento - Fase 2
+# Correcao: Cards de resumo devem refletir a aba ativa
 
-## 3 problemas identificados
+## Problema
 
-### 1. M365 - Coluna "Vencimento" mostrando apenas status em vez de data
+Os cards de resumo (Expirados, Expirando, Ativos, Total) sempre mostram a soma de **todas** as fontes (Firewalls + TLS + M365), independente da aba selecionada. O usuario espera que ao selecionar a aba "Firewalls", os cards mostrem apenas os numeros dos firewalls, e assim por diante.
 
-**Causa:** O componente `StatusBadge` mostra apenas "Ativo", "Expirado" ou "Xd restantes" sem a data real. Os dados de `expires_at` existem corretamente no banco (confirmado via query).
+## Solucao
 
-**Correcao em `src/pages/LicensingHubPage.tsx`:**
-- Na coluna "Vencimento" da aba M365, exibir a data formatada (dd/mm/yyyy) E os dias restantes juntos
-- Formato: `18/03/2026 (21d)` para itens com data
-- Manter badge colorido mas com texto mais informativo: `18/03/2026 (21d restantes)` em amarelo, ou `18/03/2026` em verde para ativos
-- Quando `expires_at` for null, manter o traco "---"
+### `src/pages/LicensingHubPage.tsx`
 
-### 2. Firewalls - Dados de licenciamento nao extraidos
+1. Trocar o `Tabs` de `defaultValue` para controlado com estado (`value` + `onValueChange`), criando um estado `activeTab`
+2. Passar `activeTab` para o hook ou calcular o summary filtrado na pagina
 
-**Causa raiz confirmada via query:** O `rawData` com `license_status.results` NAO esta em `report_data.rawData`. Esta dentro de cada check individual: `report_data.checks[].rawData.license_status.results`. A funcao `extractFirewallFromRawData(reportData?.rawData)` busca no lugar errado.
+### `src/hooks/useLicensingHub.ts`
 
-Estrutura real:
-```text
-report_data.checks[] -> cada check tem:
-  - category: "Licenciamento"
-  - rawData.license_status.results.forticare.support.enhanced.expires = 1773792000
-  - rawData.license_status.results.antivirus.expires = 1773792000
-  - rawData.license_status.results.ips.expires = 1773792000
-  - etc.
-```
+3. Exportar os contadores separados por fonte (ou deixar o calculo na pagina)
 
-**Correcao em `src/hooks/useLicensingHub.ts`:**
-- Alterar a busca para iterar `report_data.checks[]`
-- Filtrar checks com `category === 'Licenciamento'`
-- Buscar o primeiro check que tenha `rawData.license_status.results`
-- Passar esse `rawData` para `extractFirewallFromRawData()`
-- Manter fallback para a logica de categories caso checks nao exista
+### Abordagem escolhida (mais simples)
 
-### 3. Cards de resumo como filtros
+Manter o summary geral no hook, mas na **pagina** recalcular os numeros exibidos nos cards com base na aba ativa:
 
-**Correcao em `src/pages/LicensingHubPage.tsx`:**
-- Adicionar estado `activeFilter: LicenseStatus | null` (null = sem filtro)
-- Tornar os cards clicaveis com `cursor-pointer` e borda destacada quando selecionado
-- Clicar em "Expirados" filtra todas as abas mostrando apenas itens expirados
-- Clicar em "Expirando" filtra apenas itens com 30 dias ou menos
-- Clicar em "Ativos" filtra apenas itens ativos
-- Clicar no card ja ativo remove o filtro (toggle)
-- Aplicar filtro via `useMemo` nos arrays `firewallLicenses`, `tlsCertificates`, `m365Licenses` antes de renderizar
+- Adicionar estado `const [activeTab, setActiveTab] = useState('firewalls')`
+- Usar `Tabs value={activeTab} onValueChange={setActiveTab}`
+- Criar um `useMemo` que calcula `displaySummary` baseado em `activeTab`:
+  - `firewalls`: conta apenas `firewallLicenses` (forticare + services)
+  - `tls`: conta apenas `tlsCertificates`
+  - `m365`: conta apenas `m365Licenses`
+- Usar `displaySummary` nos cards em vez de `summary`
 
----
-
-## Resumo de alteracoes
+### Arquivos alterados
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/hooks/useLicensingHub.ts` | Corrigir extracao de firewalls: buscar `rawData` dentro de `report_data.checks[]` em vez de `report_data.rawData` |
-| `src/pages/LicensingHubPage.tsx` | 1) Mostrar data + dias na coluna Vencimento do M365 e Firewalls; 2) Cards clicaveis como filtros com estado toggle |
+| `src/pages/LicensingHubPage.tsx` | Adicionar estado `activeTab`, controlar Tabs, recalcular summary por aba ativa |
+
+Nenhuma alteracao no hook necessaria.
 
