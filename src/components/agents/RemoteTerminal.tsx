@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Terminal, Power, PowerOff, Wifi, WifiOff } from "lucide-react";
+import { Terminal, Power, PowerOff, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface AgentCommand {
@@ -38,6 +38,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   const isSuperAdminUser = isSuperAdmin();
 
   const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [lines, setLines] = useState<TerminalLine[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -150,15 +151,6 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
 
       if (error) throw error;
 
-      // Broadcast for instant delivery
-      const broadcastChannel = supabase.channel(`agent-cmd-${agentId}`);
-      await broadcastChannel.send({
-        type: "broadcast",
-        event: "command",
-        payload: { id: data.id, command: cmd, timeout_seconds: 60 },
-      });
-      supabase.removeChannel(broadcastChannel);
-
       return data as AgentCommand;
     },
     onSuccess: (data) => {
@@ -171,15 +163,13 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   });
 
   const handleConnect = async () => {
-    setConnected(true);
+    setConnecting(true);
     setLines([
       { type: "system", text: `Conectando ao agent "${agentName}"...` },
-      { type: "system", text: "Sessão remota iniciada. Digite comandos abaixo." },
-      { type: "system", text: 'Digite "clear" para limpar ou "exit" para desconectar.' },
-      { type: "system", text: "" },
+      { type: "system", text: "Aguardando canal de comunicação..." },
     ]);
 
-    // Signal agent to start WebSocket connection
+    // Signal agent to start shell polling
     try {
       await (supabase
         .from("agents" as any)
@@ -188,6 +178,17 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     } catch (e) {
       console.error("Failed to set shell_session_active:", e);
     }
+
+    setConnected(true);
+    setConnecting(false);
+
+    // Add ready messages after subscription is confirmed (via useEffect)
+    setLines((prev) => [
+      ...prev,
+      { type: "system", text: "Sessão remota iniciada. Digite comandos abaixo." },
+      { type: "system", text: 'Digite "clear" para limpar ou "exit" para desconectar.' },
+      { type: "system", text: "" },
+    ]);
 
     // Load recent commands as context
     try {
@@ -301,7 +302,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   if (!isSuperAdminUser) return null;
 
   // Disconnected state - show connect button
-  if (!connected) {
+  if (!connected && !connecting) {
     return (
       <div className="lg:col-span-2 rounded-lg border border-border/50 bg-black/90 p-6 flex flex-col items-center justify-center gap-4 min-h-[200px]">
         <Terminal className="w-10 h-10 text-green-500 opacity-60" />
@@ -310,6 +311,17 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           <Power className="w-4 h-4 mr-2" />
           Conectar
         </Button>
+      </div>
+    );
+  }
+
+  // Connecting state - show loading
+  if (connecting && !connected) {
+    return (
+      <div className="lg:col-span-2 rounded-lg border border-border/50 bg-black/90 p-6 flex flex-col items-center justify-center gap-4 min-h-[200px]">
+        <Loader2 className="w-10 h-10 text-green-500 animate-spin" />
+        <p className="text-sm text-green-400 font-mono animate-pulse">Aguardando canal de comunicação...</p>
+        <p className="text-xs text-gray-500 font-mono">Estabelecendo conexão com {agentName}</p>
       </div>
     );
   }
