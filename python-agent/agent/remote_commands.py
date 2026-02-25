@@ -9,12 +9,15 @@ Flow:
 """
 
 import subprocess
+import threading
 
 
 class RemoteCommandHandler:
     def __init__(self, api, logger):
         self.api = api
         self.logger = logger
+        self._running_ids = set()
+        self._lock = threading.Lock()
 
     def process_pending_commands(self):
         """Fetch and execute all pending commands."""
@@ -40,9 +43,17 @@ class RemoteCommandHandler:
         command_text = cmd["command"]
         timeout = cmd.get("timeout_seconds", 60)
 
-        self.logger.info(f"[RemoteCmd] Executando: {command_text[:80]}... (timeout={timeout}s)")
+        # Deduplication: prevent the same command from running twice
+        # (Realtime broadcast + heartbeat fallback can race)
+        with self._lock:
+            if command_id in self._running_ids:
+                self.logger.info(f"[RemoteCmd] Comando {command_id[:8]}... já em execução, ignorando duplicata")
+                return
+            self._running_ids.add(command_id)
 
         try:
+            self.logger.info(f"[RemoteCmd] Executando: {command_text[:80]}... (timeout={timeout}s)")
+
             result = subprocess.run(
                 command_text,
                 shell=True,
@@ -82,6 +93,10 @@ class RemoteCommandHandler:
                 exit_code=-1,
                 status="failed",
             )
+
+        finally:
+            with self._lock:
+                self._running_ids.discard(command_id)
 
     def _report_result(self, command_id: str, stdout: str, stderr: str, exit_code: int, status: str):
         """Send command result back to the backend."""
