@@ -100,7 +100,13 @@ class ShellCommandPoller:
             self.logger.info(f"[ShellPoll] {len(commands)} comando(s) encontrado(s)")
 
             for cmd in commands:
-                self.handler._execute_command(cmd)
+                t = threading.Thread(
+                    target=self.handler._execute_command,
+                    args=(cmd,),
+                    daemon=True,
+                    name=f"cmd-{cmd.get('id', '?')[:8]}",
+                )
+                t.start()
 
             return True
 
