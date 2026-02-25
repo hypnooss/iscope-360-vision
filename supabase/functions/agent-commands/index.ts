@@ -131,8 +131,18 @@ serve(async (req: Request) => {
         console.log(`Agent ${agentId}: ${commands.length} command(s) marked as running`);
       }
 
+      // Read session_active flag so poller can stop immediately
+      const { data: agentStatus } = await supabase
+        .from('agents')
+        .select('shell_session_active')
+        .eq('id', agentId)
+        .single();
+
       return new Response(
-        JSON.stringify({ commands: commands || [] }),
+        JSON.stringify({
+          commands: commands || [],
+          session_active: agentStatus?.shell_session_active ?? false,
+        }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -144,7 +154,7 @@ serve(async (req: Request) => {
       const { agentId } = authResult;
 
       const body = await req.json();
-      const { command_id, stdout, stderr, exit_code, status } = body;
+      const { command_id, stdout, stderr, exit_code, status, cwd } = body;
 
       if (!command_id) {
         return new Response(
@@ -155,15 +165,18 @@ serve(async (req: Request) => {
 
       const finalStatus = status || (exit_code === 0 ? 'completed' : 'failed');
 
+      const updatePayload: Record<string, any> = {
+        stdout: stdout || null,
+        stderr: stderr || null,
+        exit_code: exit_code ?? null,
+        status: finalStatus,
+        completed_at: new Date().toISOString(),
+        cwd: cwd || null,
+      };
+
       const { error } = await supabase
         .from('agent_commands')
-        .update({
-          stdout: stdout || null,
-          stderr: stderr || null,
-          exit_code: exit_code ?? null,
-          status: finalStatus,
-          completed_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('id', command_id)
         .eq('agent_id', agentId);
 

@@ -132,9 +132,10 @@ def main():
                     poller = None
                 poller_active = False
 
-            # Check if poller timed out on its own
-            if poller_active and poller and poller.timed_out:
-                logger.info("[Supervisor] Shell Poller encerrado por inatividade (120s).")
+            # Check if poller timed out or session was closed
+            if poller_active and poller and (poller.timed_out or poller.session_closed):
+                reason = "inatividade (120s)" if poller.timed_out else "sessão encerrada pelo GUI"
+                logger.info(f"[Supervisor] Shell Poller encerrado: {reason}.")
                 poller.stop()
                 poller = None
                 poller_active = False

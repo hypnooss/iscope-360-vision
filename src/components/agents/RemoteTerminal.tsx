@@ -19,6 +19,7 @@ interface AgentCommand {
   started_at: string | null;
   completed_at: string | null;
   timeout_seconds: number;
+  cwd?: string | null;
 }
 
 interface TerminalLine {
@@ -45,12 +46,13 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [pendingCommandIds, setPendingCommandIds] = useState<Set<string>>(new Set());
+  const [currentCwd, setCurrentCwd] = useState("/");
 
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
-  const prompt = `root@${agentName}:~#`;
+  const prompt = `root@${agentName}:${currentCwd === "/" ? "/" : currentCwd}#`;
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -59,14 +61,13 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
 
   // Focus input when clicking terminal area
   const focusInput = useCallback(() => {
-    if (connected) inputRef.current?.focus();
-  }, [connected]);
+    if (connected && realtimeConnected) inputRef.current?.focus();
+  }, [connected, realtimeConnected]);
 
   // Cleanup shell_session_active on unmount
   useEffect(() => {
     return () => {
       if (connected) {
-        // Fire-and-forget cleanup
         (supabase
           .from("agents" as any)
           .update({ shell_session_active: false })
@@ -92,6 +93,11 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
         (payload: any) => {
           const cmd = payload.new as AgentCommand;
           if (cmd.status === "completed" || cmd.status === "failed" || cmd.status === "timeout") {
+            // Update cwd from agent response
+            if (cmd.cwd) {
+              setCurrentCwd(cmd.cwd);
+            }
+
             // Add output lines
             setLines((prev) => {
               const newLines = [...prev];
@@ -108,9 +114,6 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
               if (cmd.status === "timeout") {
                 newLines.push({ type: "error", text: "Erro: comando excedeu o tempo limite.", commandId: cmd.id });
               }
-              if (!cmd.stdout && !cmd.stderr && cmd.status !== "timeout") {
-                // Command completed with no output - that's fine, just show next prompt
-              }
               return newLines;
             });
             setPendingCommandIds((prev) => {
@@ -122,7 +125,20 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
         }
       )
       .subscribe((status: string) => {
-        setRealtimeConnected(status === "SUBSCRIBED");
+        const isSubscribed = status === "SUBSCRIBED";
+        setRealtimeConnected(isSubscribed);
+        if (isSubscribed) {
+          // Now that realtime is ready, show the prompt
+          setConnecting(false);
+          setLines((prev) => [
+            ...prev,
+            { type: "system", text: "Canal de comunicação estabelecido." },
+            { type: "system", text: "Sessão remota iniciada. Digite comandos abaixo." },
+            { type: "system", text: 'Digite "clear" para limpar ou "exit" para desconectar.' },
+            { type: "system", text: "" },
+          ]);
+          setTimeout(() => inputRef.current?.focus(), 100);
+        }
       });
 
     channelRef.current = channel;
@@ -179,53 +195,12 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       console.error("Failed to set shell_session_active:", e);
     }
 
+    // Set connected to trigger the realtime subscription useEffect
+    // The UI stays in "connecting" state until realtime is SUBSCRIBED
     setConnected(true);
-    setConnecting(false);
-
-    // Add ready messages after subscription is confirmed (via useEffect)
-    setLines((prev) => [
-      ...prev,
-      { type: "system", text: "Sessão remota iniciada. Digite comandos abaixo." },
-      { type: "system", text: 'Digite "clear" para limpar ou "exit" para desconectar.' },
-      { type: "system", text: "" },
-    ]);
-
-    // Load recent commands as context
-    try {
-      const { data } = await (supabase
-        .from("agent_commands" as any)
-        .select("*")
-        .eq("agent_id", agentId)
-        .order("created_at", { ascending: true })
-        .limit(20) as any);
-
-      if (data && data.length > 0) {
-        const historyLines: TerminalLine[] = [
-          { type: "system", text: "── Histórico recente ──" },
-        ];
-        (data as AgentCommand[]).forEach((cmd) => {
-          historyLines.push({ type: "input", text: `${prompt} ${cmd.command}` });
-          if (cmd.stdout) {
-            cmd.stdout.split("\n").forEach((l) => historyLines.push({ type: "output", text: l }));
-          }
-          if (cmd.stderr) {
-            cmd.stderr.split("\n").forEach((l) => historyLines.push({ type: "error", text: l }));
-          }
-        });
-        historyLines.push({ type: "system", text: "── Fim do histórico ──" });
-        historyLines.push({ type: "system", text: "" });
-        setLines((prev) => [...prev, ...historyLines]);
-        setCommandHistory(data.map((c: AgentCommand) => c.command));
-      }
-    } catch {
-      // Ignore history load errors
-    }
-
-    setTimeout(() => inputRef.current?.focus(), 100);
   };
 
   const handleDisconnect = async () => {
-    // Signal agent to stop WebSocket connection
     try {
       await (supabase
         .from("agents" as any)
@@ -236,11 +211,13 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     }
 
     setConnected(false);
+    setConnecting(false);
     setLines([]);
     setCommandHistory([]);
     setHistoryIndex(-1);
     setPendingCommandIds(new Set());
     setInputValue("");
+    setCurrentCwd("/");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -315,8 +292,8 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     );
   }
 
-  // Connecting state - show loading
-  if (connecting && !connected) {
+  // Connecting state - show loading (waiting for realtime subscription)
+  if (connecting) {
     return (
       <div className="lg:col-span-2 rounded-lg border border-border/50 bg-black/90 p-6 flex flex-col items-center justify-center gap-4 min-h-[200px]">
         <Loader2 className="w-10 h-10 text-green-500 animate-spin" />
@@ -327,6 +304,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   }
 
   const hasPending = pendingCommandIds.size > 0;
+  const inputReady = connected && realtimeConnected;
 
   return (
     <div className="lg:col-span-2 rounded-lg border border-gray-700 bg-black overflow-hidden flex flex-col" style={{ height: "500px" }}>
@@ -351,7 +329,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           ) : (
             <Badge variant="secondary" className="bg-gray-800 text-gray-500 text-[10px] border-gray-700 px-1.5 py-0.5">
               <WifiOff className="w-2.5 h-2.5 mr-1" />
-              Polling
+              Conectando...
             </Badge>
           )}
           <button
@@ -395,7 +373,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
         )}
 
         {/* Active prompt + input */}
-        {!hasPending && (
+        {!hasPending && inputReady && (
           <form onSubmit={handleSubmit} className="flex leading-5">
             <span className="text-green-400 shrink-0">{prompt}&nbsp;</span>
             <input
