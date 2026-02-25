@@ -20,7 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Card, CardContent } from '@/components/ui/card';
-import { Key, Shield, Globe, Cloud, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { Key, Shield, Globe, Cloud, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff } from 'lucide-react';
 
 // ====== Helpers ======
 
@@ -66,6 +66,21 @@ function matchesFilter(daysLeft: number | null, filter: LicenseStatus | null): b
   return getLicenseStatus(daysLeft) === filter;
 }
 
+// Group services by expiry date for compact display
+function groupServicesByExpiry(services: { name: string; daysLeft: number | null; expiresAt: string | null }[]) {
+  const groups = new Map<string, { names: string[]; daysLeft: number | null; expiresAt: string | null }>();
+  for (const svc of services) {
+    const key = svc.expiresAt ?? '__no_date__';
+    const existing = groups.get(key);
+    if (existing) {
+      existing.names.push(svc.name);
+    } else {
+      groups.set(key, { names: [svc.name], daysLeft: svc.daysLeft, expiresAt: svc.expiresAt });
+    }
+  }
+  return Array.from(groups.values());
+}
+
 // ====== Page ======
 
 export default function LicensingHubPage() {
@@ -85,6 +100,7 @@ export default function LicensingHubPage() {
 
   const [activeFilter, setActiveFilter] = useState<LicenseStatus | null>(null);
   const [activeTab, setActiveTab] = useState('firewalls');
+  const [showOldExpired, setShowOldExpired] = useState(false);
 
   // Tab-specific summary
   const displaySummary = useMemo(() => {
@@ -136,6 +152,12 @@ export default function LicensingHubPage() {
     if (!activeFilter) return m365Licenses;
     return m365Licenses.filter(lic => matchesFilter(lic.daysLeft, activeFilter));
   }, [m365Licenses, activeFilter]);
+
+  const { visibleM365, hiddenM365Count } = useMemo(() => {
+    const visible = filteredM365.filter(lic => lic.daysLeft === null || lic.daysLeft >= -60);
+    const hidden = filteredM365.filter(lic => lic.daysLeft !== null && lic.daysLeft < -60);
+    return { visibleM365: showOldExpired ? filteredM365 : visible, hiddenM365Count: hidden.length };
+  }, [filteredM365, showOldExpired]);
 
   return (
     <AppLayout>
@@ -271,11 +293,13 @@ export default function LicensingHubPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap gap-1.5">
-                            {fw.services.map((svc, i) => (
-                              <div key={i} className="flex items-center gap-1">
-                                <span className="text-xs text-muted-foreground">{svc.name}:</span>
-                                <ExpiryBadge daysLeft={svc.daysLeft} expiresAt={svc.expiresAt} />
+                          <div className="space-y-1.5">
+                            {groupServicesByExpiry(fw.services).map((group, i) => (
+                              <div key={i} className="flex items-start gap-2">
+                                <ExpiryBadge daysLeft={group.daysLeft} expiresAt={group.expiresAt} />
+                                <span className="text-xs text-muted-foreground leading-5">
+                                  {group.names.join(', ')}
+                                </span>
                               </div>
                             ))}
                             {fw.services.length === 0 && (
@@ -353,49 +377,68 @@ export default function LicensingHubPage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
-            ) : filteredM365.length === 0 ? (
+            ) : visibleM365.length === 0 && hiddenM365Count === 0 ? (
               <EmptyState message={activeFilter ? 'Nenhuma licença corresponde ao filtro selecionado' : "Nenhuma licença M365 coletada. Clique em 'Atualizar Licenças' para buscar os dados do tenant."} />
             ) : (
-              <div className="rounded-lg border border-border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Tenant</TableHead>
-                      <TableHead>Licença</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-right">Em uso</TableHead>
-                      <TableHead>Vencimento</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredM365.map((lic, i) => (
-                      <TableRow key={`${lic.skuPartNumber}-${i}`}>
-                        <TableCell className="text-muted-foreground">{lic.tenantDisplayName}</TableCell>
-                        <TableCell className="font-medium">{lic.displayName}</TableCell>
-                        <TableCell>
-                          <Badge variant={lic.capabilityStatus === 'Enabled' ? 'default' : 'destructive'} className={
-                            lic.capabilityStatus === 'Enabled'
-                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                              : ''
-                          }>
-                            {lic.capabilityStatus}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-mono">{lic.totalUnits.toLocaleString()}</TableCell>
-                        <TableCell className="text-right font-mono">{lic.consumedUnits.toLocaleString()}</TableCell>
-                        <TableCell>
-                          {lic.expiresAt ? (
-                            <ExpiryBadge daysLeft={lic.daysLeft} expiresAt={lic.expiresAt} />
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <>
+                {visibleM365.length > 0 && (
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Tenant</TableHead>
+                          <TableHead>Licença</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                          <TableHead className="text-right">Em uso</TableHead>
+                          <TableHead>Vencimento</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visibleM365.map((lic, i) => (
+                          <TableRow key={`${lic.skuPartNumber}-${i}`} className={lic.daysLeft !== null && lic.daysLeft < -60 ? 'opacity-50' : ''}>
+                            <TableCell className="text-muted-foreground">{lic.tenantDisplayName}</TableCell>
+                            <TableCell className="font-medium">{lic.displayName}</TableCell>
+                            <TableCell>
+                              <Badge variant={lic.capabilityStatus === 'Enabled' ? 'default' : 'destructive'} className={
+                                lic.capabilityStatus === 'Enabled'
+                                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                  : ''
+                              }>
+                                {lic.capabilityStatus}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">{lic.totalUnits.toLocaleString()}</TableCell>
+                            <TableCell className="text-right font-mono">{lic.consumedUnits.toLocaleString()}</TableCell>
+                            <TableCell>
+                              {lic.expiresAt ? (
+                                <ExpiryBadge daysLeft={lic.daysLeft} expiresAt={lic.expiresAt} />
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+                {hiddenM365Count > 0 && (
+                  <div className="flex items-center gap-2 mt-3 text-muted-foreground">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1.5"
+                      onClick={() => setShowOldExpired(prev => !prev)}
+                    >
+                      {showOldExpired ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showOldExpired
+                        ? 'Ocultar licenças antigas'
+                        : `${hiddenM365Count} licença(s) expirada(s) há mais de 60 dias oculta(s)`}
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </TabsContent>
         </Tabs>
