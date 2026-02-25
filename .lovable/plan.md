@@ -1,47 +1,34 @@
 
 
-# Melhorias na Visibilidade do HUB de Licenciamento
+# Ocultar licencas M365 "Suspended" e mover indicador para cima da tabela
 
-## 1. Firewalls - Sumarizar servicos FortiGuard por data de vencimento
+## Alteracoes em `src/pages/LicensingHubPage.tsx`
 
-**Problema:** Cada servico aparece individualmente com seu badge, gerando muita poluicao visual quando todos vencem na mesma data (ex: 12 servicos todos com "28/07/2026 (154d)").
+### 1. Incluir licencas com `capabilityStatus === 'Suspended'` na ocultacao
 
-**Solucao em `src/pages/LicensingHubPage.tsx`:**
+No `useMemo` que calcula `visibleM365` e `hiddenM365Count` (linha ~156), adicionar a condicao de `Suspended` junto com a de expiradas > 60 dias:
 
-Agrupar servicos pela data de vencimento e exibir de forma compacta:
-
-```text
-Antes:
-  IPS: 28/07/2026 (154d)  App Control: 28/07/2026 (154d)  Antivirus: 28/07/2026 (154d) ...
-
-Depois:
-  28/07/2026 (154d): IPS, App Control, Antivirus, Web Filter, Botnet Domain, Cloud Sandbox, ...
-  14/02/2026 (expirado): FortiCloud
+```
+const shouldHide = (lic) =>
+  lic.capabilityStatus === 'Suspended' ||
+  (lic.daysLeft !== null && lic.daysLeft < -60);
 ```
 
-Implementacao:
-- Criar funcao `groupServicesByExpiry(services)` que agrupa por `expiresAt`
-- Renderizar cada grupo como: Badge de data + lista de nomes separados por virgula
-- Servicos sem data agrupados separadamente como "Sem data"
-- Manter cores do badge conforme status (verde/amarelo/vermelho)
+- Licencas `Suspended` serao ocultadas por padrao, independente da data
+- Licencas expiradas ha mais de 60 dias continuam ocultadas
+- O texto sutil sera atualizado para refletir ambos os casos: "X licenca(s) oculta(s) (suspensas ou expiradas ha mais de 60 dias)"
 
----
+### 2. Mover o indicador sutil para cima da tabela
 
-## 2. M365 - Manter licencas separadas + ocultar expiradas > 60 dias
+Mover o bloco do botao toggle (atualmente em linhas 426-439, abaixo da tabela) para antes da tabela, logo apos o botao "Atualizar Licencas" (linha ~374). Ficara entre o header de acoes e a tabela, mantendo o layout limpo.
 
-**Requisito:** Mesmo produto (ex: Power BI Pro) pode ter contratos distintos com datas e quantidades diferentes. Manter cada linha separada.
+### 3. Excluir licencas ocultas dos contadores dos cards
 
-**Implementacao em `src/pages/LicensingHubPage.tsx`:**
+No `useMemo` de `displaySummary` (aba m365, linha ~130), filtrar tambem as licencas `Suspended` e expiradas > 60 dias para que nao inflem os contadores dos cards de resumo.
 
-- Filtrar do array `filteredM365` as licencas expiradas ha mais de 60 dias (`daysLeft < -60`)
-- Exibir apenas as licencas validas ou recentemente expiradas na tabela principal
-- Abaixo da tabela, mostrar um texto sutil: "X licenca(s) expirada(s) ha mais de 60 dias oculta(s)" em `text-muted-foreground` com opcao de expandir/mostrar
-
----
-
-## Resumo de arquivos
+### Arquivo alterado
 
 | Arquivo | Alteracao |
 |---|---|
-| `src/pages/LicensingHubPage.tsx` | 1) Agrupar servicos FortiGuard por data na coluna de servicos; 2) Ocultar licencas M365 expiradas > 60 dias com indicador sutil |
+| `src/pages/LicensingHubPage.tsx` | Adicionar filtro `Suspended` na ocultacao, mover indicador para cima da tabela, ajustar contadores |
 
