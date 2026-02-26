@@ -53,10 +53,20 @@ export default function SettingsPage() {
   const [calculatingChecksum, setCalculatingChecksum] = useState(false);
   const [publishingUpdate, setPublishingUpdate] = useState(false);
   const [newVersion, setNewVersion] = useState('');
+
+  // Supervisor update management
+  const [supervisorLatestVersion, setSupervisorLatestVersion] = useState('');
+  const [supervisorForceUpdate, setSupervisorForceUpdate] = useState(false);
+  const [selectedSupervisorFile, setSelectedSupervisorFile] = useState<File | null>(null);
+  const [supervisorChecksum, setSupervisorChecksum] = useState('');
+  const [calculatingSupervisorChecksum, setCalculatingSupervisorChecksum] = useState(false);
+  const [publishingSupervisorUpdate, setPublishingSupervisorUpdate] = useState(false);
+  const [newSupervisorVersion, setNewSupervisorVersion] = useState('');
+
   const [agentStats, setAgentStats] = useState<{
     total: number;
     upToDate: number;
-    outdated: {name: string;version: string;client: string;}[];
+    outdated: {name: string;version: string;supervisorVersion: string;client: string;}[];
   }>({ total: 0, upToDate: 0, outdated: [] });
 
   useEffect(() => {
@@ -163,7 +173,7 @@ export default function SettingsPage() {
       const { data } = await supabase.
       from('system_settings').
       select('key, value').
-      in('key', ['agent_latest_version', 'agent_force_update']);
+      in('key', ['agent_latest_version', 'agent_force_update', 'supervisor_latest_version', 'supervisor_force_update']);
 
       if (data) {
         data.forEach((setting) => {
@@ -175,6 +185,15 @@ export default function SettingsPage() {
           }
           if (setting.key === 'agent_force_update') {
             setAgentForceUpdate(setting.value === true || setting.value === 'true');
+          }
+          if (setting.key === 'supervisor_latest_version') {
+            const version = typeof setting.value === 'string' ?
+            setting.value.replace(/"/g, '') :
+            String(setting.value || '');
+            setSupervisorLatestVersion(version);
+          }
+          if (setting.key === 'supervisor_force_update') {
+            setSupervisorForceUpdate(setting.value === true || setting.value === 'true');
           }
         });
       }
@@ -191,6 +210,7 @@ export default function SettingsPage() {
           id,
           name,
           agent_version,
+          supervisor_version,
           revoked,
           clients!agents_client_id_fkey (name)
         `).
@@ -198,25 +218,33 @@ export default function SettingsPage() {
 
       if (error) throw error;
 
-      const { data: versionSetting } = await supabase.
+      const { data: versionSettings } = await supabase.
       from('system_settings').
-      select('value').
-      eq('key', 'agent_latest_version').
-      maybeSingle();
+      select('key, value').
+      in('key', ['agent_latest_version', 'supervisor_latest_version']);
 
-      const latestVersion = versionSetting?.value ?
-      typeof versionSetting.value === 'string' ?
-      versionSetting.value.replace(/"/g, '') :
-      String(versionSetting.value) :
-      '';
+      let latestAgentVer = '';
+      let latestSupVer = '';
+      versionSettings?.forEach((s) => {
+        const v = typeof s.value === 'string' ? s.value.replace(/"/g, '') : String(s.value || '');
+        if (s.key === 'agent_latest_version') latestAgentVer = v;
+        if (s.key === 'supervisor_latest_version') latestSupVer = v;
+      });
 
       if (agents) {
-        const upToDate = agents.filter((a) => a.agent_version === latestVersion).length;
+        const upToDate = agents.filter((a) =>
+          a.agent_version === latestAgentVer &&
+          (!latestSupVer || a.supervisor_version === latestSupVer)
+        ).length;
         const outdated = agents.
-        filter((a) => a.agent_version && a.agent_version !== latestVersion).
+        filter((a) =>
+          (a.agent_version && a.agent_version !== latestAgentVer) ||
+          (latestSupVer && a.supervisor_version !== latestSupVer)
+        ).
         map((a) => ({
           name: a.name,
           version: a.agent_version || 'N/A',
+          supervisorVersion: a.supervisor_version || 'N/A',
           client: (a.clients as any)?.name || 'Sem cliente'
         }));
 
@@ -258,6 +286,109 @@ export default function SettingsPage() {
       console.error('Error calculating checksum:', error);
     } finally {
       setCalculatingChecksum(false);
+    }
+  };
+
+  const handleSupervisorFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.tar.gz')) {
+      toast.error('Selecione um arquivo .tar.gz');
+      return;
+    }
+
+    setSelectedSupervisorFile(file);
+    setCalculatingSupervisorChecksum(true);
+
+    try {
+      const checksum = await calculateSHA256(file);
+      setSupervisorChecksum(checksum);
+    } catch (error) {
+      toast.error('Erro ao calcular checksum');
+    } finally {
+      setCalculatingSupervisorChecksum(false);
+    }
+  };
+
+  const handlePublishSupervisorUpdate = async () => {
+    if (!selectedSupervisorFile || !newSupervisorVersion) {
+      toast.error('Selecione um arquivo e informe a versão');
+      return;
+    }
+
+    if (!supervisorChecksum) {
+      toast.error('Aguarde o cálculo do checksum');
+      return;
+    }
+
+    setPublishingSupervisorUpdate(true);
+    try {
+      const versionedFilename = `iscope-supervisor-${newSupervisorVersion}.tar.gz`;
+      const { error: uploadError } = await supabase.storage.
+      from('agent-releases').
+      upload(versionedFilename, selectedSupervisorFile, {
+        upsert: true,
+        contentType: 'application/gzip'
+      });
+
+      if (uploadError) throw uploadError;
+
+      const { error: latestUploadError } = await supabase.storage.
+      from('agent-releases').
+      upload('iscope-supervisor-latest.tar.gz', selectedSupervisorFile, {
+        upsert: true,
+        contentType: 'application/gzip'
+      });
+
+      if (latestUploadError) {
+        console.error('Error uploading supervisor latest:', latestUploadError);
+        toast.warning('Versão publicada, mas erro ao atualizar arquivo latest');
+      }
+
+      const settings = [
+      { key: 'supervisor_latest_version', value: newSupervisorVersion, description: 'Versão mais recente do supervisor' },
+      { key: 'supervisor_update_checksum', value: supervisorChecksum, description: 'Checksum SHA256 do pacote do supervisor' },
+      { key: 'supervisor_force_update', value: supervisorForceUpdate, description: 'Forçar atualização do supervisor' }];
+
+      for (const setting of settings) {
+        const { data: updateData, error: updateError } = await supabase.
+        from('system_settings').
+        update({
+          value: setting.value,
+          updated_by: user?.id,
+          updated_at: new Date().toISOString()
+        }).
+        eq('key', setting.key).
+        select();
+
+        if (!updateError && (!updateData || updateData.length === 0)) {
+          await supabase.
+          from('system_settings').
+          insert({
+            key: setting.key,
+            value: setting.value,
+            updated_by: user?.id,
+            description: setting.description
+          });
+        }
+      }
+
+      toast.success(`Supervisor v${newSupervisorVersion} publicado com sucesso!`);
+      setSupervisorLatestVersion(newSupervisorVersion);
+      setNewSupervisorVersion('');
+      setSelectedSupervisorFile(null);
+      setSupervisorChecksum('');
+
+      const fileInput = document.getElementById('supervisorPackageFile') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+
+      await loadAgentStats();
+    } catch (error) {
+      console.error('Error publishing supervisor update:', error);
+      toast.error('Erro ao publicar atualização do supervisor');
+    } finally {
+      setPublishingSupervisorUpdate(false);
     }
   };
 
@@ -580,42 +711,51 @@ export default function SettingsPage() {
                       Gerenciamento de Atualizações
                     </CardTitle>
                     <CardDescription>
-                      Publique novas versões do agent para atualização automática
+                      Publique novas versões do Agent e Supervisor para atualização automática
                     </CardDescription>
                   </div>
-                  {agentLatestVersion &&
-                  <Badge variant="outline" className="text-sm">
-                      Versão atual: v{agentLatestVersion}
-                    </Badge>
-                  }
+                  <div className="flex gap-2">
+                    {agentLatestVersion &&
+                    <Badge variant="outline" className="text-sm">
+                        Agent: v{agentLatestVersion}
+                      </Badge>
+                    }
+                    {supervisorLatestVersion &&
+                    <Badge variant="outline" className="text-sm">
+                        Supervisor: v{supervisorLatestVersion}
+                      </Badge>
+                    }
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Publicar Agent */}
                 <div className="space-y-4 p-4 border rounded-lg">
-                  <h4 className="font-medium">Publicar Nova Versão</h4>
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Bot className="w-4 h-4" />
+                    Publicar Agent
+                  </h4>
                   
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="newVersion">Versão</Label>
                       <Input
                         id="newVersion"
-                        placeholder="1.1.0"
+                        placeholder="1.4.0"
                         value={newVersion}
                         onChange={(e) => setNewVersion(e.target.value)} />
-
                       <p className="text-xs text-muted-foreground">
-                        Formato semântico: major.minor.patch (ex: 1.2.0)
+                        Formato semântico: major.minor.patch
                       </p>
                     </div>
                     
                     <div className="space-y-2">
-                      <Label htmlFor="agentPackageFile">Pacote (.tar.gz)</Label>
+                      <Label htmlFor="agentPackageFile">Pacote do Agent (.tar.gz)</Label>
                       <Input
                         id="agentPackageFile"
                         type="file"
                         accept=".tar.gz,.gz"
                         onChange={handleFileSelect} />
-
                       {selectedFile &&
                       <p className="text-xs text-muted-foreground">
                           Arquivo: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
@@ -646,7 +786,6 @@ export default function SettingsPage() {
                       id="forceUpdate"
                       checked={agentForceUpdate}
                       onCheckedChange={setAgentForceUpdate} />
-
                     <Label htmlFor="forceUpdate" className="cursor-pointer">
                       Forçar atualização (ignorar tarefas pendentes)
                     </Label>
@@ -656,16 +795,89 @@ export default function SettingsPage() {
                     onClick={handlePublishUpdate}
                     disabled={!selectedFile || !newVersion || publishingUpdate || calculatingChecksum}
                     className="w-full sm:w-auto">
-
                     {publishingUpdate ?
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" /> :
-
                     <Upload className="w-4 h-4 mr-2" />
                     }
-                    Publicar Atualização
+                    Publicar Agent
                   </Button>
                 </div>
 
+                {/* Publicar Supervisor */}
+                <div className="space-y-4 p-4 border rounded-lg">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Layers className="w-4 h-4" />
+                    Publicar Supervisor
+                  </h4>
+                  
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="newSupervisorVersion">Versão</Label>
+                      <Input
+                        id="newSupervisorVersion"
+                        placeholder="1.0.1"
+                        value={newSupervisorVersion}
+                        onChange={(e) => setNewSupervisorVersion(e.target.value)} />
+                      <p className="text-xs text-muted-foreground">
+                        Formato semântico: major.minor.patch
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="supervisorPackageFile">Pacote do Supervisor (.tar.gz)</Label>
+                      <Input
+                        id="supervisorPackageFile"
+                        type="file"
+                        accept=".tar.gz,.gz"
+                        onChange={handleSupervisorFileSelect} />
+                      {selectedSupervisorFile &&
+                      <p className="text-xs text-muted-foreground">
+                          Arquivo: {selectedSupervisorFile.name} ({(selectedSupervisorFile.size / 1024 / 1024).toFixed(2)} MB)
+                        </p>
+                      }
+                    </div>
+                  </div>
+
+                  {calculatingSupervisorChecksum &&
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Calculando checksum...</span>
+                    </div>
+                  }
+
+                  {supervisorChecksum && !calculatingSupervisorChecksum &&
+                  <div className="flex items-center gap-2 text-sm">
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                      <span className="text-muted-foreground">SHA256:</span>
+                      <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                        {supervisorChecksum.substring(0, 32)}...
+                      </code>
+                    </div>
+                  }
+
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="supervisorForceUpdate"
+                      checked={supervisorForceUpdate}
+                      onCheckedChange={setSupervisorForceUpdate} />
+                    <Label htmlFor="supervisorForceUpdate" className="cursor-pointer">
+                      Forçar atualização do Supervisor
+                    </Label>
+                  </div>
+
+                  <Button
+                    onClick={handlePublishSupervisorUpdate}
+                    disabled={!selectedSupervisorFile || !newSupervisorVersion || publishingSupervisorUpdate || calculatingSupervisorChecksum}
+                    className="w-full sm:w-auto">
+                    {publishingSupervisorUpdate ?
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> :
+                    <Upload className="w-4 h-4 mr-2" />
+                    }
+                    Publicar Supervisor
+                  </Button>
+                </div>
+
+                {/* Status dos Agents */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="font-medium">Status dos Agents</h4>
@@ -674,7 +886,6 @@ export default function SettingsPage() {
                       size="sm"
                       onClick={loadAgentStats}
                       className="h-8">
-
                       <RefreshCw className="w-4 h-4" />
                     </Button>
                   </div>
@@ -684,9 +895,11 @@ export default function SettingsPage() {
                       <CheckCircle className="w-5 h-5 text-green-500" />
                       <div>
                         <p className="font-medium">{agentStats.upToDate} atualizados</p>
-                        {agentLatestVersion &&
-                        <p className="text-xs text-muted-foreground">v{agentLatestVersion}</p>
-                        }
+                        <p className="text-xs text-muted-foreground">
+                          {agentLatestVersion && `Agent v${agentLatestVersion}`}
+                          {agentLatestVersion && supervisorLatestVersion && ' | '}
+                          {supervisorLatestVersion && `Sup v${supervisorLatestVersion}`}
+                        </p>
                       </div>
                     </div>
                     
@@ -704,10 +917,11 @@ export default function SettingsPage() {
                       <p className="text-sm text-muted-foreground">Agents desatualizados:</p>
                       <ul className="space-y-1">
                         {agentStats.outdated.map((agent, i) =>
-                      <li key={i} className="flex items-center gap-2 text-sm">
+                      <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
                             <span className="w-2 h-2 rounded-full bg-amber-500" />
                             <span>{agent.name}</span>
-                            <Badge variant="outline" className="text-xs">v{agent.version}</Badge>
+                            <Badge variant="outline" className="text-xs">Agent v{agent.version}</Badge>
+                            <Badge variant="outline" className="text-xs">Sup v{agent.supervisorVersion}</Badge>
                             <span className="text-muted-foreground">- {agent.client}</span>
                           </li>
                       )}
