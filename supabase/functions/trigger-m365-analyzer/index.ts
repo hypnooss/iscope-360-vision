@@ -33,21 +33,33 @@ Deno.serve(async (req) => {
 
     console.log(`[trigger-m365-analyzer] Starting for tenant: ${tenant_record_id}`);
 
-    // Fetch tenant with agent
+    // Fetch tenant
     const { data: tenant, error: tenantError } = await supabase
       .from('m365_tenants')
-      .select('id, display_name, tenant_domain, tenant_id, client_id, agent_id')
+      .select('id, display_name, tenant_domain, tenant_id, client_id')
       .eq('id', tenant_record_id)
       .single();
 
     if (tenantError || !tenant) {
+      console.error('[trigger-m365-analyzer] Tenant lookup error:', tenantError);
       return new Response(
         JSON.stringify({ success: false, error: 'Tenant not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    if (!tenant.agent_id) {
+    // Fetch agent from m365_tenant_agents
+    const { data: tenantAgent } = await supabase
+      .from('m365_tenant_agents')
+      .select('agent_id')
+      .eq('tenant_record_id', tenant_record_id)
+      .eq('enabled', true)
+      .limit(1)
+      .maybeSingle();
+
+    const agentId = tenantAgent?.agent_id;
+
+    if (!agentId) {
       return new Response(
         JSON.stringify({ success: false, error: 'Tenant sem agent configurado' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
