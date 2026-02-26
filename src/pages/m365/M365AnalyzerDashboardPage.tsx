@@ -536,7 +536,7 @@ export default function M365AnalyzerDashboardPage() {
                 <CardHeader><CardTitle className="text-sm">Usuários em Risco</CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {m.compromise.topRiskUsers.slice(0, 8).map((u, i) => (
+                    {(m.compromise?.topRiskUsers ?? []).slice(0, 8).map((u, i) => (
                       <div key={i} className="py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
                         <div className="flex items-center gap-3">
                           <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">{i + 1}</span>
