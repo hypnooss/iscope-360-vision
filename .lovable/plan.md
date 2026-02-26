@@ -1,52 +1,30 @@
+## M365 Analyzer - Plano de Implementação
 
+### ✅ Fase 1: Infraestrutura e Coleta (Backend) — CONCLUÍDA
 
-## Problema: Auto Refresh não funciona de verdade
+- [x] Tabelas criadas: `m365_analyzer_snapshots`, `m365_analyzer_schedules`, `m365_user_baselines`
+- [x] Enum `m365_analyzer` adicionado ao `agent_task_type`
+- [x] RLS policies configuradas para todas as tabelas
+- [x] Edge Function: `trigger-m365-analyzer` — gatilho de snapshots
+- [x] Edge Function: `m365-analyzer` — engine de processamento com 7 módulos
+- [x] `run-scheduled-analyses` atualizado com suporte a `m365_analyzer_schedules`
+- [x] `config.toml` atualizado
 
-### Causa raiz
+### 🔲 Fase 2: Frontend - Dashboard e Visualização
 
-No `useEffect` (linha 90-105), o intervalo de polling é criado **dentro** do bloco `if (!initialLoadDone.current)`. Quando o React limpa o efeito (por mudança de `user` ou `role`), o `clearInterval` roda, mas o intervalo **nunca é recriado** porque `initialLoadDone.current` já é `true`.
+- [ ] Tipos TypeScript: `src/types/m365AnalyzerInsights.ts`
+- [ ] Hook: `src/hooks/useM365AnalyzerData.ts`
+- [ ] Página: `src/pages/m365/M365AnalyzerDashboardPage.tsx`
+- [ ] Navegação: rota em `App.tsx` + menu em `AppLayout.tsx`
 
-```text
-1. Montagem → initialLoadDone = false → cria interval ✓
-2. user/role muda → cleanup → clearInterval ✓
-3. Re-executa effect → initialLoadDone = true → NÃO cria interval ✗
-4. Polling morto para sempre
-```
+### 🔲 Fase 3: Baseline Comportamental e Correlação
 
-### Correção
+- [ ] Engine de baseline com média móvel ponderada
+- [ ] Correlação entre eventos (login + envio + regras)
+- [ ] Comparação entre snapshots na UI
 
-**Arquivo:** `src/pages/admin/SettingsPage.tsx`
+### 🔲 Fase 4: Refinamentos e Subpáginas
 
-Separar o intervalo de polling em seu próprio `useEffect`, independente do `initialLoadDone`:
-
-```js
-// Effect 1: carga inicial (uma vez)
-useEffect(() => {
-  if (user && role === 'super_admin' && !initialLoadDone.current) {
-    initialLoadDone.current = true;
-    loadApiKeys();
-    loadAgentSettings();
-    loadAgentUpdateSettings();
-    loadAgentStats();
-    setLoading(false);
-  }
-}, [user, role]);
-
-// Effect 2: polling contínuo (sempre ativo enquanto logado como super_admin)
-useEffect(() => {
-  if (!user || role !== 'super_admin') return;
-
-  const interval = setInterval(() => {
-    loadAgentStats();
-  }, 5000);
-
-  return () => clearInterval(interval);
-}, [user, role]);
-```
-
-Isso garante que o intervalo de 5s **sempre** existe enquanto o super_admin estiver na página, independente de re-renders.
-
-### Resultado esperado
-
-Ao atualizar um Agent no servidor, o contador sobe de 6 para 7 em no máximo 5 segundos, sem precisar recarregar a página.
-
+- [ ] Subpágina `/scope-m365/analyzer/insights`
+- [ ] Subpágina `/scope-m365/analyzer/critical`
+- [ ] Integração com relatórios PDF
