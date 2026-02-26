@@ -36,7 +36,7 @@ from agent.state import AgentState
 from agent.api_client import APIClient
 from agent.auth import AuthManager
 from agent.heartbeat import AgentHeartbeat
-from agent.logger import setup_logger
+from supervisor.logger import setup_supervisor_logger
 from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
 from agent.realtime_commands import ShellCommandPoller
@@ -70,7 +70,7 @@ def _read_worker_version_from_disk() -> str | None:
 
 
 def main():
-    logger = setup_logger()
+    logger = setup_supervisor_logger()
     logger.info(f"=== iScope Supervisor v{get_supervisor_version()} ===")
 
     if not API_BASE_URL:
