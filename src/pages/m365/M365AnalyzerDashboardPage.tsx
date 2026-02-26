@@ -523,7 +523,7 @@ export default function M365AnalyzerDashboardPage() {
                 </CardContent>
               </Card>
             )}
-            {m.exfiltration.topExternalDomains.length > 0 && (
+            {(m.exfiltration?.topExternalDomains?.length ?? 0) > 0 && (
               <Card className="glass-card">
                 <CardHeader><CardTitle className="text-sm">Top Domínios Externos (Envio)</CardTitle></CardHeader>
                 <CardContent>
