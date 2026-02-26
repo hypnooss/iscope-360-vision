@@ -1,21 +1,21 @@
 
 
-## Limitar lista de desatualizados com ScrollArea (max 5 visíveis)
+## Corrigir ScrollArea e remover botão refresh redundante
 
-### Mudança
+### Problemas identificados
 
-Envolver a lista de agents/supervisors desatualizados em um `ScrollArea` com altura máxima para ~5 itens, adicionando barra de rolagem quando houver mais.
+1. **ScrollArea não funciona com `max-h`** — O componente Radix ScrollArea precisa de altura fixa (`h-[200px]`) para ativar o overflow interno. `max-h` não funciona porque o Viewport do Radix não calcula o overflow corretamente.
 
-### Arquivo: `src/pages/admin/SettingsPage.tsx`
+2. **Botão refresh desnecessário** — Já existe um `setInterval` de 5s em linha 98-102 que chama `loadAgentStats()` automaticamente. O botão manual é redundante; vou removê-lo.
 
-**1. Import:** Adicionar `ScrollArea` de `@/components/ui/scroll-area`.
+### Mudanças em `src/pages/admin/SettingsPage.tsx`
 
-**2. Seção "Agents desatualizados" (linhas 857-871):**
-Envolver o `<ul>` dentro de um `<ScrollArea className="max-h-[200px]">` para limitar a 5 itens visíveis (~40px por item).
+| Local | Mudança |
+|-------|---------|
+| Linha 833-835 | Remover o `<Button>` de refresh do "Status dos Agents" |
+| Linha 861 | Trocar `max-h-[200px]` por `h-[200px]` no ScrollArea de agents |
+| Linha 987 | Trocar `max-h-[200px]` por `h-[200px]` no ScrollArea de supervisors |
+| Buscar botão refresh equivalente nos supervisors | Remover também, se existir |
 
-**3. Seção "Supervisors desatualizados" (linhas 981-994):**
-Mesma alteração — envolver o `<ul>` em `<ScrollArea className="max-h-[200px]">`.
-
-### Resultado
-Ambas as listas mostram no máximo 5 itens com scroll vertical quando há mais registros.
+O auto-refresh de 5s já garante que a lista se atualiza sozinha conforme os agents recebem updates.
 
