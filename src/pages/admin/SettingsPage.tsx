@@ -66,7 +66,13 @@ export default function SettingsPage() {
   const [agentStats, setAgentStats] = useState<{
     total: number;
     upToDate: number;
-    outdated: {name: string;version: string;supervisorVersion: string;client: string;}[];
+    outdated: {name: string; version: string; client: string;}[];
+  }>({ total: 0, upToDate: 0, outdated: [] });
+
+  const [supervisorStats, setSupervisorStats] = useState<{
+    total: number;
+    upToDate: number;
+    outdated: {name: string; supervisorVersion: string; client: string;}[];
   }>({ total: 0, upToDate: 0, outdated: [] });
 
   useEffect(() => {
@@ -232,26 +238,40 @@ export default function SettingsPage() {
       });
 
       if (agents) {
-        const upToDate = agents.filter((a) =>
-          a.agent_version === latestAgentVer &&
-          (!latestSupVer || a.supervisor_version === latestSupVer)
-        ).length;
-        const outdated = agents.
-        filter((a) =>
-          (a.agent_version && a.agent_version !== latestAgentVer) ||
-          (latestSupVer && a.supervisor_version !== latestSupVer)
-        ).
-        map((a) => ({
-          name: a.name,
-          version: a.agent_version || 'N/A',
-          supervisorVersion: a.supervisor_version || 'N/A',
-          client: (a.clients as any)?.name || 'Sem cliente'
-        }));
+        // Agent stats (only agent_version)
+        const agentUpToDate = agents.filter((a) => a.agent_version === latestAgentVer).length;
+        const agentOutdated = agents
+          .filter((a) => a.agent_version && a.agent_version !== latestAgentVer)
+          .map((a) => ({
+            name: a.name,
+            version: a.agent_version || 'N/A',
+            client: (a.clients as any)?.name || 'Sem cliente'
+          }));
 
         setAgentStats({
           total: agents.length,
-          upToDate,
-          outdated
+          upToDate: agentUpToDate,
+          outdated: agentOutdated
+        });
+
+        // Supervisor stats (only supervisor_version)
+        const supUpToDate = latestSupVer
+          ? agents.filter((a) => a.supervisor_version === latestSupVer).length
+          : agents.length;
+        const supOutdated = latestSupVer
+          ? agents
+              .filter((a) => a.supervisor_version && a.supervisor_version !== latestSupVer)
+              .map((a) => ({
+                name: a.name,
+                supervisorVersion: a.supervisor_version || 'N/A',
+                client: (a.clients as any)?.name || 'Sem cliente'
+              }))
+          : [];
+
+        setSupervisorStats({
+          total: agents.length,
+          upToDate: supUpToDate,
+          outdated: supOutdated
         });
       }
     } catch (error) {
@@ -728,212 +748,258 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Publicar Agent */}
-                <div className="space-y-4 p-4 border rounded-lg">
-                  <h4 className="font-medium flex items-center gap-2">
-                    <Bot className="w-4 h-4" />
-                    Publicar Agent
-                  </h4>
-                  
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="newVersion">Versão</Label>
-                      <Input
-                        id="newVersion"
-                        placeholder="1.4.0"
-                        value={newVersion}
-                        onChange={(e) => setNewVersion(e.target.value)} />
-                      <p className="text-xs text-muted-foreground">
-                        Formato semântico: major.minor.patch
-                      </p>
-                    </div>
+              <CardContent className="space-y-8">
+                {/* Agent Row: Publish + Status side by side */}
+                <div className="grid gap-6 lg:grid-cols-2">
+                  {/* Publicar Agent */}
+                  <div className="space-y-4 p-4 border rounded-lg">
+                    <h4 className="font-medium flex items-center gap-2">
+                      <Bot className="w-4 h-4" />
+                      Publicar Agent
+                    </h4>
                     
-                    <div className="space-y-2">
-                      <Label htmlFor="agentPackageFile">Pacote do Agent (.tar.gz)</Label>
-                      <Input
-                        id="agentPackageFile"
-                        type="file"
-                        accept=".tar.gz,.gz"
-                        onChange={handleFileSelect} />
-                      {selectedFile &&
-                      <p className="text-xs text-muted-foreground">
-                          Arquivo: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="newVersion">Versão</Label>
+                        <Input
+                          id="newVersion"
+                          placeholder="1.4.0"
+                          value={newVersion}
+                          onChange={(e) => setNewVersion(e.target.value)} />
+                        <p className="text-xs text-muted-foreground">
+                          Formato semântico: major.minor.patch
                         </p>
-                      }
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="agentPackageFile">Pacote do Agent (.tar.gz)</Label>
+                        <Input
+                          id="agentPackageFile"
+                          type="file"
+                          accept=".tar.gz,.gz"
+                          onChange={handleFileSelect} />
+                        {selectedFile &&
+                        <p className="text-xs text-muted-foreground">
+                            Arquivo: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                          </p>
+                        }
+                      </div>
                     </div>
-                  </div>
 
-                  {calculatingChecksum &&
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Calculando checksum...</span>
-                    </div>
-                  }
-
-                  {calculatedChecksum && !calculatingChecksum &&
-                  <div className="flex items-center gap-2 text-sm">
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                      <span className="text-muted-foreground">SHA256:</span>
-                      <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
-                        {calculatedChecksum.substring(0, 32)}...
-                      </code>
-                    </div>
-                  }
-
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="forceUpdate"
-                      checked={agentForceUpdate}
-                      onCheckedChange={setAgentForceUpdate} />
-                    <Label htmlFor="forceUpdate" className="cursor-pointer">
-                      Forçar atualização (ignorar tarefas pendentes)
-                    </Label>
-                  </div>
-
-                  <Button
-                    onClick={handlePublishUpdate}
-                    disabled={!selectedFile || !newVersion || publishingUpdate || calculatingChecksum}
-                    className="w-full sm:w-auto">
-                    {publishingUpdate ?
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> :
-                    <Upload className="w-4 h-4 mr-2" />
+                    {calculatingChecksum &&
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Calculando checksum...</span>
+                      </div>
                     }
-                    Publicar Agent
-                  </Button>
-                </div>
 
-                {/* Publicar Supervisor */}
-                <div className="space-y-4 p-4 border rounded-lg">
-                  <h4 className="font-medium flex items-center gap-2">
-                    <Layers className="w-4 h-4" />
-                    Publicar Supervisor
-                  </h4>
-                  
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="newSupervisorVersion">Versão</Label>
-                      <Input
-                        id="newSupervisorVersion"
-                        placeholder="1.0.1"
-                        value={newSupervisorVersion}
-                        onChange={(e) => setNewSupervisorVersion(e.target.value)} />
-                      <p className="text-xs text-muted-foreground">
-                        Formato semântico: major.minor.patch
-                      </p>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="supervisorPackageFile">Pacote do Supervisor (.tar.gz)</Label>
-                      <Input
-                        id="supervisorPackageFile"
-                        type="file"
-                        accept=".tar.gz,.gz"
-                        onChange={handleSupervisorFileSelect} />
-                      {selectedSupervisorFile &&
-                      <p className="text-xs text-muted-foreground">
-                          Arquivo: {selectedSupervisorFile.name} ({(selectedSupervisorFile.size / 1024 / 1024).toFixed(2)} MB)
-                        </p>
-                      }
-                    </div>
-                  </div>
-
-                  {calculatingSupervisorChecksum &&
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Calculando checksum...</span>
-                    </div>
-                  }
-
-                  {supervisorChecksum && !calculatingSupervisorChecksum &&
-                  <div className="flex items-center gap-2 text-sm">
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                      <span className="text-muted-foreground">SHA256:</span>
-                      <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
-                        {supervisorChecksum.substring(0, 32)}...
-                      </code>
-                    </div>
-                  }
-
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="supervisorForceUpdate"
-                      checked={supervisorForceUpdate}
-                      onCheckedChange={setSupervisorForceUpdate} />
-                    <Label htmlFor="supervisorForceUpdate" className="cursor-pointer">
-                      Forçar atualização do Supervisor
-                    </Label>
-                  </div>
-
-                  <Button
-                    onClick={handlePublishSupervisorUpdate}
-                    disabled={!selectedSupervisorFile || !newSupervisorVersion || publishingSupervisorUpdate || calculatingSupervisorChecksum}
-                    className="w-full sm:w-auto">
-                    {publishingSupervisorUpdate ?
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> :
-                    <Upload className="w-4 h-4 mr-2" />
+                    {calculatedChecksum && !calculatingChecksum &&
+                    <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                        <span className="text-muted-foreground">SHA256:</span>
+                        <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                          {calculatedChecksum.substring(0, 32)}...
+                        </code>
+                      </div>
                     }
-                    Publicar Supervisor
-                  </Button>
-                </div>
 
-                {/* Status dos Agents */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-medium">Status dos Agents</h4>
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        id="forceUpdate"
+                        checked={agentForceUpdate}
+                        onCheckedChange={setAgentForceUpdate} />
+                      <Label htmlFor="forceUpdate" className="cursor-pointer">
+                        Forçar atualização (ignorar tarefas pendentes)
+                      </Label>
+                    </div>
+
                     <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={loadAgentStats}
-                      className="h-8">
-                      <RefreshCw className="w-4 h-4" />
+                      onClick={handlePublishUpdate}
+                      disabled={!selectedFile || !newVersion || publishingUpdate || calculatingChecksum}
+                      className="w-full sm:w-auto">
+                      {publishingUpdate ?
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> :
+                      <Upload className="w-4 h-4 mr-2" />
+                      }
+                      Publicar Agent
                     </Button>
                   </div>
-                  
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="flex items-center gap-3 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                      <div>
-                        <p className="font-medium">{agentStats.upToDate} atualizados</p>
-                        <p className="text-xs text-muted-foreground">
-                          {agentLatestVersion && `Agent v${agentLatestVersion}`}
-                          {agentLatestVersion && supervisorLatestVersion && ' | '}
-                          {supervisorLatestVersion && `Sup v${supervisorLatestVersion}`}
-                        </p>
-                      </div>
+
+                  {/* Status dos Agents */}
+                  <div className="space-y-4 p-4 border rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium">Status dos Agents</h4>
+                      <Button variant="ghost" size="sm" onClick={loadAgentStats} className="h-8">
+                        <RefreshCw className="w-4 h-4" />
+                      </Button>
                     </div>
                     
-                    <div className="flex items-center gap-3 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
-                      <AlertTriangle className="w-5 h-5 text-amber-500" />
-                      <div>
-                        <p className="font-medium">{agentStats.outdated.length} desatualizados</p>
-                        <p className="text-xs text-muted-foreground">Aguardando update</p>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                        <CheckCircle className="w-5 h-5 text-green-500" />
+                        <div>
+                          <p className="font-medium">{agentStats.upToDate} atualizados</p>
+                          <p className="text-xs text-muted-foreground">
+                            {agentLatestVersion ? `Agent v${agentLatestVersion}` : 'Versão não definida'}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-3 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                        <AlertTriangle className="w-5 h-5 text-amber-500" />
+                        <div>
+                          <p className="font-medium">{agentStats.outdated.length} desatualizados</p>
+                          <p className="text-xs text-muted-foreground">Aguardando update</p>
+                        </div>
                       </div>
                     </div>
+
+                    {agentStats.outdated.length > 0 &&
+                    <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">Agents desatualizados:</p>
+                        <ul className="space-y-1">
+                          {agentStats.outdated.map((agent, i) =>
+                        <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
+                              <span className="w-2 h-2 rounded-full bg-amber-500" />
+                              <span>{agent.name}</span>
+                              <Badge variant="outline" className="text-xs">Agent v{agent.version}</Badge>
+                              <span className="text-muted-foreground">- {agent.client}</span>
+                            </li>
+                        )}
+                        </ul>
+                      </div>
+                    }
+
+                    {agentStats.total === 0 &&
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                        Nenhum agent registrado
+                      </p>
+                    }
+                  </div>
+                </div>
+
+                {/* Supervisor Row: Publish + Status side by side */}
+                <div className="grid gap-6 lg:grid-cols-2">
+                  {/* Publicar Supervisor */}
+                  <div className="space-y-4 p-4 border rounded-lg">
+                    <h4 className="font-medium flex items-center gap-2">
+                      <Layers className="w-4 h-4" />
+                      Publicar Supervisor
+                    </h4>
+                    
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="newSupervisorVersion">Versão</Label>
+                        <Input
+                          id="newSupervisorVersion"
+                          placeholder="1.0.1"
+                          value={newSupervisorVersion}
+                          onChange={(e) => setNewSupervisorVersion(e.target.value)} />
+                        <p className="text-xs text-muted-foreground">
+                          Formato semântico: major.minor.patch
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="supervisorPackageFile">Pacote do Supervisor (.tar.gz)</Label>
+                        <Input
+                          id="supervisorPackageFile"
+                          type="file"
+                          accept=".tar.gz,.gz"
+                          onChange={handleSupervisorFileSelect} />
+                        {selectedSupervisorFile &&
+                        <p className="text-xs text-muted-foreground">
+                            Arquivo: {selectedSupervisorFile.name} ({(selectedSupervisorFile.size / 1024 / 1024).toFixed(2)} MB)
+                          </p>
+                        }
+                      </div>
+                    </div>
+
+                    {calculatingSupervisorChecksum &&
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Calculando checksum...</span>
+                      </div>
+                    }
+
+                    {supervisorChecksum && !calculatingSupervisorChecksum &&
+                    <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                        <span className="text-muted-foreground">SHA256:</span>
+                        <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                          {supervisorChecksum.substring(0, 32)}...
+                        </code>
+                      </div>
+                    }
+
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        id="supervisorForceUpdate"
+                        checked={supervisorForceUpdate}
+                        onCheckedChange={setSupervisorForceUpdate} />
+                      <Label htmlFor="supervisorForceUpdate" className="cursor-pointer">
+                        Forçar atualização do Supervisor
+                      </Label>
+                    </div>
+
+                    <Button
+                      onClick={handlePublishSupervisorUpdate}
+                      disabled={!selectedSupervisorFile || !newSupervisorVersion || publishingSupervisorUpdate || calculatingSupervisorChecksum}
+                      className="w-full sm:w-auto">
+                      {publishingSupervisorUpdate ?
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> :
+                      <Upload className="w-4 h-4 mr-2" />
+                      }
+                      Publicar Supervisor
+                    </Button>
                   </div>
 
-                  {agentStats.outdated.length > 0 &&
-                  <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">Agents desatualizados:</p>
-                      <ul className="space-y-1">
-                        {agentStats.outdated.map((agent, i) =>
-                      <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
-                            <span className="w-2 h-2 rounded-full bg-amber-500" />
-                            <span>{agent.name}</span>
-                            <Badge variant="outline" className="text-xs">Agent v{agent.version}</Badge>
-                            <Badge variant="outline" className="text-xs">Sup v{agent.supervisorVersion}</Badge>
-                            <span className="text-muted-foreground">- {agent.client}</span>
-                          </li>
-                      )}
-                      </ul>
+                  {/* Status dos Supervisors */}
+                  <div className="space-y-4 p-4 border rounded-lg">
+                    <h4 className="font-medium">Status dos Supervisors</h4>
+                    
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                        <CheckCircle className="w-5 h-5 text-green-500" />
+                        <div>
+                          <p className="font-medium">{supervisorStats.upToDate} atualizados</p>
+                          <p className="text-xs text-muted-foreground">
+                            {supervisorLatestVersion ? `Sup v${supervisorLatestVersion}` : 'Versão não definida'}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-3 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                        <AlertTriangle className="w-5 h-5 text-amber-500" />
+                        <div>
+                          <p className="font-medium">{supervisorStats.outdated.length} desatualizados</p>
+                          <p className="text-xs text-muted-foreground">Aguardando update</p>
+                        </div>
+                      </div>
                     </div>
-                  }
 
-                  {agentStats.total === 0 &&
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                      Nenhum agent registrado no sistema
-                    </p>
-                  }
+                    {supervisorStats.outdated.length > 0 &&
+                    <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">Supervisors desatualizados:</p>
+                        <ul className="space-y-1">
+                          {supervisorStats.outdated.map((agent, i) =>
+                        <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
+                              <span className="w-2 h-2 rounded-full bg-amber-500" />
+                              <span>{agent.name}</span>
+                              <Badge variant="outline" className="text-xs">Sup v{agent.supervisorVersion}</Badge>
+                              <span className="text-muted-foreground">- {agent.client}</span>
+                            </li>
+                        )}
+                        </ul>
+                      </div>
+                    }
+
+                    {supervisorStats.total === 0 &&
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                        Nenhum agent registrado
+                      </p>
+                    }
+                  </div>
                 </div>
               </CardContent>
             </Card>
