@@ -1,0 +1,122 @@
+// M365 Analyzer - Security Intelligence Types
+
+export type M365AnalyzerSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+export type M365AnalyzerCategory =
+  | 'phishing_threats'
+  | 'mailbox_capacity'
+  | 'behavioral_baseline'
+  | 'account_compromise'
+  | 'suspicious_rules'
+  | 'exfiltration'
+  | 'operational_risks';
+
+export interface M365AnalyzerInsight {
+  id: string;
+  category: M365AnalyzerCategory;
+  name: string;
+  description: string;
+  severity: M365AnalyzerSeverity;
+  details?: string;
+  affectedUsers?: string[];
+  count?: number;
+  recommendation?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface M365AnalyzerSummary {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+}
+
+export interface M365AnalyzerMetrics {
+  phishing: {
+    totalBlocked: number;
+    quarantined: number;
+    topAttackedUsers: { user: string; count: number }[];
+    topSenderDomains: { domain: string; count: number }[];
+  };
+  mailbox: {
+    totalMailboxes: number;
+    above80Pct: number;
+    above90Pct: number;
+    topMailboxes: { user: string; usedGB: number; pct: number }[];
+  };
+  behavioral: {
+    anomalousUsers: number;
+    deviations: { user: string; metric: string; current: number; baseline: number; deviationPct: number }[];
+  };
+  compromise: {
+    suspiciousLogins: number;
+    correlatedAlerts: number;
+    topRiskUsers: { user: string; reasons: string[] }[];
+  };
+  rules: {
+    externalForwards: number;
+    autoDelete: number;
+    suspiciousRules: { user: string; ruleName: string; action: string; destination?: string }[];
+  };
+  exfiltration: {
+    highVolumeExternal: number;
+    topExternalDomains: { domain: string; count: number; attachments: number }[];
+  };
+  operational: {
+    smtpAuthEnabled: number;
+    legacyProtocols: number;
+    inactiveWithActivity: number;
+    fullAccessGrants: number;
+  };
+}
+
+export interface M365AnalyzerSnapshot {
+  id: string;
+  tenant_record_id: string;
+  client_id: string;
+  agent_task_id?: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  period_start?: string;
+  period_end?: string;
+  score?: number;
+  summary: M365AnalyzerSummary;
+  insights: M365AnalyzerInsight[];
+  metrics: M365AnalyzerMetrics;
+  created_at: string;
+}
+
+export const M365_ANALYZER_CATEGORY_LABELS: Record<M365AnalyzerCategory, string> = {
+  phishing_threats: 'Phishing e Ameaças',
+  mailbox_capacity: 'Capacidade de Mailbox',
+  behavioral_baseline: 'Baseline Comportamental',
+  account_compromise: 'Comprometimento de Conta',
+  suspicious_rules: 'Regras Suspeitas',
+  exfiltration: 'Exfiltração',
+  operational_risks: 'Riscos Operacionais',
+};
+
+export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
+  'phishing_threats',
+  'mailbox_capacity',
+  'behavioral_baseline',
+  'account_compromise',
+  'suspicious_rules',
+  'exfiltration',
+  'operational_risks',
+];
+
+export function groupM365AnalyzerInsightsByCategory(
+  insights: M365AnalyzerInsight[]
+): Record<M365AnalyzerCategory, M365AnalyzerInsight[]> {
+  const grouped = {} as Record<M365AnalyzerCategory, M365AnalyzerInsight[]>;
+  for (const cat of M365_ANALYZER_CATEGORIES) {
+    grouped[cat] = [];
+  }
+  for (const insight of insights) {
+    if (grouped[insight.category]) {
+      grouped[insight.category].push(insight);
+    }
+  }
+  return grouped;
+}
