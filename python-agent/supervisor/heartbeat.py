@@ -6,6 +6,10 @@ independently in the Supervisor process.
 
 Sends supervisor_version alongside agent_version so the backend
 can track both and signal cross-updates.
+
+IMPORTANT: The agent_version is resolved from disk at each tick
+(not from Python's import cache) to avoid stale version after
+in-place Worker updates.
 """
 
 from agent.heartbeat import AgentStopped
@@ -20,26 +24,39 @@ class SupervisorHeartbeatLoop:
         self.auth = auth
         self.logger = logger
 
-    def tick(self) -> dict:
+    def tick(self, agent_version: str | None = None) -> dict:
         """
         Send one heartbeat and return the response.
+
+        Args:
+            agent_version: The Worker version read from disk.
+                           If None, falls back to the in-memory import
+                           (which may be stale in long-lived Supervisor).
 
         Handles token refresh automatically.
         Returns the heartbeat response dict, or an error dict.
         """
+        sup_version = get_supervisor_version()
+
         try:
             # Refresh token proactively
             if not self.auth.is_access_token_valid():
                 self.logger.info("[Supervisor] Token próximo de expirar, renovando...")
                 self.auth.refresh_tokens()
 
-            result = self.heartbeat.send(
-                status="running",
-                supervisor_version=get_supervisor_version(),
-            )
+            # Pass explicit version so heartbeat doesn't use stale import cache
+            send_kwargs = {
+                "status": "running",
+                "supervisor_version": sup_version,
+            }
+            if agent_version:
+                send_kwargs["version"] = agent_version
+
+            result = self.heartbeat.send(**send_kwargs)
 
             self.logger.info(
                 f"[Supervisor] Heartbeat OK | "
+                f"agent={agent_version or '?'} sup={sup_version} | "
                 f"update={result.get('update_available')} | "
                 f"sup_update={result.get('supervisor_update_available', False)} | "
                 f"next={result.get('next_heartbeat_in', '?')}s"

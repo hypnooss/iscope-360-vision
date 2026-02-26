@@ -13,6 +13,7 @@ a manual update itself.
 """
 
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -43,6 +44,29 @@ from agent.realtime_commands import ShellCommandPoller
 # Cross-update paths
 SUPERVISOR_RESTART_FLAG = Path("/var/lib/iscope-agent/supervisor_restart.flag")
 PENDING_SUPERVISOR_UPDATE = Path("/var/lib/iscope-agent/pending_supervisor_update.json")
+
+# Regex to extract __version__ from agent/version.py on disk
+_VERSION_RE = re.compile(r'__version__\s*=\s*["\']([^"\']+)["\']')
+
+
+def _read_worker_version_from_disk() -> str | None:
+    """
+    Read the Worker's __version__ directly from disk, bypassing
+    Python's import cache. This is critical because the Supervisor
+    is a long-lived process that updates Worker files in-place
+    without restarting itself.
+
+    Returns the version string, or None on failure.
+    """
+    version_file = WORKER_INSTALL_DIR / "agent" / "version.py"
+    try:
+        content = version_file.read_text(encoding="utf-8")
+        m = _VERSION_RE.search(content)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return None
 
 
 def main():
@@ -101,7 +125,15 @@ def main():
             worker.stop()
             sys.exit(0)
 
-        result = hb_loop.tick()
+        # --- Resolve Worker version from disk (not import cache) ---
+        agent_version = _read_worker_version_from_disk()
+        if not agent_version:
+            # Fallback: use the (possibly stale) in-memory import
+            from agent.version import get_version
+            agent_version = get_version()
+            logger.warning(f"[Supervisor] Não foi possível ler versão do disco, usando fallback: {agent_version}")
+
+        result = hb_loop.tick(agent_version=agent_version)
 
         if "error" in result:
             consecutive_errors += 1
@@ -120,7 +152,7 @@ def main():
 
             # Handle AGENT update (Supervisor updates the Worker)
             if result.get("update_available") and result.get("update_info"):
-                _handle_update(result, updater, worker, logger)
+                _handle_update(result, updater, worker, agent_version, logger)
 
             # Handle SUPERVISOR update signal (write pending file for Worker to apply)
             if result.get("supervisor_update_available") and result.get("supervisor_update_info"):
@@ -177,18 +209,30 @@ def main():
         time.sleep(interval)
 
 
-def _handle_update(result: dict, updater: SupervisorUpdater, worker: WorkerManager, logger):
+def _handle_update(result: dict, updater: SupervisorUpdater, worker: WorkerManager,
+                   current_version: str, logger):
     """Process an AGENT update signal from the heartbeat (Supervisor updates Worker)."""
     update_info = result["update_info"]
-    version = update_info.get("version", "?")
+    target_version = update_info.get("version", "?")
 
-    logger.info(f"[Supervisor] Agent update disponível: v{version}")
+    # Guard: skip if Worker on disk is already at the target version
+    if current_version == target_version:
+        logger.info(
+            f"[Supervisor] Update skip | latest={target_version} "
+            f"current={current_version} action=skip (already on disk)"
+        )
+        return
+
+    logger.info(
+        f"[Supervisor] Update apply | latest={target_version} "
+        f"current={current_version} action=apply"
+    )
 
     success = updater.check_and_update(update_info, worker)
     if success:
-        logger.info(f"[Supervisor] Worker atualizado para v{version} com sucesso")
+        logger.info(f"[Supervisor] Worker atualizado para v{target_version} com sucesso")
     else:
-        logger.error(f"[Supervisor] Falha ao atualizar Worker para v{version}")
+        logger.error(f"[Supervisor] Falha ao atualizar Worker para v{target_version}")
 
 
 def _handle_supervisor_update_signal(result: dict, logger):
