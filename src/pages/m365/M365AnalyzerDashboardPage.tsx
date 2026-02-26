@@ -515,7 +515,7 @@ export default function M365AnalyzerDashboardPage() {
                 </CardContent>
               </Card>
             )}
-            {m.phishing.topSenderDomains.length > 0 && (
+            {(m.phishing?.topSenderDomains?.length ?? 0) > 0 && (
               <Card className="glass-card">
                 <CardHeader><CardTitle className="text-sm">Top Domínios Remetentes</CardTitle></CardHeader>
                 <CardContent>
