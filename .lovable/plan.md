@@ -1,162 +1,117 @@
 
 
-## Diagnostico real
+## Problema
 
-O log mostra claramente:
+Claro como agua. Vou resumir para confirmar:
 
-```text
-CGroup: /system.slice/iscope-supervisor.service
-        ├─2708036 /opt/iscope-agent/venv/bin/python -m supervisor.main
-        └─2708039 /opt/iscope-agent/venv/bin/python /opt/iscope-agent/main.py
-```
+1. **O Supervisor e o Agent compartilham o mesmo logger** — ambos chamam `setup_logger()` que usa `logging.getLogger("infrascope360")` e escreve no mesmo `AGENT_LOG_FILE`. Resultado: logs misturados num arquivo so.
 
-O Worker (main.py) roda como subprocesso do Supervisor. Isso e BY DESIGN na arquitetura atual — `WorkerManager.start()` usa `subprocess.Popen`. Quando o Supervisor morre, o Worker morre junto. Nao sao servicos independentes.
+2. **O Supervisor usa `from agent.logger import setup_logger`** — nao tem logger proprio. Ambos os processos escrevem em `/var/log/iscope-agent/agent.log`.
 
-Alem disso, `supervisor_version` e NULL para TODOS os 30+ agents no banco porque o codigo no host ainda nao envia esse campo (o fix no `heartbeat.py` so existe no repo, nao foi deployed).
+3. **Os unit files usam `StandardOutput=journal`** — no journald ja estao separados via `SyslogIdentifier` (`iscope-supervisor` vs `iscope-agent`). Mas o arquivo de log em disco (`/var/log/iscope-agent/agent.log`) mistura tudo porque ambos usam a mesma env var `AGENT_LOG_FILE`.
 
-## Plano: Separar em 2 servicos systemd independentes
+## Plano
 
-### Arquitetura alvo
+### 1. Criar logger separado para o Supervisor
 
-```text
-systemd
-├── iscope-supervisor.service (root)
-│   └── python -m supervisor.main
-│       - Heartbeat
-│       - Updates (download + replace)
-│       - Remote commands
-│       - Gerencia Worker via systemctl (nao subprocess)
-│
-└── iscope-agent.service (root)
-    └── python main.py
-        - Task execution
-        - Health file
-        - Cross-update (supervisor updates)
-```
-
-### 1. Reescrever `python-agent/supervisor/worker_manager.py`
-
-Substituir `subprocess.Popen` por `systemctl start/stop/restart iscope-agent`. Remover toda logica de subprocess, stdout pipe, PID file manual.
+**Arquivo:** `python-agent/supervisor/logger.py` (novo)
 
 ```python
-class WorkerManager:
-    def start(self):
-        subprocess.run(["systemctl", "start", "iscope-agent"], check=True)
+import logging
+import os
+import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
-    def stop(self):
-        subprocess.run(["systemctl", "stop", "iscope-agent"], check=True)
 
-    def restart(self):
-        subprocess.run(["systemctl", "restart", "iscope-agent"], check=True)
+def setup_supervisor_logger():
+    """Logger dedicado do Supervisor. Arquivo via SUPERVISOR_LOG_FILE."""
 
-    def is_running(self):
-        result = subprocess.run(
-            ["systemctl", "is-active", "iscope-agent"],
-            capture_output=True, text=True
-        )
-        return result.stdout.strip() == "active"
+    logger = logging.getLogger("iscope-supervisor")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
-    def is_healthy(self, max_age=300):
-        # Continua usando health file
-        ...
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
-    def collect_output(self):
-        return ""  # Logs vao direto pro journal
+    if not logger.handlers:
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
+
+        log_file = os.getenv("SUPERVISOR_LOG_FILE")
+        if log_file:
+            log_path = Path(log_file)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = RotatingFileHandler(
+                str(log_path),
+                maxBytes=1 * 1024 * 1024,
+                backupCount=1,
+            )
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+
+    return logger
 ```
 
-### 2. Simplificar `python-agent/supervisor/main.py`
+### 2. Usar o logger dedicado no Supervisor
 
-- Remover `worker.collect_output()` e o print `[Worker]` (logs vao pro journal do iscope-agent)
-- `worker.start()` agora faz `systemctl start iscope-agent`
-- Manter toda logica de heartbeat, updates, remote commands
+**Arquivo:** `python-agent/supervisor/main.py`
 
-### 3. Atualizar `python-agent/systemd/iscope-agent.service`
-
-Remover nota de "fallback". Tornar servico primario:
-
-```ini
-[Unit]
-Description=iScope 360 Agent (Worker)
-After=network-online.target iscope-supervisor.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=root
-Group=root
-WorkingDirectory=/opt/iscope-agent
-EnvironmentFile=-/etc/iscope/agent.env
-ExecStart=/opt/iscope-agent/venv/bin/python main.py
-Restart=on-failure
-RestartSec=15
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=iscope-agent
-
-[Install]
-WantedBy=multi-user.target
+Trocar:
+```python
+from agent.logger import setup_logger
+```
+Por:
+```python
+from supervisor.logger import setup_supervisor_logger
 ```
 
-Mudancas chave: User=root (precisa de nmap, masscan), After inclui iscope-supervisor.
-
-### 4. Atualizar `python-agent/systemd/iscope-supervisor.service`
-
-Adicionar dependencia do Worker:
-
-```ini
-[Unit]
-Description=iScope 360 Supervisor
-After=network-online.target
-Wants=network-online.target iscope-agent.service
+E na funcao `main()`:
+```python
+logger = setup_supervisor_logger()
 ```
 
-### 5. Atualizar scripts de instalacao (Edge Functions)
+### 3. Adicionar `SUPERVISOR_LOG_FILE` no env
 
-**`supabase/functions/agent-install/index.ts`**: Na funcao `write_systemd_service()`, gerar DOIS unit files:
-- `/etc/systemd/system/iscope-supervisor.service`
-- `/etc/systemd/system/iscope-agent.service`
+**Arquivo:** `supabase/functions/agent-install/index.ts`, funcao `write_env_file()`
 
-Na funcao `start_service()`:
+Adicionar na geracao do env file:
+```
+SUPERVISOR_LOG_FILE=/var/log/iscope-agent/supervisor.log
+```
+
+E no bloco de update (append se ausente):
 ```bash
-systemctl daemon-reload
-systemctl enable iscope-supervisor iscope-agent
-systemctl start iscope-agent
-systemctl start iscope-supervisor
+grep -q "^SUPERVISOR_LOG_FILE=" "$env_file" || \
+  echo "SUPERVISOR_LOG_FILE=/var/log/iscope-agent/supervisor.log" >> "$env_file"
 ```
 
-**`supabase/functions/super-agent-install/index.ts`**: Mesma mudanca.
+**Arquivo:** `supabase/functions/super-agent-install/index.ts` — mesma mudanca.
 
-### 6. Atualizar `stop_service_if_exists` e `uninstall_all`
+### 4. Criar diretorio de logs no `ensure_dirs()`
 
-Parar e desabilitar ambos os servicos:
+Ja existe: `mkdir -p "/var/log/iscope-agent"`. Os dois arquivos (`agent.log` e `supervisor.log`) ficam no mesmo diretorio mas em arquivos separados.
+
+### Resultado
+
+```text
+/var/log/iscope-agent/
+├── agent.log        ← logs do Worker (main.py) — AGENT_LOG_FILE
+└── supervisor.log   ← logs do Supervisor       — SUPERVISOR_LOG_FILE
+```
+
+No journald, ja separados via `SyslogIdentifier`:
 ```bash
-for svc in iscope-supervisor iscope-agent; do
-  systemctl stop "$svc" || true
-  systemctl disable "$svc" || true
-done
+journalctl -u iscope-agent -f       # Worker
+journalctl -u iscope-supervisor -f  # Supervisor
 ```
-
-### 7. Frontend: supervisor_version ja esta no codigo
-
-O frontend ja exibe `supervisor_version` via `(agent as any).supervisor_version` em `AgentsPage.tsx` (linha 623) e `AgentDetailPage.tsx` (linha 470). O problema e que o valor e NULL no banco porque o codigo deployed nos hosts ainda nao envia o campo. Apos rebuild dos pacotes com o `heartbeat.py` corrigido, o campo sera populado.
 
 ### Arquivos impactados
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `python-agent/supervisor/worker_manager.py` | Reescrever: subprocess.Popen → systemctl |
-| `python-agent/supervisor/main.py` | Remover `collect_output()` e print `[Worker]` |
-| `python-agent/systemd/iscope-agent.service` | Tornar servico primario, User=root |
-| `python-agent/systemd/iscope-supervisor.service` | Adicionar Wants=iscope-agent.service |
-| `supabase/functions/agent-install/index.ts` | Gerar 2 unit files, start ambos |
+| `python-agent/supervisor/logger.py` | Novo: logger dedicado do Supervisor |
+| `python-agent/supervisor/main.py` | Usar `setup_supervisor_logger()` em vez de `setup_logger()` |
+| `supabase/functions/agent-install/index.ts` | Adicionar `SUPERVISOR_LOG_FILE` no env |
 | `supabase/functions/super-agent-install/index.ts` | Mesma mudanca |
-
-### Deploy
-
-1. Aplicar mudancas no repo
-2. Deploy edge functions (`agent-install`, `super-agent-install`)
-3. Rebuild pacotes tar (agent + supervisor) com todos os fixes
-4. Upload para bucket
-5. Rodar `--update` no host de teste
-6. Verificar: `systemctl status iscope-supervisor` (1 processo), `systemctl status iscope-agent` (1 processo)
 
