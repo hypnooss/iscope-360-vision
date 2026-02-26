@@ -121,7 +121,8 @@ export default function M365AnalyzerDashboardPage() {
   const { data: snapshot, isLoading, refetch } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
   const { data: progress, refetch: refetchProgress, isFetching: isRefetchingProgress } = useM365AnalyzerProgress(selectedTenantId || undefined);
   const isRunning = progress?.status === 'pending' || progress?.status === 'processing';
-  const isOrphan = (progress as any)?.reconciled === true;
+  const wasOrphan = (progress as any)?.wasOrphan === true;
+  const lastFailed = progress?.status === 'failed';
 
   // Schedule dialog state
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -349,14 +350,17 @@ export default function M365AnalyzerDashboardPage() {
           </Card>
         )}
 
-        {/* Orphan state warning */}
-        {isOrphan && (
+        {/* Failed/orphan state warning */}
+        {lastFailed && !isRunning && (
           <Card className="glass-card border-destructive/30">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <AlertTriangle className="w-4 h-4 text-destructive" />
-                <span className="text-sm font-medium text-destructive">Execução anterior encerrada com inconsistência.</span>
-                <span className="text-xs text-muted-foreground">A próxima execução irá reconciliar automaticamente.</span>
+                <span className="text-sm font-medium text-destructive">
+                  {wasOrphan
+                    ? 'Última execução falhou (timeout na coleta). Dados exibidos são da coleta anterior.'
+                    : 'Última execução falhou.'}
+                </span>
                 <Button
                   size="sm"
                   variant="outline"
