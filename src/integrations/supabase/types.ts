@@ -1462,6 +1462,123 @@ export type Database = {
           },
         ]
       }
+      m365_analyzer_schedules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          frequency: Database["public"]["Enums"]["schedule_frequency"]
+          id: string
+          is_active: boolean
+          next_run_at: string | null
+          scheduled_day_of_month: number | null
+          scheduled_day_of_week: number | null
+          scheduled_hour: number | null
+          tenant_record_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          frequency?: Database["public"]["Enums"]["schedule_frequency"]
+          id?: string
+          is_active?: boolean
+          next_run_at?: string | null
+          scheduled_day_of_month?: number | null
+          scheduled_day_of_week?: number | null
+          scheduled_hour?: number | null
+          tenant_record_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          frequency?: Database["public"]["Enums"]["schedule_frequency"]
+          id?: string
+          is_active?: boolean
+          next_run_at?: string | null
+          scheduled_day_of_month?: number | null
+          scheduled_day_of_week?: number | null
+          scheduled_hour?: number | null
+          tenant_record_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_analyzer_schedules_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: true
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      m365_analyzer_snapshots: {
+        Row: {
+          agent_task_id: string | null
+          client_id: string
+          created_at: string
+          id: string
+          insights: Json | null
+          metrics: Json | null
+          period_end: string | null
+          period_start: string | null
+          score: number | null
+          status: string
+          summary: Json | null
+          tenant_record_id: string
+        }
+        Insert: {
+          agent_task_id?: string | null
+          client_id: string
+          created_at?: string
+          id?: string
+          insights?: Json | null
+          metrics?: Json | null
+          period_end?: string | null
+          period_start?: string | null
+          score?: number | null
+          status?: string
+          summary?: Json | null
+          tenant_record_id: string
+        }
+        Update: {
+          agent_task_id?: string | null
+          client_id?: string
+          created_at?: string
+          id?: string
+          insights?: Json | null
+          metrics?: Json | null
+          period_end?: string | null
+          period_start?: string | null
+          score?: number | null
+          status?: string
+          summary?: Json | null
+          tenant_record_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_analyzer_snapshots_agent_task_id_fkey"
+            columns: ["agent_task_id"]
+            isOneToOne: false
+            referencedRelation: "agent_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "m365_analyzer_snapshots_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "m365_analyzer_snapshots_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       m365_app_credentials: {
         Row: {
           app_object_id: string | null
@@ -2012,6 +2129,53 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "m365_tokens_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      m365_user_baselines: {
+        Row: {
+          avg_received_daily: number | null
+          avg_recipients_per_msg: number | null
+          avg_sent_daily: number | null
+          baseline_date: string
+          id: string
+          sample_days: number | null
+          tenant_record_id: string
+          typical_send_hours: Json | null
+          updated_at: string
+          user_principal_name: string
+        }
+        Insert: {
+          avg_received_daily?: number | null
+          avg_recipients_per_msg?: number | null
+          avg_sent_daily?: number | null
+          baseline_date?: string
+          id?: string
+          sample_days?: number | null
+          tenant_record_id: string
+          typical_send_hours?: Json | null
+          updated_at?: string
+          user_principal_name: string
+        }
+        Update: {
+          avg_received_daily?: number | null
+          avg_recipients_per_msg?: number | null
+          avg_sent_daily?: number | null
+          baseline_date?: string
+          id?: string
+          sample_days?: number | null
+          tenant_record_id?: string
+          typical_send_hours?: Json | null
+          updated_at?: string
+          user_principal_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_user_baselines_tenant_record_id_fkey"
             columns: ["tenant_record_id"]
             isOneToOne: false
             referencedRelation: "m365_tenants"
@@ -2615,6 +2779,7 @@ export type Database = {
         | "firewall_analyzer"
         | "fortigate_analyzer"
         | "geo_query"
+        | "m365_analyzer"
       app_role: "super_admin" | "workspace_admin" | "user" | "super_suporte"
       blueprint_executor_type: "agent" | "edge_function" | "hybrid"
       device_category:
@@ -2793,6 +2958,7 @@ export const Constants = {
         "firewall_analyzer",
         "fortigate_analyzer",
         "geo_query",
+        "m365_analyzer",
       ],
       app_role: ["super_admin", "workspace_admin", "user", "super_suporte"],
       blueprint_executor_type: ["agent", "edge_function", "hybrid"],
