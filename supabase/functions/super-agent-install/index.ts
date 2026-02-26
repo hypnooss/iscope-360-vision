@@ -502,16 +502,22 @@ uninstall_all() {
 }
 
 download_release() {
-  local file
+  # --- Determinar nomes dos pacotes ---
+  local file_agent file_sup
   if [[ "$AGENT_VERSION" == "latest" ]]; then
-    file="iscope-agent-latest.tar.gz"
+    file_agent="iscope-agent-latest.tar.gz"
+    file_sup="iscope-supervisor-latest.tar.gz"
   else
-    file="iscope-agent-\${AGENT_VERSION}.tar.gz"
+    file_agent="iscope-agent-\${AGENT_VERSION}.tar.gz"
+    file_sup="iscope-supervisor-latest.tar.gz"
   fi
 
-  local url
-  url="\${RELEASE_BASE_URL}/\${file}"
-  echo "Baixando pacote do agent: \${file}"
+  local url_agent url_sup
+  url_agent="\${RELEASE_BASE_URL}/\${file_agent}"
+  url_sup="\${RELEASE_BASE_URL}/\${file_sup}"
+
+  echo "Baixando pacote do Agent: \${file_agent}"
+  echo "Baixando pacote do Supervisor: \${file_sup}"
 
   local curl_fail_flag
   if curl --help all 2>/dev/null | grep -q "fail-with-body"; then
@@ -520,35 +526,77 @@ download_release() {
     curl_fail_flag="--fail"
   fi
 
-  if ! curl -fsSI "$url" >/dev/null 2>&1; then
+  # --- Validar existência dos pacotes ---
+  if ! curl -fsSI "\$url_agent" >/dev/null 2>&1; then
     echo ""
-    echo "Erro: não encontrei o pacote no Supabase Storage: agent-releases/\${file}"
-    echo "URL: \${url}"
+    echo "Erro: não encontrei o pacote do Agent no Supabase Storage: agent-releases/\${file_agent}"
+    echo "URL: \${url_agent}"
     echo ""
     echo "Próximos passos:"
-    echo "1) Faça upload do arquivo \${file} no bucket 'agent-releases' (público)"
-    echo "2) Teste a URL acima com: curl -I \\"\${url}\\""
+    echo "1) Faça upload do arquivo \${file_agent} no bucket 'agent-releases' (público)"
+    echo "2) Teste a URL acima com: curl -I \\"\${url_agent}\\""
     echo "3) Rode o instalador novamente"
     echo ""
     echo "Storage (dashboard): https://supabase.com/dashboard/project/${PROJECT_REF}/storage/buckets"
     exit 1
   fi
 
-  local tmp
-  tmp="$(mktemp)"
-  if ! curl -sS "$curl_fail_flag" -L "$url" -o "$tmp"; then
-    echo "Erro: falha ao baixar pacote do agent em: \${url}"
+  if ! curl -fsSI "\$url_sup" >/dev/null 2>&1; then
+    echo ""
+    echo "Erro: não encontrei o pacote do Supervisor no Supabase Storage: agent-releases/\${file_sup}"
+    echo "URL: \${url_sup}"
+    echo ""
+    echo "Próximos passos:"
+    echo "1) Faça upload do arquivo \${file_sup} no bucket 'agent-releases' (público)"
+    echo "2) Teste a URL acima com: curl -I \\"\${url_sup}\\""
+    echo "3) Rode o instalador novamente"
+    echo ""
+    echo "Storage (dashboard): https://supabase.com/dashboard/project/${PROJECT_REF}/storage/buckets"
     exit 1
   fi
 
-  if [[ ! -s "$tmp" ]]; then
-    echo "Erro: download retornou um arquivo vazio."
+  # --- Baixar pacote do Agent ---
+  local tmp_agent
+  tmp_agent="$(mktemp)"
+  if ! curl -sS "\$curl_fail_flag" -L "\$url_agent" -o "\$tmp_agent"; then
+    echo "Erro: falha ao baixar pacote do Agent em: \${url_agent}"
     exit 1
   fi
 
-  rm -rf "$INSTALL_DIR"/*
-  tar -xzf "$tmp" -C "$INSTALL_DIR"
-  rm -f "$tmp"
+  if [[ ! -s "\$tmp_agent" ]]; then
+    echo "Erro: download do Agent retornou um arquivo vazio."
+    exit 1
+  fi
+
+  # --- Baixar pacote do Supervisor ---
+  local tmp_sup
+  tmp_sup="$(mktemp)"
+  if ! curl -sS "\$curl_fail_flag" -L "\$url_sup" -o "\$tmp_sup"; then
+    echo "Erro: falha ao baixar pacote do Supervisor em: \${url_sup}"
+    exit 1
+  fi
+
+  if [[ ! -s "\$tmp_sup" ]]; then
+    echo "Erro: download do Supervisor retornou um arquivo vazio."
+    exit 1
+  fi
+
+  # --- Limpar e extrair (preservando venv, .env, logs) ---
+  find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 \\
+    ! -name 'venv' \\
+    ! -name '.env' \\
+    ! -name 'storage' \\
+    ! -name 'logs' \\
+    -exec rm -rf {} + 2>/dev/null || true
+
+  echo "Extraindo pacote do Agent..."
+  tar -xzf "\$tmp_agent" -C "$INSTALL_DIR"
+
+  echo "Extraindo pacote do Supervisor..."
+  tar -xzf "\$tmp_sup" -C "$INSTALL_DIR"
+
+  rm -f "\$tmp_agent" "\$tmp_sup"
+  echo "Pacotes extraídos com sucesso em $INSTALL_DIR"
 }
 
 setup_venv() {
