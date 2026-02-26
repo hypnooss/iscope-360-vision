@@ -483,11 +483,9 @@ ensure_dirs() {
 
 stop_service_if_exists() {
   for svc in "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"; do
-    if systemctl list-unit-files | grep -q "^\${svc}\\.service"; then
-      echo "Parando serviço \${svc}..."
-      systemctl stop "\$svc" || true
-      systemctl disable "\$svc" || true
-    fi
+    echo "Parando serviço \${svc}..."
+    systemctl stop "\$svc" 2>/dev/null || true
+    systemctl disable "\$svc" 2>/dev/null || true
   done
 }
 
@@ -950,6 +948,10 @@ SUDOERS
 
 start_service() {
   systemctl daemon-reload
+
+  # Stop both services first to ensure clean state (kills old in-memory code)
+  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+  systemctl stop "$LEGACY_SERVICE_NAME" 2>/dev/null || true
 
   # Enable and start both services
   systemctl enable "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"
