@@ -12,6 +12,8 @@ IMPORTANT: The agent_version is resolved from disk at each tick
 in-place Worker updates.
 """
 
+from typing import Optional
+
 from agent.heartbeat import AgentStopped
 from supervisor.version import get_version as get_supervisor_version
 
@@ -24,7 +26,7 @@ class SupervisorHeartbeatLoop:
         self.auth = auth
         self.logger = logger
 
-    def tick(self, agent_version: str | None = None) -> dict:
+    def tick(self, agent_version: Optional[str] = None) -> dict:
         """
         Send one heartbeat and return the response.
 
