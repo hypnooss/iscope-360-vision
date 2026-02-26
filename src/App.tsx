@@ -62,6 +62,7 @@ const EntraIdApplicationInsightsPage = lazy(() => import("./pages/m365/EntraIdAp
 const EntraIdAnalysisPage = lazy(() => import("./pages/m365/EntraIdAnalysisPage"));
 const ExchangeOnlinePage = lazy(() => import("./pages/m365/ExchangeOnlinePage"));
 const M365CVEsPage = lazy(() => import("./pages/m365/M365CVEsPage"));
+const M365AnalyzerDashboardPage = lazy(() => import("./pages/m365/M365AnalyzerDashboardPage"));
 
 // Preview pages (temporary)
 const EnvironmentPage = lazy(() => import("./pages/EnvironmentPage"));
