@@ -582,7 +582,7 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { snapshot_id } = await req.json();
+    const { snapshot_id, raw_data } = await req.json();
 
     if (!snapshot_id) {
       return new Response(
@@ -591,7 +591,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[m365-analyzer] Processing snapshot: ${snapshot_id}`);
+    console.log(`[m365-analyzer] Processing snapshot: ${snapshot_id}, has raw_data: ${!!raw_data}`);
 
     // Fetch snapshot
     const { data: snapshot, error: snapError } = await supabase
@@ -613,54 +613,117 @@ Deno.serve(async (req) => {
       .update({ status: 'processing' })
       .eq('id', snapshot_id);
 
-    // Get Graph API token
-    const token = await getGraphToken(supabase, snapshot.tenant_record_id);
-    if (!token) {
-      await supabase
-        .from('m365_analyzer_snapshots')
-        .update({ status: 'failed', insights: [], metrics: { error: 'Failed to get Graph API token' } })
-        .eq('id', snapshot_id);
-      return new Response(
-        JSON.stringify({ success: false, error: 'Failed to get Graph API token' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    let emailActivity: any[] = [];
+    let mailboxUsage: any[] = [];
+    let signInLogs: any[] = [];
+    let auditLogs: any[] = [];
+    let threatData: any[] = [];
+    let inboxRules: any[] = [];
+    let dataSource = 'none';
+
+    // ── Strategy: try raw_data from agent first, then Graph API fallback ──
+    if (raw_data && typeof raw_data === 'object') {
+      console.log('[m365-analyzer] Using raw_data from agent');
+      dataSource = 'agent';
+
+      // Extract Graph API data from agent steps (collected via edge_function steps in blueprint)
+      const extractArray = (key: string): any[] => {
+        const step = raw_data[key];
+        if (!step) return [];
+        // Step data can be { data: [...] }, { value: [...] }, or direct array
+        if (Array.isArray(step)) return step;
+        if (typeof step === 'object') {
+          if (Array.isArray(step.data)) return step.data;
+          if (Array.isArray(step.value)) return step.value;
+          if (Array.isArray(step.results)) return step.results;
+        }
+        return [];
+      };
+
+      // Map agent step IDs to analyzer variables
+      signInLogs = extractArray('signin_logs') || extractArray('failed_signins');
+      auditLogs = extractArray('audit_logs');
+      
+      // Exchange PowerShell data mapped to analyzer concepts
+      const forwardingData = extractArray('exo_mailbox_forwarding');
+      const transportRules = extractArray('exo_transport_rules');
+      
+      // Build inbox rules from forwarding + transport data for suspicious rules module
+      inboxRules = [
+        ...forwardingData.map((f: any) => ({
+          userPrincipalName: f.PrimarySmtpAddress || f.DisplayName,
+          ruleName: 'Mailbox Forwarding',
+          forwardTo: f.ForwardingSmtpAddress || f.ForwardingAddress || '',
+        })),
+      ];
+
+      // Build audit-like entries from transport rules for suspicious rules detection
+      for (const rule of transportRules) {
+        if (rule.RedirectMessageTo || rule.CopyTo || rule.BlindCopyTo || rule.DeleteMessage) {
+          auditLogs.push({
+            activityDisplayName: 'Transport Rule',
+            targetResources: [{
+              displayName: rule.Name || 'Unknown',
+              modifiedProperties: [
+                ...(rule.RedirectMessageTo ? [{ displayName: 'forwardTo', newValue: String(rule.RedirectMessageTo) }] : []),
+                ...(rule.DeleteMessage ? [{ displayName: 'deleteMessage', newValue: 'true' }] : []),
+              ],
+            }],
+            initiatedBy: { user: { userPrincipalName: 'TransportRule' } },
+          });
+        }
+      }
+
+      console.log(`[m365-analyzer] Agent data mapped: signIns=${signInLogs.length}, audits=${auditLogs.length}, forwarding=${forwardingData.length}, transportRules=${transportRules.length}`);
     }
 
-    console.log('[m365-analyzer] Got Graph API token, collecting data...');
+    // If no data from agent (or minimal data), try Graph API directly
+    if (dataSource === 'none' || (signInLogs.length === 0 && auditLogs.length === 0 && emailActivity.length === 0)) {
+      const token = await getGraphToken(supabase, snapshot.tenant_record_id);
+      if (token) {
+        console.log('[m365-analyzer] Got Graph API token, collecting data...');
+        dataSource = dataSource === 'agent' ? 'hybrid' : 'graph_api';
 
-    // ── Collect data from Graph API ──
-    const periodFilter = snapshot.period_start
-      ? `&$filter=createdDateTime ge ${snapshot.period_start}`
-      : '';
+        const periodFilter = snapshot.period_start
+          ? `&$filter=createdDateTime ge ${snapshot.period_start}`
+          : '';
 
-    // Parallel data collection
-    const [
-      emailActivityData,
-      mailboxUsageData,
-      signInLogsData,
-      auditLogsData,
-      threatStatusData,
-    ] = await Promise.all([
-      // Email activity (last 7 days report - Graph API limitation)
-      graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getEmailActivityUserDetail(period=\'D1\')'),
-      // Mailbox usage
-      graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period=\'D1\')'),
-      // Sign-in logs (last 24h)
-      graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=500${periodFilter}`),
-      // Audit logs
-      graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=500${periodFilter}`),
-      // Threat protection status (if available)
-      graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getEmailActivityUserDetail(period=\'D1\')'),
-    ]);
+        const [
+          emailActivityData,
+          mailboxUsageData,
+          signInLogsData,
+          auditLogsData,
+          threatStatusData,
+        ] = await Promise.all([
+          graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getEmailActivityUserDetail(period=\'D1\')'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period=\'D1\')'),
+          graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=500${periodFilter}`),
+          graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=500${periodFilter}`),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getEmailActivityUserDetail(period=\'D1\')'),
+        ]);
 
-    // Parse report data (Graph reports return CSV or JSON depending on accept header)
-    const emailActivity = Array.isArray(emailActivityData?.value) ? emailActivityData.value : [];
-    const mailboxUsage = Array.isArray(mailboxUsageData?.value) ? mailboxUsageData.value : [];
-    const signInLogs = Array.isArray(signInLogsData?.value) ? signInLogsData.value : [];
-    const auditLogs = Array.isArray(auditLogsData?.value) ? auditLogsData.value : [];
-    const threatData = Array.isArray(threatStatusData?.value) ? threatStatusData.value : [];
+        if (emailActivity.length === 0) emailActivity = Array.isArray(emailActivityData?.value) ? emailActivityData.value : [];
+        if (mailboxUsage.length === 0) mailboxUsage = Array.isArray(mailboxUsageData?.value) ? mailboxUsageData.value : [];
+        if (signInLogs.length === 0) signInLogs = Array.isArray(signInLogsData?.value) ? signInLogsData.value : [];
+        if (auditLogs.length === 0) auditLogs = Array.isArray(auditLogsData?.value) ? auditLogsData.value : [];
+        if (threatData.length === 0) threatData = Array.isArray(threatStatusData?.value) ? threatStatusData.value : [];
+      } else if (dataSource === 'none') {
+        // No agent data AND no Graph API token — fail
+        console.error('[m365-analyzer] No data source available: no raw_data and Graph API token failed');
+        await supabase
+          .from('m365_analyzer_snapshots')
+          .update({ status: 'failed', insights: [], metrics: { error: 'No data source: Graph API token failed and no agent data' } })
+          .eq('id', snapshot_id);
+        return new Response(
+          JSON.stringify({ success: false, error: 'No data source available' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } else {
+        console.log('[m365-analyzer] Graph API token failed, proceeding with agent data only');
+      }
+    }
 
-    console.log(`[m365-analyzer] Data collected: emails=${emailActivity.length}, mailboxes=${mailboxUsage.length}, signIns=${signInLogs.length}, audits=${auditLogs.length}`);
+    console.log(`[m365-analyzer] Data ready (source=${dataSource}): emails=${emailActivity.length}, mailboxes=${mailboxUsage.length}, signIns=${signInLogs.length}, audits=${auditLogs.length}`);
 
     // Fetch existing baselines
     const { data: baselines } = await supabase
@@ -684,7 +747,7 @@ Deno.serve(async (req) => {
     allInsights.push(...behavioral.insights);
     allMetrics.behavioral = behavioral.metrics;
 
-    const compromise = analyzeAccountCompromise(signInLogs, emailActivity, []);
+    const compromise = analyzeAccountCompromise(signInLogs, emailActivity, inboxRules);
     allInsights.push(...compromise.insights);
     allMetrics.compromise = compromise.metrics;
 
@@ -699,6 +762,8 @@ Deno.serve(async (req) => {
     const operational = analyzeOperationalRisks(signInLogs, auditLogs);
     allInsights.push(...operational.insights);
     allMetrics.operational = operational.metrics;
+
+    allMetrics.dataSource = dataSource;
 
     // Calculate score
     const { score, summary } = calculateScore(allInsights);
