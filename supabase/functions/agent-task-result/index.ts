@@ -4318,6 +4318,33 @@ serve(async (req: Request) => {
     }
 
     // ========================================================
+    // M365 Analyzer: Process collected data into security insights
+    // ========================================================
+    if ((body.status === 'completed' || body.status === 'partial') && task.task_type === 'm365_analyzer' && rawData) {
+      const taskPayload = task.payload as Record<string, unknown> | null;
+      const snapshotId = taskPayload?.snapshot_id as string | undefined;
+
+      if (snapshotId) {
+        console.log(`[m365_analyzer] Processing insights for snapshot: ${snapshotId}`);
+        try {
+          const analyzerUrl = `${supabaseUrl}/functions/v1/m365-analyzer`;
+          const analyzerResponse = await fetch(analyzerUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+            body: JSON.stringify({ snapshot_id: snapshotId, task_id: body.task_id, raw_data: rawData }),
+          });
+          const analyzerResult = await analyzerResponse.json();
+          console.log(`[m365_analyzer] Result: score=${analyzerResult.score}, insights=${analyzerResult.insights_count}`);
+        } catch (e) {
+          console.error(`[m365_analyzer] Error:`, e);
+          await supabase.from('m365_analyzer_snapshots').update({ status: 'failed' }).eq('id', snapshotId);
+        }
+      } else {
+        console.log(`[m365_analyzer] No snapshot_id in payload, marking as failed`);
+      }
+    }
+
+    // ========================================================
     // M365 Tenant: Process agent-collected insights (Exchange, SharePoint)
     // This handles PowerShell-based data collected by the Python agent
     // ========================================================
