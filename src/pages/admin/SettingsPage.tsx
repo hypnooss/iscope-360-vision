@@ -828,12 +828,7 @@ export default function SettingsPage() {
 
                   {/* Status dos Agents */}
                   <div className="space-y-4 p-4 border rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-medium">Status dos Agents</h4>
-                      <Button variant="ghost" size="sm" onClick={loadAgentStats} className="h-8">
-                        <RefreshCw className="w-4 h-4" />
-                      </Button>
-                    </div>
+                    <h4 className="font-medium">Status dos Agents</h4>
                     
                     <div className="space-y-3">
                       <div className="flex items-center gap-3 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
@@ -858,8 +853,8 @@ export default function SettingsPage() {
                     {agentStats.outdated.length > 0 &&
                     <div className="space-y-2">
                         <p className="text-sm text-muted-foreground">Agents desatualizados:</p>
-                        <ScrollArea className="max-h-[200px]">
-                          <ul className="space-y-1">
+                        <ScrollArea className="h-[200px]">
+                          <ul className="space-y-1 pr-4">
                             {agentStats.outdated.map((agent, i) =>
                               <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
                                 <span className="w-2 h-2 rounded-full bg-amber-500" />
@@ -984,8 +979,8 @@ export default function SettingsPage() {
                     {supervisorStats.outdated.length > 0 &&
                     <div className="space-y-2">
                         <p className="text-sm text-muted-foreground">Supervisors desatualizados:</p>
-                        <ScrollArea className="max-h-[200px]">
-                          <ul className="space-y-1">
+                        <ScrollArea className="h-[200px]">
+                          <ul className="space-y-1 pr-4">
                             {supervisorStats.outdated.map((agent, i) =>
                               <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
                                 <span className="w-2 h-2 rounded-full bg-amber-500" />
