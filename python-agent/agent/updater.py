@@ -205,7 +205,7 @@ class AutoUpdater:
                 root = subdirs[0]
 
         # Preserve venv, state, and logs
-        preserved = ['venv', 'storage', 'logs', '.env']
+        preserved = ['venv', 'storage', 'logs', '.env', 'supervisor']
 
         for item in self.install_dir.iterdir():
             if item.name not in preserved:
