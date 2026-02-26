@@ -1,30 +1,43 @@
-## M365 Analyzer - Plano de Implementação
 
-### ✅ Fase 1: Infraestrutura e Coleta (Backend) — CONCLUÍDA
 
-- [x] Tabelas criadas: `m365_analyzer_snapshots`, `m365_analyzer_schedules`, `m365_user_baselines`
-- [x] Enum `m365_analyzer` adicionado ao `agent_task_type`
-- [x] RLS policies configuradas para todas as tabelas
-- [x] Edge Function: `trigger-m365-analyzer` — gatilho de snapshots
-- [x] Edge Function: `m365-analyzer` — engine de processamento com 7 módulos
-- [x] `run-scheduled-analyses` atualizado com suporte a `m365_analyzer_schedules`
-- [x] `config.toml` atualizado
+## Correção: Adicionar handler m365_analyzer no agent-task-result
 
-### ✅ Fase 2: Frontend - Dashboard e Visualização — CONCLUÍDA
+### Problema identificado
 
-- [x] Tipos TypeScript: `src/types/m365AnalyzerInsights.ts`
-- [x] Hook: `src/hooks/useM365AnalyzerData.ts`
-- [x] Página: `src/pages/m365/M365AnalyzerDashboardPage.tsx`
-- [x] Navegação: rota em `App.tsx` + menu em `AppLayout.tsx`
+O agent completa a task `m365_analyzer` com sucesso, mas o snapshot permanece `pending` porque a edge function `agent-task-result` nao possui handler para o tipo `m365_analyzer`. Sem esse handler, a edge function `m365-analyzer` (que processa os dados e atualiza o snapshot) nunca e invocada.
 
-### 🔲 Fase 3: Baseline Comportamental e Correlação
+### Solucao
 
-- [ ] Engine de baseline com média móvel ponderada
-- [ ] Correlação entre eventos (login + envio + regras)
-- [ ] Comparação entre snapshots na UI
+Adicionar um bloco de processamento em `supabase/functions/agent-task-result/index.ts`, logo apos o handler do `fortigate_analyzer` (linha ~4318), seguindo o mesmo padrao:
 
-### 🔲 Fase 4: Refinamentos e Subpáginas
+```
+if ((body.status === 'completed' || body.status === 'partial') 
+    && task.task_type === 'm365_analyzer' && rawData) {
+  const taskPayload = task.payload;
+  const snapshotId = taskPayload?.snapshot_id;
 
-- [ ] Subpágina `/scope-m365/analyzer/insights`
-- [ ] Subpágina `/scope-m365/analyzer/critical`
-- [ ] Integração com relatórios PDF
+  if (snapshotId) {
+    // Chama a edge function m365-analyzer para processar os dados
+    const analyzerUrl = `${supabaseUrl}/functions/v1/m365-analyzer`;
+    const response = await fetch(analyzerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+      body: JSON.stringify({ snapshot_id: snapshotId, task_id: body.task_id, raw_data: rawData }),
+    });
+    // Log resultado
+  } else {
+    // Se nao tem snapshot_id, marcar snapshot como failed
+  }
+}
+```
+
+### Arquivo impactado
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| `supabase/functions/agent-task-result/index.ts` | Adicionar bloco handler para `m365_analyzer` (~20 linhas, apos linha 4318) |
+
+### Apos o deploy
+
+O snapshot atual (`a52bc061`) que esta preso em `pending` precisara ser manualmente atualizado para `failed` ou removido, ja que os dados da task original ja foram descartados. A proxima execucao de analise funcionara corretamente com o handler implementado.
+
