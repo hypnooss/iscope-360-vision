@@ -39,15 +39,44 @@ function normalizeStepData(raw: unknown): any[] {
   if (Array.isArray(raw)) return raw;
   if (typeof raw === 'object' && raw !== null) {
     const obj = raw as Record<string, any>;
-    // Common wrappers
     if (Array.isArray(obj.data)) return obj.data;
     if (Array.isArray(obj.value)) return obj.value;
     if (Array.isArray(obj.results)) return obj.results;
     if (Array.isArray(obj.Result)) return obj.Result;
-    // Single object → wrap in array
     return [obj];
   }
   return [];
+}
+
+// ============================================
+// PowerShell size string parser
+// ============================================
+
+function parseSizeToBytes(sizeStr: unknown): number {
+  if (typeof sizeStr === 'number') return sizeStr;
+  if (typeof sizeStr !== 'string' || !sizeStr) return 0;
+
+  // Try "(1,234,567 bytes)" pattern first
+  const bytesMatch = sizeStr.match(/\(([0-9,.]+)\s*bytes\)/i);
+  if (bytesMatch) {
+    return parseInt(bytesMatch[1].replace(/[,.\s]/g, ''), 10) || 0;
+  }
+
+  // Try "1.234 GB" / "500 MB" / "100 KB" pattern
+  const unitMatch = sizeStr.match(/([\d,.]+)\s*(TB|GB|MB|KB|B)/i);
+  if (unitMatch) {
+    const val = parseFloat(unitMatch[1].replace(',', '.'));
+    const unit = unitMatch[2].toUpperCase();
+    const multipliers: Record<string, number> = {
+      B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4,
+    };
+    return Math.round(val * (multipliers[unit] || 1));
+  }
+
+  // "Unlimited"
+  if (sizeStr.toLowerCase().includes('unlimited')) return 0;
+
+  return 0;
 }
 
 // ============================================
@@ -295,10 +324,14 @@ function analyzePhishingThreats(
 }
 
 // ============================================
-// Module 2: Mailbox Capacity
+// Module 2: Mailbox Capacity (EXO Statistics + Quota)
 // ============================================
 
-function analyzeMailboxCapacity(mailboxUsage: any[]): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
+function analyzeMailboxCapacity(
+  mailboxUsage: any[],
+  exoMailboxStats: any[],
+  exoMailboxQuota: any[],
+): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
   const insights: M365AnalyzerInsight[] = [];
   const metrics: Record<string, any> = {
     totalMailboxes: 0,
@@ -307,28 +340,61 @@ function analyzeMailboxCapacity(mailboxUsage: any[]): { insights: M365AnalyzerIn
     topMailboxes: [],
   };
 
-  if (!Array.isArray(mailboxUsage) || mailboxUsage.length === 0) return { insights, metrics };
+  // Build merged mailbox data from EXO PowerShell if available
+  let mergedMailboxes: { user: string; usedBytes: number; quotaBytes: number }[] = [];
 
-  metrics.totalMailboxes = mailboxUsage.length;
+  if (exoMailboxStats.length > 0) {
+    // Build quota lookup from exo_mailbox_quota
+    const quotaMap: Record<string, number> = {};
+    for (const q of exoMailboxQuota) {
+      const key = (q.PrimarySmtpAddress || q.DisplayName || '').toLowerCase();
+      const quotaVal = parseSizeToBytes(q.ProhibitSendReceiveQuota);
+      if (key && quotaVal > 0) quotaMap[key] = quotaVal;
+    }
+
+    const defaultQuota = 53687091200; // 50 GB default
+
+    for (const stat of exoMailboxStats) {
+      const displayName = stat.DisplayName || '';
+      const usedBytes = parseSizeToBytes(stat.TotalItemSize);
+      const key = displayName.toLowerCase();
+      const quotaBytes = quotaMap[key] || defaultQuota;
+
+      mergedMailboxes.push({ user: displayName, usedBytes, quotaBytes });
+    }
+
+    console.log(`[m365-analyzer] Parsed ${mergedMailboxes.length} mailbox stats from PowerShell`);
+  }
+
+  // Fallback to Graph API mailboxUsage
+  if (mergedMailboxes.length === 0 && mailboxUsage.length > 0) {
+    for (const mb of mailboxUsage) {
+      const used = mb.storageUsedInBytes || 0;
+      const quota = mb.prohibitSendReceiveQuotaInBytes || mb.issueWarningQuotaInBytes || 53687091200;
+      const user = mb.userPrincipalName || mb.displayName || 'unknown';
+      mergedMailboxes.push({ user, usedBytes: used, quotaBytes: quota });
+    }
+  }
+
+  if (mergedMailboxes.length === 0) return { insights, metrics };
+
+  metrics.totalMailboxes = mergedMailboxes.length;
   const critical: string[] = [];
   const warning: string[] = [];
   const topList: { user: string; usedGB: number; pct: number }[] = [];
 
-  for (const mb of mailboxUsage) {
-    const used = mb.storageUsedInBytes || mb.TotalItemSize || 0;
-    const quota = mb.prohibitSendReceiveQuotaInBytes || mb.ProhibitSendReceiveQuota || mb.issueWarningQuotaInBytes || 53687091200;
-    if (quota === 0) continue;
-    const pct = (used / quota) * 100;
-    const usedGB = Math.round((used / (1024 * 1024 * 1024)) * 100) / 100;
-    const user = mb.userPrincipalName || mb.DisplayName || mb.PrimarySmtpAddress || 'unknown';
+  for (const mb of mergedMailboxes) {
+    if (mb.quotaBytes === 0) continue;
+    const pct = (mb.usedBytes / mb.quotaBytes) * 100;
+    const usedGB = Math.round((mb.usedBytes / (1024 ** 3)) * 100) / 100;
 
-    topList.push({ user, usedGB, pct: Math.round(pct) });
+    topList.push({ user: mb.user, usedGB, pct: Math.round(pct) });
 
     if (pct >= 90) {
-      critical.push(user);
+      critical.push(mb.user);
       metrics.above90Pct++;
     } else if (pct >= 80) {
-      warning.push(user);
+      warning.push(mb.user);
       metrics.above80Pct++;
     }
   }
@@ -365,21 +431,45 @@ function analyzeMailboxCapacity(mailboxUsage: any[]): { insights: M365AnalyzerIn
 }
 
 // ============================================
-// Module 3: Behavioral Baseline
+// Module 3: Behavioral Baseline (Message Trace aware)
 // ============================================
 
-function analyzeBehavioralBaseline(emailActivity: any[], baselines: any[]): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
+function analyzeBehavioralBaseline(
+  emailActivity: any[],
+  baselines: any[],
+  messageTrace: any[],
+): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
   const insights: M365AnalyzerInsight[] = [];
   const metrics: Record<string, any> = { anomalousUsers: 0, deviations: [] };
 
-  if (!Array.isArray(emailActivity)) return { insights, metrics };
+  // Build emailActivity from messageTrace if not available from Graph
+  let effectiveActivity = emailActivity;
+  if (effectiveActivity.length === 0 && messageTrace.length > 0) {
+    const userSendCount: Record<string, number> = {};
+    const userRecvCount: Record<string, number> = {};
+    for (const msg of messageTrace) {
+      const sender = (msg.SenderAddress || '').toLowerCase();
+      const recipient = (msg.RecipientAddress || '').toLowerCase();
+      if (sender) userSendCount[sender] = (userSendCount[sender] || 0) + 1;
+      if (recipient) userRecvCount[recipient] = (userRecvCount[recipient] || 0) + 1;
+    }
+    const allUsers = new Set([...Object.keys(userSendCount), ...Object.keys(userRecvCount)]);
+    effectiveActivity = [...allUsers].map(user => ({
+      userPrincipalName: user,
+      sendCount: userSendCount[user] || 0,
+      receiveCount: userRecvCount[user] || 0,
+    }));
+    console.log(`[m365-analyzer] Built email activity from message trace: ${effectiveActivity.length} users`);
+  }
+
+  if (!Array.isArray(effectiveActivity) || effectiveActivity.length === 0) return { insights, metrics };
 
   const baselineMap: Record<string, any> = {};
   if (Array.isArray(baselines)) {
     for (const b of baselines) baselineMap[b.user_principal_name] = b;
   }
 
-  for (const activity of emailActivity) {
+  for (const activity of effectiveActivity) {
     const user = activity.userPrincipalName || '';
     const sentCount = activity.sendCount || 0;
     const baseline = baselineMap[user];
@@ -403,6 +493,9 @@ function analyzeBehavioralBaseline(emailActivity: any[], baselines: any[]): { in
     }
   }
 
+  // Save effective activity for baseline creation later
+  (metrics as any)._effectiveActivity = effectiveActivity;
+
   return { insights, metrics };
 }
 
@@ -418,7 +511,30 @@ function analyzeAccountCompromise(signInLogs: any[], emailActivity: any[], inbox
     topRiskUsers: [],
   };
 
-  if (!Array.isArray(signInLogs) || signInLogs.length === 0) return { insights, metrics };
+  // Analyze inbox rules for suspicious patterns even without signInLogs
+  const suspiciousRuleUsers: { user: string; reasons: string[] }[] = [];
+  if (Array.isArray(inboxRules) && inboxRules.length > 0) {
+    for (const rule of inboxRules) {
+      const user = rule.MailboxOwner || rule.userPrincipalName || rule.PrimarySmtpAddress || '';
+      const enabled = rule.Enabled !== false;
+      if (!enabled || !user) continue;
+
+      const forwardTo = rule.ForwardTo || rule.ForwardAsAttachmentTo || '';
+      const redirectTo = rule.RedirectTo || '';
+      const deleteMsg = rule.DeleteMessage === true;
+
+      const reasons: string[] = [];
+      if (forwardTo) reasons.push(`forward para ${forwardTo}`);
+      if (redirectTo) reasons.push(`redirect para ${redirectTo}`);
+      if (deleteMsg) reasons.push('deleta mensagens');
+
+      if (reasons.length > 0) {
+        suspiciousRuleUsers.push({ user, reasons });
+      }
+    }
+  }
+
+  if (signInLogs.length === 0 && suspiciousRuleUsers.length === 0) return { insights, metrics };
 
   const suspiciousUsers = new Set<string>();
   const userLocations: Record<string, Set<string>> = {};
@@ -443,6 +559,7 @@ function analyzeAccountCompromise(signInLogs: any[], emailActivity: any[], inbox
   }
 
   const ruleUsers = new Set<string>();
+  for (const ru of suspiciousRuleUsers) ruleUsers.add(ru.user);
   if (Array.isArray(inboxRules)) {
     for (const rule of inboxRules) {
       if (rule.userPrincipalName) ruleUsers.add(rule.userPrincipalName);
@@ -474,6 +591,23 @@ function analyzeAccountCompromise(signInLogs: any[], emailActivity: any[], inbox
     }
   }
 
+  // Also report suspicious inbox rules standalone (without needing sign-in correlation)
+  for (const sru of suspiciousRuleUsers) {
+    if (!suspiciousUsers.has(sru.user)) {
+      // Not already flagged by sign-in correlation
+      metrics.topRiskUsers.push({ user: sru.user, reasons: sru.reasons });
+      insights.push({
+        id: `inbox_rule_risk_${sru.user.replace(/[^a-z0-9]/gi, '_')}`,
+        category: 'account_compromise',
+        name: 'Regra de Inbox Suspeita',
+        description: `${sru.user}: ${sru.reasons.join(', ')}`,
+        severity: 'high',
+        affectedUsers: [sru.user],
+        recommendation: 'Verifique se as regras de inbox são legítimas e autorizadas.',
+      });
+    }
+  }
+
   return { insights, metrics };
 }
 
@@ -485,6 +619,7 @@ function analyzeSuspiciousRules(
   auditLogs: any[],
   exoForwarding: any[],
   exoTransportRules: any[],
+  exoInboxRules: any[],
 ): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
   const insights: M365AnalyzerInsight[] = [];
   const metrics: Record<string, any> = {
@@ -556,6 +691,47 @@ function analyzeSuspiciousRules(
     }
   }
 
+  // --- EXO Inbox Rules (per-mailbox) ---
+  for (const rule of exoInboxRules) {
+    const user = rule.MailboxOwner || rule.MailboxOwnerId || 'unknown';
+    const ruleName = rule.Name || 'unnamed';
+    const enabled = rule.Enabled !== false;
+    if (!enabled) continue;
+
+    const forwardTo = rule.ForwardTo || rule.ForwardAsAttachmentTo || '';
+    const redirectTo = rule.RedirectTo || '';
+    const deleteMsg = rule.DeleteMessage === true;
+
+    if (forwardTo || redirectTo) {
+      const dest = forwardTo || redirectTo;
+      metrics.externalForwards++;
+      metrics.suspiciousRules.push({ user, ruleName, action: 'forward', destination: String(dest) });
+      insights.push({
+        id: `inbox_rule_fwd_${user.replace(/[^a-z0-9]/gi, '_')}_${ruleName.replace(/[^a-z0-9]/gi, '_')}`,
+        category: 'suspicious_rules',
+        name: 'Regra de Inbox com Encaminhamento',
+        description: `${user}: regra "${ruleName}" encaminha para ${dest}`,
+        severity: 'high',
+        affectedUsers: [user],
+        recommendation: 'Verifique se o encaminhamento via inbox rule é autorizado.',
+      });
+    }
+
+    if (deleteMsg) {
+      metrics.autoDelete++;
+      metrics.suspiciousRules.push({ user, ruleName, action: 'delete' });
+      insights.push({
+        id: `inbox_rule_del_${user.replace(/[^a-z0-9]/gi, '_')}_${ruleName.replace(/[^a-z0-9]/gi, '_')}`,
+        category: 'suspicious_rules',
+        name: 'Regra de Inbox com Exclusão Automática',
+        description: `${user}: regra "${ruleName}" deleta emails automaticamente`,
+        severity: 'high',
+        affectedUsers: [user],
+        recommendation: 'Regras que deletam emails podem ocultar atividade maliciosa.',
+      });
+    }
+  }
+
   // --- Audit log-based rules (Graph API data) ---
   if (Array.isArray(auditLogs)) {
     for (const log of auditLogs) {
@@ -603,33 +779,106 @@ function analyzeSuspiciousRules(
 }
 
 // ============================================
-// Module 6: Exfiltration Detection
+// Module 6: Exfiltration Detection (Message Trace aware)
 // ============================================
 
-function analyzeExfiltration(emailActivity: any[]): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
+function analyzeExfiltration(
+  emailActivity: any[],
+  messageTrace: any[],
+  tenantDomains: string[],
+): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
   const insights: M365AnalyzerInsight[] = [];
   const metrics: Record<string, any> = {
     highVolumeExternal: 0,
     topExternalDomains: [],
   };
 
-  if (!Array.isArray(emailActivity)) return { insights, metrics };
+  // Build external domain stats from message trace
+  if (messageTrace.length > 0) {
+    const externalDomainCount: Record<string, { count: number; attachments: number }> = {};
+    const userExternalSent: Record<string, number> = {};
 
-  for (const activity of emailActivity) {
-    const user = activity.userPrincipalName || '';
-    const externalSent = activity.sendCount || 0;
-    if (externalSent > 100) {
-      metrics.highVolumeExternal++;
+    for (const msg of messageTrace) {
+      const sender = (msg.SenderAddress || '').toLowerCase();
+      const recipient = (msg.RecipientAddress || '').toLowerCase();
+      const recipientDomain = recipient.includes('@') ? recipient.split('@')[1] : '';
+
+      if (!recipientDomain) continue;
+
+      // Check if external
+      const isExternal = tenantDomains.length > 0
+        ? !tenantDomains.some(d => recipientDomain.endsWith(d.toLowerCase()))
+        : recipientDomain !== (sender.includes('@') ? sender.split('@')[1] : '');
+
+      if (isExternal) {
+        if (!externalDomainCount[recipientDomain]) {
+          externalDomainCount[recipientDomain] = { count: 0, attachments: 0 };
+        }
+        externalDomainCount[recipientDomain].count++;
+        // Estimate attachment from size (>100KB)
+        const size = parseSizeToBytes(msg.Size);
+        if (size > 102400) externalDomainCount[recipientDomain].attachments++;
+
+        if (sender) userExternalSent[sender] = (userExternalSent[sender] || 0) + 1;
+      }
+    }
+
+    metrics.topExternalDomains = Object.entries(externalDomainCount)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 10)
+      .map(([domain, data]) => ({ domain, count: data.count, attachments: data.attachments }));
+
+    // Flag users with high external volume
+    for (const [user, count] of Object.entries(userExternalSent)) {
+      if (count > 100) {
+        metrics.highVolumeExternal++;
+        insights.push({
+          id: `exfiltration_mt_${user.replace(/[^a-z0-9]/gi, '_')}`,
+          category: 'exfiltration',
+          name: 'Alto Volume de Envio Externo',
+          description: `${user} enviou ${count} emails para domínios externos nas últimas 24h`,
+          severity: count > 500 ? 'critical' : 'high',
+          affectedUsers: [user],
+          count,
+          recommendation: 'Verifique se o volume de envio externo é compatível com a função do usuário.',
+        });
+      }
+    }
+
+    if (metrics.topExternalDomains.length > 0 && metrics.topExternalDomains[0].count > 50) {
+      const topDomain = metrics.topExternalDomains[0];
       insights.push({
-        id: `exfiltration_${user.replace(/[^a-z0-9]/gi, '_')}`,
+        id: `exfiltration_domain_${topDomain.domain.replace(/[^a-z0-9]/gi, '_')}`,
         category: 'exfiltration',
-        name: 'Possível Exfiltração de Dados',
-        description: `${user} enviou ${externalSent} emails com alto volume no período`,
-        severity: externalSent > 500 ? 'critical' : 'high',
-        affectedUsers: [user],
-        count: externalSent,
-        recommendation: 'Verifique se o volume de envio externo é compatível com a função do usuário.',
+        name: 'Domínio Externo com Alto Volume',
+        description: `${topDomain.count} emails enviados para ${topDomain.domain} (${topDomain.attachments} com anexos grandes)`,
+        severity: topDomain.count > 200 ? 'high' : 'medium',
+        recommendation: 'Analise se esse domínio é um destino legítimo para o volume de emails.',
+        metadata: { domain: topDomain.domain, count: topDomain.count },
       });
+    }
+
+    console.log(`[m365-analyzer] Exfiltration analysis from message trace: ${Object.keys(userExternalSent).length} senders, ${Object.keys(externalDomainCount).length} external domains`);
+  }
+
+  // Fallback: Graph emailActivity
+  if (messageTrace.length === 0 && Array.isArray(emailActivity)) {
+    for (const activity of emailActivity) {
+      const user = activity.userPrincipalName || '';
+      const externalSent = activity.sendCount || 0;
+      if (externalSent > 100) {
+        metrics.highVolumeExternal++;
+        insights.push({
+          id: `exfiltration_${user.replace(/[^a-z0-9]/gi, '_')}`,
+          category: 'exfiltration',
+          name: 'Possível Exfiltração de Dados',
+          description: `${user} enviou ${externalSent} emails com alto volume no período`,
+          severity: externalSent > 500 ? 'critical' : 'high',
+          affectedUsers: [user],
+          count: externalSent,
+          recommendation: 'Verifique se o volume de envio externo é compatível com a função do usuário.',
+        });
+      }
     }
   }
 
@@ -646,6 +895,7 @@ function analyzeOperationalRisks(
   exoOrgConfig: any[],
   exoRemoteDomains: any[],
   exoMalwareFilter: any[],
+  exoAuthPolicy: any[],
 ): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
   const insights: M365AnalyzerInsight[] = [];
   const metrics: Record<string, any> = {
@@ -659,7 +909,6 @@ function analyzeOperationalRisks(
   for (const cfg of exoOrgConfig) {
     const smtpAuth = cfg.SmtpClientAuthenticationDisabled;
     if (smtpAuth === false) {
-      // SMTP auth is ENABLED org-wide (bad)
       metrics.smtpAuthEnabled = 1;
       insights.push({
         id: 'smtp_auth_enabled',
@@ -671,7 +920,6 @@ function analyzeOperationalRisks(
       });
     }
 
-    // Check OAuth
     const oauthEnabled = cfg.OAuth2ClientProfileEnabled;
     if (oauthEnabled === false) {
       insights.push({
@@ -681,6 +929,31 @@ function analyzeOperationalRisks(
         description: 'OAuth2ClientProfileEnabled=false — Autenticação moderna está desabilitada',
         severity: 'critical',
         recommendation: 'Habilite OAuth2 para autenticação moderna.',
+      });
+    }
+  }
+
+  // --- EXO Auth Policy: Legacy Protocols ---
+  for (const policy of exoAuthPolicy) {
+    const name = policy.Name || 'Default';
+    const legacyEnabled: string[] = [];
+
+    if (policy.AllowBasicAuthSmtp === true) legacyEnabled.push('SMTP');
+    if (policy.AllowBasicAuthImap === true) legacyEnabled.push('IMAP');
+    if (policy.AllowBasicAuthPop === true) legacyEnabled.push('POP');
+    if (policy.AllowBasicAuthActiveSync === true) legacyEnabled.push('ActiveSync');
+    if (policy.AllowBasicAuthMapi === true) legacyEnabled.push('MAPI');
+
+    if (legacyEnabled.length > 0) {
+      metrics.legacyProtocols += legacyEnabled.length;
+      insights.push({
+        id: `auth_policy_legacy_${name.replace(/[^a-z0-9]/gi, '_')}`,
+        category: 'operational_risks',
+        name: 'Autenticação Básica Permitida',
+        description: `Política "${name}" permite autenticação básica para: ${legacyEnabled.join(', ')}`,
+        severity: legacyEnabled.length > 2 ? 'critical' : 'high',
+        recommendation: 'Desabilite autenticação básica e migre para autenticação moderna (OAuth2).',
+        metadata: { protocols: legacyEnabled },
       });
     }
   }
@@ -735,7 +1008,7 @@ function analyzeOperationalRisks(
       }
     }
     if (legacyUsers.size > 0) {
-      metrics.legacyProtocols = legacyUsers.size;
+      metrics.legacyProtocols = Math.max(metrics.legacyProtocols, legacyUsers.size);
       insights.push({
         id: 'legacy_auth_detected',
         category: 'operational_risks',
@@ -860,6 +1133,13 @@ Deno.serve(async (req) => {
     let exoMalwareFilter: any[] = [];
     let exoRemoteDomains: any[] = [];
 
+    // NEW: Phase 3 operational data
+    let exoMailboxStats: any[] = [];
+    let exoMailboxQuota: any[] = [];
+    let exoMessageTrace: any[] = [];
+    let exoInboxRules: any[] = [];
+    let exoAuthPolicy: any[] = [];
+
     let dataSource = 'none';
     let stepsReceived: string[] = [];
 
@@ -871,10 +1151,9 @@ Deno.serve(async (req) => {
       stepsReceived = keys;
       console.log(`[m365-analyzer] raw_data keys (${keys.length}): ${keys.join(', ')}`);
 
-      // Normalize each step
       const get = (key: string) => normalizeStepData(raw_data[key]);
 
-      // Graph API-style data (if agent collected via edge_function steps)
+      // Graph API-style data
       signInLogs = get('signin_logs').concat(get('failed_signins'));
       auditLogs = get('audit_logs');
       emailActivity = get('email_activity');
@@ -882,7 +1161,7 @@ Deno.serve(async (req) => {
       threatData = get('threat_data');
       inboxRules = get('inbox_rules');
 
-      // EXO PowerShell data — the PRIMARY data source for CBA tenants
+      // EXO PowerShell config data
       exoForwarding = get('exo_mailbox_forwarding');
       exoTransportRules = get('exo_transport_rules');
       exoOrgConfig = get('exo_org_config');
@@ -893,28 +1172,42 @@ Deno.serve(async (req) => {
       exoMalwareFilter = get('exo_malware_filter_policy');
       exoRemoteDomains = get('exo_remote_domains');
 
-      // Also try alternate key names (some agents use slightly different IDs)
+      // NEW Phase 3: operational data
+      exoMailboxStats = get('exo_mailbox_statistics');
+      exoMailboxQuota = get('exo_mailbox_quota');
+      exoMessageTrace = get('exo_message_trace');
+      exoInboxRules = get('exo_inbox_rules');
+      exoAuthPolicy = get('exo_auth_policy');
+
+      // Alternate key names
       if (exoForwarding.length === 0) exoForwarding = get('exo_forwarding');
       if (exoAntiPhish.length === 0) exoAntiPhish = get('exo_antiphish_policy');
       if (exoContentFilter.length === 0) exoContentFilter = get('exo_content_filter');
 
-      // Build inboxRules from forwarding data for compromise module
-      if (inboxRules.length === 0 && exoForwarding.length > 0) {
-        inboxRules = exoForwarding
-          .filter((f: any) => f.ForwardingSmtpAddress || f.ForwardingAddress)
-          .map((f: any) => ({
-            userPrincipalName: f.PrimarySmtpAddress || f.DisplayName || '',
-            ruleName: 'Mailbox Forwarding',
-            forwardTo: f.ForwardingSmtpAddress || f.ForwardingAddress || '',
-          }));
+      // Build inboxRules from forwarding + exoInboxRules for compromise module
+      if (inboxRules.length === 0) {
+        inboxRules = [
+          ...exoForwarding
+            .filter((f: any) => f.ForwardingSmtpAddress || f.ForwardingAddress)
+            .map((f: any) => ({
+              userPrincipalName: f.PrimarySmtpAddress || f.DisplayName || '',
+              MailboxOwner: f.PrimarySmtpAddress || f.DisplayName || '',
+              ruleName: 'Mailbox Forwarding',
+              forwardTo: f.ForwardingSmtpAddress || f.ForwardingAddress || '',
+              ForwardTo: f.ForwardingSmtpAddress || f.ForwardingAddress || '',
+            })),
+          ...exoInboxRules,
+        ];
       }
 
       const exoTotal = exoForwarding.length + exoTransportRules.length + exoOrgConfig.length +
         exoSafeLinks.length + exoSafeAttach.length + exoAntiPhish.length +
-        exoContentFilter.length + exoMalwareFilter.length + exoRemoteDomains.length;
+        exoContentFilter.length + exoMalwareFilter.length + exoRemoteDomains.length +
+        exoMailboxStats.length + exoMailboxQuota.length + exoMessageTrace.length +
+        exoInboxRules.length + exoAuthPolicy.length;
       const graphTotal = signInLogs.length + auditLogs.length + emailActivity.length + mailboxUsage.length + threatData.length;
 
-      console.log(`[m365-analyzer] Agent data: EXO items=${exoTotal}, Graph items=${graphTotal}`);
+      console.log(`[m365-analyzer] Agent data: EXO items=${exoTotal}, Graph items=${graphTotal}, mailboxStats=${exoMailboxStats.length}, messageTrace=${exoMessageTrace.length}, inboxRules=${exoInboxRules.length}, authPolicy=${exoAuthPolicy.length}`);
     }
 
     // ── Graph API fallback: only if NO useful data at all ──
@@ -922,6 +1215,7 @@ Deno.serve(async (req) => {
       exoForwarding.length > 0 || exoTransportRules.length > 0 || exoOrgConfig.length > 0 ||
       exoSafeLinks.length > 0 || exoSafeAttach.length > 0 || exoAntiPhish.length > 0 ||
       exoContentFilter.length > 0 || exoMalwareFilter.length > 0 || exoRemoteDomains.length > 0 ||
+      exoMailboxStats.length > 0 || exoMessageTrace.length > 0 || exoInboxRules.length > 0 ||
       signInLogs.length > 0 || auditLogs.length > 0 || emailActivity.length > 0
     );
 
@@ -961,7 +1255,26 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[m365-analyzer] Data ready (source=${dataSource}): emails=${emailActivity.length}, mailboxes=${mailboxUsage.length}, signIns=${signInLogs.length}, audits=${auditLogs.length}, exoFwd=${exoForwarding.length}, exoTransport=${exoTransportRules.length}, exoAntiPhish=${exoAntiPhish.length}, exoOrgCfg=${exoOrgConfig.length}`);
+    console.log(`[m365-analyzer] Data ready (source=${dataSource}): emails=${emailActivity.length}, mailboxes=${mailboxUsage.length}, signIns=${signInLogs.length}, audits=${auditLogs.length}, exoFwd=${exoForwarding.length}, exoTransport=${exoTransportRules.length}, exoAntiPhish=${exoAntiPhish.length}, exoOrgCfg=${exoOrgConfig.length}, exoMbxStats=${exoMailboxStats.length}, exoMsgTrace=${exoMessageTrace.length}, exoInboxRules=${exoInboxRules.length}, exoAuthPolicy=${exoAuthPolicy.length}`);
+
+    // Fetch tenant domains for exfiltration analysis
+    let tenantDomains: string[] = [];
+    try {
+      const { data: acceptedDomains } = await supabase
+        .from('m365_tenants')
+        .select('tenant_domain')
+        .eq('id', snapshot.tenant_record_id)
+        .single();
+      if (acceptedDomains?.tenant_domain) {
+        tenantDomains = [acceptedDomains.tenant_domain];
+      }
+    } catch { /* ignore */ }
+
+    // Also try accepted domains from EXO data
+    const exoAcceptedDomains = normalizeStepData(raw_data?.exo_accepted_domains);
+    for (const d of exoAcceptedDomains) {
+      if (d.DomainName) tenantDomains.push(d.DomainName);
+    }
 
     // Fetch existing baselines
     const { data: baselines } = await supabase
@@ -975,22 +1288,22 @@ Deno.serve(async (req) => {
     const phishing = analyzePhishingThreats(emailActivity, threatData, exoAntiPhish, exoSafeLinks, exoSafeAttach, exoContentFilter);
     allInsights.push(...phishing.insights);
 
-    const mailbox = analyzeMailboxCapacity(mailboxUsage);
+    const mailbox = analyzeMailboxCapacity(mailboxUsage, exoMailboxStats, exoMailboxQuota);
     allInsights.push(...mailbox.insights);
 
-    const behavioral = analyzeBehavioralBaseline(emailActivity, baselines || []);
+    const behavioral = analyzeBehavioralBaseline(emailActivity, baselines || [], exoMessageTrace);
     allInsights.push(...behavioral.insights);
 
     const compromise = analyzeAccountCompromise(signInLogs, emailActivity, inboxRules);
     allInsights.push(...compromise.insights);
 
-    const rules = analyzeSuspiciousRules(auditLogs, exoForwarding, exoTransportRules);
+    const rules = analyzeSuspiciousRules(auditLogs, exoForwarding, exoTransportRules, exoInboxRules);
     allInsights.push(...rules.insights);
 
-    const exfiltration = analyzeExfiltration(emailActivity);
+    const exfiltration = analyzeExfiltration(emailActivity, exoMessageTrace, tenantDomains);
     allInsights.push(...exfiltration.insights);
 
-    const operational = analyzeOperationalRisks(signInLogs, auditLogs, exoOrgConfig, exoRemoteDomains, exoMalwareFilter);
+    const operational = analyzeOperationalRisks(signInLogs, auditLogs, exoOrgConfig, exoRemoteDomains, exoMalwareFilter, exoAuthPolicy);
     allInsights.push(...operational.insights);
 
     // Build metrics in the exact shape expected by the frontend
@@ -1032,7 +1345,7 @@ Deno.serve(async (req) => {
         fullAccessGrants: operational.metrics.fullAccessGrants || 0,
       },
       dataSource,
-      normalizationVersion: 2,
+      normalizationVersion: 3,
       stepsReceived,
     };
 
@@ -1051,9 +1364,10 @@ Deno.serve(async (req) => {
       })
       .eq('id', snapshot_id);
 
-    // Update baselines
-    if (emailActivity.length > 0 && (!baselines || baselines.length === 0)) {
-      const baselineRows = emailActivity
+    // Update baselines from effective activity (message trace or graph)
+    const effectiveActivity = (behavioral.metrics as any)._effectiveActivity || emailActivity;
+    if (effectiveActivity.length > 0 && (!baselines || baselines.length === 0)) {
+      const baselineRows = effectiveActivity
         .filter((a: any) => a.userPrincipalName)
         .map((a: any) => ({
           tenant_record_id: snapshot.tenant_record_id,
