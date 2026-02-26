@@ -543,7 +543,7 @@ export default function M365AnalyzerDashboardPage() {
                           <span className="text-sm font-medium text-foreground flex-1 truncate">{u.user}</span>
                         </div>
                         <div className="ml-8 mt-1 flex flex-wrap gap-1">
-                          {u.reasons.map((r, j) => (
+                          {(u.reasons ?? []).map((r, j) => (
                             <Badge key={j} variant="outline" className="text-[10px]">{r}</Badge>
                           ))}
                         </div>
