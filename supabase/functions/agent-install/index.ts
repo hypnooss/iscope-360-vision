@@ -840,6 +840,8 @@ write_env_file() {
       echo "SUPABASE_ANON_KEY=\${SUPABASE_ANON_KEY}" >> "\$env_file"
     grep -q "^SUPERVISOR_HEARTBEAT_INTERVAL=" "\$env_file" || \\
       echo "SUPERVISOR_HEARTBEAT_INTERVAL=120" >> "\$env_file"
+    grep -q "^SUPERVISOR_LOG_FILE=" "\$env_file" || \\
+      echo "SUPERVISOR_LOG_FILE=/var/log/iscope-agent/supervisor.log" >> "\$env_file"
     chmod 600 "\$env_file"
     return
   fi
@@ -853,6 +855,7 @@ AGENT_STATE_FILE=\${STATE_DIR}/state.json
 AGENT_LOG_FILE=/var/log/iscope-agent/agent.log
 AGENT_ACTIVATION_CODE=\${ACTIVATION_CODE}
 SUPERVISOR_HEARTBEAT_INTERVAL=120
+SUPERVISOR_LOG_FILE=/var/log/iscope-agent/supervisor.log
 SUPABASE_URL=\${SUPABASE_URL}
 SUPABASE_ANON_KEY=\${SUPABASE_ANON_KEY}
 EOF
