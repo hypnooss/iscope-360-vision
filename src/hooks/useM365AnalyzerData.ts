@@ -133,6 +133,21 @@ export function useM365AnalyzerProgress(tenantRecordId?: string) {
       if (snap.status === 'completed' || snap.status === 'failed' || snap.status === 'cancelled') {
         return { status: snap.status as string, elapsed: null as number | null };
       }
+
+      // Reconcile: if snapshot is pending/processing but agent_task is terminal, treat as orphan
+      if (snap.agent_task_id && (snap.status === 'pending' || snap.status === 'processing')) {
+        const { data: taskData } = await supabase
+          .from('agent_tasks')
+          .select('status')
+          .eq('id', snap.agent_task_id)
+          .maybeSingle();
+
+        const taskStatus = (taskData as any)?.status;
+        if (taskStatus && ['completed', 'failed', 'timeout', 'cancelled'].includes(taskStatus)) {
+          return { status: 'orphan' as string, elapsed: null as number | null, snapshotId: snap.id as string, reconciled: true };
+        }
+      }
+
       const elapsed = Math.floor((Date.now() - new Date(snap.created_at).getTime()) / 1000);
       return { status: snap.status as string, elapsed, snapshotId: snap.id as string };
     },

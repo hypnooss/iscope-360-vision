@@ -86,6 +86,30 @@ Deno.serve(async (req) => {
       .eq('status', 'pending')
       .lt('created_at', staleThreshold);
 
+    // Reconcile orphan snapshots: pending/processing with terminal tasks
+    const { data: orphanSnapshots } = await supabase
+      .from('m365_analyzer_snapshots')
+      .select('id, agent_task_id')
+      .eq('tenant_record_id', tenant_record_id)
+      .in('status', ['pending', 'processing']);
+
+    if (orphanSnapshots && orphanSnapshots.length > 0) {
+      for (const orphan of orphanSnapshots) {
+        if (!orphan.agent_task_id) {
+          // No task linked — mark as failed
+          await supabase.from('m365_analyzer_snapshots').update({ status: 'failed', metrics: { recovered_reason: 'no_agent_task_linked' } }).eq('id', orphan.id);
+          console.log(`[trigger-m365-analyzer] Recovered orphan snapshot ${orphan.id} (no task)`);
+          continue;
+        }
+        const { data: taskRow } = await supabase.from('agent_tasks').select('status').eq('id', orphan.agent_task_id).maybeSingle();
+        const ts = taskRow?.status;
+        if (ts && ['completed', 'failed', 'timeout', 'cancelled'].includes(ts)) {
+          await supabase.from('m365_analyzer_snapshots').update({ status: 'failed', metrics: { recovered_reason: `orphan_task_${ts}` } }).eq('id', orphan.id);
+          console.log(`[trigger-m365-analyzer] Recovered orphan snapshot ${orphan.id} (task ${ts})`);
+        }
+      }
+    }
+
     // Check for existing active task
     const { data: existing } = await supabase
       .from('agent_tasks')

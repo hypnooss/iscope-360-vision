@@ -753,6 +753,26 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error('[m365-analyzer] Error:', error);
+
+    // Mark snapshot as failed if we have a snapshot_id
+    try {
+      const body = await req.clone().json().catch(() => ({}));
+      const failSnapshotId = body?.snapshot_id;
+      if (failSnapshotId) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sbAdmin = createClient(supabaseUrl, supabaseServiceKey);
+        await sbAdmin
+          .from('m365_analyzer_snapshots')
+          .update({ status: 'failed', metrics: { error: String(error) } })
+          .eq('id', failSnapshotId)
+          .in('status', ['pending', 'processing']);
+        console.log(`[m365-analyzer] Marked snapshot ${failSnapshotId} as failed`);
+      }
+    } catch (cleanupErr) {
+      console.error('[m365-analyzer] Failed to mark snapshot as failed:', cleanupErr);
+    }
+
     return new Response(
       JSON.stringify({ success: false, error: 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
