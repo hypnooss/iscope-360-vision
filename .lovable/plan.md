@@ -10,12 +10,12 @@
 - [x] `run-scheduled-analyses` atualizado com suporte a `m365_analyzer_schedules`
 - [x] `config.toml` atualizado
 
-### 🔲 Fase 2: Frontend - Dashboard e Visualização
+### ✅ Fase 2: Frontend - Dashboard e Visualização — CONCLUÍDA
 
-- [ ] Tipos TypeScript: `src/types/m365AnalyzerInsights.ts`
-- [ ] Hook: `src/hooks/useM365AnalyzerData.ts`
-- [ ] Página: `src/pages/m365/M365AnalyzerDashboardPage.tsx`
-- [ ] Navegação: rota em `App.tsx` + menu em `AppLayout.tsx`
+- [x] Tipos TypeScript: `src/types/m365AnalyzerInsights.ts`
+- [x] Hook: `src/hooks/useM365AnalyzerData.ts`
+- [x] Página: `src/pages/m365/M365AnalyzerDashboardPage.tsx`
+- [x] Navegação: rota em `App.tsx` + menu em `AppLayout.tsx`
 
 ### 🔲 Fase 3: Baseline Comportamental e Correlação
 
