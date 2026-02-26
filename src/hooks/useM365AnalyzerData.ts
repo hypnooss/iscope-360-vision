@@ -192,7 +192,12 @@ export function useM365AnalyzerProgress(tenantRecordId?: string) {
 
         const taskStatus = (taskData as any)?.status;
         if (taskStatus && ['completed', 'failed', 'timeout', 'cancelled'].includes(taskStatus)) {
-          return { status: 'orphan' as string, elapsed: null as number | null, snapshotId: snap.id as string, reconciled: true };
+          // Auto-reconcile: mark orphan snapshot as failed directly
+          await supabase
+            .from('m365_analyzer_snapshots' as any)
+            .update({ status: 'failed', metrics: { recovered_reason: `orphan_task_${taskStatus}` } })
+            .eq('id', snap.id);
+          return { status: 'failed' as string, elapsed: null as number | null, snapshotId: snap.id as string, wasOrphan: true };
         }
       }
 

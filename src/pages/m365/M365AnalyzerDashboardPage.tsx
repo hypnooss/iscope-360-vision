@@ -121,7 +121,8 @@ export default function M365AnalyzerDashboardPage() {
   const { data: snapshot, isLoading, refetch } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
   const { data: progress, refetch: refetchProgress, isFetching: isRefetchingProgress } = useM365AnalyzerProgress(selectedTenantId || undefined);
   const isRunning = progress?.status === 'pending' || progress?.status === 'processing';
-  const isOrphan = (progress as any)?.reconciled === true;
+  const wasOrphan = (progress as any)?.wasOrphan === true;
+  const lastFailed = progress?.status === 'failed';
 
   // Schedule dialog state
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
