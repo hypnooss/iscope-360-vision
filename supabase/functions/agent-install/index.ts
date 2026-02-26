@@ -1210,14 +1210,13 @@ CHECKDEPS
 }
 
 write_systemd_service() {
-  local unit_file
-  unit_file="/etc/systemd/system/\${SERVICE_NAME}.service"
-
-  cat > "$unit_file" <<EOF
+  # --- Supervisor unit ---
+  local sup_unit="/etc/systemd/system/\${SERVICE_NAME}.service"
+  cat > "$sup_unit" <<EOF
 [Unit]
 Description=iScope 360 Supervisor
 After=network-online.target
-Wants=network-online.target
+Wants=network-online.target iscope-agent.service
 
 [Service]
 Type=simple
@@ -1238,14 +1237,45 @@ ProtectSystem=false
 [Install]
 WantedBy=multi-user.target
 EOF
+
+  # --- Worker (Agent) unit ---
+  local agent_unit="/etc/systemd/system/\${LEGACY_SERVICE_NAME}.service"
+  cat > "$agent_unit" <<EOF
+[Unit]
+Description=iScope 360 Agent (Worker)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=\${CONFIG_DIR}/agent.env
+WorkingDirectory=\${INSTALL_DIR}
+ExecStart=\${INSTALL_DIR}/venv/bin/python main.py
+Restart=on-failure
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=iscope-agent
+NoNewPrivileges=false
+ProtectSystem=false
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  echo "Unit files criados: $sup_unit e $agent_unit"
 }
 
 setup_sudoers() {
   local sudoers_file="/etc/sudoers.d/iscope-agent"
-  echo "Configurando permissão sudoers para restart do serviço..."
+  echo "Configurando permissão sudoers para restart dos serviços..."
   cat > "$sudoers_file" << SUDOERS
 $SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $SERVICE_NAME
 $SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $LEGACY_SERVICE_NAME
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl start $LEGACY_SERVICE_NAME
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl stop $LEGACY_SERVICE_NAME
 SUDOERS
   chmod 440 "$sudoers_file"
   echo "Sudoers configurado: $sudoers_file"
@@ -1254,18 +1284,12 @@ SUDOERS
 start_service() {
   systemctl daemon-reload
 
-  # Remove legacy iscope-agent service completely if it exists
-  if systemctl list-unit-files | grep -q "^\${LEGACY_SERVICE_NAME}\\.service"; then
-    echo "Removendo serviço legado \${LEGACY_SERVICE_NAME}..."
-    systemctl stop "\${LEGACY_SERVICE_NAME}" 2>/dev/null || true
-    systemctl disable "\${LEGACY_SERVICE_NAME}" 2>/dev/null || true
-    rm -f "/etc/systemd/system/\${LEGACY_SERVICE_NAME}.service"
-    systemctl daemon-reload
-    echo "Serviço legado removido."
-  fi
+  # Enable and start both services
+  systemctl enable "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"
+  systemctl start "$LEGACY_SERVICE_NAME"
+  systemctl start "$SERVICE_NAME"
 
-  # Enable and start the Supervisor service
-  systemctl enable --now "$SERVICE_NAME"
+  echo "Serviços iniciados: $SERVICE_NAME e $LEGACY_SERVICE_NAME"
 }
 
 main() {
@@ -1300,11 +1324,16 @@ main() {
   start_service
 
   echo ""
-  echo "Supervisor instalado com sucesso!"
-  echo "  O Supervisor gerencia heartbeats, updates e inicia o Worker automaticamente."
+  echo "Supervisor + Worker instalados como serviços independentes!"
+  echo "  iscope-supervisor: heartbeats, updates, comandos remotos"
+  echo "  iscope-agent: execução de tarefas"
   echo ""
-  echo "Verificar status: systemctl status \${SERVICE_NAME} --no-pager"
-  echo "Ver logs:       journalctl -u \${SERVICE_NAME} -f --no-pager"
+  echo "Verificar status:"
+  echo "  systemctl status \${SERVICE_NAME} --no-pager"
+  echo "  systemctl status \${LEGACY_SERVICE_NAME} --no-pager"
+  echo "Ver logs:"
+  echo "  journalctl -u \${SERVICE_NAME} -f --no-pager"
+  echo "  journalctl -u \${LEGACY_SERVICE_NAME} -f --no-pager"
   
   # Mostrar informações do certificado M365 se existir
   if [[ -f "$STATE_DIR/certs/thumbprint.txt" ]]; then

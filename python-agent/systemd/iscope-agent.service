@@ -3,25 +3,20 @@ Description=iScope 360 Agent (Worker)
 After=network-online.target
 Wants=network-online.target
 
-# NOTE: This unit exists only as a fallback.
-# In the Supervisor architecture, the Worker is started by the Supervisor
-# as a subprocess and does NOT need its own systemd unit.
-# This file is kept for backward compatibility during migration.
-
 [Service]
 Type=simple
-User=iscope
-Group=iscope
+User=root
+Group=root
 WorkingDirectory=/opt/iscope-agent
+EnvironmentFile=-/etc/iscope/agent.env
 ExecStart=/opt/iscope-agent/venv/bin/python main.py
 Restart=on-failure
 RestartSec=15
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=iscope-agent
-
-# Environment
-EnvironmentFile=-/etc/iscope/agent.env
+NoNewPrivileges=false
+ProtectSystem=false
 
 [Install]
 WantedBy=multi-user.target
