@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
     const { data: newTask, error: taskError } = await supabase
       .from('agent_tasks')
       .insert({
-        agent_id: tenant.agent_id,
+        agent_id: agentId,
         task_type: 'm365_analyzer',
         target_id: tenant_record_id,
         target_type: 'm365_tenant',
