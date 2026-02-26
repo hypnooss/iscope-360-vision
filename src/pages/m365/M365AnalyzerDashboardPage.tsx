@@ -511,7 +511,7 @@ export default function M365AnalyzerDashboardPage() {
               <Card className="glass-card">
                 <CardHeader><CardTitle className="text-sm">Usuários Mais Atacados (Phishing)</CardTitle></CardHeader>
                 <CardContent>
-                  <RankingList items={m.phishing.topAttackedUsers} labelKey="user" />
+                  <RankingList items={m.phishing?.topAttackedUsers ?? []} labelKey="user" />
                 </CardContent>
               </Card>
             )}
