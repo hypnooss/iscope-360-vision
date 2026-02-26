@@ -527,7 +527,7 @@ export default function M365AnalyzerDashboardPage() {
               <Card className="glass-card">
                 <CardHeader><CardTitle className="text-sm">Top Domínios Externos (Envio)</CardTitle></CardHeader>
                 <CardContent>
-                  <RankingList items={m.exfiltration.topExternalDomains} labelKey="domain" />
+                  <RankingList items={m.exfiltration?.topExternalDomains ?? []} labelKey="domain" />
                 </CardContent>
               </Card>
             )}
