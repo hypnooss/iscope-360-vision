@@ -1,56 +1,85 @@
 
 
-## Separar pacotes no script de instalação
+## Analise: `--update` no script de instalacao atual
 
-A arquitetura de cross-update ja esta implementada no Python (Supervisor, Worker, supervisor_updater) e no backend (agent-heartbeat, system_settings, coluna supervisor_version). Falta apenas atualizar os **scripts de instalacao** para baixar e instalar os dois pacotes separados.
+Analisei o fluxo completo do `--update` e identifiquei **um problema critico** que impede o uso seguro:
 
-### Estado atual
+### Problema: `write_env_file` sobrescreve o `ACTIVATION_CODE`
 
-Ambos os scripts (`agent-install` e `super-agent-install`) tem uma funcao `download_release()` que baixa um unico `iscope-agent-latest.tar.gz` e extrai tudo em `$INSTALL_DIR`.
+Quando se executa com `--update` (sem `--activation-code`), o script:
 
-### Mudancas
-
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/functions/agent-install/index.ts` | Modificar `download_release()` para baixar 2 pacotes: `iscope-agent-latest.tar.gz` + `iscope-supervisor-latest.tar.gz` |
-| `supabase/functions/super-agent-install/index.ts` | Mesma mudanca no `download_release()` |
-
-### Nova logica de `download_release()`
+1. Define `ACTIVATION_CODE=""` (vazio, pois nao e obrigatorio no update)
+2. Chama `write_env_file()` que faz `cat > $CONFIG_DIR/agent.env` com `AGENT_ACTIVATION_CODE=` **vazio**
+3. O agent perde o activation code e nao consegue mais se registrar/autenticar
 
 ```text
-download_release() {
-  # 1. Baixar pacote do Agent
-  file_agent = "iscope-agent-latest.tar.gz" (ou versionado)
-  curl → $tmp_agent
-  
-  # 2. Baixar pacote do Supervisor  
-  file_sup = "iscope-supervisor-latest.tar.gz" (ou versionado)
-  curl → $tmp_sup
-  
-  # 3. Limpar INSTALL_DIR (preservando venv, storage, logs, .env)
-  # 4. Extrair pacote do Agent em INSTALL_DIR
-  tar -xzf $tmp_agent -C $INSTALL_DIR
-  
-  # 5. Extrair pacote do Supervisor em INSTALL_DIR
-  tar -xzf $tmp_sup -C $INSTALL_DIR
-  
-  # Resultado: INSTALL_DIR contém agent/ + supervisor/ + main.py + requirements.txt
+ANTES do --update:
+  /etc/iscope-agent/agent.env:
+    AGENT_ACTIVATION_CODE=XXXX-YYYY-ZZZZ-WWWW  ✓
+
+DEPOIS do --update (bug):
+  /etc/iscope-agent/agent.env:
+    AGENT_ACTIVATION_CODE=                       ✗ (vazio!)
+```
+
+### Prerequisito: Bucket
+
+Alem disso, o bucket `agent-releases` precisa ter os dois pacotes separados **antes** de rodar o script:
+
+| Arquivo | Status |
+|---------|--------|
+| `iscope-agent-latest.tar.gz` (so agent/, main.py, requirements.txt) | Precisa ser criado |
+| `iscope-supervisor-latest.tar.gz` (so supervisor/) | Precisa ser criado |
+
+Se o bucket ainda tiver o pacote unificado antigo, o script vai baixar arquivos com conteudo errado.
+
+### Correcao proposta
+
+Modificar `write_env_file()` em ambos os scripts (`agent-install` e `super-agent-install`) para **preservar o env file existente durante updates**:
+
+```text
+write_env_file() {
+  local env_file="$CONFIG_DIR/agent.env"
+
+  # Em modo --update, preservar o env existente
+  if [[ "$UPDATE" -eq 1 ]] && [[ -f "$env_file" ]]; then
+    echo "Modo update: preservando env file existente."
+    # Apenas garantir que SUPABASE_URL e SUPABASE_ANON_KEY estejam presentes
+    # (caso tenham sido adicionados em versoes mais recentes)
+    grep -q "SUPABASE_URL=" "$env_file" || \
+      echo "SUPABASE_URL=${SUPABASE_URL}" >> "$env_file"
+    grep -q "SUPABASE_ANON_KEY=" "$env_file" || \
+      echo "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}" >> "$env_file"
+    return
+  fi
+
+  # Instalacao nova: criar env completo
+  cat > "$env_file" <<EOF
+  ...
+  EOF
 }
 ```
 
-### Bucket — Arquivos necessarios
+### Arquivos a modificar
 
-Apos a implementacao, o bucket `agent-releases` precisara conter:
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/agent-install/index.ts` | `write_env_file()`: preservar env existente em modo `--update` |
+| `supabase/functions/super-agent-install/index.ts` | Mesma mudanca |
 
-| Arquivo | Conteudo |
-|---------|----------|
-| `iscope-agent-latest.tar.gz` | `agent/`, `main.py`, `requirements.txt` |
-| `iscope-supervisor-latest.tar.gz` | `supervisor/` |
-| `iscope-agent-1.3.4.tar.gz` | Mesmo conteudo (para updates automaticos) |
-| `iscope-supervisor-1.0.0.tar.gz` | Mesmo conteudo (para updates automaticos) |
+### Resumo
 
-### Versoes
+Apos a correcao, o fluxo de `--update` sera:
 
-- Agent: `1.3.4` (ja configurado em `agent/version.py`)
-- Supervisor: `1.0.0` (ja configurado em `supervisor/version.py`)
+```text
+1. Para o servico existente
+2. Instala dependencias do sistema (idempotente)
+3. Baixa iscope-agent-latest.tar.gz + iscope-supervisor-latest.tar.gz
+4. Limpa INSTALL_DIR (preserva venv, .env local, storage, logs)
+5. Extrai ambos os pacotes em INSTALL_DIR
+6. Recria venv e instala requirements.txt
+7. PRESERVA o env file existente em /etc/iscope-agent/agent.env  ← corrigido
+8. Reescreve systemd service + sudoers
+9. Inicia o Supervisor (que inicia o Worker automaticamente)
+```
 
