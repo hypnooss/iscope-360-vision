@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Save, CheckCircle, AlertCircle, RefreshCw, Bot, Upload, AlertTriangle, Layers, Key } from 'lucide-react';
+import { Loader2, Save, CheckCircle, AlertCircle, RefreshCw, Bot, Upload, AlertTriangle, Layers, Key, Info } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -74,7 +74,8 @@ export default function SettingsPage() {
     total: number;
     upToDate: number;
     outdated: {name: string; supervisorVersion: string; client: string;}[];
-  }>({ total: 0, upToDate: 0, outdated: [] });
+    withoutSupervisor: number;
+  }>({ total: 0, upToDate: 0, outdated: [], withoutSupervisor: 0 });
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -255,13 +256,14 @@ export default function SettingsPage() {
           outdated: agentOutdated
         });
 
-        // Supervisor stats (only supervisor_version)
+        // Supervisor stats — only count agents that report supervisor_version
+        const agentsWithSupervisor = agents.filter((a) => a.supervisor_version);
         const supUpToDate = latestSupVer
-          ? agents.filter((a) => a.supervisor_version === latestSupVer).length
-          : agents.length;
+          ? agentsWithSupervisor.filter((a) => a.supervisor_version === latestSupVer).length
+          : agentsWithSupervisor.length;
         const supOutdated = latestSupVer
-          ? agents
-              .filter((a) => a.supervisor_version && a.supervisor_version !== latestSupVer)
+          ? agentsWithSupervisor
+              .filter((a) => a.supervisor_version !== latestSupVer)
               .map((a) => ({
                 name: a.name,
                 supervisorVersion: a.supervisor_version || 'N/A',
@@ -270,9 +272,10 @@ export default function SettingsPage() {
           : [];
 
         setSupervisorStats({
-          total: agents.length,
+          total: agentsWithSupervisor.length,
           upToDate: supUpToDate,
-          outdated: supOutdated
+          outdated: supOutdated,
+          withoutSupervisor: agents.length - agentsWithSupervisor.length
         });
       }
     } catch (error) {
@@ -985,8 +988,18 @@ export default function SettingsPage() {
                           <p className="font-medium">{supervisorStats.outdated.length} desatualizados</p>
                           <p className="text-xs text-muted-foreground">Aguardando update</p>
                         </div>
+                        </div>
                       </div>
-                    </div>
+
+                      {supervisorStats.withoutSupervisor > 0 && (
+                        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border">
+                          <Info className="w-5 h-5 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium text-muted-foreground">{supervisorStats.withoutSupervisor} sem Supervisor</p>
+                            <p className="text-xs text-muted-foreground">Agentes legados (modelo antigo)</p>
+                          </div>
+                        </div>
+                      )}
 
                     {supervisorStats.outdated.length > 0 &&
                     <div className="space-y-2">
