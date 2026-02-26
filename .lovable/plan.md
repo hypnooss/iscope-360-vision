@@ -1,73 +1,68 @@
 
 
-## Ajustar página de Configurações para suportar upload do Supervisor
+## Reorganizar layout da aba Agents em Configurações
 
-### Situação atual
+### Mudanças no layout
 
-A página `src/pages/admin/SettingsPage.tsx` (aba "Agents") tem:
-- Upload de um único pacote `.tar.gz` (Agent)
-- Grava no bucket como `iscope-agent-{version}.tar.gz` + `iscope-agent-latest.tar.gz`
-- Atualiza `agent_latest_version`, `agent_update_checksum`, `agent_force_update` no `system_settings`
+O card "Gerenciamento de Atualizações" será reestruturado para ter dois blocos independentes, cada um com seu formulário de publicação à esquerda e seu status específico à direita.
 
-O backend (`agent-heartbeat`) já lê as chaves `supervisor_latest_version`, `supervisor_update_checksum` e `supervisor_force_update` do `system_settings`, mas não existe UI para configurá-las.
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│  Gerenciamento de Atualizações                                      │
+│  Agent: v1.3.4 | Supervisor: v1.0.0                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─ Publicar Agent ──────────────┐  ┌─ Status dos Agents ─────────┐│
+│  │  Versão: [______]             │  │  ✓ 5 atualizados            ││
+│  │  Pacote: [escolher arquivo]   │  │    Agent v1.3.4             ││
+│  │  SHA256: abc123...            │  │  ⚠ 26 desatualizados        ││
+│  │  ☐ Forçar atualização         │  │    Aguardando update        ││
+│  │  [Publicar Agent]             │  │                             ││
+│  │                               │  │  • IEMADEIRA  Agent v1.3.2  ││
+│  │                               │  │  • OCI-01    Agent v1.3.2   ││
+│  └───────────────────────────────┘  └─────────────────────────────┘│
+│                                                                     │
+│  ┌─ Publicar Supervisor ─────────┐  ┌─ Status dos Supervisors ────┐│
+│  │  Versão: [______]             │  │  ✓ 3 atualizados            ││
+│  │  Pacote: [escolher arquivo]   │  │    Sup v1.0.0               ││
+│  │  SHA256: def456...            │  │  ⚠ 2 desatualizados         ││
+│  │  ☐ Forçar atualização         │  │    Aguardando update        ││
+│  │  [Publicar Supervisor]        │  │                             ││
+│  │                               │  │  • agent-01  Sup v0.9.0     ││
+│  └───────────────────────────────┘  └─────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────┘
+```
 
-### Mudanças necessárias
+### Detalhes técnicos
 
 **Arquivo:** `src/pages/admin/SettingsPage.tsx`
 
-1. **Separar o card de upload em dois blocos distintos:**
-   - **Publicar Agent** — mantém a lógica atual, mas com label explícito "Pacote do Agent"
-   - **Publicar Supervisor** — novo bloco com campos próprios (versão, arquivo, checksum)
+1. **Campo Pacote abaixo do campo Versão** — Remover o `grid md:grid-cols-2` dos formulários de Agent e Supervisor, empilhando Versão e Pacote verticalmente (como mostra o print 1).
 
-2. **Novo estado para o Supervisor:**
-   - `supervisorLatestVersion` — lido de `system_settings` key `supervisor_latest_version`
-   - `supervisorForceUpdate` — lido de `supervisor_force_update`
-   - `selectedSupervisorFile`, `supervisorChecksum`, `newSupervisorVersion`, etc.
+2. **Separar `agentStats` em dois conjuntos independentes:**
+   - `agentStats` — filtra apenas por `agent_version !== latestAgentVer` (ignora supervisor)
+   - `supervisorStats` — filtra apenas por `supervisor_version !== latestSupVer` (ignora agent)
+   - Cada um terá seus próprios contadores `upToDate` e lista `outdated`
 
-3. **Nova função `handlePublishSupervisorUpdate`:**
-   - Upload para bucket: `iscope-supervisor-{version}.tar.gz` + `iscope-supervisor-latest.tar.gz`
-   - Grava `supervisor_latest_version`, `supervisor_update_checksum`, `supervisor_force_update` no `system_settings`
+3. **Layout lado a lado (grid cols-2):**
+   - Coluna esquerda: formulário "Publicar Agent" (versão, pacote, checksum, force, botão)
+   - Coluna direita: "Status dos Agents" (cards verde/amarelo + lista de desatualizados mostrando apenas `Agent vX.Y.Z`)
+   - Repetir o mesmo padrão abaixo para Supervisor
 
-4. **Carregar settings do Supervisor:**
-   - Modificar `loadAgentUpdateSettings()` para também ler `supervisor_latest_version` e `supervisor_force_update`
+4. **Status dos Agents** mostra apenas badges de `Agent vX.Y.Z` (sem Sup)
+5. **Status dos Supervisors** mostra apenas badges de `Sup vX.Y.Z` (sem Agent)
 
-5. **Status dos Agents:**
-   - Adicionar exibição da versão do Supervisor ao lado da versão do Agent (a coluna `supervisor_version` já existe na tabela `agents`)
+### Estado a adicionar
 
-### Layout proposto
-
-```text
-┌─────────────────────────────────────────────────┐
-│  Gerenciamento de Atualizações                  │
-│  Versão Agent: v1.3.4 | Supervisor: v1.0.0      │
-├─────────────────────────────────────────────────┤
-│                                                 │
-│  ┌─ Publicar Agent ──────────────────────────┐  │
-│  │  Versão: [______]  Pacote: [escolher]     │  │
-│  │  SHA256: abc123...                         │  │
-│  │  ☐ Forçar atualização                     │  │
-│  │  [Publicar Agent]                         │  │
-│  └───────────────────────────────────────────┘  │
-│                                                 │
-│  ┌─ Publicar Supervisor ─────────────────────┐  │
-│  │  Versão: [______]  Pacote: [escolher]     │  │
-│  │  SHA256: def456...                         │  │
-│  │  ☐ Forçar atualização                     │  │
-│  │  [Publicar Supervisor]                    │  │
-│  └───────────────────────────────────────────┘  │
-│                                                 │
-│  Status dos Agents                              │
-│  ✓ 5 atualizados (Agent v1.3.4)               │
-│  ⚠ 2 desatualizados                            │
-│    • agent-01  Agent v1.3.3  Sup v1.0.0        │
-├─────────────────────────────────────────────────┘
+```typescript
+const [supervisorStats, setSupervisorStats] = useState<{
+  total: number;
+  upToDate: number;
+  outdated: { name: string; supervisorVersion: string; client: string; }[];
+}>({ total: 0, upToDate: 0, outdated: [] });
 ```
 
-### Arquivos a modificar
+### Modificar `loadAgentStats`
 
-| Arquivo | Mudança |
-|---------|---------|
-| `src/pages/admin/SettingsPage.tsx` | Adicionar estado, UI e lógica de upload para Supervisor; mostrar `supervisor_version` no status |
-
-Nenhuma migração de banco necessária — as chaves `supervisor_latest_version`, `supervisor_update_checksum` e `supervisor_force_update` são criadas via upsert na mesma lógica já usada para o Agent.
+Separar a lógica de filtragem para computar `agentStats` (baseado só em `agent_version`) e `supervisorStats` (baseado só em `supervisor_version`) independentemente.
 
