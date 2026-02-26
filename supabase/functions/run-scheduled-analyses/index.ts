@@ -366,6 +366,7 @@ Deno.serve(async (req) => {
         domains: { triggered: domainTriggered, errors: domainErrors, total: dueDomainSchedules?.length ?? 0 },
         analyzers: { triggered: analyzerTriggered, errors: analyzerErrors, total: dueAnalyzerSchedules?.length ?? 0 },
         attack_surface: { triggered: attackSurfaceTriggered, errors: attackSurfaceErrors, total: dueAttackSurfaceSchedules?.length ?? 0 },
+        m365_analyzer: { triggered: m365AnalyzerTriggered, errors: m365AnalyzerErrors, total: dueM365AnalyzerSchedules?.length ?? 0 },
         cve_refresh: cveRefreshSuccess,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
