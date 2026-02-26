@@ -828,7 +828,13 @@ export default function SettingsPage() {
 
                   {/* Status dos Agents */}
                   <div className="space-y-4 p-4 border rounded-lg">
-                    <h4 className="font-medium">Status dos Agents</h4>
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium">Status dos Agents</h4>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        Auto refresh
+                      </div>
+                    </div>
                     
                     <div className="space-y-3">
                       <div className="flex items-center gap-3 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
@@ -954,7 +960,13 @@ export default function SettingsPage() {
 
                   {/* Status dos Supervisors */}
                   <div className="space-y-4 p-4 border rounded-lg">
-                    <h4 className="font-medium">Status dos Supervisors</h4>
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium">Status dos Supervisors</h4>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        Auto refresh
+                      </div>
+                    </div>
                     
                     <div className="space-y-3">
                       <div className="flex items-center gap-3 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
