@@ -429,56 +429,56 @@ export default function M365AnalyzerDashboardPage() {
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
                   <Mail className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{m.phishing.totalBlocked}</div>
+                    <div className="text-lg font-bold text-foreground">{m.phishing?.totalBlocked ?? 0}</div>
                     <div className="text-xs text-muted-foreground">Phishing Bloqueados</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
                   <Database className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{m.mailbox.above90Pct}</div>
+                    <div className="text-lg font-bold text-foreground">{m.mailbox?.above90Pct ?? 0}</div>
                     <div className="text-xs text-muted-foreground">Mailboxes &gt;90%</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
                   <Activity className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{m.behavioral.anomalousUsers}</div>
+                    <div className="text-lg font-bold text-foreground">{m.behavioral?.anomalousUsers ?? 0}</div>
                     <div className="text-xs text-muted-foreground">Comportamentos Anômalos</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
                   <Lock className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{m.compromise.suspiciousLogins}</div>
+                    <div className="text-lg font-bold text-foreground">{m.compromise?.suspiciousLogins ?? 0}</div>
                     <div className="text-xs text-muted-foreground">Logins Suspeitos</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
                   <FileWarning className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{m.rules.externalForwards + m.rules.autoDelete}</div>
+                    <div className="text-lg font-bold text-foreground">{(m.rules?.externalForwards ?? 0) + (m.rules?.autoDelete ?? 0)}</div>
                     <div className="text-xs text-muted-foreground">Regras Suspeitas</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
                   <Send className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{m.exfiltration.highVolumeExternal}</div>
+                    <div className="text-lg font-bold text-foreground">{m.exfiltration?.highVolumeExternal ?? 0}</div>
                     <div className="text-xs text-muted-foreground">Envios Externos Altos</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
                   <ShieldAlert className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{m.operational.smtpAuthEnabled + m.operational.legacyProtocols}</div>
+                    <div className="text-lg font-bold text-foreground">{(m.operational?.smtpAuthEnabled ?? 0) + (m.operational?.legacyProtocols ?? 0)}</div>
                     <div className="text-xs text-muted-foreground">Riscos Operacionais</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
                   <UserX className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{m.compromise.correlatedAlerts}</div>
+                    <div className="text-lg font-bold text-foreground">{m.compromise?.correlatedAlerts ?? 0}</div>
                     <div className="text-xs text-muted-foreground">Alertas Correlacionados</div>
                   </div>
                 </div>
@@ -507,43 +507,43 @@ export default function M365AnalyzerDashboardPage() {
         {/* Rankings */}
         {snapshot && m && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {m.phishing.topAttackedUsers.length > 0 && (
+            {(m.phishing?.topAttackedUsers?.length ?? 0) > 0 && (
               <Card className="glass-card">
                 <CardHeader><CardTitle className="text-sm">Usuários Mais Atacados (Phishing)</CardTitle></CardHeader>
                 <CardContent>
-                  <RankingList items={m.phishing.topAttackedUsers} labelKey="user" />
+                  <RankingList items={m.phishing?.topAttackedUsers ?? []} labelKey="user" />
                 </CardContent>
               </Card>
             )}
-            {m.phishing.topSenderDomains.length > 0 && (
+            {(m.phishing?.topSenderDomains?.length ?? 0) > 0 && (
               <Card className="glass-card">
                 <CardHeader><CardTitle className="text-sm">Top Domínios Remetentes</CardTitle></CardHeader>
                 <CardContent>
-                  <RankingList items={m.phishing.topSenderDomains} labelKey="domain" />
+                  <RankingList items={m.phishing?.topSenderDomains ?? []} labelKey="domain" />
                 </CardContent>
               </Card>
             )}
-            {m.exfiltration.topExternalDomains.length > 0 && (
+            {(m.exfiltration?.topExternalDomains?.length ?? 0) > 0 && (
               <Card className="glass-card">
                 <CardHeader><CardTitle className="text-sm">Top Domínios Externos (Envio)</CardTitle></CardHeader>
                 <CardContent>
-                  <RankingList items={m.exfiltration.topExternalDomains} labelKey="domain" />
+                  <RankingList items={m.exfiltration?.topExternalDomains ?? []} labelKey="domain" />
                 </CardContent>
               </Card>
             )}
-            {m.compromise.topRiskUsers.length > 0 && (
+            {(m.compromise?.topRiskUsers?.length ?? 0) > 0 && (
               <Card className="glass-card">
                 <CardHeader><CardTitle className="text-sm">Usuários em Risco</CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {m.compromise.topRiskUsers.slice(0, 8).map((u, i) => (
+                    {(m.compromise?.topRiskUsers ?? []).slice(0, 8).map((u, i) => (
                       <div key={i} className="py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
                         <div className="flex items-center gap-3">
                           <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">{i + 1}</span>
                           <span className="text-sm font-medium text-foreground flex-1 truncate">{u.user}</span>
                         </div>
                         <div className="ml-8 mt-1 flex flex-wrap gap-1">
-                          {u.reasons.map((r, j) => (
+                          {(u.reasons ?? []).map((r, j) => (
                             <Badge key={j} variant="outline" className="text-[10px]">{r}</Badge>
                           ))}
                         </div>
