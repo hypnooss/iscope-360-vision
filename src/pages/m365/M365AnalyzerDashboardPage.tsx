@@ -507,7 +507,7 @@ export default function M365AnalyzerDashboardPage() {
         {/* Rankings */}
         {snapshot && m && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {m.phishing.topAttackedUsers.length > 0 && (
+            {(m.phishing?.topAttackedUsers?.length ?? 0) > 0 && (
               <Card className="glass-card">
                 <CardHeader><CardTitle className="text-sm">Usuários Mais Atacados (Phishing)</CardTitle></CardHeader>
                 <CardContent>
