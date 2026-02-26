@@ -450,7 +450,7 @@ export default function M365AnalyzerDashboardPage() {
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
                   <Lock className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{m.compromise.suspiciousLogins}</div>
+                    <div className="text-lg font-bold text-foreground">{m.compromise?.suspiciousLogins ?? 0}</div>
                     <div className="text-xs text-muted-foreground">Logins Suspeitos</div>
                   </div>
                 </div>
