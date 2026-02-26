@@ -95,13 +95,17 @@ export default function SettingsPage() {
       loadAgentUpdateSettings();
       loadAgentStats();
       setLoading(false);
-
-      const interval = setInterval(() => {
-        loadAgentStats();
-      }, 5000);
-
-      return () => clearInterval(interval);
     }
+  }, [user, role]);
+
+  useEffect(() => {
+    if (!user || role !== 'super_admin') return;
+
+    const interval = setInterval(() => {
+      loadAgentStats();
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, [user, role]);
 
   // ==========================================
