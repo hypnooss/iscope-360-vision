@@ -519,7 +519,7 @@ export default function M365AnalyzerDashboardPage() {
               <Card className="glass-card">
                 <CardHeader><CardTitle className="text-sm">Top Domínios Remetentes</CardTitle></CardHeader>
                 <CardContent>
-                  <RankingList items={m.phishing.topSenderDomains} labelKey="domain" />
+                  <RankingList items={m.phishing?.topSenderDomains ?? []} labelKey="domain" />
                 </CardContent>
               </Card>
             )}
