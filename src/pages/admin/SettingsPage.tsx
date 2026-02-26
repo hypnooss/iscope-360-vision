@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ModulesManagement } from '@/components/admin/ModulesManagement';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ApiKeyStatus {
   name: string;
@@ -857,16 +858,18 @@ export default function SettingsPage() {
                     {agentStats.outdated.length > 0 &&
                     <div className="space-y-2">
                         <p className="text-sm text-muted-foreground">Agents desatualizados:</p>
-                        <ul className="space-y-1">
-                          {agentStats.outdated.map((agent, i) =>
-                        <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
-                              <span className="w-2 h-2 rounded-full bg-amber-500" />
-                              <span>{agent.name}</span>
-                              <Badge variant="outline" className="text-xs">Agent v{agent.version}</Badge>
-                              <span className="text-muted-foreground">- {agent.client}</span>
-                            </li>
-                        )}
-                        </ul>
+                        <ScrollArea className="max-h-[200px]">
+                          <ul className="space-y-1">
+                            {agentStats.outdated.map((agent, i) =>
+                              <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
+                                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                                <span>{agent.name}</span>
+                                <Badge variant="outline" className="text-xs">Agent v{agent.version}</Badge>
+                                <span className="text-muted-foreground">- {agent.client}</span>
+                              </li>
+                            )}
+                          </ul>
+                        </ScrollArea>
                       </div>
                     }
 
@@ -981,16 +984,18 @@ export default function SettingsPage() {
                     {supervisorStats.outdated.length > 0 &&
                     <div className="space-y-2">
                         <p className="text-sm text-muted-foreground">Supervisors desatualizados:</p>
-                        <ul className="space-y-1">
-                          {supervisorStats.outdated.map((agent, i) =>
-                        <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
-                              <span className="w-2 h-2 rounded-full bg-amber-500" />
-                              <span>{agent.name}</span>
-                              <Badge variant="outline" className="text-xs">Sup v{agent.supervisorVersion}</Badge>
-                              <span className="text-muted-foreground">- {agent.client}</span>
-                            </li>
-                        )}
-                        </ul>
+                        <ScrollArea className="max-h-[200px]">
+                          <ul className="space-y-1">
+                            {supervisorStats.outdated.map((agent, i) =>
+                              <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
+                                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                                <span>{agent.name}</span>
+                                <Badge variant="outline" className="text-xs">Sup v{agent.supervisorVersion}</Badge>
+                                <span className="text-muted-foreground">- {agent.client}</span>
+                              </li>
+                            )}
+                          </ul>
+                        </ScrollArea>
                       </div>
                     }
 
