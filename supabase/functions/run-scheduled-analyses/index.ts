@@ -280,6 +280,57 @@ Deno.serve(async (req) => {
     }
 
     // ========================================================
+    // M365 Analyzer Schedules
+    // ========================================================
+    const { data: dueM365AnalyzerSchedules, error: m365AnalyzerFetchError } = await supabase
+      .from('m365_analyzer_schedules')
+      .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .eq('is_active', true)
+      .not('frequency', 'eq', 'manual')
+      .lte('next_run_at', new Date().toISOString());
+
+    if (m365AnalyzerFetchError) {
+      console.error('[run-scheduled-analyses] Error fetching M365 analyzer schedules:', m365AnalyzerFetchError);
+    }
+
+    let m365AnalyzerTriggered = 0;
+    let m365AnalyzerErrors = 0;
+
+    if (dueM365AnalyzerSchedules && dueM365AnalyzerSchedules.length > 0) {
+      console.log(`[run-scheduled-analyses] Found ${dueM365AnalyzerSchedules.length} M365 analyzer schedule(s) due.`);
+
+      for (const schedule of dueM365AnalyzerSchedules) {
+        try {
+          const triggerUrl = `${supabaseUrl}/functions/v1/trigger-m365-analyzer`;
+          const response = await fetch(triggerUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+            body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
+          });
+          const result = await response.json();
+          if (result.success || response.status === 409) {
+            console.log(`[run-scheduled-analyses] Triggered M365 analyzer for tenant ${schedule.tenant_record_id}`);
+            m365AnalyzerTriggered++;
+          } else {
+            console.error(`[run-scheduled-analyses] Failed to trigger M365 analyzer for tenant ${schedule.tenant_record_id}:`, result.error);
+            m365AnalyzerErrors++;
+          }
+
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1
+          );
+          await supabase.from('m365_analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+        } catch (err) {
+          console.error(`[run-scheduled-analyses] M365 analyzer schedule error:`, err);
+          m365AnalyzerErrors++;
+        }
+      }
+    } else {
+      console.log('[run-scheduled-analyses] No M365 analyzer schedules due.');
+    }
+
+    // ========================================================
     // CVE Cache Refresh
     // ========================================================
     let cveRefreshSuccess = false;
@@ -301,10 +352,10 @@ Deno.serve(async (req) => {
       console.error('[run-scheduled-analyses] CVE refresh error:', err);
     }
 
-    const totalTriggered = triggered + domainTriggered + analyzerTriggered + attackSurfaceTriggered;
-    const totalErrors = errors + domainErrors + analyzerErrors + attackSurfaceErrors;
+    const totalTriggered = triggered + domainTriggered + analyzerTriggered + attackSurfaceTriggered + m365AnalyzerTriggered;
+    const totalErrors = errors + domainErrors + analyzerErrors + attackSurfaceErrors + m365AnalyzerErrors;
 
-    console.log(`[run-scheduled-analyses] Done. Firewalls: ${triggered}, Domains: ${domainTriggered}, Analyzers: ${analyzerTriggered}, AttackSurface: ${attackSurfaceTriggered}, CVE refresh: ${cveRefreshSuccess}, Errors: ${totalErrors}`);
+    console.log(`[run-scheduled-analyses] Done. Firewalls: ${triggered}, Domains: ${domainTriggered}, Analyzers: ${analyzerTriggered}, AttackSurface: ${attackSurfaceTriggered}, M365Analyzer: ${m365AnalyzerTriggered}, CVE refresh: ${cveRefreshSuccess}, Errors: ${totalErrors}`);
 
     return new Response(
       JSON.stringify({
@@ -315,6 +366,7 @@ Deno.serve(async (req) => {
         domains: { triggered: domainTriggered, errors: domainErrors, total: dueDomainSchedules?.length ?? 0 },
         analyzers: { triggered: analyzerTriggered, errors: analyzerErrors, total: dueAnalyzerSchedules?.length ?? 0 },
         attack_surface: { triggered: attackSurfaceTriggered, errors: attackSurfaceErrors, total: dueAttackSurfaceSchedules?.length ?? 0 },
+        m365_analyzer: { triggered: m365AnalyzerTriggered, errors: m365AnalyzerErrors, total: dueM365AnalyzerSchedules?.length ?? 0 },
         cve_refresh: cveRefreshSuccess,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

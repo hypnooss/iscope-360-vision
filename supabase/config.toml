@@ -138,3 +138,9 @@ verify_jwt = false
 [functions.agent-commands]
 verify_jwt = false
 
+[functions.trigger-m365-analyzer]
+verify_jwt = false
+
+[functions.m365-analyzer]
+verify_jwt = false
+
