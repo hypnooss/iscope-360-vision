@@ -471,7 +471,7 @@ export default function M365AnalyzerDashboardPage() {
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
                   <ShieldAlert className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{m.operational.smtpAuthEnabled + m.operational.legacyProtocols}</div>
+                    <div className="text-lg font-bold text-foreground">{(m.operational?.smtpAuthEnabled ?? 0) + (m.operational?.legacyProtocols ?? 0)}</div>
                     <div className="text-xs text-muted-foreground">Riscos Operacionais</div>
                   </div>
                 </div>
