@@ -151,6 +151,8 @@ export default function ExternalDomainExecutionsPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
+  const [snapshotCancelOpen, setSnapshotCancelOpen] = useState(false);
+  const [snapshotToCancel, setSnapshotToCancel] = useState<AttackSurfaceSnapshotRow | null>(null);
   const { isPreviewMode, previewTarget } = usePreview();
   const queryClient = useQueryClient();
 
@@ -463,6 +465,31 @@ export default function ExternalDomainExecutionsPage() {
     setCancelOpen(true);
   };
 
+  const cancelSnapshotMutation = useMutation({
+    mutationFn: async (clientId: string) => {
+      const { data, error } = await supabase.functions.invoke('cancel-attack-surface-scan', {
+        body: { client_id: clientId },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: async () => {
+      toast.success('Scan de superfície cancelado com sucesso');
+      await queryClient.invalidateQueries({ queryKey: ['attack-surface-executions'] });
+      setSnapshotCancelOpen(false);
+      setSnapshotToCancel(null);
+    },
+    onError: (e: any) => {
+      console.error('Failed to cancel snapshot:', e);
+      toast.error('Erro ao cancelar scan', { description: e?.message });
+    }
+  });
+
+  const requestSnapshotCancel = (snap: AttackSurfaceSnapshotRow) => {
+    setSnapshotToCancel(snap);
+    setSnapshotCancelOpen(true);
+  };
+
   const openDetails = async (item: UnifiedExecution) => {
     if (item.source === 'analysis') {
       setSelectedAnalysis(item.original as AnalysisHistory);
@@ -692,7 +719,16 @@ export default function ExternalDomainExecutionsPage() {
                             onClick={() => requestCancel(item.original as AgentTask)}
                             disabled={cancelMutation.isPending}
                             title="Cancelar tarefa">
-
+                                <Ban className="w-4 h-4 text-destructive" />
+                              </Button>
+                          }
+                            {item.source === 'attack_surface' && ['pending', 'running'].includes(item.status) &&
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => requestSnapshotCancel(item.original as AttackSurfaceSnapshotRow)}
+                            disabled={cancelSnapshotMutation.isPending}
+                            title="Cancelar scan">
                                 <Ban className="w-4 h-4 text-destructive" />
                               </Button>
                           }
@@ -1029,6 +1065,31 @@ export default function ExternalDomainExecutionsPage() {
                 disabled={!taskToCancel || cancelMutation.isPending}>
 
                 {cancelMutation.isPending ? 'Encerrando...' : 'Encerrar'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Cancel Surface Scan confirm */}
+        <AlertDialog open={snapshotCancelOpen} onOpenChange={setSnapshotCancelOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cancelar Surface Scan?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Isso cancelará o scan de superfície de ataque em andamento e todas as tarefas pendentes associadas.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setSnapshotToCancel(null)}>
+                Voltar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (!snapshotToCancel) return;
+                  cancelSnapshotMutation.mutate(snapshotToCancel.client_id);
+                }}
+                disabled={!snapshotToCancel || cancelSnapshotMutation.isPending}>
+                {cancelSnapshotMutation.isPending ? 'Cancelando...' : 'Cancelar Scan'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
