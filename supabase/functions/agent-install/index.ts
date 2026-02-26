@@ -830,6 +830,21 @@ write_env_file() {
   local env_file
   env_file="$CONFIG_DIR/agent.env"
 
+  # Em modo --update, preservar env existente (evita perder ACTIVATION_CODE)
+  if [[ "\$UPDATE" -eq 1 ]] && [[ -f "\$env_file" ]]; then
+    echo "Modo update: preservando env file existente em \$env_file"
+    # Garantir que chaves obrigatórias estejam presentes (adicionadas em versões recentes)
+    grep -q "^SUPABASE_URL=" "\$env_file" || \\
+      echo "SUPABASE_URL=\${SUPABASE_URL}" >> "\$env_file"
+    grep -q "^SUPABASE_ANON_KEY=" "\$env_file" || \\
+      echo "SUPABASE_ANON_KEY=\${SUPABASE_ANON_KEY}" >> "\$env_file"
+    grep -q "^SUPERVISOR_HEARTBEAT_INTERVAL=" "\$env_file" || \\
+      echo "SUPERVISOR_HEARTBEAT_INTERVAL=120" >> "\$env_file"
+    chmod 600 "\$env_file"
+    return
+  fi
+
+  # Instalação nova: criar env completo
   # Do not echo activation code to stdout
   cat > "$env_file" <<EOF
 AGENT_API_BASE_URL=\${API_BASE_URL}
