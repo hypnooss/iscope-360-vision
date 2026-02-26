@@ -452,11 +452,22 @@ class TaskExecutor:
         # Merge all commands into one executor call
         first_params = dict(steps[0].get('params', {}))
         merged_commands = []
+        batch_timeouts = []
         for step in steps:
-            cmds = step.get('params', {}).get('commands', [])
+            step_params = step.get('params', {})
+            cmds = step_params.get('commands', [])
             merged_commands.extend(cmds)
-        
+            timeout_value = step_params.get('timeout')
+            if isinstance(timeout_value, (int, float)) and timeout_value > 0:
+                batch_timeouts.append(int(timeout_value))
+
+        # IMPORTANT: when batching many steps, we cannot reuse the first step timeout
+        # (e.g. 120s) for the whole batch; otherwise every command appears as timeout.
+        default_batch_timeout = 300 + (max(0, len(merged_commands) - 1) * 30)
+        computed_batch_timeout = max([default_batch_timeout, *batch_timeouts]) if batch_timeouts else default_batch_timeout
+
         first_params['commands'] = merged_commands
+        first_params['timeout'] = computed_batch_timeout
         merged_step = {'type': 'powershell', 'params': first_params}
         
         self.logger.info(f"PowerShell batch: {len(steps)} steps, {len(merged_commands)} commands in single session")
