@@ -17,20 +17,70 @@ const defaultMetrics: M365AnalyzerMetrics = {
   operational: { smtpAuthEnabled: 0, legacyProtocols: 0, inactiveWithActivity: 0, fullAccessGrants: 0 },
 };
 
+function safeArray<T>(val: unknown): T[] {
+  return Array.isArray(val) ? val : [];
+}
+
+function safeNum(val: unknown): number {
+  return typeof val === 'number' ? val : 0;
+}
+
+function parseMetrics(raw: unknown): M365AnalyzerMetrics {
+  if (!raw || typeof raw !== 'object') return { ...defaultMetrics };
+  const m = raw as Record<string, any>;
+
+  const ph = m.phishing ?? {};
+  const mb = m.mailbox ?? {};
+  const bh = m.behavioral ?? {};
+  const co = m.compromise ?? {};
+  const ru = m.rules ?? {};
+  const ex = m.exfiltration ?? {};
+  const op = m.operational ?? {};
+
+  return {
+    phishing: {
+      totalBlocked: safeNum(ph.totalBlocked ?? ph.totalPhishing),
+      quarantined: safeNum(ph.quarantined),
+      topAttackedUsers: safeArray(ph.topAttackedUsers),
+      topSenderDomains: safeArray(ph.topSenderDomains),
+    },
+    mailbox: {
+      totalMailboxes: safeNum(mb.totalMailboxes),
+      above80Pct: safeNum(mb.above80Pct ?? mb.above80),
+      above90Pct: safeNum(mb.above90Pct ?? mb.above90),
+      topMailboxes: safeArray(mb.topMailboxes),
+    },
+    behavioral: {
+      anomalousUsers: safeNum(bh.anomalousUsers),
+      deviations: safeArray(bh.deviations),
+    },
+    compromise: {
+      suspiciousLogins: safeNum(co.suspiciousLogins ?? co.suspiciousSignIns),
+      correlatedAlerts: safeNum(co.correlatedAlerts ?? co.potentiallyCompromised),
+      topRiskUsers: safeArray(co.topRiskUsers),
+    },
+    rules: {
+      externalForwards: safeNum(ru.externalForwards ?? ru.suspiciousRules),
+      autoDelete: safeNum(ru.autoDelete),
+      suspiciousRules: safeArray(ru.suspiciousRules),
+    },
+    exfiltration: {
+      highVolumeExternal: safeNum(ex.highVolumeExternal ?? ex.exfiltrationRisk),
+      topExternalDomains: safeArray(ex.topExternalDomains),
+    },
+    operational: {
+      smtpAuthEnabled: safeNum(op.smtpAuthEnabled),
+      legacyProtocols: safeNum(op.legacyProtocols ?? op.legacyAuthUsers),
+      inactiveWithActivity: safeNum(op.inactiveWithActivity),
+      fullAccessGrants: safeNum(op.fullAccessGrants),
+    },
+  };
+}
+
 function parseSnapshot(row: Record<string, unknown>): M365AnalyzerSnapshot {
   const rawSummary = (row.summary ?? { critical: 0, high: 0, medium: 0, low: 0, info: 0 }) as unknown as M365AnalyzerSummary;
   const insights = (Array.isArray(row.insights) ? row.insights : []) as unknown as M365AnalyzerInsight[];
-  const rawMetrics = (row.metrics ?? {}) as Record<string, unknown>;
-
-  const metrics: M365AnalyzerMetrics = {
-    phishing: (rawMetrics.phishing as M365AnalyzerMetrics['phishing']) ?? defaultMetrics.phishing,
-    mailbox: (rawMetrics.mailbox as M365AnalyzerMetrics['mailbox']) ?? defaultMetrics.mailbox,
-    behavioral: (rawMetrics.behavioral as M365AnalyzerMetrics['behavioral']) ?? defaultMetrics.behavioral,
-    compromise: (rawMetrics.compromise as M365AnalyzerMetrics['compromise']) ?? defaultMetrics.compromise,
-    rules: (rawMetrics.rules as M365AnalyzerMetrics['rules']) ?? defaultMetrics.rules,
-    exfiltration: (rawMetrics.exfiltration as M365AnalyzerMetrics['exfiltration']) ?? defaultMetrics.exfiltration,
-    operational: (rawMetrics.operational as M365AnalyzerMetrics['operational']) ?? defaultMetrics.operational,
-  };
+  const metrics = parseMetrics(row.metrics);
 
   return {
     id: row.id as string,
@@ -75,7 +125,6 @@ function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnap
     { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
   );
 
-  // Use latest snapshot's metrics (most current state)
   const metrics = latest.metrics;
 
   return {
@@ -134,7 +183,6 @@ export function useM365AnalyzerProgress(tenantRecordId?: string) {
         return { status: snap.status as string, elapsed: null as number | null };
       }
 
-      // Reconcile: if snapshot is pending/processing but agent_task is terminal, treat as orphan
       if (snap.agent_task_id && (snap.status === 'pending' || snap.status === 'processing')) {
         const { data: taskData } = await supabase
           .from('agent_tasks')
