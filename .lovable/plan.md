@@ -1,117 +1,85 @@
 
 
-## Problema
+## Diagnostico
 
-Claro como agua. Vou resumir para confirmar:
+O evidence e claro. A saida do `--update` mostra:
 
-1. **O Supervisor e o Agent compartilham o mesmo logger** — ambos chamam `setup_logger()` que usa `logging.getLogger("infrascope360")` e escreve no mesmo `AGENT_LOG_FILE`. Resultado: logs misturados num arquivo so.
+```
+Serviços iniciados: iscope-supervisor e iscope-agent
+```
 
-2. **O Supervisor usa `from agent.logger import setup_logger`** — nao tem logger proprio. Ambos os processos escrevem em `/var/log/iscope-agent/agent.log`.
+Mas **NAO** mostra "Parando serviço iscope-supervisor..." nem "Parando serviço iscope-agent...", o que significa que `stop_service_if_exists` falhou silenciosamente (o grep nao matchou) ou nao parou o processo de fato.
 
-3. **Os unit files usam `StandardOutput=journal`** — no journald ja estao separados via `SyslogIdentifier` (`iscope-supervisor` vs `iscope-agent`). Mas o arquivo de log em disco (`/var/log/iscope-agent/agent.log`) mistura tudo porque ambos usam a mesma env var `AGENT_LOG_FILE`.
+Resultado:
+- O Supervisor VELHO (PID 2708036, 22:21) continua rodando com o **codigo antigo em memoria** — que usa `subprocess.Popen` para spawnar o Worker
+- O `systemctl start iscope-supervisor` na `start_service()` e NO-OP porque o servico ja esta "active"
+- O novo `iscope-agent.service` iniciou corretamente (PID 2709626), mas agora temos **2 Workers**: um como subprocess do supervisor velho + um como servico independente
+- `supervisor.log` nao existe porque o supervisor rodando usa o logger antigo (em memoria)
+
+### Causa raiz
+
+```javascript
+// start_service() — linha 1287
+systemctl start "$SERVICE_NAME"      // NO-OP se ja esta rodando!
+systemctl start "$LEGACY_SERVICE_NAME"
+```
+
+Deveria ser `restart`, nao `start`.
 
 ## Plano
 
-### 1. Criar logger separado para o Supervisor
+### 1. Corrigir `start_service()` — usar `restart` em vez de `start`
 
-**Arquivo:** `python-agent/supervisor/logger.py` (novo)
+**Arquivo:** `supabase/functions/agent-install/index.ts`
 
-```python
-import logging
-import os
-import sys
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
-
-
-def setup_supervisor_logger():
-    """Logger dedicado do Supervisor. Arquivo via SUPERVISOR_LOG_FILE."""
-
-    logger = logging.getLogger("iscope-supervisor")
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-
-    if not logger.handlers:
-        stream_handler = logging.StreamHandler(sys.stdout)
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
-
-        log_file = os.getenv("SUPERVISOR_LOG_FILE")
-        if log_file:
-            log_path = Path(log_file)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            file_handler = RotatingFileHandler(
-                str(log_path),
-                maxBytes=1 * 1024 * 1024,
-                backupCount=1,
-            )
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
-
-    return logger
-```
-
-### 2. Usar o logger dedicado no Supervisor
-
-**Arquivo:** `python-agent/supervisor/main.py`
-
-Trocar:
-```python
-from agent.logger import setup_logger
-```
-Por:
-```python
-from supervisor.logger import setup_supervisor_logger
-```
-
-E na funcao `main()`:
-```python
-logger = setup_supervisor_logger()
-```
-
-### 3. Adicionar `SUPERVISOR_LOG_FILE` no env
-
-**Arquivo:** `supabase/functions/agent-install/index.ts`, funcao `write_env_file()`
-
-Adicionar na geracao do env file:
-```
-SUPERVISOR_LOG_FILE=/var/log/iscope-agent/supervisor.log
-```
-
-E no bloco de update (append se ausente):
 ```bash
-grep -q "^SUPERVISOR_LOG_FILE=" "$env_file" || \
-  echo "SUPERVISOR_LOG_FILE=/var/log/iscope-agent/supervisor.log" >> "$env_file"
+start_service() {
+  systemctl daemon-reload
+
+  # Stop both services first to ensure clean state
+  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+  systemctl stop "$LEGACY_SERVICE_NAME" 2>/dev/null || true
+
+  # Enable and start both services
+  systemctl enable "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"
+  systemctl start "$LEGACY_SERVICE_NAME"
+  systemctl start "$SERVICE_NAME"
+
+  echo "Serviços iniciados: $SERVICE_NAME e $LEGACY_SERVICE_NAME"
+}
 ```
 
-**Arquivo:** `supabase/functions/super-agent-install/index.ts` — mesma mudanca.
+### 2. Corrigir `stop_service_if_exists()` — tornar mais robusto
 
-### 4. Criar diretorio de logs no `ensure_dirs()`
+Remover o grep condicional fragil e simplesmente parar:
 
-Ja existe: `mkdir -p "/var/log/iscope-agent"`. Os dois arquivos (`agent.log` e `supervisor.log`) ficam no mesmo diretorio mas em arquivos separados.
-
-### Resultado
-
-```text
-/var/log/iscope-agent/
-├── agent.log        ← logs do Worker (main.py) — AGENT_LOG_FILE
-└── supervisor.log   ← logs do Supervisor       — SUPERVISOR_LOG_FILE
-```
-
-No journald, ja separados via `SyslogIdentifier`:
 ```bash
-journalctl -u iscope-agent -f       # Worker
-journalctl -u iscope-supervisor -f  # Supervisor
+stop_service_if_exists() {
+  for svc in "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"; do
+    echo "Parando serviço ${svc}..."
+    systemctl stop "$svc" 2>/dev/null || true
+    systemctl disable "$svc" 2>/dev/null || true
+  done
+}
 ```
+
+### 3. Mesmas correcoes em `super-agent-install`
+
+Aplicar as mesmas mudancas em `supabase/functions/super-agent-install/index.ts`.
 
 ### Arquivos impactados
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `python-agent/supervisor/logger.py` | Novo: logger dedicado do Supervisor |
-| `python-agent/supervisor/main.py` | Usar `setup_supervisor_logger()` em vez de `setup_logger()` |
-| `supabase/functions/agent-install/index.ts` | Adicionar `SUPERVISOR_LOG_FILE` no env |
-| `supabase/functions/super-agent-install/index.ts` | Mesma mudanca |
+| `supabase/functions/agent-install/index.ts` | `stop_service_if_exists` + `start_service` |
+| `supabase/functions/super-agent-install/index.ts` | Mesmas correcoes |
+
+### Acao imediata no host
+
+Apos o deploy, rodar `--update` novamente. Desta vez:
+1. `stop_service_if_exists` para AMBOS os servicos (mata o supervisor velho com subprocess)
+2. `start_service` inicia ambos como servicos independentes
+3. `systemctl status iscope-supervisor` mostrara 1 processo
+4. `systemctl status iscope-agent` mostrara 1 processo
+5. `supervisor.log` sera criado pelo novo codigo
 
