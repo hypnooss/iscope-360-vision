@@ -62,6 +62,7 @@ const EntraIdApplicationInsightsPage = lazy(() => import("./pages/m365/EntraIdAp
 const EntraIdAnalysisPage = lazy(() => import("./pages/m365/EntraIdAnalysisPage"));
 const ExchangeOnlinePage = lazy(() => import("./pages/m365/ExchangeOnlinePage"));
 const M365CVEsPage = lazy(() => import("./pages/m365/M365CVEsPage"));
+const M365AnalyzerDashboardPage = lazy(() => import("./pages/m365/M365AnalyzerDashboardPage"));
 
 // Preview pages (temporary)
 const EnvironmentPage = lazy(() => import("./pages/EnvironmentPage"));
@@ -138,6 +139,7 @@ const App = () => (
                   <Route path="/scope-m365/entra-id/analysis" element={<EntraIdAnalysisPage />} />
                   <Route path="/scope-m365/exchange-online" element={<ExchangeOnlinePage />} />
                   <Route path="/scope-m365/cves" element={<M365CVEsPage />} />
+                  <Route path="/scope-m365/analyzer" element={<M365AnalyzerDashboardPage />} />
 
                   {/* Legacy routes - redirect to new structure */}
                   <Route path="/firewalls" element={<Navigate to="/scope-firewall/firewalls" replace />} />
