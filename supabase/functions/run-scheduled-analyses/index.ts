@@ -352,10 +352,10 @@ Deno.serve(async (req) => {
       console.error('[run-scheduled-analyses] CVE refresh error:', err);
     }
 
-    const totalTriggered = triggered + domainTriggered + analyzerTriggered + attackSurfaceTriggered;
-    const totalErrors = errors + domainErrors + analyzerErrors + attackSurfaceErrors;
+    const totalTriggered = triggered + domainTriggered + analyzerTriggered + attackSurfaceTriggered + m365AnalyzerTriggered;
+    const totalErrors = errors + domainErrors + analyzerErrors + attackSurfaceErrors + m365AnalyzerErrors;
 
-    console.log(`[run-scheduled-analyses] Done. Firewalls: ${triggered}, Domains: ${domainTriggered}, Analyzers: ${analyzerTriggered}, AttackSurface: ${attackSurfaceTriggered}, CVE refresh: ${cveRefreshSuccess}, Errors: ${totalErrors}`);
+    console.log(`[run-scheduled-analyses] Done. Firewalls: ${triggered}, Domains: ${domainTriggered}, Analyzers: ${analyzerTriggered}, AttackSurface: ${attackSurfaceTriggered}, M365Analyzer: ${m365AnalyzerTriggered}, CVE refresh: ${cveRefreshSuccess}, Errors: ${totalErrors}`);
 
     return new Response(
       JSON.stringify({
