@@ -349,6 +349,29 @@ export default function M365AnalyzerDashboardPage() {
           </Card>
         )}
 
+        {/* Orphan state warning */}
+        {isOrphan && (
+          <Card className="glass-card border-destructive/30">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-4 h-4 text-destructive" />
+                <span className="text-sm font-medium text-destructive">Execução anterior encerrada com inconsistência.</span>
+                <span className="text-xs text-muted-foreground">A próxima execução irá reconciliar automaticamente.</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto h-7 text-xs"
+                  onClick={handleTrigger}
+                  disabled={triggering}
+                >
+                  <Play className="w-3 h-3 mr-1" />
+                  Re-executar Análise
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Last analysis info */}
         {snapshot && (
           <div className="mb-6 flex items-center gap-3 flex-wrap">
