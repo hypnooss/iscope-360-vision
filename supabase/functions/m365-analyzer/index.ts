@@ -747,7 +747,7 @@ Deno.serve(async (req) => {
     allInsights.push(...behavioral.insights);
     allMetrics.behavioral = behavioral.metrics;
 
-    const compromise = analyzeAccountCompromise(signInLogs, emailActivity, []);
+    const compromise = analyzeAccountCompromise(signInLogs, emailActivity, inboxRules);
     allInsights.push(...compromise.insights);
     allMetrics.compromise = compromise.metrics;
 
@@ -762,6 +762,8 @@ Deno.serve(async (req) => {
     const operational = analyzeOperationalRisks(signInLogs, auditLogs);
     allInsights.push(...operational.insights);
     allMetrics.operational = operational.metrics;
+
+    allMetrics.dataSource = dataSource;
 
     // Calculate score
     const { score, summary } = calculateScore(allInsights);
