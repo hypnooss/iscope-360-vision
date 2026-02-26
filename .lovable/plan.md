@@ -1,61 +1,52 @@
 
 
-## Correção: Contadores de Status dos Supervisors
+## Problema: Auto Refresh não funciona de verdade
 
-### Problema
+### Causa raiz
 
-Os contadores mostram "0 atualizados" e "0 desatualizados" quando na realidade existe 1 agente com `supervisor_version = 1.0.0` (ESTRELA-SAO) e 25 agentes sem Supervisor (`supervisor_version = NULL`).
+No `useEffect` (linha 90-105), o intervalo de polling é criado **dentro** do bloco `if (!initialLoadDone.current)`. Quando o React limpa o efeito (por mudança de `user` ou `role`), o `clearInterval` roda, mas o intervalo **nunca é recriado** porque `initialLoadDone.current` já é `true`.
 
-O problema é duplo:
-1. Agentes sem Supervisor (NULL) não são contabilizados em nenhuma categoria
-2. O total exibido pode confundir — 25 de 26 agentes simplesmente não têm Supervisor
+```text
+1. Montagem → initialLoadDone = false → cria interval ✓
+2. user/role muda → cleanup → clearInterval ✓
+3. Re-executa effect → initialLoadDone = true → NÃO cria interval ✗
+4. Polling morto para sempre
+```
 
-### Plano
+### Correção
 
 **Arquivo:** `src/pages/admin/SettingsPage.tsx`
 
-**Mudança 1 — Ajustar lógica de contagem (linhas ~258-276)**
-
-Filtrar apenas agentes que **têm** `supervisor_version` reportada (ou seja, que rodam o novo modelo). Agentes legados (NULL) devem ser ignorados da contagem, não contados como "atualizados".
+Separar o intervalo de polling em seu próprio `useEffect`, independente do `initialLoadDone`:
 
 ```js
-// Supervisor stats — only count agents that report supervisor_version
-const agentsWithSupervisor = agents.filter((a) => a.supervisor_version);
-const supUpToDate = latestSupVer
-  ? agentsWithSupervisor.filter((a) => a.supervisor_version === latestSupVer).length
-  : agentsWithSupervisor.length;
-const supOutdated = latestSupVer
-  ? agentsWithSupervisor
-      .filter((a) => a.supervisor_version !== latestSupVer)
-      .map((a) => ({ ... }))
-  : [];
+// Effect 1: carga inicial (uma vez)
+useEffect(() => {
+  if (user && role === 'super_admin' && !initialLoadDone.current) {
+    initialLoadDone.current = true;
+    loadApiKeys();
+    loadAgentSettings();
+    loadAgentUpdateSettings();
+    loadAgentStats();
+    setLoading(false);
+  }
+}, [user, role]);
 
-setSupervisorStats({
-  total: agentsWithSupervisor.length,  // só agentes com Supervisor
-  upToDate: supUpToDate,
-  outdated: supOutdated
-});
+// Effect 2: polling contínuo (sempre ativo enquanto logado como super_admin)
+useEffect(() => {
+  if (!user || role !== 'super_admin') return;
+
+  const interval = setInterval(() => {
+    loadAgentStats();
+  }, 5000);
+
+  return () => clearInterval(interval);
+}, [user, role]);
 ```
 
-**Mudança 2 — Exibir contexto na UI (seção de status, linhas ~960-1000)**
-
-Adicionar indicação de quantos agentes ainda não têm Supervisor instalado:
-
-- Manter os cards "X atualizados" e "Y desatualizados"
-- Adicionar texto secundário: "Z agentes sem Supervisor" (em tom neutro/informativo)
-
-Isso dá visibilidade clara: "1 atualizado, 0 desatualizados, 25 sem Supervisor".
+Isso garante que o intervalo de 5s **sempre** existe enquanto o super_admin estiver na página, independente de re-renders.
 
 ### Resultado esperado
 
-Com os dados atuais do banco:
-- **1 atualizado** (Sup v1.0.0) — ESTRELA-SAO
-- **0 desatualizados**
-- **25 sem Supervisor** (texto informativo)
-
-### Arquivos impactados
-
-| Arquivo | Mudança |
-|---------|---------|
-| `src/pages/admin/SettingsPage.tsx` | Lógica de contagem + UI informativa |
+Ao atualizar um Agent no servidor, o contador sobe de 6 para 7 em no máximo 5 segundos, sem precisar recarregar a página.
 
