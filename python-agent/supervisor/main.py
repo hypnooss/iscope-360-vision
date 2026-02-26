@@ -194,17 +194,10 @@ def main():
                 poller = None
                 poller_active = False
 
-        # Monitor worker health
+        # Monitor worker health (systemd manages restart, but we ensure it's up)
         if not worker.is_running():
-            logger.warning("[Supervisor] Worker caiu! Reiniciando...")
+            logger.warning("[Supervisor] Worker service inativo! Iniciando via systemctl...")
             worker.start()
-
-        # Drain worker stdout to our log (print to avoid double timestamp)
-        output = worker.collect_output()
-        if output:
-            for line in output.split("\n"):
-                if line.strip():
-                    print(f"[Worker] {line}", flush=True)
 
         time.sleep(interval)
 

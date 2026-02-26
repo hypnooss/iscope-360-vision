@@ -1,13 +1,14 @@
 [Unit]
 Description=iScope 360 Supervisor
 After=network-online.target
-Wants=network-online.target
+Wants=network-online.target iscope-agent.service
 
 [Service]
 Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/iscope-agent
+ExecStartPre=-/bin/bash /opt/iscope-agent/check-deps.sh
 ExecStart=/opt/iscope-agent/venv/bin/python -m supervisor.main
 Restart=always
 RestartSec=10
