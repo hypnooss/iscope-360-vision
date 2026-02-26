@@ -531,7 +531,7 @@ export default function M365AnalyzerDashboardPage() {
                 </CardContent>
               </Card>
             )}
-            {m.compromise.topRiskUsers.length > 0 && (
+            {(m.compromise?.topRiskUsers?.length ?? 0) > 0 && (
               <Card className="glass-card">
                 <CardHeader><CardTitle className="text-sm">Usuários em Risco</CardTitle></CardHeader>
                 <CardContent>
