@@ -17,6 +17,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 from supervisor.version import get_version as get_supervisor_version
 from supervisor.config import (
@@ -49,7 +50,7 @@ PENDING_SUPERVISOR_UPDATE = Path("/var/lib/iscope-agent/pending_supervisor_updat
 _VERSION_RE = re.compile(r'__version__\s*=\s*["\']([^"\']+)["\']')
 
 
-def _read_worker_version_from_disk() -> str | None:
+def _read_worker_version_from_disk() -> Optional[str]:
     """
     Read the Worker's __version__ directly from disk, bypassing
     Python's import cache. This is critical because the Supervisor
