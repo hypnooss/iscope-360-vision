@@ -616,7 +616,7 @@ export default function SurfaceAnalyzerV3Page() {
             <Alert className="border-blue-500/30 bg-blue-500/5">
               <Info className="h-4 w-4 text-blue-500" />
               <AlertDescription className="text-sm text-muted-foreground">
-                A análise do Analyzer monitora eventos e métricas em tempo real. Recomendamos agendar a execução 1 vez por hora.
+                O Surface Analyzer monitora eventos e métricas em tempo real. Recomendamos agendar a execução 1 vez por hora.
               </AlertDescription>
             </Alert>
             <div className="space-y-4 py-2">
