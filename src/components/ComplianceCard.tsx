@@ -15,12 +15,13 @@ interface ComplianceCardProps {
   categoryColorKey?: string;
 }
 
-export function ComplianceCard({ check, categoryColorKey }: ComplianceCardProps) {
+export function ComplianceCard({ check, categoryColorKey, onClick }: ComplianceCardProps) {
   const item = mapComplianceCheck(check);
   return (
     <UnifiedComplianceCard
       item={item}
       categoryColorKey={categoryColorKey}
+      onClick={onClick}
     />
   );
 }

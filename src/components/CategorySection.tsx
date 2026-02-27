@@ -1,15 +1,18 @@
+import { useState } from 'react';
 import { ComplianceCategory } from '@/types/compliance';
 import { ComplianceCard } from './ComplianceCard';
 import { Shield, ChevronDown, ChevronUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import * as LucideIcons from 'lucide-react';
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { 
   getCategoryConfig, 
   AVAILABLE_COLORS,
   type CategoryConfig,
 } from '@/hooks/useCategoryConfig';
+import { ComplianceDetailSheet } from '@/components/compliance/ComplianceDetailSheet';
+import { mapComplianceCheck } from '@/lib/complianceMappers';
+import { ComplianceCheck } from '@/types/compliance';
 
 interface CategorySectionProps {
   category: ComplianceCategory;
@@ -49,6 +52,8 @@ function DynamicIcon({ name, className, style }: { name: string; className?: str
 
 export function CategorySection({ category, index, variant = 'default', categoryConfigs }: CategorySectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [selectedCheck, setSelectedCheck] = useState<ComplianceCheck | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   
   // Get config from database or use defaults
   const config = getCategoryConfig(categoryConfigs, category.name);
@@ -76,6 +81,11 @@ export function CategorySection({ category, index, variant = 'default', category
     if (category.passRate >= 80) return 'text-success';
     if (category.passRate >= 60) return 'text-warning';
     return 'text-destructive';
+  };
+
+  const handleCheckClick = (check: ComplianceCheck) => {
+    setSelectedCheck(check);
+    setSheetOpen(true);
   };
 
   return (
@@ -150,7 +160,7 @@ export function CategorySection({ category, index, variant = 'default', category
 
       {isExpanded && (
         <div 
-          className="space-y-3 pl-4 ml-6 mb-6"
+          className="grid grid-cols-1 lg:grid-cols-2 gap-4 pl-4 ml-6 mb-6"
           style={{ 
             borderLeftWidth: '2px',
             borderLeftColor: `${colorHex}30`,
@@ -162,10 +172,17 @@ export function CategorySection({ category, index, variant = 'default', category
               check={check} 
               variant={variant} 
               categoryColorKey={config.color}
+              onClick={() => handleCheckClick(check)}
             />
           ))}
         </div>
       )}
+
+      <ComplianceDetailSheet
+        item={selectedCheck ? mapComplianceCheck(selectedCheck) : null}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
     </div>
   );
 }
