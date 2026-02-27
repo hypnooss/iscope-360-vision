@@ -14,17 +14,16 @@ import { ComplianceCategory, ComplianceReport, SubdomainSummary } from '@/types/
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
-  Loader2, FileDown, Globe, RefreshCw, XCircle, Play, Calendar,
+  Loader2, FileDown, Globe, RefreshCw, XCircle, Play, Clock, Building2,
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
 import { ExternalDomainPDF, CorrectionGuideData } from '@/components/pdf/ExternalDomainPDF';
 import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
 import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 
 // ── Mini UI components (same as ExternalDomainAnalysisReportPage) ────────────
 
@@ -462,55 +461,69 @@ export default function ExternalDomainCompliancePage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  const latestSnapshot = snapshots.length > 0 ? snapshots[0] : null;
+
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8">
-        <PageBreadcrumb items={[{ label: 'Compliance' }]} />
+      <div className="p-6 lg:p-8 space-y-6">
+        <PageBreadcrumb items={[{ label: 'Domínio Externo' }, { label: 'Compliance' }]} />
 
-        {/* Selectors bar */}
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          {isSuperRole && allWorkspaces && (
-            <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Workspace" />
+        {/* Header row: title (left) | selectors + action (right) */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Domain Compliance</h1>
+            <p className="text-muted-foreground">Análise de conformidade de domínio externo</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {isSuperRole && allWorkspaces && (
+              <Select value={selectedWorkspaceId || ''} onValueChange={(v) => { setSelectedWorkspaceId(v); setSelectedDomainId(''); }}>
+                <SelectTrigger className="w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces.map(w => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            <Select value={selectedDomainId || ''} onValueChange={setSelectedDomainId}>
+              <SelectTrigger className="w-[200px]">
+                <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
+                <SelectValue placeholder="Selecionar domínio" />
               </SelectTrigger>
               <SelectContent>
-                {allWorkspaces.map(w => (
-                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                {domains.map(d => (
+                  <SelectItem key={d.id} value={d.id}>{d.name} ({d.domain})</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          )}
 
-          <Select value={selectedDomainId || ''} onValueChange={setSelectedDomainId}>
-            <SelectTrigger className="w-[260px]">
-              <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
-              <SelectValue placeholder="Selecione um domínio" />
-            </SelectTrigger>
-            <SelectContent>
-              {domains.map(d => (
-                <SelectItem key={d.id} value={d.id}>{d.name} ({d.domain})</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {snapshots.length > 0 && (
-            <Select value={selectedSnapshotId} onValueChange={setSelectedSnapshotId}>
-              <SelectTrigger className="w-[260px]">
-                <Calendar className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Selecione a data" />
-              </SelectTrigger>
-              <SelectContent>
-                {snapshots.map(s => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {format(new Date(s.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
-                    {s.score != null && ` — Score: ${s.score}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+            <Button onClick={handleRefresh} disabled={isRefreshing || !selectedDomainId}>
+              {isRefreshing
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
+                : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
+            </Button>
+          </div>
         </div>
+
+        {/* Last collection info */}
+        {latestSnapshot && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <Clock className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Última coleta:</span>
+            <Badge variant="outline" className="text-xs">
+              {new Date(latestSnapshot.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </Badge>
+            {latestSnapshot.score != null && (
+              <Badge variant="secondary" className="text-xs">
+                Score: {latestSnapshot.score}
+              </Badge>
+            )}
+          </div>
+        )}
 
         {/* Content */}
         {!selectedDomainId ? (
@@ -533,28 +546,8 @@ export default function ExternalDomainCompliancePage() {
           </div>
         ) : (
           <div>
-            {/* Header */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
-              <div>
-                <h1 className="text-3xl font-bold text-foreground mb-2">Análise de Compliance</h1>
-                <p className="text-muted-foreground">
-                  Relatório gerado em {report.generatedAt ? new Date(report.generatedAt).toLocaleString('pt-BR') : '—'}
-                </p>
-              </div>
-              <div className="flex gap-3 ml-auto">
-                <Button variant="outline" size="lg" disabled={isExportingPDF} onClick={handleExportPDF}>
-                  <FileDown className={cn("w-4 h-4", isExportingPDF && "animate-pulse")} />
-                  {isExportingPDF ? 'Gerando...' : 'Exportar PDF'}
-                </Button>
-                <Button variant="cyber" size="lg" onClick={handleRefresh} disabled={isRefreshing}>
-                  <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                  Reanalisar
-                </Button>
-              </div>
-            </div>
-
             {/* Command Center Header */}
-            <div className="max-w-full mb-8">
+            <div className="mb-8">
               <div className="relative overflow-hidden rounded-2xl border border-primary/20" style={{ background: "linear-gradient(145deg, hsl(220 18% 11%), hsl(220 18% 8%))" }}>
                 <div className="absolute inset-0 opacity-30 pointer-events-none" style={{
                   backgroundImage: `linear-gradient(hsl(175 80% 45% / 0.03) 1px, transparent 1px), linear-gradient(90deg, hsl(175 80% 45% / 0.03) 1px, transparent 1px)`,
