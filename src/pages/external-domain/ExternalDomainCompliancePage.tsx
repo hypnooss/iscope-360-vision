@@ -506,17 +506,15 @@ export default function ExternalDomainCompliancePage() {
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
                 : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
             </Button>
-            {isSuperRole && (
-              <Button
-                variant="outline"
-                size="icon"
-                title="Configurar agendamento"
-                disabled={!selectedDomainId}
-                onClick={() => setScheduleDialogOpen(true)}
-              >
-                <Settings className="w-4 h-4" />
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="icon"
+              title="Configurar agendamento"
+              disabled={!selectedDomainId}
+              onClick={() => setScheduleDialogOpen(true)}
+            >
+              <Settings className="w-4 h-4" />
+            </Button>
           </div>
         </div>
 
@@ -643,6 +641,7 @@ export default function ExternalDomainCompliancePage() {
           entityColumn="domain_id"
           title="Agendamento do Compliance"
           description="Configure a frequência de execução automática da análise de compliance para este domínio."
+          recommendation="A análise de compliance verifica a conformidade da configuração. Recomendamos agendar a execução 1 vez ao dia."
         />
       </div>
     </AppLayout>

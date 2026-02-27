@@ -411,6 +411,7 @@ export default function M365PosturePage() {
           entityColumn="tenant_record_id"
           title="Agendamento do Compliance M365"
           description="Configure a frequência de execução automática da análise de compliance para este tenant."
+          recommendation="A análise de compliance verifica a conformidade da configuração. Recomendamos agendar a execução 1 vez ao dia."
         />
       </div>
     </AppLayout>

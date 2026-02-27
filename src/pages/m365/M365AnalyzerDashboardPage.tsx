@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -302,17 +303,15 @@ export default function M365AnalyzerDashboardPage() {
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Em andamento...</>
                 : <><Play className="w-4 h-4 mr-2" />{triggering ? 'Iniciando...' : 'Executar Análise'}</>}
             </Button>
-            {isSuperRole && (
-              <Button
-                variant="outline"
-                size="icon"
-                title="Configurar agendamento"
-                disabled={!selectedTenantId}
-                onClick={() => setScheduleDialogOpen(true)}
-              >
-                <Settings className="w-4 h-4" />
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="icon"
+              title="Configurar agendamento"
+              disabled={!selectedTenantId}
+              onClick={() => setScheduleDialogOpen(true)}
+            >
+              <Settings className="w-4 h-4" />
+            </Button>
           </div>
         </div>
 
@@ -615,6 +614,12 @@ export default function M365AnalyzerDashboardPage() {
               <DialogTitle>Configurar Agendamento</DialogTitle>
               <DialogDescription>Configure a frequência de execução automática do M365 Analyzer.</DialogDescription>
             </DialogHeader>
+            <Alert className="border-blue-500/30 bg-blue-500/5">
+              <Info className="h-4 w-4 text-blue-500" />
+              <AlertDescription className="text-sm text-muted-foreground">
+                A análise do Analyzer monitora eventos e métricas em tempo real. Recomendamos agendar a execução 1 vez por hora.
+              </AlertDescription>
+            </Alert>
             <div className="space-y-4 py-2">
               <div className="flex items-center justify-between">
                 <Label>Ativo</Label>
