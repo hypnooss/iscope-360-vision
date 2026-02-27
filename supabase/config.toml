@@ -144,3 +144,6 @@ verify_jwt = false
 [functions.m365-analyzer]
 verify_jwt = false
 
+[functions.get-release-url]
+verify_jwt = false
+
