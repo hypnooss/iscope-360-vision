@@ -986,7 +986,7 @@ export default function AnalyzerDashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Filter className="w-4 h-4 text-primary" />
-                Top Categorias Web Bloqueadas
+                Web Filter - Top Categorias Bloqueadas
               </CardTitle>
             </CardHeader>
             <CardContent>
