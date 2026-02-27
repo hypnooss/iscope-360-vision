@@ -1,69 +1,71 @@
 
 
-## Novas Fontes de CVE Baseadas nos Dados de Surface Scan
+## Recomendacoes de Melhoria com Base na API do FortiOS 7.4
 
-### Analise
+Apos cruzar os **376 endpoints** documentados na API do FortiOS 7.4 com os **23 endpoints de Compliance** e **9 endpoints do Analyzer** atualmente coletados, identifico as seguintes oportunidades organizadas por impacto.
 
-Cruzando os produtos detectados nos snapshots de Surface Scan com as fontes de CVE ja cadastradas:
+---
 
-**Fontes existentes (external_domain):** Apache HTTP Server, Exim, jQuery, Microsoft IIS, Nginx, Node.js, OpenSSH, OpenSSL, PHP
+### A. COMPLIANCE — Novas Regras (requer novos steps no blueprint `agent`)
 
-**Produtos detectados nos scans que NAO tem fonte de CVE:**
+| # | Categoria | Regra Sugerida | Endpoint API | Justificativa |
+|---|-----------|---------------|--------------|---------------|
+| 1 | Seguranca | Certificados SSL Expirados | `/api/v2/monitor/system/available-certificates` | Detectar certificados do appliance expirados ou proximos de expirar |
+| 2 | Seguranca | Security Rating do FortiGuard | `/api/v2/monitor/system/security-rating` | O FortiGate ja calcula um security score interno — podemos comparar com o nosso |
+| 3 | Licenciamento | Status FortiAnalyzer | `/api/v2/monitor/license/fortianalyzer-status` | Verificar se FortiAnalyzer esta conectado e funcional |
+| 4 | Rede | Tabela ARP Anomala | `/api/v2/monitor/network/arp` | Detectar excesso de entradas ARP (indicador de ARP spoofing) |
+| 5 | Rede | Resolucao DNS Funcional | `/api/v2/monitor/network/dns/latency` | Verificar latencia DNS elevada que pode indicar problemas de resolucao |
+| 6 | VPN | Tuneis IPsec Down | `/api/v2/monitor/vpn/ipsec` | Compliance: todos os tuneis configurados devem estar UP |
+| 7 | VPN | Sessoes SSL-VPN Ativas | `/api/v2/monitor/vpn/ssl` | Visibilidade de usuarios conectados e deteccao de sessoes anomalas |
+| 8 | Sistema | FortiGuard Desatualizado | `/api/v2/monitor/system/fortiguard/server-info` | Verificar se as definicoes AV/IPS estao atualizadas |
+| 9 | Autenticacao | Usuarios Autenticados Ativos | `/api/v2/monitor/user/firewall` | Detectar contas autenticadas sem atividade (orphan sessions) |
+| 10 | UTM | Estatisticas de Antivirus | `/api/v2/monitor/utm/antivirus/stats` | Verificar se o modulo AV esta ativo e processando trafego |
+| 11 | Backup | Backup Config Existente | `/api/v2/monitor/system/config-revision` | Verificar se existem revisoes de configuracao salvas recentemente |
+| 12 | Rede | SD-WAN Health Check | `/api/v2/monitor/virtual-wan/health-check` | Verificar status dos health-checks SD-WAN |
+| 13 | Sistema | Performance e Recursos | `/api/v2/monitor/system/performance/status` | Detectar CPU/Memoria acima de thresholds criticos |
+| 14 | Logging | Espaco em Disco de Logs | `/api/v2/monitor/log/current-disk-usage` | Alertar quando disco de logs esta quase cheio |
 
-| Produto Detectado | product_filter sugerido | Relevancia |
-|---|---|---|
-| ISC BIND (DNS) | `ISC BIND` | Servidor DNS exposto, versoes 9.11.x detectadas |
-| Dovecot (IMAP/POP3) | `dovecot` | Servidor de email exposto |
-| Postfix (SMTP) | `postfix` | Servidor de email exposto |
-| MikroTik RouterOS | `MikroTik RouterOS` | Roteadores expostos com SSH, FTP, API, HTTP |
-| Jetty (HTTP) | `jetty` | Web server Java, versao 11.0.16 detectada |
-| ProFTPD | `proftpd` | Servidor FTP exposto |
-| vsftpd | `vsftpd` | Servidor FTP exposto |
-| Pure-FTPd | `pure-ftpd` | Servidor FTP exposto |
-| MariaDB / MySQL | `mariadb` | Banco de dados exposto |
-| LiteSpeed | `litespeed` | Web server |
-| Cisco ASA | `Cisco ASA` | VPN/Firewall exposto |
-| Hikvision | `hikvision` | Cameras IP expostas (DVR, NVR, IPCam) |
-| Tornado (Python) | `tornado` | Web server Python |
-| Microsoft Exchange | `Microsoft Exchange` | SMTP Exchange exposto |
-| FortiMail | `FortiMail` | Appliance Fortinet de email |
-| Subversion (SVN) | `subversion` | Controle de versao exposto |
-| SAP NetWeaver | `SAP NetWeaver` | ERP exposto |
-| Caddy | `caddy` | Web server moderno |
-| Kestrel (.NET) | `kestrel` | Web server .NET |
+### B. FIREWALL ANALYZER — Novos Dados para o Dashboard (requer novos steps no blueprint `hybrid`)
 
-### Plano de Implementacao
+| # | Widget / Insight | Endpoint API | O que agrega |
+|---|-----------------|--------------|--------------|
+| 1 | Sessoes Ativas | `/api/v2/monitor/firewall/session` | Total de sessoes ativas, top consumidores — indicador de carga |
+| 2 | Mapa de Politicas Utilizadas | `/api/v2/monitor/firewall/policy` (com hit_count) | Identificar regras nunca utilizadas (shadow rules) — insight de higiene |
+| 3 | Status VPN em Tempo Real | `/api/v2/monitor/vpn/ipsec` + `/api/v2/monitor/vpn/ssl` | Painel de status de tuneis e usuarios SSL-VPN |
+| 4 | Bandwidth por Interface | `/api/v2/monitor/system/traffic-history/interface` | Grafico de utilizacao de banda por interface ao longo do tempo |
+| 5 | Top Aplicacoes Bloqueadas | (ja coleta `appctrl_blocked`) | Ja existe coleta, mas podemos enriquecer com `/api/v2/monitor/utm/app-lookup` para nomes |
+| 6 | URLs Maliciosas Detectadas | `/api/v2/monitor/webfilter/malicious-urls` | Contagem e estatisticas de URLs maliciosas pelo WebFilter |
+| 7 | Status IPS Engine | `/api/v2/monitor/ips/session/performance` | Metricas de performance do engine IPS |
+| 8 | Admins Conectados | `/api/v2/monitor/system/current-admins` | Visibilidade de quem esta logado no appliance em tempo real |
+| 9 | Routing Table | `/api/v2/monitor/router/ipv4` | Snapshot da tabela de rotas para deteccao de mudancas |
+| 10 | Botnet Domains Stats | `/api/v2/monitor/system/botnet-domains/stat` | Deteccoes de comunicacao com botnets |
 
-Inserir as fontes de CVE mais relevantes na tabela `cve_sources` via SQL INSERT. Priorizando por criticidade de exposicao:
+### C. IMPLEMENTACAO
 
-**Prioridade Alta (servicos criticos expostos):**
-1. ISC BIND
-2. Dovecot
-3. Postfix
-4. MikroTik RouterOS
-5. Microsoft Exchange
-6. MariaDB
-7. Cisco ASA
+Todas as melhorias acima sao **100% data-driven** — nao exigem alteracoes de codigo no frontend ou no agente. O pipeline seria:
 
-**Prioridade Media (servicos comuns):**
-8. ProFTPD
-9. vsftpd
-10. Pure-FTPd
-11. Hikvision
-12. FortiMail
-13. LiteSpeed
-14. Jetty
+1. **Blueprint `agent` (Compliance)**: Adicionar novos steps `http_request` com os endpoints da coluna "Endpoint API" da secao A
+2. **Blueprint `hybrid` (Analyzer)**: Adicionar novos steps com os endpoints da secao B
+3. **Compliance Rules**: Criar novas regras em `compliance_rules` com `evaluation_logic` JSONB para avaliar os dados coletados
+4. **Edge Function `firewall-analyzer`**: Adicionar modulos de processamento para os novos dados (sessoes, politicas, VPN status, bandwidth)
+5. **Frontend**: Novos widgets no dashboard do Analyzer para os dados da secao B (cards de sessoes, grafico de bandwidth, painel VPN)
 
-**Prioridade Baixa (menos impacto):**
-15. Tornado
-16. Subversion
-17. SAP NetWeaver
-18. Caddy
-19. Kestrel
+### D. PRIORIZACAO SUGERIDA
 
-### Alteracao
+**Fase 1 — Alto impacto, baixo esforco (so blueprint + rules):**
+- Certificados SSL expirados (A1)
+- Tuneis IPsec Down (A6)
+- FortiGuard desatualizado (A8)
+- Performance/Recursos (A13)
+- Security Rating (A2)
 
-Um unico INSERT SQL na tabela `cve_sources` com as novas fontes (module_code = 'external_domain', source_type = 'nist_nvd_web'), usando o mesmo padrao das fontes existentes. O `refresh-cve-cache` ja suporta `nist_nvd_web` nativamente, entao nenhuma alteracao de codigo e necessaria.
+**Fase 2 — Analyzer enhancements (blueprint + edge function + UI):**
+- Shadow rules / politicas nao utilizadas (B2)
+- Sessoes ativas (B1)
+- Bandwidth por interface (B4)
+- Botnet detection (B10)
 
-Sugiro adicionar as 14 fontes de prioridade alta e media, que cobrem todos os produtos realmente criticos detectados nos scans.
+**Fase 3 — Complementar:**
+- Demais regras de compliance (A3-A5, A9-A12, A14)
+- Demais widgets do analyzer (B5-B9)
 
