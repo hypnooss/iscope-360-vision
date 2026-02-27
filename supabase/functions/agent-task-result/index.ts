@@ -2399,7 +2399,7 @@ function formatLDAPEvidence(rawData: Record<string, unknown>): {
         value: 'Nenhum servidor LDAP configurado',
         type: 'text'
       });
-      return { evidence, status: 'fail', hasServers: false };
+      return { evidence, status: 'not_found', hasServers: false };
     }
 
     // Contar servidores com e sem criptografia
@@ -3187,10 +3187,10 @@ function processComplianceRules(
       status = ldapResult.status;
       if (status === 'pass') {
         details = rule.pass_description || 'Todos os servidores LDAP com criptografia LDAPS';
+      } else if (status === 'not_found') {
+        details = rule.not_found_description || 'Nenhum servidor LDAP configurado';
       } else if (status === 'fail') {
-        details = ldapResult.hasServers 
-          ? (rule.fail_description || 'Servidores LDAP sem criptografia')
-          : 'Nenhum servidor LDAP configurado';
+        details = rule.fail_description || 'Servidores LDAP sem criptografia';
       } else {
         details = 'Não foi possível verificar - dados indisponíveis';
       }
