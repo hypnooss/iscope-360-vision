@@ -34,6 +34,7 @@ const FirewallCreatePage = lazy(() => import("./pages/firewall/FirewallCreatePag
 const FirewallEditPage = lazy(() => import("./pages/firewall/FirewallEditPage"));
 const FirewallCVEsPage = lazy(() => import("./pages/firewall/FirewallCVEsPage"));
 const FirewallReportsPage = lazy(() => import("./pages/firewall/FirewallReportsPage"));
+const FirewallCompliancePage = lazy(() => import("./pages/firewall/FirewallCompliancePage"));
 const TaskExecutionsPage = lazy(() => import("./pages/firewall/TaskExecutionsPage"));
 const FirewallAnalysis = lazy(() => import("./pages/FirewallAnalysis"));
 const AnalyzerDashboardPage = lazy(() => import("./pages/firewall/AnalyzerDashboardPage"));
@@ -48,6 +49,7 @@ const ExternalDomainAnalysisReportPage = lazy(() => import("./pages/external-dom
 const ExternalDomainEditPage = lazy(() => import("./pages/external-domain/ExternalDomainEditPage"));
 const SurfaceAnalyzerV3Page = lazy(() => import("./pages/external-domain/SurfaceAnalyzerV3Page"));
 const AllFindingsPage = lazy(() => import("./pages/external-domain/AllFindingsPage"));
+const ExternalDomainCompliancePage = lazy(() => import("./pages/external-domain/ExternalDomainCompliancePage"));
 
 // Microsoft 365 Module Pages - lazy loaded
 const M365ExecutionsPage = lazy(() => import("./pages/m365/M365ExecutionsPage"));
@@ -105,6 +107,7 @@ const App = () => (
 
                   {/* Scope Firewall Module */}
                   <Route path="/scope-firewall/dashboard" element={<FirewallDashboardPage />} />
+                  <Route path="/scope-firewall/compliance" element={<FirewallCompliancePage />} />
                   <Route path="/scope-firewall/firewalls/:id/analysis" element={<FirewallAnalysis />} />
                   <Route path="/scope-firewall/cves" element={<FirewallCVEsPage />} />
                   <Route path="/scope-firewall/executions" element={<TaskExecutionsPage />} />
@@ -115,6 +118,7 @@ const App = () => (
                   <Route path="/scope-firewall/analyzer/config-changes" element={<AnalyzerConfigChangesPage />} />
 
                   {/* External Domain Module */}
+                  <Route path="/scope-external-domain/compliance" element={<ExternalDomainCompliancePage />} />
                   <Route path="/scope-external-domain/executions" element={<ExternalDomainExecutionsPage />} />
                   <Route path="/scope-external-domain/reports" element={<ExternalDomainReportsPage />} />
                   <Route path="/scope-external-domain/domains/:id/report/:analysisId" element={<ExternalDomainAnalysisReportPage />} />

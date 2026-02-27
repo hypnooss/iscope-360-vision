@@ -117,7 +117,7 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     icon: Shield,
     color: 'text-orange-500',
     items: [
-      { label: 'Compliance', href: '/scope-firewall/reports', icon: FileText },
+      { label: 'Compliance', href: '/scope-firewall/compliance', icon: FileText },
       { label: 'Analyzer', href: '/scope-firewall/analyzer', icon: Activity },
       { label: 'CVEs', href: '/scope-firewall/cves', icon: ShieldCheck },
       { label: 'Execuções', href: '/scope-firewall/executions', icon: Activity },
@@ -127,7 +127,7 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     icon: Globe,
     color: 'text-teal-500',
     items: [
-      { label: 'Compliance', href: '/scope-external-domain/reports', icon: FileText },
+      { label: 'Compliance', href: '/scope-external-domain/compliance', icon: FileText },
       { label: 'Analyzer', href: '/scope-external-domain/analyzer', icon: Radar },
       { label: 'Execuções', href: '/scope-external-domain/executions', icon: Activity },
     ],
@@ -137,12 +137,12 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     color: 'text-blue-500',
     items: [
       { label: 'Tenants', href: '/scope-m365/tenant-connection', icon: Building },
+      { label: 'Compliance', href: '/scope-m365/posture', icon: FileText },
       { label: 'CVEs', href: '/scope-m365/cves', icon: ShieldCheck },
       { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
       { label: 'Exchange Online', href: '/scope-m365/exchange-online', icon: Mail },
       { label: 'Analyzer', href: '/scope-m365/analyzer', icon: Activity },
       { label: 'Execuções', href: '/scope-m365/executions', icon: Activity },
-      { label: 'Relatórios', href: '/scope-m365/reports', icon: FileText },
     ],
   },
   'scope_network': {
