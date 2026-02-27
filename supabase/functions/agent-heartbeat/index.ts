@@ -680,9 +680,21 @@ serve(async (req: Request) => {
 
     // Include AGENT update info if available (Supervisor downloads this)
     if (updateAvailable) {
+      const agentFilePath = `iscope-agent-${latestVersion}.tar.gz`;
+      let agentDownloadUrl = `${supabaseUrl}/storage/v1/object/public/agent-releases/${agentFilePath}`;
+      try {
+        const { data: signedData } = await supabase.storage
+          .from('agent-releases')
+          .createSignedUrl(agentFilePath, 3600); // 1 hour expiry
+        if (signedData?.signedUrl) {
+          agentDownloadUrl = signedData.signedUrl;
+        }
+      } catch (signErr) {
+        console.error('Failed to create signed URL for agent release:', signErr);
+      }
       response.update_info = {
         version: latestVersion,
-        download_url: `${supabaseUrl}/storage/v1/object/public/agent-releases/iscope-agent-${latestVersion}.tar.gz`,
+        download_url: agentDownloadUrl,
         checksum: updateChecksum,
         force: forceUpdate,
       };
@@ -690,10 +702,22 @@ serve(async (req: Request) => {
 
     // Include SUPERVISOR update info if available (Worker/Agent downloads this)
     if (supervisorUpdateAvailable) {
+      const supervisorFilePath = `iscope-supervisor-${supervisorLatestVersion}.tar.gz`;
+      let supervisorDownloadUrl = `${supabaseUrl}/storage/v1/object/public/agent-releases/${supervisorFilePath}`;
+      try {
+        const { data: signedData } = await supabase.storage
+          .from('agent-releases')
+          .createSignedUrl(supervisorFilePath, 3600); // 1 hour expiry
+        if (signedData?.signedUrl) {
+          supervisorDownloadUrl = signedData.signedUrl;
+        }
+      } catch (signErr) {
+        console.error('Failed to create signed URL for supervisor release:', signErr);
+      }
       response.supervisor_update_available = true;
       response.supervisor_update_info = {
         version: supervisorLatestVersion,
-        download_url: `${supabaseUrl}/storage/v1/object/public/agent-releases/iscope-supervisor-${supervisorLatestVersion}.tar.gz`,
+        download_url: supervisorDownloadUrl,
         checksum: supervisorUpdateChecksum,
         force: supervisorForceUpdate,
       };
