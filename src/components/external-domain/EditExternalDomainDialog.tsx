@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 import { Pencil } from 'lucide-react';
-import type { ScheduleFrequency } from '@/components/external-domain/AddExternalDomainDialog';
 import type { ExternalDomainRow } from '@/components/external-domain/ExternalDomainTable';
 
 interface Agent {
@@ -29,7 +28,7 @@ interface EditExternalDomainDialogProps {
   domain: ExternalDomainRow | null;
   clients: Client[];
   isSuperAdmin: boolean;
-  onSave: (payload: { client_id?: string; agent_id: string; schedule: ScheduleFrequency }) => Promise<void>;
+  onSave: (payload: { client_id?: string; agent_id: string }) => Promise<void>;
 }
 
 export function EditExternalDomainDialog({ 
@@ -46,7 +45,6 @@ export function EditExternalDomainDialog({
   const [formData, setFormData] = useState({
     client_id: '',
     agent_id: '',
-    schedule: 'manual' as ScheduleFrequency,
   });
 
   useEffect(() => {
@@ -55,7 +53,6 @@ export function EditExternalDomainDialog({
     setFormData({
       client_id: domain.client_id || '',
       agent_id: domain.agent_id || '',
-      schedule: (domain.schedule_frequency || 'manual') as ScheduleFrequency,
     });
   }, [open, domain]);
 
@@ -106,9 +103,8 @@ export function EditExternalDomainDialog({
     if (!canSubmit) return;
     setSaving(true);
     try {
-      const payload: { client_id?: string; agent_id: string; schedule: ScheduleFrequency } = {
+      const payload: { client_id?: string; agent_id: string } = {
         agent_id: formData.agent_id,
-        schedule: formData.schedule,
       };
       
       // Include client_id only if super admin changed it
@@ -191,23 +187,6 @@ export function EditExternalDomainDialog({
               )}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="edit-ext-schedule">Frequência de Análise</Label>
-              <Select
-                value={formData.schedule}
-                onValueChange={(v) => setFormData((p) => ({ ...p, schedule: v as ScheduleFrequency }))}
-              >
-                <SelectTrigger id="edit-ext-schedule">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="manual">Manual</SelectItem>
-                  <SelectItem value="daily">Diário</SelectItem>
-                  <SelectItem value="weekly">Semanal</SelectItem>
-                  <SelectItem value="monthly">Mensal</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
         </ScrollArea>
 

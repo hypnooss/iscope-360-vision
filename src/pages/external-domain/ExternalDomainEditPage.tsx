@@ -25,56 +25,6 @@ interface Agent {
   client_id: string;
 }
 
-type ScheduleFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
-
-const HOURS = Array.from({ length: 24 }, (_, i) => ({
-  value: i.toString(),
-  label: `${i.toString().padStart(2, '0')}:00`,
-}));
-
-const DAYS_OF_WEEK = [
-  { value: '0', label: 'Domingo' },
-  { value: '1', label: 'Segunda-feira' },
-  { value: '2', label: 'Terça-feira' },
-  { value: '3', label: 'Quarta-feira' },
-  { value: '4', label: 'Quinta-feira' },
-  { value: '5', label: 'Sexta-feira' },
-  { value: '6', label: 'Sábado' },
-];
-
-const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => ({
-  value: (i + 1).toString(),
-  label: (i + 1).toString(),
-}));
-
-function calculateNextRunAt(
-  frequency: ScheduleFrequency,
-  hour: number,
-  dayOfWeek: number,
-  dayOfMonth: number
-): string | null {
-  if (frequency === 'manual') return null;
-
-  const now = new Date();
-  let next: Date;
-
-  if (frequency === 'daily') {
-    next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1);
-  } else if (frequency === 'weekly') {
-    const currentDay = now.getDay();
-    let daysAhead = dayOfWeek - currentDay;
-    if (daysAhead < 0) daysAhead += 7;
-    next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysAhead, hour, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 7);
-  } else {
-    next = new Date(now.getFullYear(), now.getMonth(), dayOfMonth, hour, 0, 0);
-    if (next <= now) next.setMonth(next.getMonth() + 1);
-  }
-
-  return next.toISOString();
-}
-
 export default function ExternalDomainEditPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -90,10 +40,6 @@ export default function ExternalDomainEditPage() {
     domain: '',
     client_id: '',
     agent_id: '',
-    schedule: 'manual' as ScheduleFrequency,
-    scheduled_hour: 2,
-    scheduled_day_of_week: 1,
-    scheduled_day_of_month: 1,
   });
 
   const isSuperAdminUser = isSuperAdmin() || role === 'super_suporte';
@@ -132,10 +78,9 @@ export default function ExternalDomainEditPage() {
 
   const fetchAllData = async () => {
     try {
-      const [clientsRes, domainRes, scheduleRes] = await Promise.all([
+      const [clientsRes, domainRes] = await Promise.all([
         supabase.from('clients').select('id, name').order('name'),
         supabase.from('external_domains').select('*').eq('id', id!).single(),
-        supabase.from('external_domain_schedules').select('*').eq('domain_id', id!).maybeSingle(),
       ]);
 
       if (clientsRes.data) setClients(clientsRes.data);
@@ -147,16 +92,11 @@ export default function ExternalDomainEditPage() {
       }
 
       const d = domainRes.data;
-      const schedule = scheduleRes.data;
 
       setFormData({
         domain: d.domain,
         client_id: d.client_id,
         agent_id: d.agent_id || '',
-        schedule: (schedule?.frequency as ScheduleFrequency) || 'manual',
-        scheduled_hour: (schedule as any)?.scheduled_hour ?? 2,
-        scheduled_day_of_week: (schedule as any)?.scheduled_day_of_week ?? 1,
-        scheduled_day_of_month: (schedule as any)?.scheduled_day_of_month ?? 1,
       });
 
       if (d.client_id) {
@@ -192,30 +132,6 @@ export default function ExternalDomainEditPage() {
         .eq('id', id!);
 
       if (error) throw error;
-
-      // Delete existing schedules
-      await supabase.from('external_domain_schedules').delete().eq('domain_id', id!);
-
-      // Create new schedule if not manual
-      if (formData.schedule !== 'manual') {
-        const nextRunAt = calculateNextRunAt(
-          formData.schedule,
-          formData.scheduled_hour,
-          formData.scheduled_day_of_week,
-          formData.scheduled_day_of_month
-        );
-
-        await supabase.from('external_domain_schedules').insert({
-          domain_id: id!,
-          frequency: formData.schedule,
-          is_active: true,
-          created_by: user?.id,
-          scheduled_hour: formData.scheduled_hour,
-          scheduled_day_of_week: formData.scheduled_day_of_week,
-          scheduled_day_of_month: formData.scheduled_day_of_month,
-          next_run_at: nextRunAt,
-        } as any);
-      }
 
       toast.success('Domínio atualizado com sucesso!');
       navigate('/environment');
@@ -312,79 +228,6 @@ export default function ExternalDomainEditPage() {
                 <p className="text-xs text-muted-foreground">Nenhum agent disponível para este workspace</p>
               )}
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Schedule */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Clock className="w-5 h-5" />
-              Agendamento de Análise
-            </CardTitle>
-            <CardDescription>Configure a frequência e horário da análise automática</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Frequência</Label>
-              <Select value={formData.schedule} onValueChange={(v) => setFormData({ ...formData, schedule: v as ScheduleFrequency })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="manual">Manual</SelectItem>
-                  <SelectItem value="daily">Diário</SelectItem>
-                  <SelectItem value="weekly">Semanal</SelectItem>
-                  <SelectItem value="monthly">Mensal</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {formData.schedule !== 'manual' && (
-              <>
-                <Separator />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Horário</Label>
-                    <Select value={formData.scheduled_hour.toString()} onValueChange={(v) => setFormData({ ...formData, scheduled_hour: parseInt(v) })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {HOURS.map(h => <SelectItem key={h.value} value={h.value}>{h.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {formData.schedule === 'weekly' && (
-                    <div className="space-y-2">
-                      <Label>Dia da Semana</Label>
-                      <Select value={formData.scheduled_day_of_week.toString()} onValueChange={(v) => setFormData({ ...formData, scheduled_day_of_week: parseInt(v) })}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {DAYS_OF_WEEK.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {formData.schedule === 'monthly' && (
-                    <div className="space-y-2">
-                      <Label>Dia do Mês</Label>
-                      <Select value={formData.scheduled_day_of_month.toString()} onValueChange={(v) => setFormData({ ...formData, scheduled_day_of_month: parseInt(v) })}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {DAYS_OF_MONTH.map(d => <SelectItem key={d.value} value={d.value}>Dia {d.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                </div>
-
-                <p className="text-sm text-muted-foreground">
-                  {formData.schedule === 'daily' && `A análise será executada todos os dias às ${formData.scheduled_hour.toString().padStart(2, '0')}:00 (UTC).`}
-                  {formData.schedule === 'weekly' && `A análise será executada toda ${DAYS_OF_WEEK.find(d => d.value === formData.scheduled_day_of_week.toString())?.label} às ${formData.scheduled_hour.toString().padStart(2, '0')}:00 (UTC).`}
-                  {formData.schedule === 'monthly' && `A análise será executada todo dia ${formData.scheduled_day_of_month} do mês às ${formData.scheduled_hour.toString().padStart(2, '0')}:00 (UTC).`}
-                </p>
-              </>
-            )}
           </CardContent>
         </Card>
 
