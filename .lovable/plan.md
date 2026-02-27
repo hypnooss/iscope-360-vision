@@ -1,31 +1,22 @@
 
 
-## Diagnóstico
+## Changes to `/settings` page
 
-O problema é um conflito entre as políticas RLS de storage:
+### 1. Reorder tabs alphabetically
+Current order: `Chaves de API`, `Módulos`, `Agents`
+New order: `Agents`, `Chaves de API`, `Módulos`
 
-- **INSERT/UPDATE/DELETE**: permitem `super_admin` via `has_role()` ✅
-- **SELECT**: foi alterado para exigir `service_role` apenas ❌
+Also update `defaultValue`/initial `activeTab` from `"api-keys"` to `"agents"` (first tab alphabetically).
 
-Quando o upload usa `upsert: true`, o Storage precisa fazer um SELECT para verificar se o arquivo já existe. Como o SELECT só permite `service_role`, o upsert falha mesmo para `super_admin`.
+### 2. Swap cards in the Agents tab
+Move "Gerenciamento de Atualizações" card (lines 732-1034) above "Configurações dos Agents" card (lines 673-730).
 
-## Correção
+### 3. Remove icon from "Gerenciamento de Atualizações"
+Remove the `<Upload className="w-5 h-5" />` element from the card title (line 738).
 
-Criar uma migration que adiciona uma política SELECT para `super_admin` no bucket `agent-releases`:
-
-```sql
-CREATE POLICY "Super admins can read agent releases"
-ON storage.objects FOR SELECT
-TO authenticated
-USING (
-  bucket_id = 'agent-releases'
-  AND public.has_role(auth.uid(), 'super_admin')
-);
-```
-
-Isso permite que super_admins façam SELECT (necessário para upsert) mantendo o bucket privado para outros usuários.
-
-## Implementação
-
-1. Criar migration SQL com a nova política SELECT para super_admin no bucket agent-releases
+### Technical details
+- File: `src/pages/admin/SettingsPage.tsx`
+- Tab order change: reorder the three `<TabsTrigger>` elements at lines 560-571
+- Card swap: move the entire Card block at lines 732-1034 before the Card block at lines 673-730
+- Icon removal: delete `<Upload className="w-5 h-5" />` from line 738
 
