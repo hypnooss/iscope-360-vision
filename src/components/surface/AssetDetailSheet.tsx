@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/collapsible';
 import {
   Server, Shield, ShieldAlert, Lock, Bug, Globe, Network,
-  ChevronDown, ChevronRight, ExternalLink,
+  ChevronDown, ChevronRight, ExternalLink, Search,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SurfaceFindingCard } from './SurfaceFindingCard';
@@ -316,11 +316,23 @@ export function AssetDetailSheet({
         </SheetHeader>
 
         <Tabs defaultValue="analise" className="flex flex-col h-[calc(100vh-140px)]">
-          <TabsList className="mx-6 mb-0 w-fit">
-            <TabsTrigger value="analise">Análise</TabsTrigger>
-            <TabsTrigger value="servicos">Serviços</TabsTrigger>
-            <TabsTrigger value="cves">CVEs ({cves.length})</TabsTrigger>
-            <TabsTrigger value="certificados">Certificados ({tlsCerts.length})</TabsTrigger>
+          <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-6 h-auto py-0">
+            <TabsTrigger value="analise" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-sm">
+              <Search className="w-3.5 h-3.5 mr-1.5" />
+              Análise
+            </TabsTrigger>
+            <TabsTrigger value="servicos" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-sm">
+              <Network className="w-3.5 h-3.5 mr-1.5" />
+              Serviços
+            </TabsTrigger>
+            <TabsTrigger value="cves" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-sm">
+              <Bug className="w-3.5 h-3.5 mr-1.5" />
+              CVEs ({cves.length})
+            </TabsTrigger>
+            <TabsTrigger value="certificados" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-sm">
+              <Lock className="w-3.5 h-3.5 mr-1.5" />
+              Certificados ({tlsCerts.length})
+            </TabsTrigger>
           </TabsList>
 
           <ScrollArea className="flex-1">

@@ -141,13 +141,12 @@ export function ComplianceDetailSheet({ item, open, onOpenChange }: ComplianceDe
   })();
 
   // Determine available tabs
-  const hasRisk = isFailed && (item.technicalRisk || item.businessImpact);
   const hasEvidence = item.evidence && item.evidence.length > 0;
   const hasAdminData = canViewAdminDetails && (item.apiEndpoint || (item.rawData && Object.keys(item.rawData).length > 0));
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-[540px] lg:max-w-[600px] overflow-y-auto p-0">
+      <SheetContent side="right" className="w-full sm:max-w-[50vw] overflow-y-auto p-0">
         {/* Header */}
         <SheetHeader className="p-6 pb-4 border-b border-border/50">
           <div className="flex items-start gap-3">
@@ -177,12 +176,6 @@ export function ComplianceDetailSheet({ item, open, onOpenChange }: ComplianceDe
               <Search className="w-3.5 h-3.5 mr-1.5" />
               Análise
             </TabsTrigger>
-            {hasRisk && (
-              <TabsTrigger value="risco" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3 text-xs">
-                <ShieldAlert className="w-3.5 h-3.5 mr-1.5" />
-                Risco
-              </TabsTrigger>
-            )}
             {hasEvidence && (
               <TabsTrigger value="evidencias" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3 text-xs">
                 <Layers className="w-3.5 h-3.5 mr-1.5" />
@@ -225,23 +218,18 @@ export function ComplianceDetailSheet({ item, open, onOpenChange }: ComplianceDe
                 </div>
               </div>
             )}
+            {/* Risk sections merged into Análise */}
+            {isFailed && item.technicalRisk && (
+              <Section title="RISCO TÉCNICO" icon={ShieldAlert} variant="warning">
+                {item.technicalRisk}
+              </Section>
+            )}
+            {isFailed && item.businessImpact && (
+              <Section title="IMPACTO NO NEGÓCIO" icon={Building2} variant="destructive">
+                {item.businessImpact}
+              </Section>
+            )}
           </TabsContent>
-
-          {/* Tab: Risco */}
-          {hasRisk && (
-            <TabsContent value="risco" className="p-6 space-y-4 mt-0">
-              {isFailed && item.technicalRisk && (
-                <Section title="RISCO TÉCNICO" icon={ShieldAlert} variant="warning">
-                  {item.technicalRisk}
-                </Section>
-              )}
-              {isFailed && item.businessImpact && (
-                <Section title="IMPACTO NO NEGÓCIO" icon={Building2} variant="destructive">
-                  {item.businessImpact}
-                </Section>
-              )}
-            </TabsContent>
-          )}
 
           {/* Tab: Evidências */}
           {hasEvidence && (
