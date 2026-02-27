@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import LeakedCredentialsSection from '@/components/external-domain/LeakedCredentialsSection';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -14,7 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import {
   Loader2, Radar, Building2, CheckCircle2, Play, XCircle, Settings, Calendar,
-  Globe, Server, ShieldAlert, AlertTriangle, Clock,
+  Globe, Server, ShieldAlert, AlertTriangle, Clock, Info,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
@@ -435,7 +436,7 @@ export default function SurfaceAnalyzerV3Page() {
                   {cancelMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />} Cancelar
                 </Button>
               )}
-              {isSuperRole && <Button variant="outline" size="icon" title="Configurar agendamento" onClick={() => setScheduleDialogOpen(true)}><Settings className="w-4 h-4" /></Button>}
+              <Button variant="outline" size="icon" title="Configurar agendamento" onClick={() => setScheduleDialogOpen(true)}><Settings className="w-4 h-4" /></Button>
             </div>
           </div>
 
@@ -612,6 +613,12 @@ export default function SurfaceAnalyzerV3Page() {
               <DialogTitle className="flex items-center gap-2"><Calendar className="w-5 h-5" /> Agendamento do Analyzer</DialogTitle>
               <DialogDescription>Configure a frequência de execução automática{workspaceName ? ` para ${workspaceName}` : ''}.</DialogDescription>
             </DialogHeader>
+            <Alert className="border-blue-500/30 bg-blue-500/5">
+              <Info className="h-4 w-4 text-blue-500" />
+              <AlertDescription className="text-sm text-muted-foreground">
+                A análise do Analyzer monitora eventos e métricas em tempo real. Recomendamos agendar a execução 1 vez por hora.
+              </AlertDescription>
+            </Alert>
             <div className="space-y-4 py-2">
               <div className="flex items-center justify-between"><Label htmlFor="schedule-active">Agendamento ativo</Label><Switch id="schedule-active" checked={scheduleActive} onCheckedChange={setScheduleActive} /></div>
               <div className="space-y-1.5"><Label>Frequência</Label><Select value={scheduleFreq} onValueChange={setScheduleFreq}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="daily">Diário</SelectItem><SelectItem value="weekly">Semanal</SelectItem><SelectItem value="monthly">Mensal</SelectItem></SelectContent></Select></div>

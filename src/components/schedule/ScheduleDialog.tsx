@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Info } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -25,6 +27,8 @@ interface ScheduleDialogProps {
   title?: string;
   /** Dialog description */
   description?: string;
+  /** Optional recommendation text shown as info alert */
+  recommendation?: string;
 }
 
 function calculateNextRun(freq: string, hour: number, dayOfWeek: number, dayOfMonth: number): Date {
@@ -62,6 +66,7 @@ export function ScheduleDialog({
   entityColumn,
   title = 'Agendamento de Análise',
   description = 'Configure a frequência de execução automática.',
+  recommendation,
 }: ScheduleDialogProps) {
   const [scheduleFreq, setScheduleFreq] = useState<string>('daily');
   const [scheduleHour, setScheduleHour] = useState<number>(15);
@@ -135,6 +140,15 @@ export function ScheduleDialog({
           </DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+
+        {recommendation && (
+          <Alert className="border-blue-500/30 bg-blue-500/5">
+            <Info className="h-4 w-4 text-blue-500" />
+            <AlertDescription className="text-sm text-muted-foreground">
+              {recommendation}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <div className="space-y-5 py-2">
           {/* Active toggle */}
