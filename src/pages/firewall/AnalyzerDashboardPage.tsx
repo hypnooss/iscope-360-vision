@@ -986,7 +986,7 @@ export default function AnalyzerDashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Filter className="w-4 h-4 text-primary" />
-                Top Categorias Web Bloqueadas
+                Web Filter - Top Categorias Bloqueadas
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1012,7 +1012,7 @@ export default function AnalyzerDashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <AppWindow className="w-4 h-4 text-primary" />
-                Top Aplicações Bloqueadas
+                Application Control - Top Aplicações Bloqueadas
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1038,7 +1038,7 @@ export default function AnalyzerDashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Zap className="w-4 h-4 text-primary" />
-                Anomalias de Rede
+                IPS/IDS - Anomalias de Rede
               </CardTitle>
             </CardHeader>
             <CardContent>
