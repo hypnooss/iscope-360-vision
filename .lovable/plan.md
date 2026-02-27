@@ -1,54 +1,32 @@
 
 
-## Plano: Unificar topo das páginas Compliance com o padrão Analyzer
+## Bug: Race condition between snapshot effects
 
-### Problema
-As páginas de Compliance têm layout de topo diferente do Analyzer:
-- **Analyzer**: Breadcrumb → Título + Subtítulo (esquerda) | Seletores + Botão "Executar Análise" + ⚙️ (direita) → Barra de progresso → Linha "Última coleta"
-- **Compliance (Firewall)**: Breadcrumb → Seletores em linha → Componente `Dashboard` com seu próprio header (título, botões, command center com `max-w-7xl mx-auto` e padding extra)
-- **Compliance (Domínio)**: Breadcrumb → Seletores em linha → Header interno + Command Center
+### Root cause
 
-### Mudanças
+Both `FirewallCompliancePage` and `ExternalDomainCompliancePage` have two competing effects:
 
-#### 1. `src/pages/firewall/FirewallCompliancePage.tsx`
-- Reorganizar o topo para seguir o padrão Analyzer:
-  - Breadcrumb: `Firewall > Compliance`
-  - Título "Firewall Compliance" + subtítulo (esquerda) | Seletores + botão "Executar Análise" (direita)
-  - Linha "Última coleta" com data do snapshot selecionado (usando Badge, sem ser um seletor — o snapshot mais recente é carregado automaticamente)
-- Remover o seletor de snapshot como dropdown — exibir apenas a data da última coleta como o Analyzer faz
-- Mover os botões "Exportar PDF" e "Reanalisar" do componente `Dashboard` para o header da página (junto com o botão "Executar Análise")
-- Remover o header redundante do `Dashboard` (título, botões) — ou passar uma prop para suprimi-lo
+1. **Effect A** (lines 302-306 / 165-169): "Auto-select latest snapshot" — sets `selectedSnapshotId` to first snapshot when snapshots load
+2. **Effect B** (lines 308-310 / 172-174): "Reset snapshot when domain/firewall changes" — clears `selectedSnapshotId` to `''`
 
-#### 2. `src/pages/external-domain/ExternalDomainCompliancePage.tsx`
-- Mesmo padrão: Breadcrumb `Domínio Externo > Compliance`
-- Título "Domain Compliance" + subtítulo (esquerda) | Seletores + botão "Executar Análise" (direita)
-- Linha "Última coleta" com Badge
-- Mover botões "Exportar PDF" e "Reanalisar" para o header
+React runs effects in declaration order. When both fire in the same cycle (domain changes → new snapshots arrive), Effect A sets the snapshot, then Effect B immediately resets it to `''`. The report query never fires because `selectedSnapshotId` is empty, so the page shows "Nenhuma análise encontrada."
 
-#### 3. `src/components/Dashboard.tsx`
-- Remover o `max-w-7xl mx-auto` wrapper (alinhando com a padronização global de espaçamento)
-- Remover o padding extra `p-6 lg:p-8` do container raiz (a página já fornece padding)
-- Adicionar prop `hideHeader?: boolean` para suprimir o header interno (título + botões) quando a página já fornece esses elementos
-- Quando `hideHeader=true`, renderizar direto do Command Center em diante
+### Fix
 
-#### 4. `src/pages/m365/M365PosturePage.tsx`
-- Ajustar breadcrumb para `Microsoft 365 > Compliance`
-- Reorganizar header para o mesmo padrão: título (esquerda) | TenantSelector + botão "Atualizar" (direita)
-- Linha "Última coleta" com Badge (já existe parcialmente)
+**Remove Effect B entirely** from both pages. Effect A already handles domain/firewall changes correctly because the `snapshots` query key includes the selected domain/firewall ID — when the asset changes, snapshots refetch, and Effect A picks the first one. Replace Effect A with a version that always syncs to the first snapshot when snapshots change:
 
-### Resultado visual esperado (todas as páginas de Compliance)
-```text
-Módulo > Compliance
-
-Título Compliance                    [Workspace ▼] [Ativo ▼]  ▶ Executar Análise  ⚙
-Subtítulo descritivo
-
-⏱ Última coleta: 26/02/2026, 23:43:33
-
-[═══════════ Progress bar (quando rodando) ═══════════]
-
-┌─────────────────────────────────────────────┐
-│            Command Center / Conteúdo         │
-└─────────────────────────────────────────────┘
+```ts
+useEffect(() => {
+  if (snapshots.length > 0) {
+    setSelectedSnapshotId(snapshots[0].id);
+  } else {
+    setSelectedSnapshotId('');
+  }
+}, [snapshots]);
 ```
+
+### Files changed
+
+- `src/pages/firewall/FirewallCompliancePage.tsx` — replace Effect A (lines 165-169), remove Effect B (lines 172-174)
+- `src/pages/external-domain/ExternalDomainCompliancePage.tsx` — replace Effect A (lines 302-306), remove Effect B (lines 308-310)
 
