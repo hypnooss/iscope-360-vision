@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,11 +18,6 @@ import {
   Users,
   Wrench,
 } from 'lucide-react';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import {
   UnifiedComplianceItem,
   UnifiedComplianceStatus,
@@ -119,6 +113,9 @@ interface UnifiedComplianceCardProps {
   /** Cor da categoria para hover (ex: "sky-500") */
   categoryColorKey?: string;
 
+  /** Callback ao clicar no card para abrir detalhes na sheet lateral */
+  onClick?: () => void;
+
   /** Callback ao clicar nas entidades afetadas */
   onShowAffectedEntities?: () => void;
 
@@ -152,10 +149,10 @@ const CATEGORY_HOVER_CLASSES: Record<string, { border: string; text: string }> =
 export function UnifiedComplianceCard({
   item,
   categoryColorKey,
+  onClick,
   onShowAffectedEntities,
   onShowRemediation,
 }: UnifiedComplianceCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
   const { role } = useAuth();
 
   const statusConfig = STATUS_CONFIG[item.status] || STATUS_CONFIG.unknown;
@@ -201,8 +198,10 @@ export function UnifiedComplianceCard({
     <div
       className={cn(
         'glass-card rounded-lg transition-all duration-200 group animate-fade-in',
-        hoverClasses?.border || 'hover:border-primary/50'
+        hoverClasses?.border || 'hover:border-primary/50',
+        onClick && 'cursor-pointer'
       )}
+      onClick={onClick}
     >
       {/* ═══════════════════════════════════════════════════════
           NÍVEL 1 — Visão Rápida (sempre visível)
@@ -265,111 +264,99 @@ export function UnifiedComplianceCard({
         </div>
       </div>
 
-      {/* ═══════════════════════════════════════════════════════
-          NÍVEL 3 — Detalhes Expandíveis
-          ═══════════════════════════════════════════════════════ */}
-      {hasExpandableContent && (
-        <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-          <CollapsibleTrigger asChild>
-            <button className="w-full px-4 pb-2 text-left">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                {isExpanded ? (
-                  <ChevronDown className="w-3.5 h-3.5" />
-                ) : (
-                  <ChevronRight className={cn(
-                    'w-3.5 h-3.5 transition-colors',
-                    hoverClasses?.text || 'group-hover:text-primary'
-                  )} />
-                )}
-                <span>Detalhes</span>
-              </div>
-            </button>
-          </CollapsibleTrigger>
+      {/* Link "Detalhes" — abre sheet lateral quando onClick presente */}
+      {onClick && hasExpandableContent && (
+        <div className="px-4 pb-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <ChevronRight className={cn(
+              'w-3.5 h-3.5 transition-colors',
+              hoverClasses?.text || 'group-hover:text-primary'
+            )} />
+            <span>Detalhes</span>
+          </div>
+        </div>
+      )}
 
-          <CollapsibleContent>
-            <div className="px-4 pb-4 space-y-3 border-t border-border/50 pt-3 mx-4 mb-2">
-
-              {/* Endpoint consultado — Super Admin only */}
-              {canViewAdminDetails && item.apiEndpoint && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <ExternalLink className="w-3 h-3" />
-                  <span>
-                    Endpoint consultado:{' '}
-                    <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
-                      {item.apiEndpoint}
-                    </code>
-                  </span>
-                </div>
-              )}
-
-              {/* ANÁLISE EFETUADA */}
-              {(item.details || item.description) && (
-                <Section title="ANÁLISE EFETUADA" icon={FileText}>
-                  {item.details || item.description}
-                </Section>
-              )}
-
-              {/* RISCO TÉCNICO — apenas em falha */}
-              {isFailed && item.technicalRisk && (
-                <Section title="RISCO TÉCNICO" icon={ShieldAlert} variant="warning">
-                  {item.technicalRisk}
-                </Section>
-              )}
-
-              {/* IMPACTO NO NEGÓCIO — apenas em falha */}
-              {isFailed && item.businessImpact && (
-                <Section title="IMPACTO NO NEGÓCIO" icon={Building2} variant="destructive">
-                  {item.businessImpact}
-                </Section>
-              )}
-
-              {/* EVIDÊNCIAS COLETADAS */}
-              {item.evidence && item.evidence.length > 0 && (
-                <div className="space-y-2">
-                  <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
-                    <Layers className="w-3 h-3 text-muted-foreground" />
-                    EVIDÊNCIAS COLETADAS
-                  </h5>
-                  <div className="space-y-2">
-                    {item.evidence.map((ev, index) => (
-                      <EvidenceItemDisplay key={index} item={ev} />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Dados brutos (JSON) — Super Admin only */}
-              {canViewAdminDetails && item.rawData && Object.keys(item.rawData).length > 0 && (
-                <details className="text-xs">
-                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground flex items-center gap-1">
-                    <Code className="w-3 h-3" />
-                    Ver dados brutos (JSON)
-                  </summary>
-                  <pre className="mt-2 bg-muted/50 p-3 rounded-md overflow-x-auto text-[10px] text-muted-foreground">
-                    {JSON.stringify(item.rawData, null, 2)}
-                  </pre>
-                </details>
-              )}
-
-              {/* Botão "Como Corrigir" */}
-              {isFailed && item.remediation && onShowRemediation && (
-                <div className="pt-2 border-t border-border/50">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onShowRemediation();
-                    }}
-                  >
-                    <Wrench className="w-4 h-4 mr-2" />
-                    Como Corrigir
-                  </Button>
-                </div>
-              )}
+      {/* Fallback: Collapsible inline quando NÃO tem onClick (ex: M365 Posture) */}
+      {!onClick && hasExpandableContent && (
+        <details className="group/details">
+          <summary className="w-full px-4 pb-2 text-left cursor-pointer list-none">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
+              <ChevronRight className={cn(
+                'w-3.5 h-3.5 transition-colors group-open/details:rotate-90',
+                hoverClasses?.text || 'group-hover:text-primary'
+              )} />
+              <span>Detalhes</span>
             </div>
-          </CollapsibleContent>
-        </Collapsible>
+          </summary>
+          <div className="px-4 pb-4 space-y-3 border-t border-border/50 pt-3 mx-4 mb-2">
+            {canViewAdminDetails && item.apiEndpoint && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <ExternalLink className="w-3 h-3" />
+                <span>
+                  Endpoint consultado:{' '}
+                  <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
+                    {item.apiEndpoint}
+                  </code>
+                </span>
+              </div>
+            )}
+            {(item.details || item.description) && (
+              <Section title="ANÁLISE EFETUADA" icon={FileText}>
+                {item.details || item.description}
+              </Section>
+            )}
+            {isFailed && item.technicalRisk && (
+              <Section title="RISCO TÉCNICO" icon={ShieldAlert} variant="warning">
+                {item.technicalRisk}
+              </Section>
+            )}
+            {isFailed && item.businessImpact && (
+              <Section title="IMPACTO NO NEGÓCIO" icon={Building2} variant="destructive">
+                {item.businessImpact}
+              </Section>
+            )}
+            {item.evidence && item.evidence.length > 0 && (
+              <div className="space-y-2">
+                <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  <Layers className="w-3 h-3 text-muted-foreground" />
+                  EVIDÊNCIAS COLETADAS
+                </h5>
+                <div className="space-y-2">
+                  {item.evidence.map((ev, index) => (
+                    <EvidenceItemDisplay key={index} item={ev} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {canViewAdminDetails && item.rawData && Object.keys(item.rawData).length > 0 && (
+              <details className="text-xs">
+                <summary className="cursor-pointer text-muted-foreground hover:text-foreground flex items-center gap-1">
+                  <Code className="w-3 h-3" />
+                  Ver dados brutos (JSON)
+                </summary>
+                <pre className="mt-2 bg-muted/50 p-3 rounded-md overflow-x-auto text-[10px] text-muted-foreground">
+                  {JSON.stringify(item.rawData, null, 2)}
+                </pre>
+              </details>
+            )}
+            {isFailed && item.remediation && onShowRemediation && (
+              <div className="pt-2 border-t border-border/50">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShowRemediation();
+                  }}
+                >
+                  <Wrench className="w-4 h-4 mr-2" />
+                  Como Corrigir
+                </Button>
+              </div>
+            )}
+          </div>
+        </details>
       )}
     </div>
   );

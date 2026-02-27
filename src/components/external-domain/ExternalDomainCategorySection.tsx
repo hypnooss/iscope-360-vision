@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronRight, Shield } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
-import { ComplianceCategory } from '@/types/compliance';
+import { ComplianceCategory, ComplianceCheck } from '@/types/compliance';
 import { ComplianceCard } from '@/components/ComplianceCard';
+import { ComplianceDetailSheet } from '@/components/compliance/ComplianceDetailSheet';
+import { mapComplianceCheck } from '@/lib/complianceMappers';
 import { 
   getCategoryConfig, 
   AVAILABLE_COLORS,
@@ -47,6 +49,8 @@ export function ExternalDomainCategorySection({
   categoryConfigs
 }: ExternalDomainCategorySectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [selectedCheck, setSelectedCheck] = useState<ComplianceCheck | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   
   // Get config from database or use defaults
   const config = getCategoryConfig(categoryConfigs, category.name);
@@ -75,6 +79,11 @@ export function ExternalDomainCategorySection({
     if (passRate >= 80) return 'text-emerald-500';
     if (passRate >= 60) return 'text-amber-500';
     return 'text-red-500';
+  };
+
+  const handleCheckClick = (check: ComplianceCheck) => {
+    setSelectedCheck(check);
+    setSheetOpen(true);
   };
 
   if (category.checks.length === 0) return null;
@@ -145,7 +154,7 @@ export function ExternalDomainCategorySection({
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent 
-          className="pt-4 space-y-3 pl-4 ml-6 mb-6"
+          className="pt-4 grid grid-cols-1 lg:grid-cols-2 gap-4 pl-4 ml-6 mb-6"
           style={{ 
             borderLeftWidth: '2px',
             borderLeftColor: `${colorHex}30`,
@@ -157,10 +166,17 @@ export function ExternalDomainCategorySection({
               check={check} 
               variant="external_domain" 
               categoryColorKey={config.color}
+              onClick={() => handleCheckClick(check)}
             />
           ))}
         </CollapsibleContent>
       </Collapsible>
+
+      <ComplianceDetailSheet
+        item={selectedCheck ? mapComplianceCheck(selectedCheck) : null}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
     </div>
   );
 }
