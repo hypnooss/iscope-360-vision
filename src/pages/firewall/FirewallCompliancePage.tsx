@@ -267,7 +267,7 @@ export default function FirewallCompliancePage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Firewall Compliance</h1>
-            <p className="text-muted-foreground">Relatório de conformidade e segurança</p>
+            <p className="text-muted-foreground">Análise de conformidade de firewall</p>
           </div>
           <div className="flex items-center gap-3">
             {isSuperRole && allWorkspaces && (
