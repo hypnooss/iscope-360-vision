@@ -29,6 +29,8 @@ interface ScheduleDialogProps {
   description?: string;
   /** Optional recommendation text shown as info alert */
   recommendation?: string;
+  /** Whether to show the hourly frequency option (default: true) */
+  allowHourly?: boolean;
 }
 
 function calculateNextRun(freq: string, hour: number, dayOfWeek: number, dayOfMonth: number): Date {
@@ -67,6 +69,7 @@ export function ScheduleDialog({
   title = 'Agendamento de Análise',
   description = 'Configure a frequência de execução automática.',
   recommendation,
+  allowHourly = true,
 }: ScheduleDialogProps) {
   const [scheduleFreq, setScheduleFreq] = useState<string>('daily');
   const [scheduleHour, setScheduleHour] = useState<number>(15);
@@ -163,7 +166,7 @@ export function ScheduleDialog({
             <Select value={scheduleFreq} onValueChange={setScheduleFreq}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="hourly">Por Hora</SelectItem>
+                {allowHourly && <SelectItem value="hourly">Por Hora</SelectItem>}
                 <SelectItem value="daily">Diário</SelectItem>
                 <SelectItem value="weekly">Semanal</SelectItem>
                 <SelectItem value="monthly">Mensal</SelectItem>
