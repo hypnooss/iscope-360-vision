@@ -32,7 +32,7 @@ export default function SettingsPage() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("api-keys");
+  const [activeTab, setActiveTab] = useState("agents");
   const initialLoadDone = useRef(false);
 
   // API Keys state
@@ -557,6 +557,10 @@ export default function SettingsPage() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList>
+            <TabsTrigger value="agents" className="gap-2">
+              <Bot className="w-4 h-4" />
+              Agents
+            </TabsTrigger>
             <TabsTrigger value="api-keys" className="gap-2">
               <Key className="w-4 h-4" />
               Chaves de API
@@ -564,10 +568,6 @@ export default function SettingsPage() {
             <TabsTrigger value="modules" className="gap-2">
               <Layers className="w-4 h-4" />
               Módulos
-            </TabsTrigger>
-            <TabsTrigger value="agents" className="gap-2">
-              <Bot className="w-4 h-4" />
-              Agents
             </TabsTrigger>
           </TabsList>
 
@@ -670,72 +670,12 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="agents" className="space-y-6">
-            {/* Card 1: Configurações dos Agents */}
-            <Card className="border-border/50">
-              <CardHeader>
-                <CardTitle>Configurações dos Agents</CardTitle>
-                <CardDescription>
-                  Configure o comportamento global dos agents de coleta
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {loadingAgentSettings ?
-                <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  </div> :
-
-                <>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="heartbeatInterval">Intervalo de Heartbeat (segundos)</Label>
-                        <Input
-                        id="heartbeatInterval"
-                        type="number"
-                        min={60}
-                        max={300}
-                        value={agentHeartbeatInterval}
-                        onChange={(e) => setAgentHeartbeatInterval(Number(e.target.value))}
-                        className="w-[200px]" />
-
-                        <p className="text-xs text-muted-foreground">
-                          Define o intervalo entre check-ins dos agents. Valores menores detectam problemas 
-                          mais rapidamente, mas aumentam o uso de recursos. Recomendado: 60-120 segundos.
-                        </p>
-                      </div>
-
-                      <div className="bg-muted/30 rounded-lg p-4 space-y-2">
-                        <h4 className="font-medium text-sm">Sobre o Heartbeat</h4>
-                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                          <li>Agents reportam status e verificam tarefas pendentes a cada intervalo</li>
-                          <li>Intervalos menores = detecção mais rápida de agents offline</li>
-                          <li>Intervalos maiores = menor carga no servidor</li>
-                          <li>A alteração afeta todos os agents na próxima sincronização</li>
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end">
-                      <Button onClick={handleSaveAgentSettings} disabled={savingAgentSettings}>
-                        {savingAgentSettings ?
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> :
-
-                      <Save className="w-4 h-4 mr-2" />
-                      }
-                        Salvar Configurações
-                      </Button>
-                    </div>
-                  </>
-                }
-              </CardContent>
-            </Card>
-
-            {/* Card 2: Gerenciamento de Atualizações */}
+            {/* Card 1: Gerenciamento de Atualizações */}
             <Card className="border-border/50">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="flex items-center gap-2">
-                      <Upload className="w-5 h-5" />
                       Gerenciamento de Atualizações
                     </CardTitle>
                     <CardDescription>
@@ -1030,6 +970,65 @@ export default function SettingsPage() {
                     }
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Card 2: Configurações dos Agents */}
+            <Card className="border-border/50">
+              <CardHeader>
+                <CardTitle>Configurações dos Agents</CardTitle>
+                <CardDescription>
+                  Configure o comportamento global dos agents de coleta
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {loadingAgentSettings ?
+                <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  </div> :
+
+                <>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="heartbeatInterval">Intervalo de Heartbeat (segundos)</Label>
+                        <Input
+                        id="heartbeatInterval"
+                        type="number"
+                        min={60}
+                        max={300}
+                        value={agentHeartbeatInterval}
+                        onChange={(e) => setAgentHeartbeatInterval(Number(e.target.value))}
+                        className="w-[200px]" />
+
+                        <p className="text-xs text-muted-foreground">
+                          Define o intervalo entre check-ins dos agents. Valores menores detectam problemas 
+                          mais rapidamente, mas aumentam o uso de recursos. Recomendado: 60-120 segundos.
+                        </p>
+                      </div>
+
+                      <div className="bg-muted/30 rounded-lg p-4 space-y-2">
+                        <h4 className="font-medium text-sm">Sobre o Heartbeat</h4>
+                        <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                          <li>Agents reportam status e verificam tarefas pendentes a cada intervalo</li>
+                          <li>Intervalos menores = detecção mais rápida de agents offline</li>
+                          <li>Intervalos maiores = menor carga no servidor</li>
+                          <li>A alteração afeta todos os agents na próxima sincronização</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <Button onClick={handleSaveAgentSettings} disabled={savingAgentSettings}>
+                        {savingAgentSettings ?
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> :
+
+                      <Save className="w-4 h-4 mr-2" />
+                      }
+                        Salvar Configurações
+                      </Button>
+                    </div>
+                  </>
+                }
               </CardContent>
             </Card>
           </TabsContent>
