@@ -850,7 +850,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 flex flex-col min-h-screen cyber-grid px-2 lg:px-6">{children}</main>
+        <main className="flex-1 flex flex-col min-h-screen cyber-grid px-4 lg:px-12">{children}</main>
       </div>
       <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
     </div>
