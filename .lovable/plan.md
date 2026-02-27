@@ -1,30 +1,20 @@
 
 
-## Plano: Ajustar largura e abas dos painéis laterais
+## Plano: Reordenar seções na aba Análise
 
-### 3 mudanças
+### Mudança
 
-#### 1. `ComplianceDetailSheet.tsx` — largura 50vw + mesclar Risco na aba Análise
-- Mudar `sm:max-w-[540px] lg:max-w-[600px]` → `sm:max-w-[50vw]`
-- Remover aba "Risco" separada
-- Mover seções "Risco Técnico" e "Impacto no Negócio" para dentro da `TabsContent value="analise"`, abaixo da recomendação
-- Remover variável `hasRisk` e referências à tab "risco"
+**`src/components/compliance/ComplianceDetailSheet.tsx`** — reordenar blocos dentro de `TabsContent value="analise"`:
 
-#### 2. `ComplianceDetailSheet.tsx` — formatar abas no estilo underline (print 2)
-Já usa estilo underline com `border-b-2`. Manter, mas ajustar para ficar consistente com o novo padrão do AssetDetailSheet (item 3).
+Ordem atual: Descrição → Análise Efetuada → Recomendação → Risco Técnico → Impacto no Negócio
 
-#### 3. `AssetDetailSheet.tsx` — formatar abas no estilo underline (print 2/3)
-- Mudar `TabsList` de `className="mx-6 mb-0 w-fit"` (pill style) → estilo underline:
-  ```
-  className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-6 h-auto py-0"
-  ```
-- Cada `TabsTrigger` recebe:
-  ```
-  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3 text-sm"
-  ```
-- Adicionar ícones nas abas (Search, Network, Bug, Lock) para consistência visual
+Nova ordem: **Descrição → Análise Efetuada → Impacto no Negócio → Risco Técnico → Recomendação**
 
-### Arquivos editados (2)
+### Confirmação sobre visibilidade das abas
+- **Análise**: visível para todos ✓
+- **Evidências**: visível para todos ✓
+- **Dados**: visível apenas para `super_admin` e `super_suporte` ✓ (já implementado corretamente)
+
+### Arquivo editado (1)
 - `src/components/compliance/ComplianceDetailSheet.tsx`
-- `src/components/surface/AssetDetailSheet.tsx`
 
