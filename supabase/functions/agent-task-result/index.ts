@@ -556,6 +556,17 @@ function normalizeEvaluationLogic(rawLogic: Record<string, unknown>): Normalized
     };
   }
 
+  // Typed evaluation logic: array_check, object_check, threshold_check
+  const logicType = rawLogic?.type as string | undefined;
+  if (logicType === 'array_check' || logicType === 'object_check' || logicType === 'threshold_check') {
+    return {
+      source_key: (rawLogic.source_key as string) || '',
+      field_path: (rawLogic.path as string) || (rawLogic.field as string) || '',
+      conditions: [],
+      default_result: 'unknown',
+    };
+  }
+
   // External Domain format: { step_id, field, operator, value/values/pattern }
   const stepId = typeof rawLogic.step_id === 'string' ? (rawLogic.step_id as string) : '';
   const field = typeof rawLogic.field === 'string' ? (rawLogic.field as string) : '';
@@ -577,6 +588,234 @@ function normalizeEvaluationLogic(rawLogic: Record<string, unknown>): Normalized
       : [],
     // Default to fail when rule cannot be satisfied
     default_result: 'fail',
+  };
+}
+
+// ============================================
+// Generic typed evaluation logic (data-driven from DB)
+// ============================================
+
+interface TypedLogicResult {
+  status: 'pass' | 'fail' | 'not_found' | 'unknown';
+  evidence: Array<{ field: string; value: string; status: string }>;
+  details?: string;
+}
+
+function getNestedPath(obj: unknown, path: string): unknown {
+  if (!path || !obj || typeof obj !== 'object') return obj;
+  const parts = path.split('.');
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+function evaluateTypedLogic(
+  rawLogic: Record<string, unknown>,
+  sourceData: unknown,
+  rule: ComplianceRule
+): TypedLogicResult | null {
+  const logicType = rawLogic.type as string;
+
+  if (logicType === 'array_check') {
+    return evaluateArrayCheck(rawLogic, sourceData, rule);
+  } else if (logicType === 'object_check') {
+    return evaluateObjectCheck(rawLogic, sourceData, rule);
+  } else if (logicType === 'threshold_check') {
+    return evaluateThresholdCheck(rawLogic, sourceData, rule);
+  }
+
+  return null;
+}
+
+function evaluateArrayCheck(
+  logic: Record<string, unknown>,
+  sourceData: unknown,
+  rule: ComplianceRule
+): TypedLogicResult {
+  const path = logic.path as string | undefined;
+  const raw = path ? getNestedPath(sourceData, path) : sourceData;
+  // Also try .results if raw is an object with results key
+  let arr: Array<Record<string, unknown>>;
+  if (Array.isArray(raw)) {
+    arr = raw as Array<Record<string, unknown>>;
+  } else if (raw && typeof raw === 'object' && Array.isArray((raw as Record<string, unknown>).results)) {
+    arr = (raw as Record<string, unknown>).results as Array<Record<string, unknown>>;
+  } else {
+    arr = [];
+  }
+
+  if (arr.length === 0) {
+    return {
+      status: 'not_found',
+      evidence: [],
+      details: rule.not_found_description || 'Nenhum item encontrado',
+    };
+  }
+
+  const condition = logic.condition as string; // none_match, all_match
+  const field = logic.field as string;
+  const value = logic.value;
+
+  let matched: Array<Record<string, unknown>> = [];
+
+  if (condition === 'none_match') {
+    // Pass if NO item matches field === value
+    matched = arr.filter(item => String(item[field] ?? '').toLowerCase() === String(value).toLowerCase());
+    const status = matched.length === 0 ? 'pass' : 'fail';
+    return {
+      status,
+      evidence: arr.map(item => ({
+        field: String(item.name || item.p2name || item.source || field),
+        value: String(item[field] ?? 'unknown'),
+        status: String(item[field] ?? '').toLowerCase() === String(value).toLowerCase() ? 'fail' : 'pass',
+      })),
+      details: status === 'pass'
+        ? (rule.pass_description || 'Todos os itens em conformidade')
+        : (rule.fail_description || `${matched.length} item(ns) em não-conformidade`),
+    };
+  } else if (condition === 'all_match') {
+    // Pass if ALL items match field === value
+    matched = arr.filter(item => String(item[field] ?? '').toLowerCase() !== String(value).toLowerCase());
+    const status = matched.length === 0 ? 'pass' : 'fail';
+    return {
+      status,
+      evidence: arr.map(item => ({
+        field: String(item.name || item.p2name || item.source || field),
+        value: String(item[field] ?? 'unknown'),
+        status: String(item[field] ?? '').toLowerCase() === String(value).toLowerCase() ? 'pass' : 'fail',
+      })),
+      details: status === 'pass'
+        ? (rule.pass_description || 'Todos os itens em conformidade')
+        : (rule.fail_description || `${matched.length} item(ns) não atendem ao critério`),
+    };
+  }
+
+  // Check alt_condition if present
+  const altCondition = logic.alt_condition as string | undefined;
+  if (altCondition) {
+    const altField = logic.alt_field as string;
+    const altValue = logic.alt_value;
+    if (altCondition === 'none_match') {
+      matched = arr.filter(item => String(item[altField] ?? '').toLowerCase() === String(altValue).toLowerCase());
+      const status = matched.length === 0 ? 'pass' : 'fail';
+      return {
+        status,
+        evidence: arr.map(item => ({
+          field: String(item.name || item.source || altField),
+          value: String(item[altField] ?? 'unknown'),
+          status: String(item[altField] ?? '').toLowerCase() === String(altValue).toLowerCase() ? 'fail' : 'pass',
+        })),
+        details: status === 'pass'
+          ? (rule.pass_description || 'Verificação aprovada')
+          : (rule.fail_description || `${matched.length} item(ns) em não-conformidade`),
+      };
+    }
+  }
+
+  return { status: 'unknown', evidence: [], details: 'Condição não reconhecida' };
+}
+
+function evaluateObjectCheck(
+  logic: Record<string, unknown>,
+  sourceData: unknown,
+  rule: ComplianceRule
+): TypedLogicResult {
+  const path = logic.path as string | undefined;
+  const obj = path ? getNestedPath(sourceData, path) : sourceData;
+
+  if (!obj || typeof obj !== 'object') {
+    return { status: 'unknown', evidence: [], details: 'Dados não disponíveis' };
+  }
+
+  const condition = logic.condition as string;
+  const field = logic.field as string;
+  const expectedValue = logic.expected_value;
+
+  if (condition === 'field_exists') {
+    const actualValue = (obj as Record<string, unknown>)[field];
+    const exists = actualValue !== undefined && actualValue !== null;
+    let pass = exists;
+    if (expectedValue !== undefined && exists) {
+      pass = String(actualValue).toLowerCase() === String(expectedValue).toLowerCase();
+    }
+    return {
+      status: pass ? 'pass' : 'fail',
+      evidence: [{
+        field: field,
+        value: String(actualValue ?? 'N/A'),
+        status: pass ? 'pass' : 'fail',
+      }],
+      details: pass
+        ? (rule.pass_description || `Campo ${field} encontrado`)
+        : (rule.fail_description || `Campo ${field} não encontrado ou valor incorreto`),
+    };
+  }
+
+  return { status: 'unknown', evidence: [], details: 'Condição não reconhecida' };
+}
+
+function evaluateThresholdCheck(
+  logic: Record<string, unknown>,
+  sourceData: unknown,
+  rule: ComplianceRule
+): TypedLogicResult {
+  const path = logic.path as string | undefined;
+  const obj = path ? getNestedPath(sourceData, path) : sourceData;
+
+  if (!obj || typeof obj !== 'object') {
+    return { status: 'unknown', evidence: [], details: 'Dados não disponíveis' };
+  }
+
+  const checks = logic.checks as Array<Record<string, unknown>> | undefined;
+  if (!checks || !Array.isArray(checks)) {
+    return { status: 'unknown', evidence: [], details: 'Nenhuma verificação definida' };
+  }
+
+  const evidence: Array<{ field: string; value: string; status: string }> = [];
+  let allPass = true;
+
+  for (const check of checks) {
+    const field = check.field as string;
+    // Support alternate field names (e.g., cpu_usage vs cpu)
+    const altFields = field.split('|').map(f => f.trim());
+    let actualValue: unknown = undefined;
+    let usedField = field;
+    for (const f of altFields) {
+      const v = (obj as Record<string, unknown>)[f];
+      if (v !== undefined) {
+        actualValue = v;
+        usedField = f;
+        break;
+      }
+    }
+    const numVal = Number(actualValue ?? 0);
+    const threshold = Number(check.value ?? 0);
+    const operator = check.operator as string;
+
+    let pass = false;
+    if (operator === 'lt') pass = numVal < threshold;
+    else if (operator === 'lte') pass = numVal <= threshold;
+    else if (operator === 'gt') pass = numVal > threshold;
+    else if (operator === 'gte') pass = numVal >= threshold;
+    else if (operator === 'eq') pass = numVal === threshold;
+
+    if (!pass) allPass = false;
+    evidence.push({
+      field: usedField,
+      value: `${numVal}`,
+      status: pass ? 'pass' : 'fail',
+    });
+  }
+
+  return {
+    status: allPass ? 'pass' : 'fail',
+    evidence,
+    details: allPass
+      ? (rule.pass_description || 'Todos os limites dentro do aceitável')
+      : (rule.fail_description || 'Um ou mais limites excedidos'),
   };
 }
 
@@ -2900,6 +3139,35 @@ function processComplianceRules(
       });
       continue;
     }
+
+    // =====================================================
+    // Generic typed evaluation (data-driven from DB)
+    // Handles array_check, object_check, threshold_check
+    // =====================================================
+    const rawLogic = rule.evaluation_logic;
+    const logicType = rawLogic?.type as string | undefined;
+    if (logicType === 'array_check' || logicType === 'object_check' || logicType === 'threshold_check') {
+      const typedResult = evaluateTypedLogic(rawLogic, sourceData, rule);
+      if (typedResult) {
+        checks.push({
+          id: rule.code,
+          name: rule.name,
+          description: rule.description || rule.name,
+          category: rule.category,
+          severity: rule.severity,
+          status: typedResult.status === 'not_found' ? 'unknown' : typedResult.status,
+          details: typedResult.details || '',
+          recommendation: rule.recommendation || undefined,
+          weight: rule.weight,
+          evidence: typedResult.evidence.map(e => ({ label: e.field, value: e.value, type: 'text' as const })),
+          rawData: { [logic.source_key]: sourceData },
+          apiEndpoint,
+          technicalRisk: rule.technical_risk || undefined,
+          businessImpact: rule.business_impact || undefined,
+        });
+        continue;
+      }
+    }
     
     // Get the value at the field path
     const value = getNestedValue(sourceData as Record<string, unknown>, logic.field_path);
@@ -3085,124 +3353,6 @@ function processComplianceRules(
       } else {
         status = 'pass';
         details = rule.pass_description || 'Nenhuma regra any-any encontrada';
-      }
-    } else if (rule.code === 'cert-001') {
-      // Certificados expirados
-      const certData = rawData['monitor_certificates'] as Record<string, unknown> | null;
-      if (!certData) {
-        status = 'unknown';
-        details = 'Dados não disponíveis';
-      } else {
-        const certResults = (certData.results || certData) as Array<Record<string, unknown>>;
-        const arr = Array.isArray(certResults) ? certResults : [];
-        if (arr.length === 0) {
-          status = 'not_found';
-          details = rule.not_found_description || 'Nenhum certificado encontrado';
-        } else {
-          const expired = arr.filter((c: Record<string, unknown>) => c.status === 'expired');
-          if (expired.length > 0) {
-            status = 'fail';
-            details = rule.fail_description || `${expired.length} certificado(s) expirado(s)`;
-          } else {
-            status = 'pass';
-            details = rule.pass_description || 'Todos os certificados válidos';
-          }
-        }
-        evidence = arr.map((c: Record<string, unknown>) => ({
-          field: String(c.name || c.source || 'Certificado'),
-          value: String(c.status || 'unknown'),
-          status: c.status === 'expired' ? 'fail' : 'pass'
-        }));
-      }
-    } else if (rule.code === 'vpn-004') {
-      // Túneis IPsec
-      const vpnData = rawData['monitor_vpn_ipsec'] as Record<string, unknown> | null;
-      if (!vpnData) {
-        status = 'unknown';
-        details = 'Dados não disponíveis';
-      } else {
-        const vpnResults = (vpnData.results || vpnData) as Array<Record<string, unknown>>;
-        const arr = Array.isArray(vpnResults) ? vpnResults : [];
-        if (arr.length === 0) {
-          status = 'not_found';
-          details = rule.not_found_description || 'Nenhum túnel IPsec configurado';
-        } else {
-          const down = arr.filter((t: Record<string, unknown>) => {
-            const s = String(t.status || t.state || '').toLowerCase();
-            return s === 'down' || s === 'inactive';
-          });
-          if (down.length > 0) {
-            status = 'fail';
-            details = rule.fail_description || `${down.length} túnel(is) down de ${arr.length}`;
-          } else {
-            status = 'pass';
-            details = rule.pass_description || `Todos os ${arr.length} túneis ativos`;
-          }
-        }
-        evidence = (Array.isArray(vpnResults) ? vpnResults : []).map((t: Record<string, unknown>) => ({
-          field: String(t.name || t.p2name || 'Túnel'),
-          value: String(t.status || t.state || 'unknown'),
-          status: String(t.status || t.state || '').toLowerCase() === 'down' ? 'fail' : 'pass'
-        }));
-      }
-    } else if (rule.code === 'fg-001') {
-      // FortiGuard Server
-      const fgData = rawData['monitor_fortiguard_server'] as Record<string, unknown> | null;
-      if (!fgData) {
-        status = 'unknown';
-        details = 'Dados não disponíveis';
-      } else {
-        const connected = fgData.connected === true || fgData.connected === 'true';
-        status = connected ? 'pass' : 'fail';
-        details = connected
-          ? (rule.pass_description || 'Conectado ao FortiGuard')
-          : (rule.fail_description || 'Sem conexão com FortiGuard');
-        evidence = [{
-          field: 'FortiGuard Connection',
-          value: String(fgData.connected ?? 'unknown'),
-          status: connected ? 'pass' : 'fail'
-        }];
-      }
-    } else if (rule.code === 'perf-001') {
-      // Performance (CPU/Mem)
-      const perfData = rawData['monitor_performance'] as Record<string, unknown> | null;
-      if (!perfData) {
-        status = 'unknown';
-        details = 'Dados não disponíveis';
-      } else {
-        const cpu = Number(perfData.cpu ?? perfData.cpu_usage ?? 0);
-        const mem = Number(perfData.mem ?? perfData.memory_usage ?? perfData.memory ?? 0);
-        const cpuOk = cpu < 90;
-        const memOk = mem < 90;
-        status = (cpuOk && memOk) ? 'pass' : 'fail';
-        details = status === 'pass'
-          ? (rule.pass_description || `CPU ${cpu}%, Memória ${mem}% — dentro dos limites`)
-          : (rule.fail_description || `CPU ${cpu}%, Memória ${mem}% — acima do limite de 90%`);
-        evidence = [
-          { field: 'CPU Usage', value: `${cpu}%`, status: cpuOk ? 'pass' : 'fail' },
-          { field: 'Memory Usage', value: `${mem}%`, status: memOk ? 'pass' : 'fail' }
-        ];
-      }
-    } else if (rule.code === 'sec-004') {
-      // Security Rating
-      const secRatingData = rawData['monitor_security_rating'] as Record<string, unknown> | null;
-      if (!secRatingData) {
-        status = 'unknown';
-        details = 'Dados não disponíveis';
-      } else {
-        const score = secRatingData.overall_score ?? secRatingData.score;
-        if (score !== undefined && score !== null) {
-          status = 'pass';
-          details = rule.pass_description || `Security Rating: ${score}`;
-        } else {
-          status = 'fail';
-          details = rule.fail_description || 'Security Rating não disponível no dispositivo';
-        }
-        evidence = [{
-          field: 'Security Rating Score',
-          value: String(score ?? 'N/A'),
-          status: score !== undefined && score !== null ? 'pass' : 'fail'
-        }];
       }
     } else if (rule.code.startsWith('vpn-')) {
       // VPN rules (vpn-001, vpn-002, vpn-003)
