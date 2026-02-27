@@ -206,6 +206,18 @@ export function ComplianceDetailSheet({ item, open, onOpenChange }: ComplianceDe
               </Section>
             )}
 
+            {/* Business Impact */}
+            {isFailed && item.businessImpact && (
+              <Section title="IMPACTO NO NEGÓCIO" icon={Building2} variant="destructive">
+                {item.businessImpact}
+              </Section>
+            )}
+            {/* Technical Risk */}
+            {isFailed && item.technicalRisk && (
+              <Section title="RISCO TÉCNICO" icon={ShieldAlert} variant="warning">
+                {item.technicalRisk}
+              </Section>
+            )}
             {/* Recommendation */}
             {isFailed && item.recommendation && (
               <div className="space-y-2">
@@ -217,17 +229,6 @@ export function ComplianceDetailSheet({ item, open, onOpenChange }: ComplianceDe
                   <p className="text-sm text-foreground">{item.recommendation}</p>
                 </div>
               </div>
-            )}
-            {/* Risk sections merged into Análise */}
-            {isFailed && item.technicalRisk && (
-              <Section title="RISCO TÉCNICO" icon={ShieldAlert} variant="warning">
-                {item.technicalRisk}
-              </Section>
-            )}
-            {isFailed && item.businessImpact && (
-              <Section title="IMPACTO NO NEGÓCIO" icon={Building2} variant="destructive">
-                {item.businessImpact}
-              </Section>
             )}
           </TabsContent>
 
