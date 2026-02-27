@@ -300,14 +300,12 @@ export default function ExternalDomainCompliancePage() {
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string>('');
 
   useEffect(() => {
-    if (snapshots.length > 0 && (!selectedSnapshotId || !snapshots.find(s => s.id === selectedSnapshotId))) {
+    if (snapshots.length > 0) {
       setSelectedSnapshotId(snapshots[0].id);
+    } else {
+      setSelectedSnapshotId('');
     }
   }, [snapshots]);
-
-  useEffect(() => {
-    setSelectedSnapshotId('');
-  }, [selectedDomainId]);
 
   // ── Load snapshot data ──
   const { data: snapshotData, isLoading: loadingReport } = useQuery({
