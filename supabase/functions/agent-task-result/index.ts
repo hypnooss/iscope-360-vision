@@ -3198,30 +3198,33 @@ function processComplianceRules(
       // RADIUS
       const radiusResult = formatRADIUSEvidence(rawData);
       evidence = radiusResult.evidence;
-      // Para RADIUS, manter status original da regra (informativo)
       if (!radiusResult.hasServers) {
-        details = 'Nenhum servidor RADIUS configurado';
+        status = 'not_found';
+        details = rule.not_found_description || 'Nenhum servidor RADIUS configurado';
       } else {
+        status = 'pass';
         details = rule.pass_description || `${(rawData['user_radius'] as Record<string, unknown>)?.results ? ((rawData['user_radius'] as Record<string, unknown>).results as Array<unknown>).length : 0} servidor(es) RADIUS configurado(s)`;
       }
     } else if (rule.code === 'auth-003') {
       // FSSO
       const fssoResult = formatFSSOEvidence(rawData);
       evidence = fssoResult.evidence;
-      // Para FSSO, manter status original da regra (informativo)
       if (!fssoResult.hasAgents) {
-        details = 'Nenhum agente FSSO configurado';
+        status = 'not_found';
+        details = rule.not_found_description || 'Nenhum agente FSSO configurado';
       } else {
+        status = 'pass';
         details = rule.pass_description || 'Agente(s) FSSO configurado(s)';
       }
     } else if (rule.code === 'auth-004') {
       // SAML
       const samlResult = formatSAMLEvidence(rawData);
       evidence = samlResult.evidence;
-      // Para SAML, manter status original da regra (informativo)
       if (!samlResult.hasProviders) {
-        details = 'Nenhum provedor SAML configurado';
+        status = 'not_found';
+        details = rule.not_found_description || 'Nenhum provedor SAML configurado';
       } else {
+        status = 'pass';
         details = rule.pass_description || 'Provedor(es) SAML configurado(s)';
       }
     }
