@@ -1012,7 +1012,7 @@ export default function AnalyzerDashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <AppWindow className="w-4 h-4 text-primary" />
-                Top Aplicações Bloqueadas
+                Application Control - Top Aplicações Bloqueadas
               </CardTitle>
             </CardHeader>
             <CardContent>
