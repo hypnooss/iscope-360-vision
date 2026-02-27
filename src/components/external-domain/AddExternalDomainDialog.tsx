@@ -37,7 +37,6 @@ export interface AddExternalDomainPayload {
   client_id: string;
   agent_id: string;
   domain: string;
-  schedule: ScheduleFrequency;
 }
 
 interface AddExternalDomainDialogProps {
@@ -71,7 +70,6 @@ export function AddExternalDomainDialog({ clients, onDomainAdded }: AddExternalD
     client_id: '',
     agent_id: '',
     domain: '',
-    schedule: 'manual' as ScheduleFrequency,
   });
 
   useEffect(() => {
@@ -114,7 +112,6 @@ export function AddExternalDomainDialog({ clients, onDomainAdded }: AddExternalD
       client_id: '',
       agent_id: '',
       domain: '',
-      schedule: 'manual',
     });
     setAgents([]);
     setDomainError(null);
@@ -141,7 +138,6 @@ export function AddExternalDomainDialog({ clients, onDomainAdded }: AddExternalD
         client_id: formData.client_id,
         agent_id: formData.agent_id,
         domain: normalizedDomain,
-        schedule: formData.schedule,
       });
 
       setOpen(false);
@@ -236,24 +232,6 @@ export function AddExternalDomainDialog({ clients, onDomainAdded }: AddExternalD
               {domainError && <p className="text-sm text-destructive">{domainError}</p>}
             </div>
 
-            {/* Schedule */}
-            <div className="space-y-2">
-              <Label htmlFor="ext-schedule">Frequência de Análise</Label>
-              <Select
-                value={formData.schedule}
-                onValueChange={(v) => setFormData((prev) => ({ ...prev, schedule: v as ScheduleFrequency }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="manual">Manual</SelectItem>
-                  <SelectItem value="daily">Diário</SelectItem>
-                  <SelectItem value="weekly">Semanal</SelectItem>
-                  <SelectItem value="monthly">Mensal</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
         </ScrollArea>
 

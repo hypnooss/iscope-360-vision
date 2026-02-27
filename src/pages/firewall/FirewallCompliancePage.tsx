@@ -11,12 +11,13 @@ import { Dashboard } from '@/components/Dashboard';
 import { ComplianceReport, ComplianceCategory } from '@/types/compliance';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, Play, Clock, Building2, FileText, RefreshCw } from 'lucide-react';
+import { Loader2, Play, Clock, Building2, FileText, RefreshCw, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
 import { useQuery } from '@tanstack/react-query';
+import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -111,6 +112,7 @@ export default function FirewallCompliancePage() {
   const { isPreviewMode } = usePreview();
   const navigate = useNavigate();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
 
@@ -298,6 +300,17 @@ export default function FirewallCompliancePage() {
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
                 : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
             </Button>
+            {isSuperRole && (
+              <Button
+                variant="outline"
+                size="icon"
+                title="Configurar agendamento"
+                disabled={!selectedFirewallId}
+                onClick={() => setScheduleDialogOpen(true)}
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         </div>
 
@@ -349,6 +362,17 @@ export default function FirewallCompliancePage() {
             hideHeader={true}
           />
         )}
+
+        {/* Schedule Dialog */}
+        <ScheduleDialog
+          open={scheduleDialogOpen}
+          onOpenChange={setScheduleDialogOpen}
+          entityId={selectedFirewallId || ''}
+          table="analysis_schedules"
+          entityColumn="firewall_id"
+          title="Agendamento do Compliance"
+          description="Configure a frequência de execução automática da análise de compliance para este firewall."
+        />
       </div>
     </AppLayout>
   );

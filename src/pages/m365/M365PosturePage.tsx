@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -20,7 +20,9 @@ import {
   Clock,
   XCircle,
   Play,
+  Settings,
 } from 'lucide-react';
+import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { 
   M365CategoryCard, 
   M365SeverityBreakdown,
@@ -41,6 +43,7 @@ export default function M365PosturePage() {
   const { isPreviewMode } = usePreview();
   const { isBlocked, showBlockedMessage } = usePreviewGuard();
   const navigate = useNavigate();
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   
   const { tenants, selectedTenantId, selectedTenant, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
 
@@ -123,6 +126,15 @@ export default function M365PosturePage() {
               {isLoading
                 ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
                 : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              title="Configurar agendamento"
+              disabled={!selectedTenantId}
+              onClick={() => setScheduleDialogOpen(true)}
+            >
+              <Settings className="w-4 h-4" />
             </Button>
           </div>
         </div>
@@ -389,6 +401,17 @@ export default function M365PosturePage() {
             )}
           </>
         )}
+
+        {/* Schedule Dialog */}
+        <ScheduleDialog
+          open={scheduleDialogOpen}
+          onOpenChange={setScheduleDialogOpen}
+          entityId={selectedTenantId || ''}
+          table="m365_analyzer_schedules"
+          entityColumn="tenant_record_id"
+          title="Agendamento do Compliance M365"
+          description="Configure a frequência de execução automática da análise de compliance para este tenant."
+        />
       </div>
     </AppLayout>
   );

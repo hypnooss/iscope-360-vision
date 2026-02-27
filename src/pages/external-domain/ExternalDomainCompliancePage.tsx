@@ -14,7 +14,7 @@ import { ComplianceCategory, ComplianceReport, SubdomainSummary } from '@/types/
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
-  Loader2, FileDown, Globe, RefreshCw, XCircle, Play, Clock, Building2,
+  Loader2, FileDown, Globe, RefreshCw, XCircle, Play, Clock, Building2, Settings,
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/u
 import { ExternalDomainPDF, CorrectionGuideData } from '@/components/pdf/ExternalDomainPDF';
 import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
 import { useQuery } from '@tanstack/react-query';
+import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 
 // ── Mini UI components (same as ExternalDomainAnalysisReportPage) ────────────
 
@@ -244,6 +245,7 @@ export default function ExternalDomainCompliancePage() {
   const { isPreviewMode } = usePreview();
   const navigate = useNavigate();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
@@ -504,6 +506,17 @@ export default function ExternalDomainCompliancePage() {
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
                 : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
             </Button>
+            {isSuperRole && (
+              <Button
+                variant="outline"
+                size="icon"
+                title="Configurar agendamento"
+                disabled={!selectedDomainId}
+                onClick={() => setScheduleDialogOpen(true)}
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         </div>
 
@@ -620,6 +633,17 @@ export default function ExternalDomainCompliancePage() {
             </div>
           </div>
         )}
+
+        {/* Schedule Dialog */}
+        <ScheduleDialog
+          open={scheduleDialogOpen}
+          onOpenChange={setScheduleDialogOpen}
+          entityId={selectedDomainId || ''}
+          table="external_domain_schedules"
+          entityColumn="domain_id"
+          title="Agendamento do Compliance"
+          description="Configure a frequência de execução automática da análise de compliance para este domínio."
+        />
       </div>
     </AppLayout>
   );

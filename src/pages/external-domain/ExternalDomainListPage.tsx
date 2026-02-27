@@ -245,22 +245,6 @@ export default function ExternalDomainListPage() {
       throw insertError;
     }
 
-    if (payload.schedule !== 'manual') {
-      const { error: scheduleError } = await supabase.
-      from('external_domain_schedules').
-      insert({
-        domain_id: inserted.id,
-        frequency: payload.schedule,
-        is_active: true,
-        created_by: user.id
-      });
-
-      if (scheduleError) {
-        toast.error('Domínio criado, mas falhou ao salvar frequência', { description: scheduleError.message });
-        throw scheduleError;
-      }
-    }
-
     await fetchData();
     toast.success('Domínio adicionado com sucesso!');
   };
