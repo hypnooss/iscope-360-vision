@@ -52,12 +52,12 @@ Todas as melhorias acima sao **100% data-driven** — nao exigem alteracoes de c
 
 ### D. PRIORIZACAO SUGERIDA
 
-**Fase 1 — Alto impacto, baixo esforco (so blueprint + rules):**
-- Certificados SSL expirados (A1)
-- Tuneis IPsec Down (A6)
-- FortiGuard desatualizado (A8)
-- Performance/Recursos (A13)
-- Security Rating (A2)
+**Fase 1 — Alto impacto, baixo esforco (so blueprint + rules): ✅ IMPLEMENTADO**
+- ✅ Certificados SSL expirados (A1) — step `monitor_certificates` + regra `cert-001`
+- ✅ Tuneis IPsec Down (A6) — step `monitor_vpn_ipsec` + regra `vpn-004`
+- ✅ FortiGuard desatualizado (A8) — step `monitor_fortiguard_server` + regra `fg-001`
+- ✅ Performance/Recursos (A13) — step `monitor_performance` + regra `perf-001`
+- ✅ Security Rating (A2) — step `monitor_security_rating` + regra `sec-004`
 
 **Fase 2 — Analyzer enhancements (blueprint + edge function + UI):**
 - Shadow rules / politicas nao utilizadas (B2)
@@ -68,4 +68,3 @@ Todas as melhorias acima sao **100% data-driven** — nao exigem alteracoes de c
 **Fase 3 — Complementar:**
 - Demais regras de compliance (A3-A5, A9-A12, A14)
 - Demais widgets do analyzer (B5-B9)
-
