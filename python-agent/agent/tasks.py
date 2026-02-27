@@ -510,7 +510,10 @@ class TaskExecutor:
         # Check for batch-level error (connection failure)
         if result.get('error'):
             error_msg = result['error']
-            self.logger.error(f"PowerShell batch failed: {error_msg}")
+            self.logger.error(
+                f"PowerShell batch failed: module={first_params.get('module', 'unknown')}, "
+                f"commands={len(merged_commands)}, timeout={computed_batch_timeout}s, error={error_msg}"
+            )
             
             step_results = []
             for step in steps:
