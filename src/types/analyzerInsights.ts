@@ -128,10 +128,6 @@ export interface AnalyzerMetrics {
   topInboundAllowedIPs: TopBlockedIP[];
   topInboundAllowedCountries: TopCountry[];
   inboundAllowed: number;
-  // Fase 2: Shadow Rules
-  totalPolicies: number;
-  unusedPolicies: number;
-  shadowRules: ShadowRule[];
   // Fase 2: Active Sessions
   activeSessions: number;
   // Fase 2: Interface Bandwidth
@@ -139,14 +135,6 @@ export interface AnalyzerMetrics {
   // Fase 2: Botnet
   botnetDetections: number;
   botnetDomains: BotnetDomain[];
-}
-
-export interface ShadowRule {
-  policyid: number;
-  name: string;
-  srcintf: string;
-  dstintf: string;
-  action: string;
 }
 
 export interface InterfaceBandwidth {

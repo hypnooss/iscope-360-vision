@@ -1043,77 +1043,6 @@ function analyzeOutboundTraffic(allowedLogs: any[], blockedLogs: any[], ipCountr
 }
 
 // ============================================
-// Shadow Rules Analysis (unused firewall policies)
-// ============================================
-
-interface PolicyInfo {
-  policyid: number;
-  name: string;
-  srcintf: string;
-  dstintf: string;
-  action: string;
-  status: string;
-  hit_count: number;
-  first_used?: number;
-  last_used?: number;
-  bytes?: number;
-}
-
-function analyzeShadowRules(policyData: any): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
-  const insights: AnalyzerInsight[] = [];
-  const results = Array.isArray(policyData) ? policyData : policyData?.results || [];
-  if (results.length === 0) return { insights, metrics: { totalPolicies: 0, unusedPolicies: 0, shadowRules: [] } };
-
-  const policies: PolicyInfo[] = results.map((p: any) => ({
-    policyid: p.policyid || p['policy-id'] || 0,
-    name: p.name || `Policy ${p.policyid || ''}`,
-    srcintf: Array.isArray(p.srcintf) ? p.srcintf.map((i: any) => i.name || i).join(', ') : (p.srcintf || ''),
-    dstintf: Array.isArray(p.dstintf) ? p.dstintf.map((i: any) => i.name || i).join(', ') : (p.dstintf || ''),
-    action: p.action || '',
-    status: p.status || 'enable',
-    hit_count: parseInt(p.hit_count || p.software_hit_count || p.hardware_hit_count || '0'),
-    first_used: p.first_used || 0,
-    last_used: p.last_used || 0,
-    bytes: parseInt(p.bytes || p.software_bytes || '0'),
-  }));
-
-  const activePolicies = policies.filter(p => p.status === 'enable');
-  const unusedPolicies = activePolicies.filter(p => p.hit_count === 0);
-  
-  // Build shadow rules list
-  const shadowRules = unusedPolicies.map(p => ({
-    policyid: p.policyid,
-    name: p.name,
-    srcintf: p.srcintf,
-    dstintf: p.dstintf,
-    action: p.action,
-  }));
-
-  if (unusedPolicies.length > 0) {
-    const pct = Math.round((unusedPolicies.length / activePolicies.length) * 100);
-    insights.push({
-      id: 'shadow_rules_detected',
-      category: 'traffic_behavior',
-      name: 'Regras de Firewall Não Utilizadas (Shadow Rules)',
-      description: `${unusedPolicies.length} de ${activePolicies.length} regras ativas nunca receberam tráfego (${pct}%)`,
-      severity: unusedPolicies.length >= 20 ? 'high' : unusedPolicies.length >= 5 ? 'medium' : 'low',
-      count: unusedPolicies.length,
-      details: `Regras: ${shadowRules.slice(0, 10).map(r => `#${r.policyid} ${r.name}`).join(', ')}`,
-      recommendation: 'Revise e remova regras não utilizadas para reduzir a superfície de ataque e melhorar a performance do firewall.',
-    });
-  }
-
-  return {
-    insights,
-    metrics: {
-      totalPolicies: activePolicies.length,
-      unusedPolicies: unusedPolicies.length,
-      shadowRules: shadowRules.slice(0, 50),
-    },
-  };
-}
-
-// ============================================
 // Active Sessions Analysis
 // ============================================
 
@@ -1457,12 +1386,11 @@ Deno.serve(async (req) => {
     const rawTrafficData = raw_data.monitor_traffic_history?.data || raw_data.monitor_traffic_history || {};
     const rawBotnetData = raw_data.monitor_botnet_domains?.data || raw_data.monitor_botnet_domains || {};
 
-    const shadowResult = analyzeShadowRules(rawPolicyData);
     const sessionResult = analyzeActiveSessions(rawSessionData);
     const bandwidthResult = analyzeBandwidth(rawTrafficData);
     const botnetResult = analyzeBotnetDomains(rawBotnetData);
 
-    console.log(`[firewall-analyzer] Fase 2: policies=${shadowResult.metrics.totalPolicies}, unused=${shadowResult.metrics.unusedPolicies}, sessions=${sessionResult.metrics.activeSessions}, botnet=${botnetResult.metrics.botnetDetections}`);
+    console.log(`[firewall-analyzer] Fase 2: sessions=${sessionResult.metrics.activeSessions}, botnet=${botnetResult.metrics.botnetDetections}`);
 
     // Combine all insights
     const allInsights = [
@@ -1474,7 +1402,6 @@ Deno.serve(async (req) => {
       ...appctrlResult.insights,
       ...anomalyResult.insights,
       ...outboundResult.insights,
-      ...shadowResult.insights,
       ...sessionResult.insights,
       ...bandwidthResult.insights,
       ...botnetResult.insights,
@@ -1542,10 +1469,7 @@ Deno.serve(async (req) => {
       topAnomalySources: anomalyResult.metrics.topAnomalySources || [],
       topAnomalyTypes: anomalyResult.metrics.topAnomalyTypes || [],
       totalEvents: (deniedResult.metrics.totalDenied || 0) + (authResult.metrics.vpnFailures || 0) + (authResult.metrics.firewallAuthFailures || 0) + (ipsResult.metrics.ipsEvents || 0) + (configResult.metrics.configChanges || 0) + (webfilterResult.metrics.webFilterBlocked || 0) + (appctrlResult.metrics.appControlBlocked || 0) + (anomalyResult.metrics.anomalyEvents || 0),
-      // Fase 2: Shadow Rules, Sessions, Bandwidth, Botnet
-      totalPolicies: shadowResult.metrics.totalPolicies || 0,
-      unusedPolicies: shadowResult.metrics.unusedPolicies || 0,
-      shadowRules: shadowResult.metrics.shadowRules || [],
+      // Fase 2: Sessions, Bandwidth, Botnet
       activeSessions: sessionResult.metrics.activeSessions || 0,
       interfaceBandwidth: bandwidthResult.metrics.interfaceBandwidth || [],
       botnetDetections: botnetResult.metrics.botnetDetections || 0,

@@ -79,6 +79,10 @@ export const DEFAULT_CATEGORY_CONFIGS: Record<string, { icon: string; color: str
   'Configuração VPN': { icon: 'key', color: 'indigo-500' },
   'Logging e Monitoramento': { icon: 'activity', color: 'slate-500' },
   'Licenciamento': { icon: 'check-circle', color: 'emerald-600' },
+  'Alta Disponibilidade': { icon: 'server', color: 'blue-500' },
+  'Backup e Recovery': { icon: 'hard-drive', color: 'amber-500' },
+  'Atualizações': { icon: 'activity', color: 'green-500' },
+  'Recomendações': { icon: 'check-circle', color: 'teal-500' },
 };
 
 // Fetch category configs for a device type
