@@ -461,11 +461,11 @@ export default function SurfaceAnalyzerV3Page() {
 
           {/* Last collection info */}
           {snapshot?.completed_at && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-3 flex-wrap text-sm text-muted-foreground">
               <Clock className="w-4 h-4" />
               <span>Última coleta:</span>
-              <Badge variant="secondary" className="font-mono text-xs">
-                {new Date(snapshot.completed_at).toLocaleString('pt-BR')}
+              <Badge variant="outline" className="text-xs">
+                {new Date(snapshot.completed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </Badge>
             </div>
           )}
