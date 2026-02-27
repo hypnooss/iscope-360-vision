@@ -1,83 +1,54 @@
 
 
-## Plano: Acesso direto ao Compliance (como o Analyzer)
+## Plano: Unificar topo das páginas Compliance com o padrão Analyzer
 
-### Resumo
+### Problema
+As páginas de Compliance têm layout de topo diferente do Analyzer:
+- **Analyzer**: Breadcrumb → Título + Subtítulo (esquerda) | Seletores + Botão "Executar Análise" + ⚙️ (direita) → Barra de progresso → Linha "Última coleta"
+- **Compliance (Firewall)**: Breadcrumb → Seletores em linha → Componente `Dashboard` com seu próprio header (título, botões, command center com `max-w-7xl mx-auto` e padding extra)
+- **Compliance (Domínio)**: Breadcrumb → Seletores em linha → Header interno + Command Center
 
-Hoje, clicar em "Compliance" no menu leva a uma tela intermediária com tabela de snapshots. O objetivo é eliminar essa tela intermediária e levar o usuário diretamente ao relatório de compliance, com seletores no topo (Workspace para super roles + Firewall/Domínio/Tenant).
+### Mudanças
 
-### Situação atual por módulo
+#### 1. `src/pages/firewall/FirewallCompliancePage.tsx`
+- Reorganizar o topo para seguir o padrão Analyzer:
+  - Breadcrumb: `Firewall > Compliance`
+  - Título "Firewall Compliance" + subtítulo (esquerda) | Seletores + botão "Executar Análise" (direita)
+  - Linha "Última coleta" com data do snapshot selecionado (usando Badge, sem ser um seletor — o snapshot mais recente é carregado automaticamente)
+- Remover o seletor de snapshot como dropdown — exibir apenas a data da última coleta como o Analyzer faz
+- Mover os botões "Exportar PDF" e "Reanalisar" do componente `Dashboard` para o header da página (junto com o botão "Executar Análise")
+- Remover o header redundante do `Dashboard` (título, botões) — ou passar uma prop para suprimi-lo
 
-| Módulo | Menu "Compliance" aponta para | Comportamento |
-|--------|-------------------------------|---------------|
-| Firewall | `/scope-firewall/reports` (FirewallReportsPage) | Tabela com lista de firewalls e snapshots → clica "Visualizar" → vai para `/scope-firewall/firewalls/:id/analysis` (FirewallAnalysis) |
-| Domínio Externo | `/scope-external-domain/reports` (ExternalDomainReportsPage) | Tabela com lista de domínios e snapshots → clica "Visualizar" → vai para `/scope-external-domain/domains/:id/report/:analysisId` (ExternalDomainAnalysisReportPage) |
-| M365 | `/scope-m365/reports` (M365ReportsPage) | Tabela com lista de tenants e snapshots → clica "Visualizar" → vai para `/scope-m365/posture/report/:reportId` (M365PostureReportPage) |
+#### 2. `src/pages/external-domain/ExternalDomainCompliancePage.tsx`
+- Mesmo padrão: Breadcrumb `Domínio Externo > Compliance`
+- Título "Domain Compliance" + subtítulo (esquerda) | Seletores + botão "Executar Análise" (direita)
+- Linha "Última coleta" com Badge
+- Mover botões "Exportar PDF" e "Reanalisar" para o header
 
-**Nota:** O M365 já possui a tela `/scope-m365/posture` (M365PosturePage) que funciona exatamente como o padrão desejado — com TenantSelector embutido e carregamento direto dos dados. Porém no menu, "Relatórios" aponta para a listagem.
+#### 3. `src/components/Dashboard.tsx`
+- Remover o `max-w-7xl mx-auto` wrapper (alinhando com a padronização global de espaçamento)
+- Remover o padding extra `p-6 lg:p-8` do container raiz (a página já fornece padding)
+- Adicionar prop `hideHeader?: boolean` para suprimir o header interno (título + botões) quando a página já fornece esses elementos
+- Quando `hideHeader=true`, renderizar direto do Command Center em diante
 
-### Mudanças propostas
+#### 4. `src/pages/m365/M365PosturePage.tsx`
+- Ajustar breadcrumb para `Microsoft 365 > Compliance`
+- Reorganizar header para o mesmo padrão: título (esquerda) | TenantSelector + botão "Atualizar" (direita)
+- Linha "Última coleta" com Badge (já existe parcialmente)
 
-#### 1. Firewall Compliance — Nova página direta
-Criar uma nova página `src/pages/firewall/FirewallCompliancePage.tsx` que:
-- Tem seletor de Workspace (para super_admin/super_suporte) — usando `useWorkspaceSelector`
-- Tem seletor de Firewall (filtrável por workspace) — usando `useFirewallSelector`
-- Ao selecionar um firewall, carrega automaticamente o **último** `analysis_history` desse firewall e renderiza o relatório de compliance (reutilizando o componente `Dashboard` já usado em `FirewallAnalysis.tsx`)
-- Tem seletor de data/snapshot para navegar entre análises anteriores
-- Mantém as ações existentes (exportar PDF, reanalisar, etc.)
-
-#### 2. External Domain Compliance — Nova página direta
-Criar uma nova página `src/pages/external-domain/ExternalDomainCompliancePage.tsx` que:
-- Tem seletor de Workspace (para super_admin/super_suporte)
-- Tem seletor de Domínio (filtrável por workspace) — novo hook `useDomainSelector` similar ao `useFirewallSelector`
-- Ao selecionar um domínio, carrega automaticamente o **último** `external_domain_analysis_history` (source='agent') e renderiza o relatório
-- Tem seletor de data/snapshot
-- Reutiliza toda a lógica de normalização e renderização do `ExternalDomainAnalysisReportPage`
-
-#### 3. M365 — Redirecionar para página existente
-O M365 já possui `/scope-m365/posture` que funciona exatamente como desejado. Basta:
-- Alterar o menu de "Relatórios" (`/scope-m365/reports`) para apontar para `/scope-m365/posture`
-- Ou adicionar um item "Compliance" no menu apontando para `/scope-m365/posture`
-
-#### 4. Navegação (AppLayout.tsx)
-Atualizar os links do menu:
-- **Firewall**: `Compliance` → `/scope-firewall/compliance` (nova página)
-- **Domínio Externo**: `Compliance` → `/scope-external-domain/compliance` (nova página)
-- **M365**: Manter ou adicionar `Compliance` → `/scope-m365/posture` (já existente)
-
-#### 5. Rotas (App.tsx)
-- Adicionar rota `/scope-firewall/compliance` → `FirewallCompliancePage`
-- Adicionar rota `/scope-external-domain/compliance` → `ExternalDomainCompliancePage`
-- Manter rotas antigas (`/scope-firewall/reports`, `/scope-external-domain/reports`, etc.) funcionando para backward compatibility
-- As rotas dos relatórios individuais (`/scope-firewall/firewalls/:id/analysis`, `/scope-external-domain/domains/:id/report/:analysisId`) continuam existindo
-
-#### 6. Hook: `useDomainSelector`
-Criar `src/hooks/useDomainSelector.ts` seguindo o padrão do `useFirewallSelector` para persistir a seleção do domínio.
-
-### Detalhes técnicos
-
-**Padrão de seletores (baseado no AnalyzerDashboardPage):**
+### Resultado visual esperado (todas as páginas de Compliance)
 ```text
-┌──────────────────────────────────────────────────┐
-│  [Workspace ▼]  [Firewall/Domínio ▼]  [Data ▼]  │
-│                                                  │
-│  ┌────────────────────────────────────────────┐  │
-│  │         Relatório de Compliance             │  │
-│  │         (Score, Categorias, Checks)         │  │
-│  └────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────┘
+Módulo > Compliance
+
+Título Compliance                    [Workspace ▼] [Ativo ▼]  ▶ Executar Análise  ⚙
+Subtítulo descritivo
+
+⏱ Última coleta: 26/02/2026, 23:43:33
+
+[═══════════ Progress bar (quando rodando) ═══════════]
+
+┌─────────────────────────────────────────────┐
+│            Command Center / Conteúdo         │
+└─────────────────────────────────────────────┘
 ```
-
-**Seletor de Data/Snapshot:** Um dropdown que lista as últimas N análises do firewall/domínio selecionado, mostrando data e score. O mais recente é selecionado por padrão.
-
-**Arquivos novos:**
-- `src/pages/firewall/FirewallCompliancePage.tsx`
-- `src/pages/external-domain/ExternalDomainCompliancePage.tsx`
-- `src/hooks/useDomainSelector.ts`
-
-**Arquivos editados:**
-- `src/components/layout/AppLayout.tsx` — links do menu
-- `src/App.tsx` — novas rotas
-
-As páginas de listagem antigas (`FirewallReportsPage`, `ExternalDomainReportsPage`, `M365ReportsPage`) continuam existindo e acessíveis, mas não serão mais o ponto de entrada principal do menu.
 
