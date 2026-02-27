@@ -470,7 +470,12 @@ class TaskExecutor:
         first_params['timeout'] = computed_batch_timeout
         merged_step = {'type': 'powershell', 'params': first_params}
         
-        self.logger.info(f"PowerShell batch: {len(steps)} steps, {len(merged_commands)} commands in single session")
+        module = first_params.get('module', 'unknown')
+        self.logger.info(
+            f"PowerShell batch: module={module}, {len(steps)} steps, "
+            f"{len(merged_commands)} commands, computed_timeout={computed_batch_timeout}s "
+            f"(default={default_batch_timeout}s, step_timeouts={batch_timeouts})"
+        )
         
         executor = self._executors.get('powershell')
         
@@ -505,7 +510,10 @@ class TaskExecutor:
         # Check for batch-level error (connection failure)
         if result.get('error'):
             error_msg = result['error']
-            self.logger.error(f"PowerShell batch failed: {error_msg}")
+            self.logger.error(
+                f"PowerShell batch failed: module={first_params.get('module', 'unknown')}, "
+                f"commands={len(merged_commands)}, timeout={computed_batch_timeout}s, error={error_msg}"
+            )
             
             step_results = []
             for step in steps:
