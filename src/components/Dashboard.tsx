@@ -92,9 +92,10 @@ interface DashboardProps {
   clientName?: string | null;
   categoryConfigs?: CategoryConfig[];
   skipGaugeAnimation?: boolean;
+  hideHeader?: boolean;
 }
 
-export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl, deviceVendor, clientName, categoryConfigs, skipGaugeAnimation = false }: DashboardProps) {
+export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firewallUrl, deviceVendor, clientName, categoryConfigs, skipGaugeAnimation = false, hideHeader = false }: DashboardProps) {
   const [loadedCVEs, setLoadedCVEs] = useState<CVEInfo[]>([]);
   const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
@@ -200,36 +201,38 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
   const osLabel = isSonicWall ? 'SonicOS' : 'FortiOS';
 
   return (
-    <div className="min-h-screen p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">
-              Análise de Compliance
-            </h1>
-            <p className="text-muted-foreground">
-              Relatório gerado em {report.generatedAt instanceof Date 
-                ? report.generatedAt.toLocaleString('pt-BR')
-                : new Date(report.generatedAt).toLocaleString('pt-BR')}
-            </p>
+    <div>
+      <div>
+        {/* Header - hidden when page provides its own */}
+        {!hideHeader && (
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground mb-2">
+                Análise de Compliance
+              </h1>
+              <p className="text-muted-foreground">
+                Relatório gerado em {report.generatedAt instanceof Date 
+                  ? report.generatedAt.toLocaleString('pt-BR')
+                  : new Date(report.generatedAt).toLocaleString('pt-BR')}
+              </p>
+            </div>
+            <div className="flex gap-3 ml-auto">
+              <Button variant="outline" size="lg" onClick={handleExportPDF} disabled={isExportingPDF}>
+                <FileText className={`w-4 h-4 ${isExportingPDF ? 'animate-pulse' : ''}`} />
+                {isExportingPDF ? 'Gerando...' : 'Exportar PDF'}
+              </Button>
+              <Button 
+                variant="cyber" 
+                size="lg" 
+                onClick={onRefresh}
+                disabled={isRefreshing}
+              >
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                Reanalisar
+              </Button>
+            </div>
           </div>
-          <div className="flex gap-3 ml-auto">
-            <Button variant="outline" size="lg" onClick={handleExportPDF} disabled={isExportingPDF}>
-              <FileText className={`w-4 h-4 ${isExportingPDF ? 'animate-pulse' : ''}`} />
-              {isExportingPDF ? 'Gerando...' : 'Exportar PDF'}
-            </Button>
-            <Button 
-              variant="cyber" 
-              size="lg" 
-              onClick={onRefresh}
-              disabled={isRefreshing}
-            >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              Reanalisar
-            </Button>
-          </div>
-        </div>
+        )}
 
         {/* COMMAND CENTER HEADER */}
         <div className="max-w-full mb-8">

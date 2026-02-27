@@ -14,13 +14,12 @@ import { Separator } from '@/components/ui/separator';
 import { 
   RefreshCw, 
   AlertTriangle, 
-  Calendar,
-  ArrowLeft,
   Lock,
   Server,
   CheckCircle2,
   Clock,
   XCircle,
+  Play,
 } from 'lucide-react';
 import { 
   M365CategoryCard, 
@@ -99,38 +98,50 @@ export default function M365PosturePage() {
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <PageBreadcrumb 
+          items={[
+            { label: 'Microsoft 365', href: '/scope-m365/dashboard' },
+            { label: 'Compliance' }
+          ]} 
+        />
+
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <PageBreadcrumb 
-              items={[
-                { label: 'Microsoft 365', href: '/scope-m365/dashboard' },
-                { label: 'Postura de Segurança' }
-              ]} 
-            />
-            <h1 className="text-2xl font-bold text-foreground mt-2">Postura de Segurança</h1>
-            <p className="text-muted-foreground">
-              Análise consolidada do ambiente Microsoft 365
-            </p>
+            <h1 className="text-2xl font-bold text-foreground">M365 Compliance</h1>
+            <p className="text-muted-foreground">Análise consolidada do ambiente Microsoft 365</p>
           </div>
           <div className="flex items-center gap-3">
-            <Button 
-              variant="outline" 
-              onClick={() => navigate('/scope-m365/dashboard')}
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Voltar
-            </Button>
-            <Button 
-              onClick={handleRefresh} 
-              disabled={isLoading || !selectedTenantId}
-              variant={isBlocked ? 'outline' : 'default'}
-            >
+            <TenantSelector
+              tenants={tenants}
+              selectedId={selectedTenantId}
+              onSelect={selectTenant}
+              loading={isLoading}
+              disabled={isBlocked}
+            />
+            <Button onClick={handleRefresh} disabled={isLoading || !selectedTenantId}>
               {isBlocked && <Lock className="w-4 h-4 mr-2" />}
-              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-              {isLoading ? 'Analisando...' : 'Atualizar'}
+              {isLoading
+                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
+                : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
             </Button>
           </div>
         </div>
+
+        {/* Last collection info */}
+        {data?.analyzedAt && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <Clock className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Última coleta:</span>
+            <Badge variant="outline" className="text-xs">
+              {new Date(data.analyzedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </Badge>
+            {data?.cached && (
+              <Badge variant="secondary" className="text-xs">
+                Resultado em cache
+              </Badge>
+            )}
+          </div>
+        )}
 
         {/* Error State */}
         {error && !data && (
@@ -185,31 +196,6 @@ export default function M365PosturePage() {
                   </div>
 
                   <div className="flex-1 text-center lg:text-left">
-                    <div className="mb-4">
-                      <TenantSelector
-                        tenants={tenants}
-                        selectedId={selectedTenantId}
-                        onSelect={selectTenant}
-                        loading={isLoading}
-                        disabled={isBlocked}
-                      />
-                    </div>
-                    
-                    {data?.analyzedAt && (
-                      <div className="flex items-center justify-center lg:justify-start gap-2 text-sm text-muted-foreground">
-                        <Calendar className="w-4 h-4" />
-                        <span>
-                          Última análise: {new Date(data.analyzedAt).toLocaleString('pt-BR')}
-                        </span>
-                      </div>
-                    )}
-
-                    {data?.cached && (
-                      <Badge variant="secondary" className="mt-2">
-                        Resultado em cache
-                      </Badge>
-                    )}
-
                     {data?.errors && data.errors.length > 0 && (
                       <Badge variant="outline" className="mt-2 text-warning border-warning/30">
                         {data.errors.length} aviso(s) durante coleta

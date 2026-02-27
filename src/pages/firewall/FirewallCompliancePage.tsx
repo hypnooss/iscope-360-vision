@@ -11,13 +11,12 @@ import { Dashboard } from '@/components/Dashboard';
 import { ComplianceReport, ComplianceCategory } from '@/types/compliance';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, Play, Calendar } from 'lucide-react';
+import { Loader2, Play, Clock, Building2, FileText, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
 import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -258,56 +257,68 @@ export default function FirewallCompliancePage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  const selectedFirewallObj = firewalls.find(f => f.id === selectedFirewallId);
+  const latestSnapshot = snapshots.length > 0 ? snapshots[0] : null;
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8">
-        <PageBreadcrumb items={[{ label: 'Compliance' }]} />
+      <div className="p-6 lg:p-8 space-y-6">
+        <PageBreadcrumb items={[{ label: 'Firewall' }, { label: 'Compliance' }]} />
 
-        {/* Selectors bar */}
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          {isSuperRole && allWorkspaces && (
-            <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Workspace" />
+        {/* Header row: title (left) | selectors + action (right) */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Firewall Compliance</h1>
+            <p className="text-muted-foreground">Relatório de conformidade e segurança</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {isSuperRole && allWorkspaces && (
+              <Select value={selectedWorkspaceId || ''} onValueChange={(v) => { setSelectedWorkspaceId(v); setSelectedFirewallId(''); }}>
+                <SelectTrigger className="w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces.map(w => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            <Select value={selectedFirewallId || ''} onValueChange={setSelectedFirewallId}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Selecionar firewall" />
               </SelectTrigger>
               <SelectContent>
-                {allWorkspaces.map(w => (
-                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                {firewalls.map(f => (
+                  <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          )}
 
-          <Select value={selectedFirewallId || ''} onValueChange={setSelectedFirewallId}>
-            <SelectTrigger className="w-[260px]">
-              <SelectValue placeholder="Selecione um firewall" />
-            </SelectTrigger>
-            <SelectContent>
-              {firewalls.map(f => (
-                <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {snapshots.length > 0 && (
-            <Select value={selectedSnapshotId} onValueChange={setSelectedSnapshotId}>
-              <SelectTrigger className="w-[260px]">
-                <Calendar className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Selecione a data" />
-              </SelectTrigger>
-              <SelectContent>
-                {snapshots.map(s => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {format(new Date(s.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
-                    {s.score != null && ` — Score: ${s.score}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+            <Button onClick={handleRefresh} disabled={isRefreshing || !selectedFirewallId}>
+              {isRefreshing
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
+                : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
+            </Button>
+          </div>
         </div>
+
+        {/* Last collection info */}
+        {latestSnapshot && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <Clock className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Última coleta:</span>
+            <Badge variant="outline" className="text-xs">
+              {new Date(latestSnapshot.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </Badge>
+            {latestSnapshot.score != null && (
+              <Badge variant="secondary" className="text-xs">
+                Score: {latestSnapshot.score}
+              </Badge>
+            )}
+          </div>
+        )}
 
         {/* Content */}
         {!selectedFirewallId ? (
@@ -338,6 +349,7 @@ export default function FirewallCompliancePage() {
             clientName={clientName}
             categoryConfigs={categoryConfigs}
             skipGaugeAnimation={true}
+            hideHeader={true}
           />
         )}
       </div>
