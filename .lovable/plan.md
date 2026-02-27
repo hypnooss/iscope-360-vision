@@ -1,39 +1,29 @@
 
 
-## Corrigir 5 regras Fase 1 — status N/A e endpoint incorreto
+## Tornar avaliação de compliance genérica — eliminar handlers hardcoded
 
-### Causa Raiz
+### Problema
+As 5 regras da Fase 1 têm `evaluation_logic` bem estruturada no banco (com `type`, `source_key`, `condition`, `field`, `path` etc.), mas `normalizeEvaluationLogic` não reconhece esses formatos. O workaround foi adicionar blocos `if (rule.code === 'cert-001')` hardcoded — exatamente o que deve ser eliminado.
 
-Dois problemas distintos:
-
-1. **evaluation_logic incompativel**: As 5 novas regras (cert-001, vpn-004, fg-001, perf-001, sec-004) usam formatos `type: "array_check"`, `"object_check"`, `"threshold_check"` que `normalizeEvaluationLogic` nao reconhece (exige `field_path`). Sem `field_path`, o `source_key` sai vazio, `sourceData` e `null`, e o check cai em `status: 'unknown'` com "Dados nao disponiveis".
-
-2. **Conflito de prefixo**: `sec-004` e capturado pelo handler `rule.code.startsWith('sec-')` (linha 3157) que chama `formatSecurityPolicyEvidence` — funcao que nao conhece `monitor_security_rating`. Idem para `vpn-004` capturado por `startsWith('vpn-')` (linha 3085).
-
-3. **Endpoint**: `apiEndpoint` vem de `getEndpointForSourceKey` que consulta `source_key_endpoints`. Nao ha entradas para os novos source_keys, entao exibe "API do dispositivo". O campo `rule.api_endpoint` (que tem o valor correto) nunca e usado como fallback.
-
-### Alteracoes
+### Alterações
 
 **Arquivo**: `supabase/functions/agent-task-result/index.ts`
 
-1. **Adicionar handlers especificos ANTES dos handlers de prefixo** (antes da linha 3085 `startsWith('vpn-')`), para as 5 novas regras:
-   - `cert-001`: Ler `rawData['monitor_certificates']`, extrair array `results`, verificar se algum tem `status === 'expired'`
-   - `vpn-004`: Ler `rawData['monitor_vpn_ipsec']`, verificar se todos os tuneis estao up (nenhum down). Se array vazio → `not_found`
-   - `fg-001`: Ler `rawData['monitor_fortiguard_server']`, verificar campo `connected`
-   - `perf-001`: Ler `rawData['monitor_performance']`, verificar `cpu < 90` e `mem < 90`
-   - `sec-004`: Ler `rawData['monitor_security_rating']`, verificar se `overall_score` existe
+1. **Expandir `normalizeEvaluationLogic`** para reconhecer os 3 novos tipos de `evaluation_logic` do banco:
+   - Quando `rawLogic.type === 'array_check'` ou `'object_check'` ou `'threshold_check'`, extrair `source_key` do campo `rawLogic.source_key` e retornar um `NormalizedEvaluationLogic` com o `source_key` correto (para que `rawData[source_key]` funcione)
+   - O `field_path` pode ser `rawLogic.path || rawLogic.field || ''`
 
-2. **Fallback de endpoint**: Na linha 2866, apos calcular `apiEndpoint` via `getEndpointForSourceKey`, adicionar fallback para `rule.api_endpoint`:
-   ```
-   if (apiEndpoint === 'API do dispositivo' && rule.api_endpoint) {
-     apiEndpoint = rule.api_endpoint;
-   }
-   ```
+2. **Criar função `evaluateTypedLogic`** que interpreta genericamente os 3 tipos:
+   - `array_check`: Lê `rawLogic.path` do sourceData, itera o array, aplica `condition` (`none_match` / `all_match`) com `field` + `value` (ou `alt_condition` + `alt_field` + `alt_value`). Array vazio → `not_found`
+   - `object_check`: Lê `rawLogic.path` do sourceData, verifica `condition: "field_exists"` com `field` + `expected_value`
+   - `threshold_check`: Lê `rawLogic.path` do sourceData, itera `checks[]` aplicando `operator` (`lt`, `gt`, `eq`) com `field` e `value`
 
-3. **Deploy** da edge function `agent-task-result`
+3. **Integrar no loop principal** (`processComplianceRules`): Após obter `sourceData`, antes dos handlers de prefixo, verificar se `rule.evaluation_logic.type` é um dos 3 tipos. Se sim, chamar `evaluateTypedLogic` e gerar o `ComplianceCheck` diretamente — sem cair nos blocos de prefixo.
 
-### Notas
-- Os handlers especificos por codigo (`rule.code === 'cert-001'`) tem prioridade sobre handlers de prefixo (`startsWith('vpn-')`)
-- Para `vpn-004` e `sec-004`, os handlers devem ser adicionados ANTES dos handlers de prefixo existentes para evitar conflito
-- Para steps opcionais que retornam null (agent ainda nao coletou), o status sera `unknown` com mensagem "Dados nao disponiveis" ate o agent executar com o blueprint atualizado — este e o comportamento correto
+4. **Remover os 5 blocos hardcoded** (`rule.code === 'cert-001'`, `'vpn-004'`, `'fg-001'`, `'perf-001'`, `'sec-004'`).
+
+5. **Deploy** da edge function `agent-task-result`.
+
+### Resultado
+Qualquer regra futura que use `type: "array_check"`, `"object_check"` ou `"threshold_check"` no banco será avaliada automaticamente, sem necessidade de código novo.
 
