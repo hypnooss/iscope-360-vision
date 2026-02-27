@@ -470,7 +470,12 @@ class TaskExecutor:
         first_params['timeout'] = computed_batch_timeout
         merged_step = {'type': 'powershell', 'params': first_params}
         
-        self.logger.info(f"PowerShell batch: {len(steps)} steps, {len(merged_commands)} commands in single session")
+        module = first_params.get('module', 'unknown')
+        self.logger.info(
+            f"PowerShell batch: module={module}, {len(steps)} steps, "
+            f"{len(merged_commands)} commands, computed_timeout={computed_batch_timeout}s "
+            f"(default={default_batch_timeout}s, step_timeouts={batch_timeouts})"
+        )
         
         executor = self._executors.get('powershell')
         
