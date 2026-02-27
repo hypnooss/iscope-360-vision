@@ -642,6 +642,7 @@ export default function ExternalDomainCompliancePage() {
           title="Agendamento do Compliance"
           description="Configure a frequência de execução automática da análise de compliance para este domínio."
           recommendation="A análise de compliance verifica a conformidade da configuração. Recomendamos agendar a execução 1 vez ao dia."
+          allowHourly={false}
         />
       </div>
     </AppLayout>

@@ -197,7 +197,7 @@ export function UnifiedComplianceCard({
   return (
     <div
       className={cn(
-        'glass-card rounded-lg transition-all duration-200 group animate-fade-in',
+        'glass-card rounded-lg transition-all duration-200 group animate-fade-in flex flex-col',
         hoverClasses?.border || 'hover:border-primary/50',
         onClick && 'cursor-pointer'
       )}
@@ -206,7 +206,7 @@ export function UnifiedComplianceCard({
       {/* ═══════════════════════════════════════════════════════
           NÍVEL 1 — Visão Rápida (sempre visível)
           ═══════════════════════════════════════════════════════ */}
-      <div className="p-4">
+      <div className="p-4 flex-1">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 flex-1 min-w-0">
             {/* Ícone de status */}
@@ -266,7 +266,7 @@ export function UnifiedComplianceCard({
 
       {/* Link "Detalhes" — abre sheet lateral quando onClick presente */}
       {onClick && hasExpandableContent && (
-        <div className="px-4 pb-3">
+        <div className="px-4 pb-3 mt-auto">
           <div className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
             <ChevronRight className={cn(
               'w-3.5 h-3.5 transition-colors',
