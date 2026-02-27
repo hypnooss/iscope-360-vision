@@ -163,15 +163,12 @@ export default function FirewallCompliancePage() {
 
   // Auto-select latest snapshot
   useEffect(() => {
-    if (snapshots.length > 0 && (!selectedSnapshotId || !snapshots.find(s => s.id === selectedSnapshotId))) {
+    if (snapshots.length > 0) {
       setSelectedSnapshotId(snapshots[0].id);
+    } else {
+      setSelectedSnapshotId('');
     }
   }, [snapshots]);
-
-  // Reset snapshot when firewall changes
-  useEffect(() => {
-    setSelectedSnapshotId('');
-  }, [selectedFirewallId]);
 
   // ── Load selected snapshot data ──
   const { data: snapshotData, isLoading: loadingReport } = useQuery({
