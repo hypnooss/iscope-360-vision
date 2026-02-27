@@ -791,9 +791,24 @@ function evaluateThresholdCheck(
         break;
       }
     }
-    const numVal = Number(actualValue ?? 0);
+    // Handle object values: if it has an "idle" property, compute usage = 100 - idle
+    let numVal: number;
+    if (actualValue !== null && typeof actualValue === 'object' && !Array.isArray(actualValue)) {
+      const obj2 = actualValue as Record<string, unknown>;
+      if (typeof obj2.idle === 'number') {
+        numVal = Math.round((100 - obj2.idle) * 100) / 100;
+      } else if (typeof obj2.used === 'number') {
+        numVal = obj2.used;
+      } else {
+        numVal = Number(actualValue ?? 0);
+      }
+    } else {
+      numVal = Number(actualValue ?? 0);
+    }
+
     const threshold = Number(check.value ?? 0);
     const operator = check.operator as string;
+    const label = (check.label as string) || usedField;
 
     let pass = false;
     if (operator === 'lt') pass = numVal < threshold;
@@ -804,8 +819,8 @@ function evaluateThresholdCheck(
 
     if (!pass) allPass = false;
     evidence.push({
-      field: usedField,
-      value: `${numVal}`,
+      field: label,
+      value: `${numVal}%`,
       status: pass ? 'pass' : 'fail',
     });
   }
