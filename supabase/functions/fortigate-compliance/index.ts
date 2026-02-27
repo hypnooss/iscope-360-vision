@@ -881,6 +881,64 @@ async function checkFirewallRules(config: FortiGateConfig): Promise<ComplianceCh
             ],
       rawData: { rules: anyAnyRules.length > 0 ? anyAnyRules : { total: totalPoliciesData.length } },
     });
+
+    // net-004: Regras sem tráfego (Shadow Rules)
+    // Filtra regras ativas que NÃO sejam deny e que tenham bytes === 0 ou hit_count === 0
+    const unusedRules: { id: string; name: string; srcintf: string; dstintf: string; action: string }[] = [];
+    for (const policy of policies.results || []) {
+      if (policy.status !== "enable") continue;
+      const action = (policy.action || "").toLowerCase();
+      if (action === "deny" || action === "block") continue;
+      const bytes = parseInt(policy.bytes || policy.software_bytes || "0");
+      const hitCount = parseInt(policy.hit_count || policy.software_hit_count || policy.hardware_hit_count || "0");
+      if (bytes === 0 || hitCount === 0) {
+        const srcintf = policy.srcintf?.map((i: any) => i.name).join(", ") || "";
+        const dstintf = policy.dstintf?.map((i: any) => i.name).join(", ") || "";
+        unusedRules.push({
+          id: `#${policy.policyid}`,
+          name: policy.name || "Sem nome",
+          srcintf,
+          dstintf,
+          action: policy.action || "",
+        });
+      }
+    }
+
+    const unusedSeverity: "critical" | "high" | "medium" | "low" =
+      unusedRules.length >= 10 ? "high" : unusedRules.length >= 3 ? "medium" : "low";
+
+    checks.push({
+      id: "net-004",
+      name: "Regras Sem Tráfego (Shadow Rules)",
+      description: "Verifica regras de firewall ativas (exceto deny) que nunca receberam tráfego",
+      category: "Configuração de Rede",
+      status: unusedRules.length > 0 ? "fail" : "pass",
+      severity: unusedSeverity,
+      recommendation:
+        unusedRules.length > 0
+          ? "Revise e remova regras sem tráfego para reduzir a superfície de ataque e melhorar a performance do firewall"
+          : "Manter configuração atual",
+      details:
+        unusedRules.length > 0
+          ? `${unusedRules.length} regras ativas sem tráfego: ${unusedRules.slice(0, 10).map((r) => r.id).join(", ")}`
+          : "Todas as regras ativas possuem tráfego registrado",
+      apiEndpoint: "/api/v2/cmdb/firewall/policy",
+      evidence:
+        unusedRules.length > 0
+          ? unusedRules.slice(0, 20).map((r) => ({
+              label: `Regra ${r.id}: ${r.name}`,
+              value: `${r.srcintf} → ${r.dstintf} · action: ${r.action}`,
+              type: "code" as const,
+            }))
+          : [
+              {
+                label: "Verificação Shadow Rules",
+                value: `${totalPoliciesData.length} regras verificadas - todas com tráfego registrado`,
+                type: "text" as const,
+              },
+            ],
+      rawData: { rules: unusedRules.length > 0 ? unusedRules : { total: totalPoliciesData.length } },
+    });
   } catch (error) {
     console.error("Error checking firewall rules:", error);
     checks.push({
