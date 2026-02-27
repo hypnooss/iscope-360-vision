@@ -1038,7 +1038,7 @@ export default function AnalyzerDashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Zap className="w-4 h-4 text-primary" />
-                Anomalias de Rede
+                IPS/IDS - Anomalias de Rede
               </CardTitle>
             </CardHeader>
             <CardContent>
