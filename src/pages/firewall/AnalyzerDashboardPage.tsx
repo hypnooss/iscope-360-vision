@@ -29,12 +29,13 @@ import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
   Globe, Wifi, Eye, Server, Lock, KeyRound, ExternalLink,
   Filter, AppWindow, Building2, Zap, Clock, Maximize2, Settings, Calendar, Loader2,
+  Activity, Layers, Radio, Bug,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast as sonnerToast } from 'sonner';
 import 'flag-icons/css/flag-icons.min.css';
-import type { TopBlockedIP, TopCountry, TopCategory, TopUserIP } from '@/types/analyzerInsights';
+import type { TopBlockedIP, TopCountry, TopCategory, TopUserIP, ShadowRule, InterfaceBandwidth, BotnetDomain } from '@/types/analyzerInsights';
 
 interface FirewallOption { id: string; name: string; client_id: string; }
 
@@ -720,6 +721,42 @@ export default function AnalyzerDashboardPage() {
                     <div className="text-xs text-muted-foreground">Anomalias</div>
                   </div>
                 </div>
+
+                {/* Sessões Ativas */}
+                {(m?.activeSessions ?? 0) > 0 && (
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                    <Activity className="w-5 h-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-lg font-bold text-foreground">{(m?.activeSessions ?? 0).toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">Sessões Ativas</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Políticas */}
+                {(m?.totalPolicies ?? 0) > 0 && (
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                    <Layers className="w-5 h-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-lg font-bold text-foreground">{m?.totalPolicies ?? 0}</div>
+                      <div className="text-xs text-muted-foreground mb-1">Políticas</div>
+                      {(m?.unusedPolicies ?? 0) > 0 && (
+                        <div className="text-[10px] text-destructive font-semibold">{m?.unusedPolicies} não utilizadas</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Botnet */}
+                {(m?.botnetDetections ?? 0) > 0 && (
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 border border-destructive/30">
+                    <Bug className="w-5 h-5 text-destructive shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-lg font-bold text-destructive">{m?.botnetDetections ?? 0}</div>
+                      <div className="text-xs text-muted-foreground">Detecções Botnet</div>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1021,6 +1058,93 @@ export default function AnalyzerDashboardPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Shadow Rules (Unused Policies) */}
+          {(m?.shadowRules?.length ?? 0) > 0 && (
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Layers className="w-4 h-4 text-warning" />
+                  Regras Não Utilizadas (Shadow Rules)
+                  <Badge variant="secondary" className="ml-auto text-xs">{m?.unusedPolicies ?? 0} / {m?.totalPolicies ?? 0}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1">
+                  {(m?.shadowRules ?? []).slice(0, 15).map((rule, i) => (
+                    <div key={i} className="flex items-center gap-3 py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
+                      <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">
+                        #{rule.policyid}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-foreground truncate block">{rule.name || `Policy ${rule.policyid}`}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {rule.srcintf} → {rule.dstintf} · {rule.action}
+                        </span>
+                      </div>
+                      <Badge variant="outline" className="text-xs text-warning border-warning/30 shrink-0">0 hits</Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Botnet Domains */}
+          {(m?.botnetDomains?.length ?? 0) > 0 && (
+            <Card className="glass-card border-destructive/30">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Bug className="w-4 h-4 text-destructive" />
+                  Domínios de Botnet Detectados
+                  <Badge variant="destructive" className="ml-auto text-xs">{m?.botnetDetections ?? 0}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <RankingListWidget items={(m?.botnetDomains ?? []).map(d => ({ domain: d.domain, count: d.count }))} labelKey="domain" />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Interface Bandwidth */}
+          {(m?.interfaceBandwidth?.length ?? 0) > 0 && (
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Radio className="w-4 h-4 text-primary" />
+                  Bandwidth por Interface
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1">
+                  {(m?.interfaceBandwidth ?? []).slice(0, 10).map((iface, i) => {
+                    const totalBytes = iface.tx_bytes + iface.rx_bytes;
+                    const formatBytes = (b: number) => {
+                      if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`;
+                      if (b >= 1e6) return `${(b / 1e6).toFixed(1)} MB`;
+                      if (b >= 1e3) return `${(b / 1e3).toFixed(1)} KB`;
+                      return `${b} B`;
+                    };
+                    return (
+                      <div key={i} className="flex items-center gap-3 py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
+                        <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">
+                          {i + 1}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium text-foreground">{iface.name}</span>
+                        </div>
+                        <div className="flex gap-3 text-xs shrink-0">
+                          <span className="text-primary">↑ {formatBytes(iface.tx_bytes)}</span>
+                          <span className="text-muted-foreground">↓ {formatBytes(iface.rx_bytes)}</span>
+                        </div>
+                        <Badge variant="secondary" className="font-mono text-xs shrink-0">{formatBytes(totalBytes)}</Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Recent Insights Preview */}
           <Card className="glass-card">

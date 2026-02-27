@@ -59,11 +59,11 @@ Todas as melhorias acima sao **100% data-driven** — nao exigem alteracoes de c
 - ✅ Performance/Recursos (A13) — step `monitor_performance` + regra `perf-001`
 - ✅ Security Rating (A2) — step `monitor_security_rating` + regra `sec-004`
 
-**Fase 2 — Analyzer enhancements (blueprint + edge function + UI):**
-- Shadow rules / politicas nao utilizadas (B2)
-- Sessoes ativas (B1)
-- Bandwidth por interface (B4)
-- Botnet detection (B10)
+**Fase 2 — Analyzer enhancements (blueprint + edge function + UI): ✅ IMPLEMENTADO**
+- ✅ Shadow rules / politicas nao utilizadas (B2) — step `monitor_firewall_policy` + widget Shadow Rules
+- ✅ Sessoes ativas (B1) — step `monitor_firewall_session` + card Sessões Ativas
+- ✅ Bandwidth por interface (B4) — step `monitor_traffic_history` + widget Interface Bandwidth
+- ✅ Botnet detection (B10) — step `monitor_botnet_domains` + widget Botnet Domains
 
 **Fase 3 — Complementar:**
 - Demais regras de compliance (A3-A5, A9-A12, A14)

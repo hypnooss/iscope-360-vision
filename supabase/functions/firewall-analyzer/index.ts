@@ -1043,6 +1043,202 @@ function analyzeOutboundTraffic(allowedLogs: any[], blockedLogs: any[], ipCountr
 }
 
 // ============================================
+// Shadow Rules Analysis (unused firewall policies)
+// ============================================
+
+interface PolicyInfo {
+  policyid: number;
+  name: string;
+  srcintf: string;
+  dstintf: string;
+  action: string;
+  status: string;
+  hit_count: number;
+  first_used?: number;
+  last_used?: number;
+  bytes?: number;
+}
+
+function analyzeShadowRules(policyData: any): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
+  const insights: AnalyzerInsight[] = [];
+  const results = Array.isArray(policyData) ? policyData : policyData?.results || [];
+  if (results.length === 0) return { insights, metrics: { totalPolicies: 0, unusedPolicies: 0, shadowRules: [] } };
+
+  const policies: PolicyInfo[] = results.map((p: any) => ({
+    policyid: p.policyid || p['policy-id'] || 0,
+    name: p.name || `Policy ${p.policyid || ''}`,
+    srcintf: Array.isArray(p.srcintf) ? p.srcintf.map((i: any) => i.name || i).join(', ') : (p.srcintf || ''),
+    dstintf: Array.isArray(p.dstintf) ? p.dstintf.map((i: any) => i.name || i).join(', ') : (p.dstintf || ''),
+    action: p.action || '',
+    status: p.status || 'enable',
+    hit_count: parseInt(p.hit_count || p.software_hit_count || p.hardware_hit_count || '0'),
+    first_used: p.first_used || 0,
+    last_used: p.last_used || 0,
+    bytes: parseInt(p.bytes || p.software_bytes || '0'),
+  }));
+
+  const activePolicies = policies.filter(p => p.status === 'enable');
+  const unusedPolicies = activePolicies.filter(p => p.hit_count === 0);
+  
+  // Build shadow rules list
+  const shadowRules = unusedPolicies.map(p => ({
+    policyid: p.policyid,
+    name: p.name,
+    srcintf: p.srcintf,
+    dstintf: p.dstintf,
+    action: p.action,
+  }));
+
+  if (unusedPolicies.length > 0) {
+    const pct = Math.round((unusedPolicies.length / activePolicies.length) * 100);
+    insights.push({
+      id: 'shadow_rules_detected',
+      category: 'traffic_behavior',
+      name: 'Regras de Firewall Não Utilizadas (Shadow Rules)',
+      description: `${unusedPolicies.length} de ${activePolicies.length} regras ativas nunca receberam tráfego (${pct}%)`,
+      severity: unusedPolicies.length >= 20 ? 'high' : unusedPolicies.length >= 5 ? 'medium' : 'low',
+      count: unusedPolicies.length,
+      details: `Regras: ${shadowRules.slice(0, 10).map(r => `#${r.policyid} ${r.name}`).join(', ')}`,
+      recommendation: 'Revise e remova regras não utilizadas para reduzir a superfície de ataque e melhorar a performance do firewall.',
+    });
+  }
+
+  return {
+    insights,
+    metrics: {
+      totalPolicies: activePolicies.length,
+      unusedPolicies: unusedPolicies.length,
+      shadowRules: shadowRules.slice(0, 50),
+    },
+  };
+}
+
+// ============================================
+// Active Sessions Analysis
+// ============================================
+
+function analyzeActiveSessions(sessionData: any): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
+  const insights: AnalyzerInsight[] = [];
+  const results = sessionData?.results || sessionData || {};
+  const totalSessions = parseInt(results.total || results.count || '0');
+  
+  if (totalSessions === 0) return { insights, metrics: { activeSessions: 0 } };
+
+  if (totalSessions >= 100000) {
+    insights.push({
+      id: 'high_session_count',
+      category: 'traffic_behavior',
+      name: 'Volume Elevado de Sessões Ativas',
+      description: `${totalSessions.toLocaleString()} sessões ativas simultâneas detectadas`,
+      severity: totalSessions >= 500000 ? 'critical' : totalSessions >= 200000 ? 'high' : 'medium',
+      count: totalSessions,
+      recommendation: 'Verifique se o volume de sessões está dentro da capacidade do appliance. Considere otimizar session timeouts.',
+    });
+  }
+
+  return {
+    insights,
+    metrics: { activeSessions: totalSessions },
+  };
+}
+
+// ============================================
+// Bandwidth / Interface Traffic Analysis
+// ============================================
+
+interface InterfaceBandwidth {
+  name: string;
+  tx_bytes: number;
+  rx_bytes: number;
+  tx_rate: number;
+  rx_rate: number;
+}
+
+function analyzeBandwidth(trafficData: any): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
+  const insights: AnalyzerInsight[] = [];
+  const results = Array.isArray(trafficData) ? trafficData : trafficData?.results || [];
+  if (!results || (typeof results !== 'object')) return { insights, metrics: { interfaceBandwidth: [] } };
+
+  // The response is typically an object keyed by interface name
+  const interfaces: InterfaceBandwidth[] = [];
+  
+  const processInterface = (name: string, data: any) => {
+    const history = Array.isArray(data) ? data : data?.history || [];
+    if (!Array.isArray(history) || history.length === 0) return;
+    
+    let totalTx = 0, totalRx = 0;
+    let maxTxRate = 0, maxRxRate = 0;
+    
+    for (const point of history) {
+      totalTx += parseInt(point.tx_byte || point.tx_bytes || '0');
+      totalRx += parseInt(point.rx_byte || point.rx_bytes || '0');
+      const txRate = parseInt(point.tx_rate || point.tx_bandwidth || '0');
+      const rxRate = parseInt(point.rx_rate || point.rx_bandwidth || '0');
+      if (txRate > maxTxRate) maxTxRate = txRate;
+      if (rxRate > maxRxRate) maxRxRate = rxRate;
+    }
+    
+    interfaces.push({ name, tx_bytes: totalTx, rx_bytes: totalRx, tx_rate: maxTxRate, rx_rate: maxRxRate });
+  };
+
+  if (Array.isArray(results)) {
+    for (const item of results) {
+      if (item.name || item.interface) {
+        processInterface(item.name || item.interface, item);
+      }
+    }
+  } else if (typeof results === 'object') {
+    for (const [name, data] of Object.entries(results)) {
+      processInterface(name, data);
+    }
+  }
+
+  // Sort by total traffic
+  interfaces.sort((a, b) => (b.tx_bytes + b.rx_bytes) - (a.tx_bytes + a.rx_bytes));
+
+  return {
+    insights,
+    metrics: { interfaceBandwidth: interfaces.slice(0, 20) },
+  };
+}
+
+// ============================================
+// Botnet Domain Analysis
+// ============================================
+
+function analyzeBotnetDomains(botnetData: any): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
+  const insights: AnalyzerInsight[] = [];
+  const results = botnetData?.results || botnetData || {};
+  
+  const totalDetections = parseInt(results.total || results.dns_block_count || results.count || '0');
+  const domains = Array.isArray(results.domains) ? results.domains : [];
+
+  if (totalDetections > 0 || domains.length > 0) {
+    insights.push({
+      id: 'botnet_domains_detected',
+      category: 'ioc_correlation',
+      name: 'Comunicação com Domínios de Botnet',
+      description: `${totalDetections || domains.length} detecção(ões) de comunicação com domínios maliciosos de botnet`,
+      severity: totalDetections >= 50 ? 'critical' : totalDetections >= 10 ? 'high' : 'medium',
+      count: totalDetections || domains.length,
+      details: domains.length > 0 ? `Domínios: ${domains.slice(0, 5).map((d: any) => d.domain || d.name || d).join(', ')}` : undefined,
+      recommendation: 'Investigue os hosts internos que tentaram comunicação com domínios de botnet. Possível comprometimento.',
+    });
+  }
+
+  return {
+    insights,
+    metrics: {
+      botnetDetections: totalDetections || domains.length,
+      botnetDomains: domains.slice(0, 20).map((d: any) => ({
+        domain: d.domain || d.name || String(d),
+        count: d.count || d.hits || 1,
+      })),
+    },
+  };
+}
+
+// ============================================
 // Score Calculation
 // ============================================
 
@@ -1255,6 +1451,19 @@ Deno.serve(async (req) => {
 
     const outboundResult = analyzeOutboundTraffic(outboundAllowedLogs, outboundBlockedLogs, ipCountryMap);
 
+    // Fase 2: New analysis modules
+    const rawPolicyData = raw_data.monitor_firewall_policy?.data || raw_data.monitor_firewall_policy || {};
+    const rawSessionData = raw_data.monitor_firewall_session?.data || raw_data.monitor_firewall_session || {};
+    const rawTrafficData = raw_data.monitor_traffic_history?.data || raw_data.monitor_traffic_history || {};
+    const rawBotnetData = raw_data.monitor_botnet_domains?.data || raw_data.monitor_botnet_domains || {};
+
+    const shadowResult = analyzeShadowRules(rawPolicyData);
+    const sessionResult = analyzeActiveSessions(rawSessionData);
+    const bandwidthResult = analyzeBandwidth(rawTrafficData);
+    const botnetResult = analyzeBotnetDomains(rawBotnetData);
+
+    console.log(`[firewall-analyzer] Fase 2: policies=${shadowResult.metrics.totalPolicies}, unused=${shadowResult.metrics.unusedPolicies}, sessions=${sessionResult.metrics.activeSessions}, botnet=${botnetResult.metrics.botnetDetections}`);
+
     // Combine all insights
     const allInsights = [
       ...deniedResult.insights,
@@ -1265,6 +1474,10 @@ Deno.serve(async (req) => {
       ...appctrlResult.insights,
       ...anomalyResult.insights,
       ...outboundResult.insights,
+      ...shadowResult.insights,
+      ...sessionResult.insights,
+      ...bandwidthResult.insights,
+      ...botnetResult.insights,
     ];
 
     // Deduplicate by id
@@ -1329,6 +1542,14 @@ Deno.serve(async (req) => {
       topAnomalySources: anomalyResult.metrics.topAnomalySources || [],
       topAnomalyTypes: anomalyResult.metrics.topAnomalyTypes || [],
       totalEvents: (deniedResult.metrics.totalDenied || 0) + (authResult.metrics.vpnFailures || 0) + (authResult.metrics.firewallAuthFailures || 0) + (ipsResult.metrics.ipsEvents || 0) + (configResult.metrics.configChanges || 0) + (webfilterResult.metrics.webFilterBlocked || 0) + (appctrlResult.metrics.appControlBlocked || 0) + (anomalyResult.metrics.anomalyEvents || 0),
+      // Fase 2: Shadow Rules, Sessions, Bandwidth, Botnet
+      totalPolicies: shadowResult.metrics.totalPolicies || 0,
+      unusedPolicies: shadowResult.metrics.unusedPolicies || 0,
+      shadowRules: shadowResult.metrics.shadowRules || [],
+      activeSessions: sessionResult.metrics.activeSessions || 0,
+      interfaceBandwidth: bandwidthResult.metrics.interfaceBandwidth || [],
+      botnetDetections: botnetResult.metrics.botnetDetections || 0,
+      botnetDomains: botnetResult.metrics.botnetDomains || [],
     };
 
     const score = calculateScore(uniqueInsights);

@@ -71,6 +71,14 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
       topInboundAllowedIPs: (metrics.topInboundAllowedIPs as AnalyzerMetrics['topInboundAllowedIPs']) ?? [],
       topInboundAllowedCountries: (metrics.topInboundAllowedCountries as AnalyzerMetrics['topInboundAllowedCountries']) ?? [],
       inboundAllowed: (metrics.inboundAllowed as number) ?? 0,
+      // Fase 2
+      totalPolicies: (metrics.totalPolicies as number) ?? 0,
+      unusedPolicies: (metrics.unusedPolicies as number) ?? 0,
+      shadowRules: (metrics.shadowRules as AnalyzerMetrics['shadowRules']) ?? [],
+      activeSessions: (metrics.activeSessions as number) ?? 0,
+      interfaceBandwidth: (metrics.interfaceBandwidth as AnalyzerMetrics['interfaceBandwidth']) ?? [],
+      botnetDetections: (metrics.botnetDetections as number) ?? 0,
+      botnetDomains: (metrics.botnetDomains as AnalyzerMetrics['botnetDomains']) ?? [],
     },
     created_at: row.created_at as string,
   };
@@ -223,6 +231,14 @@ function aggregateSnapshots(snapshots: AnalyzerSnapshot[]): AnalyzerSnapshot & {
     topInboundAllowedIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topInboundAllowedIPs ?? [])),
     topInboundAllowedCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topInboundAllowedCountries ?? [])),
     inboundAllowed: sum('inboundAllowed'),
+    // Fase 2: use latest snapshot values (not aggregatable)
+    totalPolicies: latest.metrics.totalPolicies ?? 0,
+    unusedPolicies: latest.metrics.unusedPolicies ?? 0,
+    shadowRules: latest.metrics.shadowRules ?? [],
+    activeSessions: latest.metrics.activeSessions ?? 0,
+    interfaceBandwidth: latest.metrics.interfaceBandwidth ?? [],
+    botnetDetections: sum('botnetDetections'),
+    botnetDomains: latest.metrics.botnetDomains ?? [],
   };
 
   return {
