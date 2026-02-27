@@ -2864,6 +2864,10 @@ function processComplianceRules(
     
     // Mapear endpoint da API - usando mapeamento carregado do banco
     let apiEndpoint = getEndpointForSourceKey(sourceKeyToEndpoint, logic.source_key);
+    // Fallback: usar api_endpoint da regra quando o mapeamento não encontra
+    if (apiEndpoint === 'API do dispositivo' && rule.api_endpoint) {
+      apiEndpoint = rule.api_endpoint;
+    }
     
     // Para regras com alt_source_key (como log-002), listar ambos endpoints
     if (logic.alt_source_key) {
@@ -3082,8 +3086,126 @@ function processComplianceRules(
         status = 'pass';
         details = rule.pass_description || 'Nenhuma regra any-any encontrada';
       }
+    } else if (rule.code === 'cert-001') {
+      // Certificados expirados
+      const certData = rawData['monitor_certificates'] as Record<string, unknown> | null;
+      if (!certData) {
+        status = 'unknown';
+        details = 'Dados não disponíveis';
+      } else {
+        const certResults = (certData.results || certData) as Array<Record<string, unknown>>;
+        const arr = Array.isArray(certResults) ? certResults : [];
+        if (arr.length === 0) {
+          status = 'not_found';
+          details = rule.not_found_description || 'Nenhum certificado encontrado';
+        } else {
+          const expired = arr.filter((c: Record<string, unknown>) => c.status === 'expired');
+          if (expired.length > 0) {
+            status = 'fail';
+            details = rule.fail_description || `${expired.length} certificado(s) expirado(s)`;
+          } else {
+            status = 'pass';
+            details = rule.pass_description || 'Todos os certificados válidos';
+          }
+        }
+        evidence = arr.map((c: Record<string, unknown>) => ({
+          field: String(c.name || c.source || 'Certificado'),
+          value: String(c.status || 'unknown'),
+          status: c.status === 'expired' ? 'fail' : 'pass'
+        }));
+      }
+    } else if (rule.code === 'vpn-004') {
+      // Túneis IPsec
+      const vpnData = rawData['monitor_vpn_ipsec'] as Record<string, unknown> | null;
+      if (!vpnData) {
+        status = 'unknown';
+        details = 'Dados não disponíveis';
+      } else {
+        const vpnResults = (vpnData.results || vpnData) as Array<Record<string, unknown>>;
+        const arr = Array.isArray(vpnResults) ? vpnResults : [];
+        if (arr.length === 0) {
+          status = 'not_found';
+          details = rule.not_found_description || 'Nenhum túnel IPsec configurado';
+        } else {
+          const down = arr.filter((t: Record<string, unknown>) => {
+            const s = String(t.status || t.state || '').toLowerCase();
+            return s === 'down' || s === 'inactive';
+          });
+          if (down.length > 0) {
+            status = 'fail';
+            details = rule.fail_description || `${down.length} túnel(is) down de ${arr.length}`;
+          } else {
+            status = 'pass';
+            details = rule.pass_description || `Todos os ${arr.length} túneis ativos`;
+          }
+        }
+        evidence = (Array.isArray(vpnResults) ? vpnResults : []).map((t: Record<string, unknown>) => ({
+          field: String(t.name || t.p2name || 'Túnel'),
+          value: String(t.status || t.state || 'unknown'),
+          status: String(t.status || t.state || '').toLowerCase() === 'down' ? 'fail' : 'pass'
+        }));
+      }
+    } else if (rule.code === 'fg-001') {
+      // FortiGuard Server
+      const fgData = rawData['monitor_fortiguard_server'] as Record<string, unknown> | null;
+      if (!fgData) {
+        status = 'unknown';
+        details = 'Dados não disponíveis';
+      } else {
+        const connected = fgData.connected === true || fgData.connected === 'true';
+        status = connected ? 'pass' : 'fail';
+        details = connected
+          ? (rule.pass_description || 'Conectado ao FortiGuard')
+          : (rule.fail_description || 'Sem conexão com FortiGuard');
+        evidence = [{
+          field: 'FortiGuard Connection',
+          value: String(fgData.connected ?? 'unknown'),
+          status: connected ? 'pass' : 'fail'
+        }];
+      }
+    } else if (rule.code === 'perf-001') {
+      // Performance (CPU/Mem)
+      const perfData = rawData['monitor_performance'] as Record<string, unknown> | null;
+      if (!perfData) {
+        status = 'unknown';
+        details = 'Dados não disponíveis';
+      } else {
+        const cpu = Number(perfData.cpu ?? perfData.cpu_usage ?? 0);
+        const mem = Number(perfData.mem ?? perfData.memory_usage ?? perfData.memory ?? 0);
+        const cpuOk = cpu < 90;
+        const memOk = mem < 90;
+        status = (cpuOk && memOk) ? 'pass' : 'fail';
+        details = status === 'pass'
+          ? (rule.pass_description || `CPU ${cpu}%, Memória ${mem}% — dentro dos limites`)
+          : (rule.fail_description || `CPU ${cpu}%, Memória ${mem}% — acima do limite de 90%`);
+        evidence = [
+          { field: 'CPU Usage', value: `${cpu}%`, status: cpuOk ? 'pass' : 'fail' },
+          { field: 'Memory Usage', value: `${mem}%`, status: memOk ? 'pass' : 'fail' }
+        ];
+      }
+    } else if (rule.code === 'sec-004') {
+      // Security Rating
+      const secRatingData = rawData['monitor_security_rating'] as Record<string, unknown> | null;
+      if (!secRatingData) {
+        status = 'unknown';
+        details = 'Dados não disponíveis';
+      } else {
+        const score = secRatingData.overall_score ?? secRatingData.score;
+        if (score !== undefined && score !== null) {
+          status = 'pass';
+          details = rule.pass_description || `Security Rating: ${score}`;
+        } else {
+          status = 'fail';
+          details = rule.fail_description || 'Security Rating não disponível no dispositivo';
+        }
+        evidence = [{
+          field: 'Security Rating Score',
+          value: String(score ?? 'N/A'),
+          status: score !== undefined && score !== null ? 'pass' : 'fail'
+        }];
+      }
     } else if (rule.code.startsWith('vpn-')) {
-      // VPN rules
+      // VPN rules (vpn-001, vpn-002, vpn-003)
       evidence = formatVPNEvidence(rawData, rule.code);
     } else if (rule.code.startsWith('log-')) {
       // Logging rules
