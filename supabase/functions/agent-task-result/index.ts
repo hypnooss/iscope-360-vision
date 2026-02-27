@@ -796,7 +796,11 @@ function evaluateThresholdCheck(
     if (actualValue !== null && typeof actualValue === 'object' && !Array.isArray(actualValue)) {
       const obj2 = actualValue as Record<string, unknown>;
       if (typeof obj2.idle === 'number') {
+        // CPU-style: usage = 100 - idle
         numVal = Math.round((100 - obj2.idle) * 100) / 100;
+      } else if (typeof obj2.used === 'number' && typeof obj2.total === 'number' && obj2.total > 0) {
+        // Memory-style: usage % = used / total * 100
+        numVal = Math.round((obj2.used / obj2.total) * 10000) / 100;
       } else if (typeof obj2.used === 'number') {
         numVal = obj2.used;
       } else {
