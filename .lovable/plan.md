@@ -1,39 +1,25 @@
 
 
-## Plano: Botão ⚙️ visível para todos + aviso de recomendação no modal
+## Plano: Padronizar "Última coleta" no Surface Analyzer
 
-### Mudanças
+### Problema
 
-#### 1. `src/components/schedule/ScheduleDialog.tsx`
-- Adicionar prop opcional `recommendation?: string`
-- Renderizar um `Alert` (info) logo abaixo do `DialogDescription` com o texto da recomendação quando fornecido
-- Import `Alert, AlertDescription` de `@/components/ui/alert` e ícone `Info`
+A página Surface Analyzer (`SurfaceAnalyzerV3Page.tsx`) usa estilo diferente das demais páginas na seção "Última coleta":
 
-#### 2. Remover guard `isSuperRole` do botão ⚙️ em 5 páginas:
+| Aspecto | Surface Analyzer (atual) | Demais páginas (padrão) |
+|---|---|---|
+| Gap | `gap-2` | `gap-3` |
+| flex-wrap | ausente | presente |
+| Badge variant | `secondary` + `font-mono` | `outline` |
+| Data format | `toLocaleString('pt-BR')` | `toLocaleDateString('pt-BR', { day, month, year, hour, minute })` |
 
-**Compliance (3 páginas):**
-- `src/pages/firewall/FirewallCompliancePage.tsx` (linhas 303-313) — remover `{isSuperRole && (...)}`
-- `src/pages/external-domain/ExternalDomainCompliancePage.tsx` (linhas 509-519) — remover `{isSuperRole && (...)}`
-- M365PosturePage.tsx — já sem guard, nada a fazer
+### Correção
 
-**Analyzer (3 páginas):**
-- `src/pages/firewall/AnalyzerDashboardPage.tsx` (linhas 530-540) — remover `{isSuperRole && (...)}`
-- `src/pages/m365/M365AnalyzerDashboardPage.tsx` (linhas 305-315) — remover `{isSuperRole && (...)}`
-- `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx` (linha 438) — remover `{isSuperRole && ...}`
+**`src/pages/external-domain/SurfaceAnalyzerV3Page.tsx`** (linhas 464-470):
+- Mudar `gap-2` → `gap-3 flex-wrap`
+- Badge: `variant="outline"` sem `font-mono`
+- Data: usar `toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })`
 
-#### 3. Passar `recommendation` nas chamadas do ScheduleDialog
-
-**Compliance pages** (FirewallCompliancePage, ExternalDomainCompliancePage, M365PosturePage):
-- `recommendation="A análise de compliance verifica a conformidade da configuração. Recomendamos agendar a execução 1 vez ao dia."`
-
-**Analyzer pages** que usam o componente `ScheduleDialog` reutilizável: nenhuma usa atualmente (usam inline). Nas 3 Analyzer pages com dialogs inline (AnalyzerDashboardPage, M365AnalyzerDashboardPage, SurfaceAnalyzerV3Page), adicionar um `Alert` info com texto:
-- `"A análise do Analyzer monitora eventos e métricas em tempo real. Recomendamos agendar a execução 1 vez por hora."`
-
-### Arquivos editados (7)
-- `src/components/schedule/ScheduleDialog.tsx`
-- `src/pages/firewall/FirewallCompliancePage.tsx`
-- `src/pages/external-domain/ExternalDomainCompliancePage.tsx`
-- `src/pages/firewall/AnalyzerDashboardPage.tsx`
-- `src/pages/m365/M365AnalyzerDashboardPage.tsx`
+### Arquivo editado (1)
 - `src/pages/external-domain/SurfaceAnalyzerV3Page.tsx`
 
