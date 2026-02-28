@@ -1,21 +1,17 @@
 
 
-## Fix net-004 evidence format
+## Fix: Align Surface Analyzer tabs with Compliance standard
 
-Current evidence templates:
-- `evidence_label`: `Regra #{policyid}: {name}`
-- `evidence_value`: `{srcintf} → {dstintf} · action: {action}`
+The `AssetDetailSheet.tsx` TabsTrigger classes differ from the `ComplianceDetailSheet.tsx` standard:
 
-Change to:
-- `evidence_label`: `Regra #{policyid}`
-- `evidence_value`: `{name}`
+| Property | Compliance (correct) | Surface (current) |
+|---|---|---|
+| Font size | `text-xs` | `text-sm` |
+| Shadow | _(none)_ | `data-[state=active]:shadow-none` |
 
-Also fix the `interpolate` helper in `agent-task-result/index.ts` (line 874-876) to handle array/object values (the `[object Object]` fix from the previous plan).
+### Change
 
-### Files
-
-| File | Change |
-|---|---|
-| `supabase/functions/agent-task-result/index.ts` | Fix `interpolate` to handle arrays of objects with `name` field |
-| New migration | Update net-004 `evidence_label` and `evidence_value` |
+**`src/components/surface/AssetDetailSheet.tsx`** (lines 320-335): Update all four `TabsTrigger` elements to match the Compliance pattern:
+- Change `text-sm` → `text-xs`
+- Remove `data-[state=active]:shadow-none`
 
