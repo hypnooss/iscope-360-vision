@@ -1,42 +1,58 @@
 
 
-## Diagnóstico: Agent em loop de registro
+## Modo Offline para o Script de Instalação do Agent
 
-### Causa Raiz
+### Problema
+O servidor `srv-zbx-proxy` não consegue fazer conexões HTTPS ao Supabase (TLS reset), impedindo tanto o download do script quanto dos pacotes `.tar.gz`.
 
-O fluxo é:
-1. Worker inicia, faz POST `/register-agent` com activation_code
-2. Backend encontra o agent, gera tokens, **limpa activation_code** (linha 344: `activation_code: null`)
-3. Worker recebe resposta, salva state, mas o processo crasha/é reiniciado pelo systemd ANTES de salvar ou ANTES do próximo ciclo
-4. Systemd reinicia o Worker (~15s)
-5. Worker carrega state.json → `agent_id` é null (state não foi salvo a tempo)
-6. Tenta registrar novamente com o MESMO `activation_code`
-7. Backend faz `SELECT * FROM agents WHERE activation_code = X` → não encontra (foi limpo no passo 2)
-8. Retorna 400 `INVALID_CODE`
-9. Agent recebe RuntimeError("INVALID_CODE") que não é tratada → crash → loop infinito
+### Solução
+Adicionar flags `--local-agent` e `--local-supervisor` ao script gerado por `agent-install/index.ts`. Quando fornecidos, o instalador pula `get_signed_url` e usa os arquivos `.tar.gz` locais diretamente.
 
-O problema: o backend limpa o `activation_code` imediatamente na primeira chamada, mas o agent pode não ter salvo o state a tempo. Nas chamadas seguintes, o agent não consegue mais se encontrar.
+### Mudanças
 
-### Correção
+**Arquivo: `supabase/functions/agent-install/index.ts`**
 
-**Arquivo: `supabase/functions/register-agent/index.ts`**
+1. Adicionar variáveis `LOCAL_AGENT=""` e `LOCAL_SUPERVISOR=""` junto das outras variáveis globais (linha ~41)
 
-1. **Não limpar activation_code no registro** — manter o código para permitir retentativas
-2. **Limpar activation_code apenas no primeiro heartbeat bem-sucedido** — quando o agent confirma que está operacional
+2. Adicionar parsing dos novos flags em `parse_args()`:
+   - `--local-agent` → caminho para o `.tar.gz` do agent
+   - `--local-supervisor` → caminho para o `.tar.gz` do supervisor
 
-Mudanças específicas:
+3. Modificar `download_release()` para verificar se os caminhos locais foram fornecidos:
+   - Se `LOCAL_AGENT` e `LOCAL_SUPERVISOR` estiverem preenchidos, pular download e usar os arquivos locais
+   - Se apenas um for fornecido, exigir o outro também
+   - Manter o fluxo normal (signed URL + curl) como fallback quando não fornecidos
 
-**register-agent/index.ts (linha 344):** Remover `activation_code: null` e `activation_code_expires_at: null` do updateData
+4. Atualizar `usage()` para documentar os novos flags
 
-**agent-heartbeat/index.ts:** Após o heartbeat bem-sucedido, adicionar lógica para limpar `activation_code` se ainda existir:
+### Fluxo de Uso (Offline)
+
+```text
+# Na máquina com acesso à internet:
+1. Baixar o script:
+   curl -fsSL https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-install -o install.sh
+
+2. Baixar os pacotes (via browser ou curl):
+   - iscope-agent-latest.tar.gz
+   - iscope-supervisor-latest.tar.gz
+   (do bucket agent-releases no dashboard Supabase)
+
+3. Transferir tudo para o servidor:
+   scp install.sh iscope-agent-latest.tar.gz iscope-supervisor-latest.tar.gz root@srv-zbx-proxy:/tmp/
+
+# No servidor sem internet:
+4. Executar:
+   bash /tmp/install.sh \
+     --activation-code "XXXX-XXXX-XXXX-XXXX" \
+     --local-agent /tmp/iscope-agent-latest.tar.gz \
+     --local-supervisor /tmp/iscope-supervisor-latest.tar.gz
 ```
-UPDATE agents SET activation_code = NULL, activation_code_expires_at = NULL
-WHERE id = p_agent_id AND activation_code IS NOT NULL
-```
 
-### Resultado
+### Detalhes Técnicos
 
-- Agent pode retentar registro quantas vezes precisar (reemissão de tokens na linha 306)
-- Activation_code só é consumido após o agent confirmar que está rodando (heartbeat)
-- Sem risco de loop infinito
+- As variáveis `LOCAL_AGENT` e `LOCAL_SUPERVISOR` serão adicionadas nas linhas ~41-42
+- No `parse_args`, dois novos cases: `--local-agent` e `--local-supervisor` com shift 2
+- Na função `download_release`, um bloco condicional no início verifica se ambos os caminhos locais existem. Se sim, copia/extrai direto sem chamar `get_signed_url` nem `curl`
+- O `usage()` será atualizado com as novas opções
+- O mesmo será aplicado ao `super-agent-install/index.ts` para consistência
 
