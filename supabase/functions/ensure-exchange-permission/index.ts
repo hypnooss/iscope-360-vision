@@ -15,10 +15,15 @@ const EXCHANGE_MANAGE_AS_APP_ID = "dc50a0fb-09a3-484d-be87-e023b12c6440";
 const SHAREPOINT_RESOURCE_ID = "00000003-0000-0ff1-ce00-000000000000";
 const SHAREPOINT_SITES_FULLCONTROL_ID = "678536fe-1083-478a-9c59-b99265e6b0d3";
 
+// Microsoft Graph
+const GRAPH_RESOURCE_ID = "00000003-0000-0000-c000-000000000000";
+const IDENTITY_RISKY_USER_READ_ALL_ID = "dc5007c0-2d7d-4c42-879c-2dab87571379";
+
 // Permissions to ensure on App Registration
 const REQUIRED_PERMISSIONS = [
   { resourceAppId: EXCHANGE_RESOURCE_ID, permissionId: EXCHANGE_MANAGE_AS_APP_ID, name: "Exchange.ManageAsApp" },
   { resourceAppId: SHAREPOINT_RESOURCE_ID, permissionId: SHAREPOINT_SITES_FULLCONTROL_ID, name: "Sites.FullControl.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: IDENTITY_RISKY_USER_READ_ALL_ID, name: "IdentityRiskyUser.Read.All" },
 ];
 
 function fromHex(hex: string): Uint8Array {
