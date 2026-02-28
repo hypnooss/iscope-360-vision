@@ -260,13 +260,15 @@ export default function M365TenantEditPage() {
                   {GRAPH_PERMISSIONS.map(permName => {
                     const perm = permissions.find((p: any) => p.permission_name === permName);
                     return (
-                      <div key={permName} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 flex items-center gap-2">
-                        <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                          perm?.status === 'granted' ? 'bg-green-500' :
-                          perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                        )} />
-                        <span className="text-xs font-mono font-medium text-foreground truncate">{permName}</span>
-                        {PERM_DESCRIPTIONS[permName] && <span className="text-xs text-muted-foreground truncate">— {PERM_DESCRIPTIONS[permName]}</span>}
+                      <div key={permName} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
+                            perm?.status === 'granted' ? 'bg-green-500' :
+                            perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                          )} />
+                          <span className="text-xs font-mono font-medium text-foreground truncate">{permName}</span>
+                        </div>
+                        {PERM_DESCRIPTIONS[permName] && <p className="text-xs text-muted-foreground pl-4 truncate">{PERM_DESCRIPTIONS[permName]}</p>}
                       </div>
                     );
                   })}
@@ -279,13 +281,15 @@ export default function M365TenantEditPage() {
                   {DIR_ROLES_LIST.map(roleName => {
                     const perm = permissions.find((p: any) => p.permission_name === roleName);
                     return (
-                      <div key={roleName} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 flex items-center gap-2">
-                        <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                          perm?.status === 'granted' ? 'bg-green-500' :
-                          perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                        )} />
-                        <span className="text-xs font-medium text-foreground truncate">{roleName}</span>
-                        {PERM_DESCRIPTIONS[roleName] && <span className="text-xs text-muted-foreground truncate">— {PERM_DESCRIPTIONS[roleName]}</span>}
+                      <div key={roleName} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
+                            perm?.status === 'granted' ? 'bg-green-500' :
+                            perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                          )} />
+                          <span className="text-xs font-medium text-foreground truncate">{roleName}</span>
+                        </div>
+                        {PERM_DESCRIPTIONS[roleName] && <p className="text-xs text-muted-foreground pl-4 truncate">{PERM_DESCRIPTIONS[roleName]}</p>}
                       </div>
                     );
                   })}

@@ -431,10 +431,12 @@ export default function AddM365TenantPage() {
         </h3>
         <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
           {GRAPH_PERMISSIONS_LIST.map(permName => (
-            <div key={permName} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 flex items-center gap-2">
-              <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
-              <span className="text-xs font-mono font-medium text-foreground truncate">{permName}</span>
-              {PERM_DESCRIPTIONS[permName] && <span className="text-xs text-muted-foreground truncate">— {PERM_DESCRIPTIONS[permName]}</span>}
+             <div key={permName} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+                <span className="text-xs font-mono font-medium text-foreground truncate">{permName}</span>
+              </div>
+              {PERM_DESCRIPTIONS[permName] && <p className="text-xs text-muted-foreground pl-5 truncate">{PERM_DESCRIPTIONS[permName]}</p>}
             </div>
           ))}
         </div>
@@ -446,10 +448,12 @@ export default function AddM365TenantPage() {
           </h3>
           <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
             {DIR_ROLES.map(role => (
-              <div key={role} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 flex items-center gap-2">
-                <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
-                <span className="text-xs font-medium text-foreground truncate">{role}</span>
-                {PERM_DESCRIPTIONS[role] && <span className="text-xs text-muted-foreground truncate">— {PERM_DESCRIPTIONS[role]}</span>}
+               <div key={role} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+                  <span className="text-xs font-medium text-foreground truncate">{role}</span>
+                </div>
+                {PERM_DESCRIPTIONS[role] && <p className="text-xs text-muted-foreground pl-5 truncate">{PERM_DESCRIPTIONS[role]}</p>}
               </div>
             ))}
           </div>
