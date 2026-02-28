@@ -201,11 +201,80 @@ serve(async (req) => {
     }
 
     const body: ValidationRequest = await req.json();
-    const { tenant_id, app_id, client_secret, tenant_record_id } = body;
+    let { tenant_id, app_id, client_secret, tenant_record_id } = body;
+
+    // Fallback: if only tenant_record_id is provided, fetch credentials from DB
+    if (tenant_record_id && (!tenant_id || !app_id || !client_secret)) {
+      console.log('Fetching credentials from DB for tenant_record_id:', tenant_record_id);
+
+      // 1. Get tenant_id from m365_tenants
+      if (!tenant_id) {
+        const { data: tenantRow, error: tenantErr } = await supabase
+          .from('m365_tenants')
+          .select('tenant_id')
+          .eq('id', tenant_record_id)
+          .single();
+        if (tenantErr || !tenantRow?.tenant_id) {
+          return new Response(
+            JSON.stringify({ error: 'Tenant não encontrado para o tenant_record_id fornecido.' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        tenant_id = tenantRow.tenant_id;
+      }
+
+      // 2. Get app_id from m365_app_credentials
+      if (!app_id) {
+        const { data: credRow } = await supabase
+          .from('m365_app_credentials')
+          .select('azure_app_id')
+          .eq('tenant_record_id', tenant_record_id)
+          .eq('is_active', true)
+          .maybeSingle();
+        if (credRow?.azure_app_id) {
+          app_id = credRow.azure_app_id;
+        }
+      }
+
+      // 3. Get client_secret from m365_app_credentials or m365_global_config
+      if (!client_secret) {
+        // Try tenant-specific secret first
+        const { data: credSecretRow } = await supabase
+          .from('m365_app_credentials')
+          .select('client_secret_encrypted')
+          .eq('tenant_record_id', tenant_record_id)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (credSecretRow?.client_secret_encrypted) {
+          client_secret = credSecretRow.client_secret_encrypted;
+        } else {
+          // Fallback to global config
+          const { data: globalRow } = await supabase
+            .from('m365_global_config')
+            .select('client_secret_encrypted')
+            .maybeSingle();
+          if (globalRow?.client_secret_encrypted) {
+            client_secret = globalRow.client_secret_encrypted;
+          }
+        }
+
+        // If still no app_id, try global config
+        if (!app_id) {
+          const { data: globalRow } = await supabase
+            .from('m365_global_config')
+            .select('app_id')
+            .maybeSingle();
+          if (globalRow?.app_id) {
+            app_id = globalRow.app_id;
+          }
+        }
+      }
+    }
 
     if (!tenant_id || !app_id || !client_secret) {
       return new Response(
-        JSON.stringify({ error: 'tenant_id, app_id, and client_secret are required' }),
+        JSON.stringify({ error: 'tenant_id, app_id, and client_secret are required (or provide tenant_record_id)' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

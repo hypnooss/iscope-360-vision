@@ -141,15 +141,20 @@ export default function M365TenantEditPage() {
       
       setWaitingForConsent(false);
       
-      // Re-validate permissions after consent
+      // Re-validate permissions after consent using validate-m365-connection
+      // which updates m365_tenant_permissions table (not just global config)
       (async () => {
         setRevalidating(true);
         try {
-          const { error } = await supabase.functions.invoke('validate-m365-permissions', {
+          const { data, error } = await supabase.functions.invoke('validate-m365-connection', {
             body: { tenant_record_id: id },
           });
           if (error) throw error;
-          toast.success('Permissões revalidadas com sucesso');
+          if (data?.success) {
+            toast.success('Permissões revalidadas com sucesso');
+          } else {
+            toast.error('Erro ao revalidar: ' + (data?.error || 'Erro desconhecido'));
+          }
           queryClient.invalidateQueries({ queryKey: ['m365-tenant-permissions', id] });
           queryClient.invalidateQueries({ queryKey: ['m365-tenant-edit', id] });
         } catch (err: any) {
