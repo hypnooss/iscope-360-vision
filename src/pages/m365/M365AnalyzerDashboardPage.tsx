@@ -569,7 +569,7 @@ export default function M365AnalyzerDashboardPage() {
             'glass-card border-primary/20',
             score > 70 && 'border-rose-500/30 shadow-[0_0_20px_hsl(350_70%_50%/0.1)]',
           )}>
-            <CardContent className={cn('flex flex-col md:flex-row md:items-center gap-4', compact ? 'p-3' : 'p-4')}>
+            <CardContent className={cn('flex flex-col md:flex-row md:items-center gap-4', compactMode ? 'p-3' : 'p-4')}>
               {/* Risk label */}
               <div className="flex items-center gap-3">
                 <ShieldAlert className={cn('w-6 h-6', risk.color)} />
