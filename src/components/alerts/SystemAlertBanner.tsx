@@ -177,7 +177,7 @@ export function SystemAlertBanner() {
 
   const handleViewAnalysis = async (alertId: string, firewallId: string) => {
     await dismissAlert(alertId);
-    navigate(`/scope-firewall/firewalls/${firewallId}/analysis`);
+    navigate(`/scope-firewall/compliance`);
   };
 
   const handleViewExternalDomainReport = async (alertId: string, domainId: string, reportId: string) => {

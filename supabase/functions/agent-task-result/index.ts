@@ -615,7 +615,8 @@ function getNestedPath(obj: unknown, path: string): unknown {
 function evaluateTypedLogic(
   rawLogic: Record<string, unknown>,
   sourceData: unknown,
-  rule: ComplianceRule
+  rule: ComplianceRule,
+  allRawData?: Record<string, unknown>
 ): TypedLogicResult | null {
   const logicType = rawLogic.type as string;
 
@@ -626,7 +627,7 @@ function evaluateTypedLogic(
   } else if (logicType === 'threshold_check') {
     return evaluateThresholdCheck(rawLogic, sourceData, rule);
   } else if (logicType === 'filtered_count_check') {
-    return evaluateFilteredCountCheck(rawLogic, sourceData, rule);
+    return evaluateFilteredCountCheck(rawLogic, sourceData, rule, allRawData);
   }
 
   return null;
@@ -765,7 +766,8 @@ function evaluateObjectCheck(
 function evaluateFilteredCountCheck(
   logic: Record<string, unknown>,
   sourceData: unknown,
-  rule: ComplianceRule
+  rule: ComplianceRule,
+  allRawData?: Record<string, unknown>
 ): TypedLogicResult {
   const path = logic.path as string | undefined;
   let raw = path ? getNestedPath(sourceData, path) : sourceData;
@@ -783,13 +785,43 @@ function evaluateFilteredCountCheck(
     };
   }
 
+  // ---- join_source: merge fields from a secondary data source ----
+  const joinSource = logic.join_source as { key: string; on: string; fields: string[] } | undefined;
+  let items = raw as Array<Record<string, unknown>>;
+  if (joinSource && allRawData) {
+    let secondaryRaw = allRawData[joinSource.key] as unknown;
+    if (secondaryRaw && typeof secondaryRaw === 'object' && !Array.isArray(secondaryRaw) && 'results' in (secondaryRaw as Record<string, unknown>)) {
+      secondaryRaw = (secondaryRaw as Record<string, unknown>).results;
+    }
+    if (Array.isArray(secondaryRaw)) {
+      const index = new Map<string, Record<string, unknown>>();
+      for (const item of secondaryRaw as Array<Record<string, unknown>>) {
+        const key = String(item[joinSource.on] ?? '');
+        if (key) index.set(key, item);
+      }
+      items = items.map((item) => {
+        const key = String(item[joinSource.on] ?? '');
+        const match = index.get(key);
+        if (!match) return item;
+        const merged = { ...item };
+        for (const field of joinSource.fields) {
+          if (merged[field] === undefined && match[field] !== undefined) {
+            merged[field] = match[field];
+          }
+        }
+        return merged;
+      });
+      console.log(`[join_source] Merged ${joinSource.fields.join(',')} from ${joinSource.key} (${index.size} entries) into ${items.length} primary items`);
+    }
+  }
+
   const preFilters = (logic.pre_filters || []) as Array<{ field: string; op: string; value: unknown }>;
   const matchConditions = (logic.match_conditions || []) as Array<{ field: string; op: string; value: unknown; join?: string }>;
   const evidenceLabelTpl = (logic.evidence_label || '{name}') as string;
   const evidenceValueTpl = (logic.evidence_value || '') as string;
 
   // Apply pre_filters sequentially to narrow the array
-  let filtered = raw as Array<Record<string, unknown>>;
+  let filtered = items;
   for (const pf of preFilters) {
     filtered = filtered.filter((item) => {
       const fieldVal = item[pf.field];
@@ -3275,7 +3307,7 @@ function processComplianceRules(
     const rawLogic = rule.evaluation_logic;
     const logicType = rawLogic?.type as string | undefined;
     if (logicType === 'array_check' || logicType === 'object_check' || logicType === 'threshold_check' || logicType === 'filtered_count_check') {
-      const typedResult = evaluateTypedLogic(rawLogic, sourceData, rule);
+      const typedResult = evaluateTypedLogic(rawLogic, sourceData, rule, rawData as Record<string, unknown>);
       if (typedResult) {
         checks.push({
           id: rule.code,
