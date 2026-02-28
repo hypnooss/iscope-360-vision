@@ -429,14 +429,12 @@ export default function AddM365TenantPage() {
           <AlertCircle className="w-4 h-4 text-primary" />
           Permissões do Microsoft Graph
         </h3>
-        <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
           {GRAPH_PERMISSIONS_LIST.map(permName => (
-            <div key={permName} className="rounded-lg p-3 bg-muted/50 border border-border/50 space-y-1">
-              <div className="flex items-center gap-2">
-                <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
-                <span className="text-xs font-mono font-medium text-foreground truncate">{permName}</span>
-              </div>
-              <p className="text-xs text-muted-foreground pl-5">{PERM_DESCRIPTIONS[permName] || ''}</p>
+            <div key={permName} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 flex items-center gap-2">
+              <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+              <span className="text-xs font-mono font-medium text-foreground truncate">{permName}</span>
+              {PERM_DESCRIPTIONS[permName] && <span className="text-xs text-muted-foreground truncate">— {PERM_DESCRIPTIONS[permName]}</span>}
             </div>
           ))}
         </div>
@@ -446,14 +444,12 @@ export default function AddM365TenantPage() {
             <AlertCircle className="w-4 h-4 text-primary" />
             Roles do Diretório (RBAC)
           </h3>
-          <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
             {DIR_ROLES.map(role => (
-              <div key={role} className="rounded-lg p-3 bg-muted/50 border border-border/50 space-y-1">
-                <div className="flex items-center gap-2">
-                  <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
-                  <span className="text-xs font-medium text-foreground truncate">{role}</span>
-                </div>
-                <p className="text-xs text-muted-foreground pl-5">{PERM_DESCRIPTIONS[role] || ''}</p>
+              <div key={role} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 flex items-center gap-2">
+                <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+                <span className="text-xs font-medium text-foreground truncate">{role}</span>
+                {PERM_DESCRIPTIONS[role] && <span className="text-xs text-muted-foreground truncate">— {PERM_DESCRIPTIONS[role]}</span>}
               </div>
             ))}
           </div>
