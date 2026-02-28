@@ -1,17 +1,47 @@
 
 
-## Plano: Remover chamada legacy `fortigate-compliance`
+## Three Fixes
 
-### Contexto
-A função `handleAnalyze` em `src/pages/FirewallsPage.tsx` (linhas 206-248) chama diretamente a edge function `fortigate-compliance`, enviando URL e API key pelo frontend. Isso bypassa completamente o fluxo de blueprints/agente e é código legacy que deveria ter sido removido.
+### 1. Alert redirect (SystemAlertBanner.tsx)
 
-### Mudanças
+Line 180: `handleViewAnalysis` navigates to `/scope-firewall/firewalls/${firewallId}/analysis` (old route). Change to `/scope-firewall/compliance`.
 
-1. **`src/pages/FirewallsPage.tsx`**: Substituir `handleAnalyze` para usar `trigger-firewall-analysis` (mesmo fluxo do `FirewallCompliancePage.tsx`), ou remover o botão de análise desta página e direcionar o usuário para a página de Compliance.
+### 2. Progress bar position (FirewallCompliancePage.tsx)
 
-2. **`supabase/functions/fortigate-compliance/index.ts`** (opcional): Marcar para remoção futura ou deletar, já que nenhuma outra parte do código a utiliza.
+Lines 360-396: "Última coleta" block is rendered **before** the task progress bar. Swap the two blocks so progress bar appears first (matching Analyzer layout from screenshot 1).
 
-### Arquivos editados
-- `src/pages/FirewallsPage.tsx` — substituir `handleAnalyze` pelo fluxo via agente
-- (Opcional) Deletar `supabase/functions/fortigate-compliance/index.ts`
+### 3. Shadow Rules net-004 — root cause found
+
+The rule uses `source_key: firewall_policy_stats` (monitor endpoint) which returns objects with `bytes`, `hit_count`, `policyid` — but **no `status` or `action` fields**. The `pre_filters` require `status === 'enable'` and `action not_in ['deny','block']`, which filter out **every single item** (none have those fields), resulting in 0 items → 0 violations → pass.
+
+Raw data confirms policies 212, 113, 114 have `bytes: 0, hit_count: 0` — these are real shadow rules being missed.
+
+**Fix**: Add `join_source` support to `filtered_count_check` in `agent-task-result/index.ts`. The rule will specify a secondary data source to merge fields from before filtering:
+
+```json
+{
+  "type": "filtered_count_check",
+  "source_key": "firewall_policy_stats",
+  "join_source": { "key": "firewall_policy", "on": "policyid", "fields": ["status", "action", "name", "srcintf", "dstintf"] },
+  "pre_filters": [...],
+  "match_conditions": [...]
+}
+```
+
+The engine will:
+1. Load `firewall_policy_stats.results` as the primary array
+2. Load `firewall_policy.results` and index by `policyid`
+3. Merge matched fields into each stats item
+4. Then apply pre_filters and match_conditions as normal
+
+Update the `net-004` rule's `evaluation_logic` in a migration to include the `join_source`.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/components/alerts/SystemAlertBanner.tsx` | Fix route on line 180 |
+| `src/pages/firewall/FirewallCompliancePage.tsx` | Swap progress bar above "Última coleta" |
+| `supabase/functions/agent-task-result/index.ts` | Add `join_source` merging in `evaluateFilteredCountCheck` |
+| New migration | Update net-004 `evaluation_logic` to include `join_source` |
 
