@@ -1,30 +1,20 @@
 
 
-## Plan: Add edit/delete actions to M365 tenant rows + Create M365 tenant edit page
+## Plan: Consolidar M365 Tenant Edit em card único
 
-### 1. Add edit/delete icons to M365 tenant table in EnvironmentPage
+### Mudanças em `src/pages/environment/M365TenantEditPage.tsx`
 
-**`src/pages/EnvironmentPage.tsx`** (lines 358-365):
-- Add `renderActions` to the M365 `AssetCategorySection`, matching the pattern used for firewalls and domains
-- Edit icon navigates to `/environment/m365/{id}/edit`
-- Delete icon opens a confirmation dialog (reuse `DeleteEnvironmentDomainDialog` or add a new state for M365 delete)
-- Add delete handler for M365 tenants (delete from `m365_tenant_agents`, `m365_tenant_permissions`, `m365_tenants`)
-- Update `navigationUrl` for m365 tenants to `/environment/m365/{id}/edit`
+1. **Unificar tudo em um único Card** — Mesclar os 3 cards (Info Grid, Permissões, Ações) em um só.
 
-### 2. Create M365 tenant edit page
+2. **Remover métricas de análise** — Remover os campos "Última Análise", "Score" e "Agendamento" do grid. Manter apenas "Workspace".
 
-**New file: `src/pages/environment/M365TenantEditPage.tsx`**
+3. **Mover status de conexão para dentro do card** — Tirar o badge do header externo e colocá-lo dentro do card, ao lado do workspace info.
 
-Full-page edit screen inspired by the screenshot, with these sections:
+4. **Permissões sempre visíveis** — Remover o toggle expand/collapse (`showPermissions` state, `ChevronDown`/`ChevronUp`). Exibir a seção de permissões e RBAC diretamente, sempre aberta.
 
-- **Header**: Tenant name, domain, connection status badge
-- **Info grid**: Workspace, Ultima Analise, Score, Agendamento
-- **Permissions section** (collapsible): Reuse the permission categories/roles display from `TenantStatusCard`
-- **Directory Roles (RBAC)**: Exchange Administrator, SharePoint Administrator
-- **Action buttons at bottom**: Testar, Editar (opens `TenantEditDialog`), Revalidar Permissoes, Desconectar, Excluir, Analisar
-- Fetch tenant data by ID from `m365_tenants`, permissions from `m365_tenant_permissions`, last analysis from `m365_posture_history`
+5. **Remover botão "Analisar"** — Remover o handler `handleAnalyze`, state `analyzing`, e o botão.
 
-### 3. Register route
+6. **Alinhar botões à direita** — Os botões restantes (Testar, Editar, Revalidar Permissões, Desconectar, Excluir) ficam alinhados à direita com `justify-end`.
 
-**`src/App.tsx`**: Add route `/environment/m365/:id/edit` → `M365TenantEditPage`
+7. **Cleanup** — Remover imports não utilizados (`Play`, `TrendingUp`, `Calendar`, `ChevronDown`, `ChevronUp`) e queries desnecessárias (`lastAnalysis`, `schedule`).
 
