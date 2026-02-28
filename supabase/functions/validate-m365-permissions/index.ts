@@ -18,6 +18,7 @@ const REQUIRED_PERMISSIONS = [
   'Organization.Read.All',
   'Domain.Read.All',
   'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
+  'IdentityRiskyUser.Read.All', // Required for Identity Protection risky users
 ];
 
 const RECOMMENDED_PERMISSIONS = [
