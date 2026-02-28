@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
           message: `Task ${existingTask.id} está com status: ${existingTask.status}`,
           task_id: existingTask.id
         }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
