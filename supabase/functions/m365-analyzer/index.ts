@@ -1785,6 +1785,11 @@ Deno.serve(async (req) => {
       exoSharedMailboxes = get('exo_shared_mailboxes');
       exoConnectors = get('exo_connectors');
 
+      // Fallback: merge separate inbound/outbound connectors if exo_connectors is empty
+      if (exoConnectors.length === 0) {
+        exoConnectors = [...get('exo_inbound_connectors'), ...get('exo_outbound_connectors')];
+      }
+
       // Alternate key names
       if (exoForwarding.length === 0) exoForwarding = get('exo_forwarding');
       if (exoAntiPhish.length === 0) exoAntiPhish = get('exo_antiphish_policy');
