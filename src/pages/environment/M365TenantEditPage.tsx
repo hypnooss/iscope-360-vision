@@ -256,19 +256,17 @@ export default function M365TenantEditPage() {
                   Permissões ({grantedCount}/{ALL_PERMISSIONS.length})
                 </p>
                 <p className="text-xs text-muted-foreground mb-3">Permissões do Microsoft Graph</p>
-                <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
                   {GRAPH_PERMISSIONS.map(permName => {
                     const perm = permissions.find((p: any) => p.permission_name === permName);
                     return (
-                      <div key={permName} className="rounded-lg p-3 bg-muted/50 border border-border/50 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                            perm?.status === 'granted' ? 'bg-green-500' :
-                            perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                          )} />
-                          <span className="text-xs font-mono font-medium text-foreground truncate">{permName}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground pl-4">{PERM_DESCRIPTIONS[permName] || ''}</p>
+                      <div key={permName} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 flex items-center gap-2">
+                        <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
+                          perm?.status === 'granted' ? 'bg-green-500' :
+                          perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                        )} />
+                        <span className="text-xs font-mono font-medium text-foreground truncate">{permName}</span>
+                        {PERM_DESCRIPTIONS[permName] && <span className="text-xs text-muted-foreground truncate">— {PERM_DESCRIPTIONS[permName]}</span>}
                       </div>
                     );
                   })}
@@ -277,19 +275,17 @@ export default function M365TenantEditPage() {
 
               <div className="pt-4 border-t border-border/50">
                 <p className="text-xs text-muted-foreground mb-3">Roles do Diretório (RBAC)</p>
-                <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
                   {DIR_ROLES_LIST.map(roleName => {
                     const perm = permissions.find((p: any) => p.permission_name === roleName);
                     return (
-                      <div key={roleName} className="rounded-lg p-3 bg-muted/50 border border-border/50 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                            perm?.status === 'granted' ? 'bg-green-500' :
-                            perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                          )} />
-                          <span className="text-xs font-medium text-foreground truncate">{roleName}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground pl-4">{PERM_DESCRIPTIONS[roleName] || ''}</p>
+                      <div key={roleName} className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 flex items-center gap-2">
+                        <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
+                          perm?.status === 'granted' ? 'bg-green-500' :
+                          perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                        )} />
+                        <span className="text-xs font-medium text-foreground truncate">{roleName}</span>
+                        {PERM_DESCRIPTIONS[roleName] && <span className="text-xs text-muted-foreground truncate">— {PERM_DESCRIPTIONS[roleName]}</span>}
                       </div>
                     );
                   })}
