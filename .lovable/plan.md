@@ -1,14 +1,17 @@
 
 
-## Plano: Ajustar layout dos cards de Compliance
+## Plano: Remover chamada legacy `fortigate-compliance`
 
-### Mudanças em `src/components/compliance/UnifiedComplianceCard.tsx`
+### Contexto
+A função `handleAnalyze` em `src/pages/FirewallsPage.tsx` (linhas 206-248) chama diretamente a edge function `fortigate-compliance`, enviando URL e API key pelo frontend. Isso bypassa completamente o fluxo de blueprints/agente e é código legacy que deveria ter sido removido.
 
-1. **Alinhar descrição com o título** (linhas 224-228): Adicionar `ml-[calc(2rem+0.75rem+1rem)]` (padding do ícone 8px*2 + ícone 16px + gap 12px ≈ `ml-[3.25rem]`) ao parágrafo da descrição para que o texto comece na mesma posição vertical do título.
-   - O ícone ocupa: `p-2` (8px cada lado) + `w-4` (16px) = 32px, mais o `gap-3` (12px) = 44px ≈ `ml-[2.75rem]`
+### Mudanças
 
-2. **Remover recomendação dos cards fail** (linhas 230-235): Remover ou comentar o bloco que exibe `item.recommendation` no card. A recomendação continuará visível na sheet de detalhes.
+1. **`src/pages/FirewallsPage.tsx`**: Substituir `handleAnalyze` para usar `trigger-firewall-analysis` (mesmo fluxo do `FirewallCompliancePage.tsx`), ou remover o botão de análise desta página e direcionar o usuário para a página de Compliance.
 
-### Arquivo editado (1)
-- `src/components/compliance/UnifiedComplianceCard.tsx`
+2. **`supabase/functions/fortigate-compliance/index.ts`** (opcional): Marcar para remoção futura ou deletar, já que nenhuma outra parte do código a utiliza.
+
+### Arquivos editados
+- `src/pages/FirewallsPage.tsx` — substituir `handleAnalyze` pelo fluxo via agente
+- (Opcional) Deletar `supabase/functions/fortigate-compliance/index.ts`
 
