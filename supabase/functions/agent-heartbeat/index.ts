@@ -526,6 +526,17 @@ serve(async (req: Request) => {
     // Update agent version + supervisor_version in database
     await updateAgentVersion(supabase, agentId, agentVersion, supervisorVersion);
 
+    // Clear activation_code on first successful heartbeat (confirms agent saved state)
+    try {
+      await supabase
+        .from('agents')
+        .update({ activation_code: null, activation_code_expires_at: null })
+        .eq('id', agentId)
+        .not('activation_code', 'is', null);
+    } catch (clearErr) {
+      console.error('Failed to clear activation_code:', clearErr);
+    }
+
     // Persist capabilities if provided
     if (Array.isArray(body.capabilities)) {
       try {
