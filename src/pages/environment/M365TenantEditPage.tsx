@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PERMISSION_DESCRIPTIONS as PERM_DESCRIPTIONS, GRAPH_PERMISSIONS, DIRECTORY_ROLES as DIR_ROLES_LIST } from '@/lib/m365PermissionDescriptions';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -49,7 +49,7 @@ export default function M365TenantEditPage() {
   const [disconnecting, setDisconnecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [revalidating, setRevalidating] = useState(false);
-
+  const [waitingForConsent, setWaitingForConsent] = useState(false);
   // Fetch tenant data
   const { data: tenant, isLoading: tenantLoading } = useQuery({
     queryKey: ['m365-tenant-edit', id],
@@ -132,15 +132,99 @@ export default function M365TenantEditPage() {
     }
   };
 
+  // Listen for OAuth popup postMessage (for re-consent flow)
+  useEffect(() => {
+    if (!waitingForConsent) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'm365-oauth-callback') return;
+      
+      setWaitingForConsent(false);
+      
+      // Re-validate permissions after consent
+      (async () => {
+        setRevalidating(true);
+        try {
+          const { error } = await supabase.functions.invoke('validate-m365-permissions', {
+            body: { tenant_record_id: id },
+          });
+          if (error) throw error;
+          toast.success('Permissões revalidadas com sucesso');
+          queryClient.invalidateQueries({ queryKey: ['m365-tenant-permissions', id] });
+          queryClient.invalidateQueries({ queryKey: ['m365-tenant-edit', id] });
+        } catch (err: any) {
+          toast.error('Erro ao revalidar: ' + (err.message || 'Erro desconhecido'));
+        } finally {
+          setRevalidating(false);
+        }
+      })();
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [waitingForConsent, id, queryClient]);
+
   const handleRevalidatePermissions = async () => {
     setRevalidating(true);
     try {
-      const { error } = await supabase.functions.invoke('validate-m365-permissions', {
+      // 1. First validate current permissions
+      const { data, error } = await supabase.functions.invoke('validate-m365-permissions', {
         body: { tenant_record_id: id },
       });
       if (error) throw error;
-      toast.success('Permissões revalidadas');
+      
       queryClient.invalidateQueries({ queryKey: ['m365-tenant-permissions', id] });
+
+      const failedRequired = data?.results?.filter((r: any) => r.status !== 'granted' && r.required)?.length || 0;
+      const failedRecommended = data?.results?.filter((r: any) => r.status !== 'granted' && !r.required)?.length || 0;
+      const totalFailed = failedRequired + failedRecommended;
+
+      if (totalFailed === 0) {
+        toast.success('Todas as permissões já estão concedidas');
+        setRevalidating(false);
+        return;
+      }
+
+      // 2. Get app_id to build admin consent URL
+      const { data: configData, error: configError } = await supabase.functions.invoke('get-m365-config', {
+        body: {},
+      });
+
+      if (configError || !configData?.app_id) {
+        toast.error('Não foi possível obter a configuração do App. Contate o administrador.');
+        setRevalidating(false);
+        return;
+      }
+
+      // 3. Build admin consent URL and open popup
+      const getAppBaseUrl = () => {
+        const publishedUrl = 'https://iscope360.lovable.app';
+        if (import.meta.env.DEV) return window.location.origin;
+        return publishedUrl;
+      };
+
+      const statePayload = {
+        tenant_record_id: id,
+        client_id: tenant?.client_id,
+        tenant_id: tenant?.tenant_id,
+        redirect_url: `${getAppBaseUrl()}/scope-m365/tenant-connection`,
+      };
+      const state = btoa(JSON.stringify(statePayload));
+      const callbackUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/m365-oauth-callback`;
+
+      const adminConsentUrl = new URL(`https://login.microsoftonline.com/${tenant?.tenant_id}/adminconsent`);
+      adminConsentUrl.searchParams.set('client_id', configData.app_id);
+      adminConsentUrl.searchParams.set('redirect_uri', callbackUrl);
+      adminConsentUrl.searchParams.set('state', state);
+
+      window.open(
+        adminConsentUrl.toString(),
+        'microsoft_auth',
+        'width=600,height=700,scrollbars=yes,resizable=yes'
+      );
+
+      setWaitingForConsent(true);
+      toast.info(`${totalFailed} permissão(ões) pendente(s). Conceda o acesso na janela da Microsoft.`);
     } catch (err: any) {
       toast.error('Erro ao revalidar: ' + (err.message || 'Erro desconhecido'));
     } finally {
@@ -340,9 +424,9 @@ export default function M365TenantEditPage() {
                 {testing ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
                 Testar
               </Button>
-              <Button variant="outline" size="sm" onClick={handleRevalidatePermissions} disabled={revalidating || tenant.connection_status === 'disconnected'}>
-                {revalidating ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
-                Revalidar Permissões
+              <Button variant="outline" size="sm" onClick={handleRevalidatePermissions} disabled={revalidating || waitingForConsent || tenant.connection_status === 'disconnected'}>
+                {(revalidating || waitingForConsent) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
+                {waitingForConsent ? 'Aguardando consentimento...' : 'Revalidar Permissões'}
               </Button>
               <Button
                 variant="outline" size="sm"
