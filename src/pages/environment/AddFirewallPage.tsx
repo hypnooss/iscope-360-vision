@@ -5,7 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  Clock,
+  
   Cloud,
   Globe,
   Loader2,
@@ -30,7 +30,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+
 import {
   Dialog,
   DialogContent,
@@ -45,7 +45,7 @@ interface Client { id: string; name: string; }
 interface Agent { id: string; name: string; client_id: string | null; }
 interface DeviceType { id: string; name: string; vendor: string; code: string; }
 
-type ScheduleFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
+
 
 interface WanCandidate {
   ip: string;
@@ -62,59 +62,16 @@ interface WanCandidate {
 
 const SESSION_AUTH_DEVICE_CODES = ['sonicwall_tz', 'sonicwall_nsa', 'sonicwall'];
 
-const HOURS = Array.from({ length: 24 }, (_, i) => ({
-  value: i.toString(),
-  label: `${i.toString().padStart(2, '0')}:00`,
-}));
-
-const DAYS_OF_WEEK = [
-  { value: '0', label: 'Domingo' },
-  { value: '1', label: 'Segunda-feira' },
-  { value: '2', label: 'Terça-feira' },
-  { value: '3', label: 'Quarta-feira' },
-  { value: '4', label: 'Quinta-feira' },
-  { value: '5', label: 'Sexta-feira' },
-  { value: '6', label: 'Sábado' },
-];
-
-const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => ({
-  value: (i + 1).toString(),
-  label: (i + 1).toString(),
-}));
-
 const STEPS = [
   { id: 1, label: 'Fabricante' },
   { id: 2, label: 'Instruções' },
   { id: 3, label: 'Configuração' },
-  { id: 4, label: 'Agendamento' },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function calculateNextRunAt(
-  frequency: ScheduleFrequency,
-  hour: number,
-  dayOfWeek: number,
-  dayOfMonth: number
-): string | null {
-  if (frequency === 'manual') return null;
-  const now = new Date();
-  let next: Date;
-  if (frequency === 'daily') {
-    next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1);
-  } else if (frequency === 'weekly') {
-    const currentDay = now.getDay();
-    let daysAhead = dayOfWeek - currentDay;
-    if (daysAhead < 0) daysAhead += 7;
-    next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysAhead, hour, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 7);
-  } else {
-    next = new Date(now.getFullYear(), now.getMonth(), dayOfMonth, hour, 0, 0);
-    if (next <= now) next.setMonth(next.getMonth() + 1);
-  }
-  return next.toISOString();
-}
+
+
 
 // ─── Step Indicator ───────────────────────────────────────────────────────────
 
@@ -372,11 +329,8 @@ export default function AddFirewallPage() {
 
   const [showCloudIP, setShowCloudIP] = useState(false);
 
-  // Step 4
-  const [schedule, setSchedule] = useState<ScheduleFrequency>('manual');
-  const [scheduledHour, setScheduledHour] = useState(2);
-  const [scheduledDayOfWeek, setScheduledDayOfWeek] = useState(1);
-  const [scheduledDayOfMonth, setScheduledDayOfMonth] = useState(1);
+
+
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
@@ -501,19 +455,8 @@ export default function AddFirewallPage() {
         toast.warning('Firewall criado, mas erro ao criptografar credenciais. Edite o firewall para salvar novamente.');
       }
 
-      if (schedule !== 'manual') {
-        const nextRunAt = calculateNextRunAt(schedule, scheduledHour, scheduledDayOfWeek, scheduledDayOfMonth);
-        await supabase.from('analysis_schedules').insert({
-          firewall_id: firewall.id,
-          frequency: schedule,
-          is_active: true,
-          created_by: user?.id,
-          scheduled_hour: scheduledHour,
-          scheduled_day_of_week: scheduledDayOfWeek,
-          scheduled_day_of_month: scheduledDayOfMonth,
-          next_run_at: nextRunAt,
-        } as any);
-      }
+
+
 
       toast.success('Firewall adicionado com sucesso!');
       navigate('/environment');
@@ -1043,96 +986,7 @@ export default function AddFirewallPage() {
                 <ArrowLeft className="w-4 h-4" />
                 Voltar
               </Button>
-              <Button onClick={handleNext} disabled={!canAdvanceStep2}>
-                Próximo
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* ── STEP 4: Agendamento ───────────────────────────────────────────── */}
-        {step === 4 && (
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Clock className="w-5 h-5 text-orange-400" />
-                  Agendamento de Análise
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">Configure a frequência e horário da análise automática</p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Frequência</Label>
-                    <Select value={schedule} onValueChange={(v) => setSchedule(v as ScheduleFrequency)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="manual">Manual</SelectItem>
-                        <SelectItem value="daily">Diário</SelectItem>
-                        <SelectItem value="weekly">Semanal</SelectItem>
-                        <SelectItem value="monthly">Mensal</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {schedule !== 'manual' && (
-                  <>
-                    <Separator />
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Horário</Label>
-                        <Select value={scheduledHour.toString()} onValueChange={(v) => setScheduledHour(parseInt(v))}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {HOURS.map(h => <SelectItem key={h.value} value={h.value}>{h.label}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {schedule === 'weekly' && (
-                        <div className="space-y-2">
-                          <Label>Dia da Semana</Label>
-                          <Select value={scheduledDayOfWeek.toString()} onValueChange={(v) => setScheduledDayOfWeek(parseInt(v))}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {DAYS_OF_WEEK.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-
-                      {schedule === 'monthly' && (
-                        <div className="space-y-2">
-                          <Label>Dia do Mês</Label>
-                          <Select value={scheduledDayOfMonth.toString()} onValueChange={(v) => setScheduledDayOfMonth(parseInt(v))}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {DAYS_OF_MONTH.map(d => <SelectItem key={d.value} value={d.value}>Dia {d.label}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                    </div>
-
-                    <p className="text-sm text-muted-foreground">
-                      {schedule === 'daily' && `A análise será executada todos os dias às ${scheduledHour.toString().padStart(2, '0')}:00 (UTC).`}
-                      {schedule === 'weekly' && `A análise será executada toda ${DAYS_OF_WEEK.find(d => d.value === scheduledDayOfWeek.toString())?.label} às ${scheduledHour.toString().padStart(2, '0')}:00 (UTC).`}
-                      {schedule === 'monthly' && `A análise será executada todo dia ${scheduledDayOfMonth} do mês às ${scheduledHour.toString().padStart(2, '0')}:00 (UTC).`}
-                    </p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            <div className="flex justify-between">
-              <Button variant="outline" onClick={handleBack}>
-                <ArrowLeft className="w-4 h-4" />
-                Voltar
-              </Button>
-              <Button onClick={handleSubmit} disabled={saving}>
+              <Button onClick={handleSubmit} disabled={saving || !canAdvanceStep2}>
                 {saving ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1148,6 +1002,7 @@ export default function AddFirewallPage() {
             </div>
           </div>
         )}
+
       </div>
     </AppLayout>
 
