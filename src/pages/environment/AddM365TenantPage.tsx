@@ -15,7 +15,6 @@ import {
   Info,
   Mail,
   ExternalLink,
-  Cloud,
 } from 'lucide-react';
 
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -574,22 +573,7 @@ export default function AddM365TenantPage() {
           ]}
         />
 
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/environment/new')}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Cloud className="h-6 w-6 text-primary" />
-              Conectar Microsoft 365
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Configure a conexão com seu tenant Microsoft 365
-            </p>
-          </div>
-        </div>
-
-        <div className="max-w-2xl mx-auto">
+        <div className="pt-10 max-w-2xl mx-auto">
           <StepIndicator current={step} />
 
           <Card>
