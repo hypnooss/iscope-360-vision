@@ -222,7 +222,7 @@ export function UnifiedComplianceCard({
 
         {/* Conteúdo abaixo (fora do flex do ícone) */}
         {contextualMessage && (
-          <p className="text-sm text-muted-foreground line-clamp-2 pr-2 ml-[2.75rem]">
+          <p className="text-sm text-muted-foreground line-clamp-2 pr-2 ml-[2.85rem]">
             {contextualMessage}
           </p>
         )}
