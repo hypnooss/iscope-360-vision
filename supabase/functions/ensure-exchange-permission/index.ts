@@ -82,7 +82,7 @@ serve(async (req) => {
     // Get global M365 config
     const { data: globalConfig, error: configError } = await supabase
       .from("m365_global_config")
-      .select("app_id, app_object_id, client_secret_encrypted, validation_tenant_id")
+      .select("app_id, app_object_id, client_secret_encrypted, validation_tenant_id, home_tenant_id")
       .limit(1)
       .single();
 
@@ -94,10 +94,20 @@ serve(async (req) => {
       );
     }
 
-    if (!globalConfig.validation_tenant_id) {
-      console.log("[ensure-exchange-permission] No validation_tenant_id configured");
+    // Use home_tenant_id (where app is registered) for manifest modifications
+    const tenantForToken = globalConfig.home_tenant_id || globalConfig.validation_tenant_id;
+    if (!tenantForToken) {
+      console.log("[ensure-exchange-permission] No home_tenant_id or validation_tenant_id configured");
       return new Response(
         JSON.stringify({ success: false, error: "Tenant ID not configured", skipped: true }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!globalConfig.app_object_id) {
+      console.log("[ensure-exchange-permission] No app_object_id configured");
+      return new Response(
+        JSON.stringify({ success: false, error: "App Object ID not configured", skipped: true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -105,10 +115,10 @@ serve(async (req) => {
     // Decrypt client secret
     const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted);
 
-    // Get access token for home tenant
-    console.log("[ensure-exchange-permission] Getting access token for tenant...");
+    // Get access token for HOME tenant (where the app registration lives)
+    console.log("[ensure-exchange-permission] Getting access token for home tenant:", tenantForToken);
     const tokenResponse = await fetch(
-      `https://login.microsoftonline.com/${globalConfig.validation_tenant_id}/oauth2/v2.0/token`,
+      `https://login.microsoftonline.com/${tenantForToken}/oauth2/v2.0/token`,
       {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -133,37 +143,28 @@ serve(async (req) => {
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
 
-    // Auto-discover the Object ID using the app_id (Client ID)
-    console.log("[ensure-exchange-permission] Auto-discovering Object ID for app_id:", globalConfig.app_id);
-    const lookupUrl = `https://graph.microsoft.com/v1.0/applications(appId='${globalConfig.app_id}')?$select=id,requiredResourceAccess`;
-    const lookupResponse = await fetch(lookupUrl, {
+    // Use app_object_id directly (the correct Azure Object ID)
+    const objectId = globalConfig.app_object_id;
+    console.log("[ensure-exchange-permission] Using app_object_id:", objectId);
+
+    const appUrl = `https://graph.microsoft.com/v1.0/applications/${objectId}`;
+
+    // Read current manifest
+    console.log("[ensure-exchange-permission] Reading current app manifest...");
+    const appResponse = await fetch(`${appUrl}?$select=requiredResourceAccess`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    if (!lookupResponse.ok) {
-      const error = await lookupResponse.text();
-      console.error("[ensure-exchange-permission] Failed to discover Object ID:", error);
+    if (!appResponse.ok) {
+      const error = await appResponse.text();
+      console.error("[ensure-exchange-permission] Failed to read app manifest:", error);
       return new Response(
-        JSON.stringify({ success: false, error: "Failed to discover app Object ID", skipped: true }),
+        JSON.stringify({ success: false, error: "Failed to read app manifest", skipped: true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const app = await lookupResponse.json();
-    const objectId = app.id;
-    console.log("[ensure-exchange-permission] Discovered Object ID:", objectId);
-
-    // Save discovered Object ID back to config for other functions
-    if (globalConfig.app_object_id !== objectId) {
-      await supabase
-        .from("m365_global_config")
-        .update({ app_object_id: objectId })
-        .neq("app_object_id", objectId);
-      console.log("[ensure-exchange-permission] Updated app_object_id in config");
-    }
-
-    const appUrl = `https://graph.microsoft.com/v1.0/applications/${objectId}`;
-
+    const app = await appResponse.json();
     const currentPermissions = app.requiredResourceAccess || [];
 
     // Check and add missing permissions
