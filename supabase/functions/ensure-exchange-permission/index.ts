@@ -82,7 +82,7 @@ serve(async (req) => {
     // Get global M365 config
     const { data: globalConfig, error: configError } = await supabase
       .from("m365_global_config")
-      .select("app_id, app_object_id, client_secret_encrypted, validation_tenant_id")
+      .select("app_id, app_object_id, client_secret_encrypted, validation_tenant_id, home_tenant_id")
       .limit(1)
       .single();
 
