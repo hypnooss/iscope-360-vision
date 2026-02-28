@@ -1,26 +1,36 @@
 
 
-## Plan: Ajustar página de adição M365
+## Plan: Exibir permissões em mini-cards estilizados
 
-### 1. Aumentar largura do container (`src/pages/environment/AddM365TenantPage.tsx`)
-- **Linha 636**: Alterar `max-w-2xl` para `max-w-4xl` no div principal do wizard.
+Alterar a exibição de permissões em ambas as páginas para usar pequenos cards escuros (como no print), com o nome da permissão em destaque e uma descrição abaixo, em vez de listas simples com bullets.
 
-### 2. Atualizar lista de permissões para incluir todas
-Substituir o array de permissões no `renderStep1` (linhas 432-449) por uma lista categorizada igual à tela de edição:
+### Dados de descrição das permissões
 
-**Permissões do Microsoft Graph:**
-- **Entra ID**: `User.Read.All`, `Directory.Read.All`, `Group.Read.All`, `Application.Read.All`, `AuditLog.Read.All`, `Organization.Read.All`, `Policy.Read.All`
-- **Exchange Online**: `MailboxSettings.Read`, `Mail.Read`, `RoleManagement.ReadWrite.Directory`
-- **SharePoint**: `Sites.Read.All`
-- **Certificados**: `Application.ReadWrite.All`
-- **Outros**: `Reports.Read.All` (opcional - requer Azure AD Premium)
+Criar um mapa compartilhado de descrições para cada permissão, ex:
+- `Application.ReadWrite.All` → "Gestão de certificados e credenciais"
+- `Directory.Read.All` → "Leitura de diretório e usuários"
+- `User.Read.All` → "Leitura de perfis de usuários"
+- `Mail.Read` → "Leitura de configurações de e-mail"
+- `Organization.Read.All` → "Leitura de dados da organização"
+- `Policy.Read.All` → "Leitura de políticas de segurança"
+- `RoleManagement.Read.All` → "Leitura de roles e atribuições"
+- `SecurityEvents.Read.All` → "Leitura de eventos de segurança"
+- etc.
 
-**Roles do Diretório (RBAC):**
-- Exchange Administrator
-- SharePoint Administrator
+### `src/pages/environment/AddM365TenantPage.tsx`
 
-Apresentar em seções agrupadas por categoria com layout em grid, similar ao print 2.
+**Linhas 431-451** — Substituir o grid de categorias com listas por um grid flat de mini-cards (`grid-cols-2 md:grid-cols-3 lg:grid-cols-4`). Cada card:
+- Fundo `bg-muted/50` com `rounded-lg p-3 border border-border/50`
+- Ícone verde `Check` + nome da permissão em `text-xs font-mono font-medium`
+- Descrição em `text-xs text-muted-foreground`
 
-### 3. Mover botão Cancelar para o lado direito, junto ao Próximo
-- **Linhas 655-704**: Reorganizar o footer do step 1 para que ambos os botões (Cancelar e Próximo) fiquem no lado direito (`justify-end`), com Cancelar à esquerda do Próximo.
+Remover o agrupamento por categoria (Entra ID, Exchange, etc.) — exibir todas as permissões Graph em um grid flat.
+
+**Linhas 458-474** — Mesmo tratamento para as roles RBAC, num grid separado abaixo.
+
+### `src/pages/environment/M365TenantEditPage.tsx`
+
+**Linhas 277-297** — Substituir o grid de categorias por mini-cards no mesmo estilo. Cada card mostra o status dot (verde/vermelho/âmbar) + nome + descrição.
+
+**Linhas 302-322** — Mesmo tratamento para roles RBAC.
 
