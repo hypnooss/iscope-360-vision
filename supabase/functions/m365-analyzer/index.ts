@@ -1778,12 +1778,18 @@ Deno.serve(async (req) => {
 
         const periodFilter = snapshot.period_start ? `&$filter=createdDateTime ge ${snapshot.period_start}` : '';
 
-        const [emailData, mailboxData, signInData, auditData, threatStatus] = await Promise.all([
+        const [emailData, mailboxData, signInData, auditData, threatStatus,
+               riskyUsersRes, credRegRes, caPoliciesRes, recentAppsRes, serviceHealthRes] = await Promise.all([
           graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getEmailActivityUserDetail(period=\'D1\')'),
           graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period=\'D1\')'),
           graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=500${periodFilter}`),
           graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=500${periodFilter}`),
           graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getEmailActivityUserDetail(period=\'D1\')'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/reports/credentialUserRegistrationDetails?$top=999'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/applications?$orderby=createdDateTime desc&$top=50'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/issues?$top=50'),
         ]);
 
         if (emailActivity.length === 0) emailActivity = Array.isArray(emailData?.value) ? emailData.value : [];
@@ -1791,6 +1797,13 @@ Deno.serve(async (req) => {
         if (signInLogs.length === 0) signInLogs = Array.isArray(signInData?.value) ? signInData.value : [];
         if (auditLogs.length === 0) auditLogs = Array.isArray(auditData?.value) ? auditData.value : [];
         if (threatData.length === 0) threatData = Array.isArray(threatStatus?.value) ? threatStatus.value : [];
+        if (riskyUsersData.length === 0) riskyUsersData = Array.isArray(riskyUsersRes?.value) ? riskyUsersRes.value : [];
+        if (credentialRegistration.length === 0) credentialRegistration = Array.isArray(credRegRes?.value) ? credRegRes.value : [];
+        if (caPolicies.length === 0) caPolicies = Array.isArray(caPoliciesRes?.value) ? caPoliciesRes.value : [];
+        if (recentApps.length === 0) recentApps = Array.isArray(recentAppsRes?.value) ? recentAppsRes.value : [];
+        if (serviceHealthData.length === 0) serviceHealthData = Array.isArray(serviceHealthRes?.value) ? serviceHealthRes.value : [];
+
+        console.log(`[m365-analyzer] Graph enrichment: riskyUsers=${riskyUsersData.length}, credReg=${credentialRegistration.length}, caPolicies=${caPolicies.length}, apps=${recentApps.length}, serviceHealth=${serviceHealthData.length}`);
       } else if (dataSource === 'none') {
         console.error('[m365-analyzer] No data source available');
         await supabase
@@ -1803,6 +1816,35 @@ Deno.serve(async (req) => {
         );
       } else {
         console.log('[m365-analyzer] Graph API unavailable, proceeding with agent data only');
+      }
+    }
+
+    // Always try to enrich with Graph API for new modules (even if agent data exists)
+    if (dataSource === 'agent' && (riskyUsersData.length === 0 || caPolicies.length === 0)) {
+      const token = await getGraphToken(supabase, snapshot.tenant_record_id);
+      if (token) {
+        console.log('[m365-analyzer] Enriching agent data with Graph API for Entra ID modules...');
+        const enrichCalls = [];
+        if (riskyUsersData.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100'));
+        else enrichCalls.push(Promise.resolve(null));
+        if (credentialRegistration.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/reports/credentialUserRegistrationDetails?$top=999'));
+        else enrichCalls.push(Promise.resolve(null));
+        if (caPolicies.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies'));
+        else enrichCalls.push(Promise.resolve(null));
+        if (recentApps.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/applications?$orderby=createdDateTime desc&$top=50'));
+        else enrichCalls.push(Promise.resolve(null));
+        if (serviceHealthData.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/issues?$top=50'));
+        else enrichCalls.push(Promise.resolve(null));
+
+        const [riskRes, credRes, caRes, appRes, shRes] = await Promise.all(enrichCalls);
+        if (riskRes && riskyUsersData.length === 0) riskyUsersData = Array.isArray(riskRes.value) ? riskRes.value : [];
+        if (credRes && credentialRegistration.length === 0) credentialRegistration = Array.isArray(credRes.value) ? credRes.value : [];
+        if (caRes && caPolicies.length === 0) caPolicies = Array.isArray(caRes.value) ? caRes.value : [];
+        if (appRes && recentApps.length === 0) recentApps = Array.isArray(appRes.value) ? appRes.value : [];
+        if (shRes && serviceHealthData.length === 0) serviceHealthData = Array.isArray(shRes.value) ? shRes.value : [];
+
+        dataSource = 'hybrid';
+        console.log(`[m365-analyzer] Enriched: riskyUsers=${riskyUsersData.length}, credReg=${credentialRegistration.length}, caPolicies=${caPolicies.length}`);
       }
     }
 
