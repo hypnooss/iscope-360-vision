@@ -79,7 +79,7 @@ export default function OAuthCallbackPage() {
     if (window.opener) {
       window.close();
     } else {
-      window.location.href = '/scope-m365/tenant-connection';
+      window.location.href = '/environment';
     }
   };
 

@@ -116,7 +116,7 @@ export default function ExchangeOnlinePage() {
                 Para visualizar os insights do Exchange Online, primeiro conecte um tenant Microsoft 365.
               </p>
               <Button asChild className="gap-2">
-                <Link to="/scope-m365/tenant-connection">
+                <Link to="/environment/new/m365">
                   <LinkIcon className="w-4 h-4" />
                   Conectar Tenant
                 </Link>

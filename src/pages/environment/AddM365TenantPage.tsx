@@ -384,7 +384,7 @@ export default function AddM365TenantPage() {
 
   const handleFinish = () => {
     if (connectionResult?.success) {
-      navigate('/scope-m365/tenant-connection');
+      navigate('/environment');
     } else {
       // Retry
       setConnectionResult(null);

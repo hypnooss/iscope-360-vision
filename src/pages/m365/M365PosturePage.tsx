@@ -184,7 +184,7 @@ export default function M365PosturePage() {
                   : 'Conecte um tenant Microsoft 365 para analisar a postura de segurança.'}
               </p>
               {!isPreviewMode && (
-                <Button onClick={() => navigate('/scope-m365/tenant-connection')}>
+                <Button onClick={() => navigate('/environment/new/m365')}>
                   Conectar Tenant
                 </Button>
               )}
