@@ -872,7 +872,17 @@ function evaluateFilteredCountCheck(
 
   // Template interpolation helper
   const interpolate = (tpl: string, item: Record<string, unknown>): string => {
-    return tpl.replace(/\{(\w+)\}/g, (_, key) => String(item[key] ?? ''));
+    return tpl.replace(/\{(\w+)\}/g, (_, key) => {
+      const val = item[key];
+      if (val === undefined || val === null) return '';
+      if (Array.isArray(val)) {
+        return val.map(v => (v && typeof v === 'object' && 'name' in v) ? (v as Record<string, unknown>).name : String(v)).join(', ');
+      }
+      if (typeof val === 'object' && 'name' in (val as Record<string, unknown>)) {
+        return String((val as Record<string, unknown>).name);
+      }
+      return String(val);
+    });
   };
 
   const evidence = violating.slice(0, 50).map((item) => ({
