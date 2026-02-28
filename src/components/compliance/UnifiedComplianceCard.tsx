@@ -207,10 +207,10 @@ export function UnifiedComplianceCard({
           NÍVEL 1 — Visão Rápida (sempre visível)
           ═══════════════════════════════════════════════════════ */}
       <div className="p-4 flex-1">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
             {/* Ícone de status */}
-            <div className={cn('p-2 rounded-lg border flex-shrink-0 mt-0.5', statusConfig.bgClass)}>
+            <div className={cn('p-2 rounded-lg border flex-shrink-0', statusConfig.bgClass)}>
               <StatusIcon className={cn('w-4 h-4', statusConfig.iconClass)} />
             </div>
 
