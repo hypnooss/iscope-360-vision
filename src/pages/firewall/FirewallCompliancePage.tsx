@@ -357,22 +357,6 @@ export default function FirewallCompliancePage() {
           </div>
         </div>
 
-        {/* Last collection info */}
-        {latestSnapshot && (
-          <div className="flex items-center gap-3 flex-wrap">
-            <Clock className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Última coleta:</span>
-            <Badge variant="outline" className="text-xs">
-              {new Date(latestSnapshot.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-            </Badge>
-            {latestSnapshot.score != null && (
-              <Badge variant="secondary" className="text-xs">
-                Score: {latestSnapshot.score}
-              </Badge>
-            )}
-          </div>
-        )}
-
         {/* Task progress bar */}
         {isTaskRunning && (
           <div className="rounded-lg border bg-card p-4 space-y-3">
@@ -392,6 +376,22 @@ export default function FirewallCompliancePage() {
               </Button>
             </div>
             <Progress value={taskStatus?.status === 'running' ? 60 : 20} className="h-2" />
+          </div>
+        )}
+
+        {/* Last collection info */}
+        {latestSnapshot && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <Clock className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Última coleta:</span>
+            <Badge variant="outline" className="text-xs">
+              {new Date(latestSnapshot.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </Badge>
+            {latestSnapshot.score != null && (
+              <Badge variant="secondary" className="text-xs">
+                Score: {latestSnapshot.score}
+              </Badge>
+            )}
           </div>
         )}
 
