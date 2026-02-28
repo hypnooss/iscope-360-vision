@@ -72,6 +72,7 @@ const AddAssetPage = lazy(() => import("./pages/AddAssetPage"));
 const AddExternalDomainPage = lazy(() => import("./pages/AddExternalDomainPage"));
 const AddFirewallPage = lazy(() => import("./pages/environment/AddFirewallPage"));
 const AddM365TenantPage = lazy(() => import("./pages/environment/AddM365TenantPage"));
+const M365TenantEditPage = lazy(() => import("./pages/environment/M365TenantEditPage"));
 const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPreview"));
 const FirewallReportPreview = lazy(() => import("./pages/preview/FirewallReportPreview"));
 const LicensingHubPage = lazy(() => import("./pages/LicensingHubPage"));
@@ -161,6 +162,7 @@ const App = () => (
                   <Route path="/environment/new/external-domain" element={<AddExternalDomainPage />} />
                   <Route path="/environment/new/firewall" element={<AddFirewallPage />} />
                   <Route path="/environment/new/m365" element={<AddM365TenantPage />} />
+                  <Route path="/environment/m365/:id/edit" element={<M365TenantEditPage />} />
 
                   {/* Admin */}
                   <Route path="/users" element={<UsersPage />} />
