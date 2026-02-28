@@ -19,7 +19,6 @@ const SHAREPOINT_SITES_FULLCONTROL_ID = "678536fe-1083-478a-9c59-b99265e6b0d3";
 const GRAPH_RESOURCE_ID = "00000003-0000-0000-c000-000000000000";
 const IDENTITY_RISKY_USER_READ_ALL_ID = "dc5007c0-2d7d-4c42-879c-2dab87571379";
 
-// Permissions to ensure on App Registration
 const REQUIRED_PERMISSIONS = [
   { resourceAppId: EXCHANGE_RESOURCE_ID, permissionId: EXCHANGE_MANAGE_AS_APP_ID, name: "Exchange.ManageAsApp" },
   { resourceAppId: SHAREPOINT_RESOURCE_ID, permissionId: SHAREPOINT_SITES_FULLCONTROL_ID, name: "Sites.FullControl.All" },
@@ -36,41 +35,32 @@ function fromHex(hex: string): Uint8Array {
 
 async function decryptSecret(encryptedData: string): Promise<string> {
   const encryptionKeyHex = Deno.env.get("M365_ENCRYPTION_KEY");
-  if (!encryptionKeyHex) {
-    throw new Error("M365_ENCRYPTION_KEY not configured");
-  }
+  if (!encryptionKeyHex) throw new Error("M365_ENCRYPTION_KEY not configured");
 
   const [ivHex, ciphertextHex] = encryptedData.split(":");
-  if (!ivHex || !ciphertextHex) {
-    // Not encrypted, return as-is (legacy)
-    return encryptedData;
-  }
+  if (!ivHex || !ciphertextHex) return encryptedData;
 
   const iv = fromHex(ivHex);
   const ciphertext = fromHex(ciphertextHex);
   const keyBytes = fromHex(encryptionKeyHex);
 
   const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    keyBytes,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["decrypt"]
+    "raw", keyBytes, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
   );
 
-  const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv },
-    cryptoKey,
-    ciphertext
-  );
-
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, cryptoKey, ciphertext);
   return new TextDecoder().decode(decrypted);
 }
 
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -79,44 +69,27 @@ serve(async (req) => {
 
     console.log("[ensure-exchange-permission] Starting...");
 
-    // Get global M365 config
+    // 1. Read global config
     const { data: globalConfig, error: configError } = await supabase
       .from("m365_global_config")
-      .select("app_id, app_object_id, client_secret_encrypted, validation_tenant_id, home_tenant_id")
+      .select("id, app_id, client_secret_encrypted, home_tenant_id, validation_tenant_id")
       .limit(1)
       .single();
 
     if (configError || !globalConfig) {
       console.log("[ensure-exchange-permission] No global config found");
-      return new Response(
-        JSON.stringify({ success: false, error: "Global config not found", skipped: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: false, error: "Global config not found", skipped: true });
     }
 
-    // Use home_tenant_id (where app is registered) for manifest modifications
     const tenantForToken = globalConfig.home_tenant_id || globalConfig.validation_tenant_id;
     if (!tenantForToken) {
-      console.log("[ensure-exchange-permission] No home_tenant_id or validation_tenant_id configured");
-      return new Response(
-        JSON.stringify({ success: false, error: "Tenant ID not configured", skipped: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: false, error: "Tenant ID not configured", skipped: true });
     }
 
-    if (!globalConfig.app_object_id) {
-      console.log("[ensure-exchange-permission] No app_object_id configured");
-      return new Response(
-        JSON.stringify({ success: false, error: "App Object ID not configured", skipped: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Decrypt client secret
+    // 2. Get access token for HOME tenant
     const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted);
+    console.log("[ensure-exchange-permission] Getting token for home tenant:", tenantForToken);
 
-    // Get access token for HOME tenant (where the app registration lives)
-    console.log("[ensure-exchange-permission] Getting access token for home tenant:", tenantForToken);
     const tokenResponse = await fetch(
       `https://login.microsoftonline.com/${tenantForToken}/oauth2/v2.0/token`,
       {
@@ -133,118 +106,93 @@ serve(async (req) => {
 
     if (!tokenResponse.ok) {
       const error = await tokenResponse.text();
-      console.error("[ensure-exchange-permission] Failed to get token:", error);
-      return new Response(
-        JSON.stringify({ success: false, error: "Failed to get access token", skipped: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.error("[ensure-exchange-permission] Token error:", error);
+      return jsonResponse({ success: false, error: "Failed to get access token", skipped: true });
     }
 
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const { access_token: accessToken } = await tokenResponse.json();
 
-    // Use app_object_id directly (the correct Azure Object ID)
-    const objectId = globalConfig.app_object_id;
-    console.log("[ensure-exchange-permission] Using app_object_id:", objectId);
+    // 3. Auto-discover Object ID via appId filter (single call returns id + manifest)
+    console.log("[ensure-exchange-permission] Auto-discovering Object ID for appId:", globalConfig.app_id);
+    const discoveryUrl = `https://graph.microsoft.com/v1.0/applications(appId='${globalConfig.app_id}')?$select=id,requiredResourceAccess`;
 
-    const appUrl = `https://graph.microsoft.com/v1.0/applications/${objectId}`;
-
-    // Read current manifest
-    console.log("[ensure-exchange-permission] Reading current app manifest...");
-    const appResponse = await fetch(`${appUrl}?$select=requiredResourceAccess`, {
+    const discoveryResponse = await fetch(discoveryUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    if (!appResponse.ok) {
-      const error = await appResponse.text();
-      console.error("[ensure-exchange-permission] Failed to read app manifest:", error);
-      return new Response(
-        JSON.stringify({ success: false, error: "Failed to read app manifest", skipped: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (!discoveryResponse.ok) {
+      const error = await discoveryResponse.text();
+      console.error("[ensure-exchange-permission] Auto-discovery failed:", error);
+      return jsonResponse({ success: false, error: "Failed to discover app registration", skipped: true });
     }
 
-    const app = await appResponse.json();
-    const currentPermissions = app.requiredResourceAccess || [];
+    const appData = await discoveryResponse.json();
+    const objectId = appData.id;
+    const currentPermissions = appData.requiredResourceAccess || [];
 
-    // Check and add missing permissions
+    console.log("[ensure-exchange-permission] Discovered Object ID:", objectId);
+
+    // 4. Save discovered Object ID back to config
+    await supabase
+      .from("m365_global_config")
+      .update({ app_object_id: objectId })
+      .eq("id", globalConfig.id);
+
+    // 5. Check and add missing permissions
     const addedPermissions: string[] = [];
 
     for (const perm of REQUIRED_PERMISSIONS) {
-      let resource = currentPermissions.find(
-        (r: any) => r.resourceAppId === perm.resourceAppId
-      );
+      let resource = currentPermissions.find((r: any) => r.resourceAppId === perm.resourceAppId);
 
       if (!resource) {
-        // Create new resource entry
         resource = { resourceAppId: perm.resourceAppId, resourceAccess: [] };
         currentPermissions.push(resource);
       }
 
-      const hasPermission = resource.resourceAccess?.some(
-        (p: any) => p.id === perm.permissionId
-      );
+      const hasPermission = resource.resourceAccess?.some((p: any) => p.id === perm.permissionId);
 
       if (!hasPermission) {
-        resource.resourceAccess.push({
-          id: perm.permissionId,
-          type: "Role",
-        });
+        resource.resourceAccess.push({ id: perm.permissionId, type: "Role" });
         addedPermissions.push(perm.name);
-        console.log(`[ensure-exchange-permission] Adding ${perm.name} to app registration`);
+        console.log(`[ensure-exchange-permission] Adding ${perm.name}`);
       } else {
         console.log(`[ensure-exchange-permission] ${perm.name} already configured`);
       }
     }
 
-    // If no permissions were added, return early
     if (addedPermissions.length === 0) {
-      console.log("[ensure-exchange-permission] All required permissions already configured");
-      return new Response(
-        JSON.stringify({ success: true, added: false, message: "All permissions already configured", permissions: [] }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.log("[ensure-exchange-permission] All permissions already configured");
+      return jsonResponse({ success: true, added: false, message: "All permissions already configured", permissions: [], objectId });
     }
 
-    // Update app registration with new permissions
-    console.log(`[ensure-exchange-permission] Adding ${addedPermissions.join(", ")} to app registration...`);
-    const updateResponse = await fetch(appUrl, {
+    // 6. PATCH manifest with discovered Object ID
+    console.log(`[ensure-exchange-permission] Patching manifest for ${objectId}...`);
+    const updateResponse = await fetch(`https://graph.microsoft.com/v1.0/applications/${objectId}`, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        requiredResourceAccess: currentPermissions,
-      }),
+      body: JSON.stringify({ requiredResourceAccess: currentPermissions }),
     });
 
     if (!updateResponse.ok) {
       const error = await updateResponse.text();
-      console.error("[ensure-exchange-permission] Failed to update app registration:", error);
-      return new Response(
-        JSON.stringify({ success: false, error: "Failed to update app registration", skipped: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.error("[ensure-exchange-permission] PATCH failed:", error);
+      return jsonResponse({ success: false, error: "Failed to update app registration", skipped: true });
     }
 
-    console.log(`[ensure-exchange-permission] Successfully added: ${addedPermissions.join(", ")}`);
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        added: true,
-        message: `Added permissions: ${addedPermissions.join(", ")}`,
-        permissions: addedPermissions,
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    console.log(`[ensure-exchange-permission] Success: ${addedPermissions.join(", ")}`);
+    return jsonResponse({
+      success: true,
+      added: true,
+      message: `Added permissions: ${addedPermissions.join(", ")}`,
+      permissions: addedPermissions,
+      objectId,
+    });
 
   } catch (error: any) {
     console.error("[ensure-exchange-permission] Error:", error);
-    return new Response(
-      JSON.stringify({ success: false, error: error.message || "Internal error", skipped: true }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({ success: false, error: error.message || "Internal error", skipped: true });
   }
 });
