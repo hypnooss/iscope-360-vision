@@ -382,6 +382,12 @@ serve(async (req) => {
           });
           granted = response.ok;
           console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
+        } else if (permission === 'IdentityRiskyUser.Read.All') {
+          const response = await fetch('https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1', {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          granted = response.ok;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
         } else if (permission === 'MailboxSettings.Read') {
           // Fetch up to 5 users to find one with an active mailbox
           const usersResp = await fetch('https://graph.microsoft.com/v1.0/users?$top=5&$select=id', {
