@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { PERMISSION_DESCRIPTIONS as PERM_DESCRIPTIONS, GRAPH_PERMISSIONS as GRAPH_PERMISSIONS_LIST, DIRECTORY_ROLES as DIR_ROLES } from '@/lib/m365PermissionDescriptions';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePreview } from '@/contexts/PreviewContext';
@@ -428,24 +429,14 @@ export default function AddM365TenantPage() {
           <AlertCircle className="w-4 h-4 text-primary" />
           Permissões do Microsoft Graph
         </h3>
-        <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-          {Object.entries({
-            'Entra ID': ['User.Read.All', 'Directory.Read.All', 'Group.Read.All', 'Application.Read.All', 'AuditLog.Read.All', 'Organization.Read.All', 'Policy.Read.All'],
-            'Exchange Online': ['MailboxSettings.Read', 'Mail.Read', 'RoleManagement.ReadWrite.Directory'],
-            'SharePoint': ['Sites.Read.All'],
-            'Certificados': ['Application.ReadWrite.All'],
-            'Outros': ['Reports.Read.All'],
-          }).map(([category, perms]) => (
-            <div key={category} className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">{category}</p>
-              <ul className="text-sm space-y-1">
-                {perms.map(permName => (
-                  <li key={permName} className="flex items-center gap-2">
-                    <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
-                    <span className="text-xs font-mono truncate">{permName}</span>
-                  </li>
-                ))}
-              </ul>
+        <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          {GRAPH_PERMISSIONS_LIST.map(permName => (
+            <div key={permName} className="rounded-lg p-3 bg-muted/50 border border-border/50 space-y-1">
+              <div className="flex items-center gap-2">
+                <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+                <span className="text-xs font-mono font-medium text-foreground truncate">{permName}</span>
+              </div>
+              <p className="text-xs text-muted-foreground pl-5">{PERM_DESCRIPTIONS[permName] || ''}</p>
             </div>
           ))}
         </div>
@@ -455,21 +446,14 @@ export default function AddM365TenantPage() {
             <AlertCircle className="w-4 h-4 text-primary" />
             Roles do Diretório (RBAC)
           </h3>
-          <div className="grid gap-4 grid-cols-2">
-            {Object.entries({
-              'Exchange Online': ['Exchange Administrator'],
-              'SharePoint': ['SharePoint Administrator'],
-            }).map(([category, roles]) => (
-              <div key={category} className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">{category}</p>
-                <ul className="text-sm space-y-1">
-                  {roles.map(role => (
-                    <li key={role} className="flex items-center gap-2">
-                      <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
-                      <span className="text-xs truncate">{role}</span>
-                    </li>
-                  ))}
-                </ul>
+          <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            {DIR_ROLES.map(role => (
+              <div key={role} className="rounded-lg p-3 bg-muted/50 border border-border/50 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+                  <span className="text-xs font-medium text-foreground truncate">{role}</span>
+                </div>
+                <p className="text-xs text-muted-foreground pl-5">{PERM_DESCRIPTIONS[role] || ''}</p>
               </div>
             ))}
           </div>
