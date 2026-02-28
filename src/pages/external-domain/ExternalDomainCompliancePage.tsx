@@ -23,8 +23,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
 import { ExternalDomainPDF, CorrectionGuideData } from '@/components/pdf/ExternalDomainPDF';
 import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
+import { Progress } from '@/components/ui/progress';
 
 // ── Mini UI components (same as ExternalDomainAnalysisReportPage) ────────────
 
@@ -246,6 +247,9 @@ export default function ExternalDomainCompliancePage() {
   const navigate = useNavigate();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [taskStartedAt, setTaskStartedAt] = useState<Date | null>(null);
+  const queryClient = useQueryClient();
   const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
@@ -397,6 +401,41 @@ export default function ExternalDomainCompliancePage() {
     return 'Inativo';
   })();
 
+  // ── Task polling ──
+  const { data: taskStatus } = useQuery({
+    queryKey: ['domain-compliance-task', activeTaskId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('agent_tasks')
+        .select('status, error_message, started_at')
+        .eq('id', activeTaskId!)
+        .single();
+      return data;
+    },
+    enabled: !!activeTaskId,
+    refetchInterval: 5000,
+  });
+
+  useEffect(() => {
+    if (!taskStatus || !activeTaskId) return;
+    const s = taskStatus.status;
+    if (s === 'completed' || s === 'failed' || s === 'timeout') {
+      if (s === 'completed') {
+        toast.success('Análise concluída com sucesso!');
+        queryClient.invalidateQueries({ queryKey: ['domain-compliance-snapshots', selectedDomainId] });
+      } else if (s === 'failed') {
+        toast.error(`Análise falhou: ${taskStatus.error_message || 'erro desconhecido'}`);
+      } else {
+        toast.error('Análise expirou (timeout).');
+      }
+      setActiveTaskId(null);
+      setTaskStartedAt(null);
+      setIsRefreshing(false);
+    }
+  }, [taskStatus?.status]);
+
+  const isTaskRunning = !!activeTaskId && (!taskStatus || taskStatus.status === 'pending' || taskStatus.status === 'running');
+
   // ── Actions ──
   const handleRefresh = async () => {
     if (!selectedDomainId || !selectedDomain?.agent_id) {
@@ -410,10 +449,13 @@ export default function ExternalDomainCompliancePage() {
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any)?.details || (data as any)?.error);
-      toast.success('Análise agendada! Acompanhe o status em Execuções.');
+      if ((data as any)?.task_id) {
+        setActiveTaskId((data as any).task_id);
+        setTaskStartedAt(new Date());
+      }
+      toast.success('Análise agendada! O agent irá processar em breve.');
     } catch (err: any) {
       toast.error(`Erro ao reanalisar: ${err?.message || 'erro desconhecido'}`);
-    } finally {
       setIsRefreshing(false);
     }
   };
@@ -531,6 +573,28 @@ export default function ExternalDomainCompliancePage() {
                 Score: {latestSnapshot.score}
               </Badge>
             )}
+          </div>
+        )}
+
+        {/* Task progress bar */}
+        {isTaskRunning && (
+          <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">Análise em andamento...</p>
+                  <p className="text-xs text-muted-foreground">
+                    {taskStatus?.status === 'running' ? 'O agent está processando' : 'Aguardando o agent iniciar'}
+                    {taskStartedAt && ` · ${Math.round((Date.now() - taskStartedAt.getTime()) / 1000)}s`}
+                  </p>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ['domain-compliance-task', activeTaskId] })}>
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </div>
+            <Progress value={taskStatus?.status === 'running' ? 60 : 20} className="h-2" />
           </div>
         )}
 

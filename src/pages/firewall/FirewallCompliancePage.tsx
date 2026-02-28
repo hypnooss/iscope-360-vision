@@ -16,8 +16,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
+import { Progress } from '@/components/ui/progress';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -113,6 +114,9 @@ export default function FirewallCompliancePage() {
   const navigate = useNavigate();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [taskStartedAt, setTaskStartedAt] = useState<Date | null>(null);
+  const queryClient = useQueryClient();
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
 
@@ -225,6 +229,42 @@ export default function FirewallCompliancePage() {
 
   const { data: categoryConfigs } = useCategoryConfigs(firewallMeta?.device_type_id || undefined);
 
+  // ── Task polling ──
+  const { data: taskStatus } = useQuery({
+    queryKey: ['fw-compliance-task', activeTaskId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('agent_tasks')
+        .select('status, error_message, started_at')
+        .eq('id', activeTaskId!)
+        .single();
+      return data;
+    },
+    enabled: !!activeTaskId,
+    refetchInterval: 5000,
+  });
+
+  // Handle task completion
+  useEffect(() => {
+    if (!taskStatus || !activeTaskId) return;
+    const s = taskStatus.status;
+    if (s === 'completed' || s === 'failed' || s === 'timeout') {
+      if (s === 'completed') {
+        toast.success('Análise concluída com sucesso!');
+        queryClient.invalidateQueries({ queryKey: ['fw-compliance-snapshots', selectedFirewallId] });
+      } else if (s === 'failed') {
+        toast.error(`Análise falhou: ${taskStatus.error_message || 'erro desconhecido'}`);
+      } else {
+        toast.error('Análise expirou (timeout).');
+      }
+      setActiveTaskId(null);
+      setTaskStartedAt(null);
+      setIsRefreshing(false);
+    }
+  }, [taskStatus?.status]);
+
+  const isTaskRunning = !!activeTaskId && (!taskStatus || taskStatus.status === 'pending' || taskStatus.status === 'running');
+
   // ── Trigger analysis ──
   const handleRefresh = async () => {
     if (!selectedFirewallId) return;
@@ -236,16 +276,21 @@ export default function FirewallCompliancePage() {
       if (error) throw error;
       if (!data.success) {
         if (data.task_id) {
+          setActiveTaskId(data.task_id);
+          setTaskStartedAt(new Date());
           toast.info(data.message || 'Já existe uma análise em andamento.');
         } else {
           throw new Error(data.error || 'Erro ao criar tarefa');
         }
         return;
       }
+      if (data.task_id) {
+        setActiveTaskId(data.task_id);
+        setTaskStartedAt(new Date());
+      }
       toast.success('Análise agendada! O agent irá processar em breve.');
     } catch (error: any) {
       toast.error('Erro ao agendar análise: ' + error.message);
-    } finally {
       setIsRefreshing(false);
     }
   };
@@ -325,6 +370,28 @@ export default function FirewallCompliancePage() {
                 Score: {latestSnapshot.score}
               </Badge>
             )}
+          </div>
+        )}
+
+        {/* Task progress bar */}
+        {isTaskRunning && (
+          <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">Análise em andamento...</p>
+                  <p className="text-xs text-muted-foreground">
+                    {taskStatus?.status === 'running' ? 'O agent está processando' : 'Aguardando o agent iniciar'}
+                    {taskStartedAt && ` · ${Math.round((Date.now() - taskStartedAt.getTime()) / 1000)}s`}
+                  </p>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ['fw-compliance-task', activeTaskId] })}>
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </div>
+            <Progress value={taskStatus?.status === 'running' ? 60 : 20} className="h-2" />
           </div>
         )}
 
