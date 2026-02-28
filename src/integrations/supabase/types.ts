@@ -1693,6 +1693,7 @@ export type Database = {
           client_secret_encrypted: string
           created_at: string
           created_by: string | null
+          home_tenant_id: string | null
           id: string
           last_validated_at: string | null
           updated_at: string
@@ -1706,6 +1707,7 @@ export type Database = {
           client_secret_encrypted: string
           created_at?: string
           created_by?: string | null
+          home_tenant_id?: string | null
           id?: string
           last_validated_at?: string | null
           updated_at?: string
@@ -1719,6 +1721,7 @@ export type Database = {
           client_secret_encrypted?: string
           created_at?: string
           created_by?: string | null
+          home_tenant_id?: string | null
           id?: string
           last_validated_at?: string | null
           updated_at?: string
