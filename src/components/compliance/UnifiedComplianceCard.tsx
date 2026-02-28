@@ -206,62 +206,50 @@ export function UnifiedComplianceCard({
       {/* ═══════════════════════════════════════════════════════
           NÍVEL 1 — Visão Rápida (sempre visível)
           ═══════════════════════════════════════════════════════ */}
-      <div className="p-4 flex-1">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            {/* Ícone de status */}
-            <div className={cn('p-2 rounded-lg border flex-shrink-0', statusConfig.bgClass)}>
-              <StatusIcon className={cn('w-4 h-4', statusConfig.iconClass)} />
-            </div>
-
-            <div className="flex-1 min-w-0">
-              {/* Code + Name + Severity badge */}
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-sm font-medium text-foreground truncate">
-                  {item.name}
-                </span>
-                <Badge className={cn('text-xs border ml-auto flex-shrink-0', severityBadgeClass)}>
-                  {UNIFIED_SEVERITY_LABELS[item.severity]}
-                </Badge>
-              </div>
-
-              {/* Mensagem contextual */}
-              {contextualMessage && (
-                <p className="text-sm text-muted-foreground mt-2 line-clamp-2 pr-2">
-                  {contextualMessage}
-                </p>
-              )}
-
-              {/* ═══════════════════════════════════════════════
-                  NÍVEL 2 — Contexto Estratégico (apenas falha/warning)
-                  ═══════════════════════════════════════════════ */}
-              {isFailed && item.recommendation && (
-                <p className="text-xs text-primary mt-2 flex items-start gap-1">
-                  <ChevronRight className="w-3 h-3 flex-shrink-0 mt-0.5" />
-                  <span>{item.recommendation}</span>
-                </p>
-              )}
-
-              {/* Entidades afetadas */}
-              {isFailed && item.affectedCount != null && item.affectedCount > 0 && (
-                <button
-                  type="button"
-                  className="flex items-center gap-2 text-xs text-amber-400 mt-2 hover:text-amber-300 transition-colors cursor-pointer underline underline-offset-2"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onShowAffectedEntities?.();
-                  }}
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>
-                    {item.affectedCount} {item.affectedCount === 1 ? 'item afetado' : 'itens afetados'}
-                  </span>
-                  <ChevronRight className="w-3 h-3" />
-                </button>
-              )}
-            </div>
+      <div className="p-4 flex-1 space-y-2">
+        {/* Linha 1: Ícone + Título + Badge (centralizados verticalmente) */}
+        <div className="flex items-center gap-3">
+          <div className={cn('p-2 rounded-lg border flex-shrink-0', statusConfig.bgClass)}>
+            <StatusIcon className={cn('w-4 h-4', statusConfig.iconClass)} />
           </div>
+          <span className="text-sm font-medium text-foreground truncate flex-1 min-w-0">
+            {item.name}
+          </span>
+          <Badge className={cn('text-xs border flex-shrink-0', severityBadgeClass)}>
+            {UNIFIED_SEVERITY_LABELS[item.severity]}
+          </Badge>
         </div>
+
+        {/* Conteúdo abaixo (fora do flex do ícone) */}
+        {contextualMessage && (
+          <p className="text-sm text-muted-foreground line-clamp-2 pr-2">
+            {contextualMessage}
+          </p>
+        )}
+
+        {isFailed && item.recommendation && (
+          <p className="text-xs text-primary flex items-start gap-1">
+            <ChevronRight className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            <span>{item.recommendation}</span>
+          </p>
+        )}
+
+        {isFailed && item.affectedCount != null && item.affectedCount > 0 && (
+          <button
+            type="button"
+            className="flex items-center gap-2 text-xs text-amber-400 hover:text-amber-300 transition-colors cursor-pointer underline underline-offset-2"
+            onClick={(e) => {
+              e.stopPropagation();
+              onShowAffectedEntities?.();
+            }}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>
+              {item.affectedCount} {item.affectedCount === 1 ? 'item afetado' : 'itens afetados'}
+            </span>
+            <ChevronRight className="w-3 h-3" />
+          </button>
+        )}
       </div>
 
       {/* Link "Detalhes" — abre sheet lateral quando onClick presente */}
