@@ -59,7 +59,7 @@ interface ConnectionResult {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STEPS = [
-  { id: 1, label: 'Workspace' },
+  { id: 1, label: 'Instruções' },
   { id: 2, label: 'Autenticação' },
   { id: 3, label: 'Resultado' },
 ];
@@ -136,7 +136,7 @@ function StepIndicator({ current }: { current: number }) {
 
 export default function AddM365TenantPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const { isPreviewMode, previewTarget } = usePreview();
 
   const [step, setStep] = useState(1);
@@ -243,8 +243,9 @@ export default function AddM365TenantPage() {
 
   // ── Validation ────────────────────────────────────────────────────────────
 
-  const canProceedStep1 = !!selectedClientId;
-  const canProceedStep2 = !!adminEmail.trim() && adminEmail.includes('@');
+  const isSuperRole = role === 'super_admin' || role === 'super_suporte';
+  const canProceedStep1 = true; // Informational step
+  const canProceedStep2 = !!adminEmail.trim() && adminEmail.includes('@') && (isSuperRole ? !!selectedClientId : true);
 
   // ── Start OAuth ───────────────────────────────────────────────────────────
 
@@ -394,51 +395,68 @@ export default function AddM365TenantPage() {
 
   const renderStep1 = () => (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <Label>Workspace</Label>
-        {loadingClients ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : clients.length === 0 ? (
-          <Card className="border-dashed border-border/50">
-            <CardContent className="py-6 text-center">
-              <AlertCircle className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">Nenhum workspace disponível.</p>
-            </CardContent>
-          </Card>
-        ) : clients.length === 1 ? (
-          <Card className="border-primary/30 bg-primary/5">
-            <CardContent className="py-3 flex items-center gap-3">
-              <Building className="w-5 h-5 text-primary" />
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          O iScope 360 irá registrar um aplicativo no seu tenant Microsoft 365 para coletar dados de segurança e conformidade.
+          O processo utiliza o <strong>Admin Consent</strong> da Microsoft, que requer uma conta com permissão de <strong>Global Administrator</strong>.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <Info className="w-4 h-4 text-primary" />
+          Pré-requisitos
+        </h3>
+        <ul className="text-sm text-muted-foreground space-y-1.5 ml-6 list-disc">
+          <li>Conta com permissão de <strong>Global Administrator</strong> no tenant</li>
+          <li>Acesso ao navegador com pop-ups habilitados</li>
+        </ul>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 text-primary" />
+          Aplicativo registrado
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Será criado (ou vinculado) o aplicativo <strong>iScope 360</strong> no Azure AD do seu tenant.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-primary" />
+          Permissões solicitadas (Microsoft Graph)
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 ml-1">
+          {[
+            { name: 'Application.ReadWrite.All', desc: 'Gestão de certificados e credenciais' },
+            { name: 'Directory.Read.All', desc: 'Leitura de diretório e usuários' },
+            { name: 'User.Read.All', desc: 'Leitura de perfis de usuários' },
+            { name: 'Mail.Read', desc: 'Leitura de configurações de e-mail' },
+            { name: 'Organization.Read.All', desc: 'Leitura de dados da organização' },
+            { name: 'Policy.Read.All', desc: 'Leitura de políticas de segurança' },
+            { name: 'RoleManagement.Read.All', desc: 'Leitura de roles e atribuições' },
+            { name: 'SecurityEvents.Read.All', desc: 'Leitura de eventos de segurança' },
+          ].map((perm) => (
+            <div key={perm.name} className="flex items-start gap-2 text-xs py-1 px-2 rounded bg-muted/50">
+              <Check className="w-3 h-3 text-green-500 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="font-medium">{clients[0].name}</p>
-                <p className="text-xs text-muted-foreground">Selecionado automaticamente</p>
+                <span className="font-mono text-[11px]">{perm.name}</span>
+                <p className="text-muted-foreground text-[10px]">{perm.desc}</p>
               </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <Select value={selectedClientId} onValueChange={setSelectedClientId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione o workspace" />
-            </SelectTrigger>
-            <SelectContent>
-              {clients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  {client.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+            </div>
+          ))}
+        </div>
       </div>
 
       <Card className="bg-blue-500/5 border-blue-500/20">
         <CardContent className="py-3">
           <div className="flex gap-2 items-start">
-            <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+            <ExternalLink className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-muted-foreground">
-              O tenant Microsoft 365 será vinculado a este workspace. Certifique-se de selecionar o workspace correto.
+              No próximo passo, uma <strong>janela pop-up da Microsoft</strong> será aberta para que você conceda as permissões acima. 
+              Certifique-se de que pop-ups estejam habilitados no navegador.
             </p>
           </div>
         </CardContent>
@@ -477,6 +495,48 @@ export default function AddM365TenantPage() {
 
     return (
       <div className="space-y-6">
+        {/* Workspace selector - only for super roles */}
+        {isSuperRole && (
+          <div className="space-y-2">
+            <Label>Workspace</Label>
+            {loadingClients ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : clients.length === 0 ? (
+              <Card className="border-dashed border-border/50">
+                <CardContent className="py-4 text-center">
+                  <AlertCircle className="w-5 h-5 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">Nenhum workspace disponível.</p>
+                </CardContent>
+              </Card>
+            ) : clients.length === 1 ? (
+              <Card className="border-primary/30 bg-primary/5">
+                <CardContent className="py-3 flex items-center gap-3">
+                  <Building className="w-5 h-5 text-primary" />
+                  <div>
+                    <p className="font-medium">{clients[0].name}</p>
+                    <p className="text-xs text-muted-foreground">Selecionado automaticamente</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Select value={selectedClientId} onValueChange={setSelectedClientId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label htmlFor="adminEmail">
             <Mail className="w-4 h-4 inline mr-2" />
@@ -579,7 +639,7 @@ export default function AddM365TenantPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">
-                {step === 1 && 'Selecione o Workspace'}
+                {step === 1 && 'Antes de Começar'}
                 {step === 2 && (waitingForAuth ? 'Aguardando Autorização' : 'Conta do Administrador')}
                 {step === 3 && 'Resultado da Conexão'}
               </CardTitle>
