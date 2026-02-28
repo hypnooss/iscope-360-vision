@@ -50,6 +50,8 @@ export default function EnvironmentPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteFirewallTarget, setDeleteFirewallTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteFirewallLoading, setDeleteFirewallLoading] = useState(false);
+  const [deleteM365Target, setDeleteM365Target] = useState<{ id: string; name: string } | null>(null);
+  const [deleteM365Loading, setDeleteM365Loading] = useState(false);
 
   // Fetch workspaces
   const { data: allWorkspaces } = useQuery({
@@ -153,7 +155,7 @@ export default function EnvironmentPage() {
             score: null,
             status: t.connection_status,
             agentName: tenantAgent?.agents?.name || null,
-            navigationUrl: `/scope-m365/tenant-connection`,
+            navigationUrl: `/environment/m365/${t.id}/edit`,
           };
         }),
       ];
@@ -202,6 +204,24 @@ export default function EnvironmentPage() {
       setDeleteFirewallLoading(false);
     }
   }, [deleteFirewallTarget, queryClient]);
+
+  const handleDeleteM365 = useCallback(async () => {
+    if (!deleteM365Target) return;
+    setDeleteM365Loading(true);
+    try {
+      await supabase.from('m365_tenant_agents').delete().eq('tenant_record_id', deleteM365Target.id);
+      await supabase.from('m365_tenant_permissions').delete().eq('tenant_record_id', deleteM365Target.id);
+      const { error } = await supabase.from('m365_tenants').delete().eq('id', deleteM365Target.id);
+      if (error) throw error;
+      toast.success('Tenant M365 excluído com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['environment-assets'] });
+      setDeleteM365Target(null);
+    } catch (err: any) {
+      toast.error('Erro ao excluir tenant: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setDeleteM365Loading(false);
+    }
+  }, [deleteM365Target, queryClient]);
 
   const handleDeleteDomain = useCallback(async () => {
     if (!deleteTarget) return;
@@ -362,6 +382,16 @@ export default function EnvironmentPage() {
             items={filteredTenants}
             totalCount={stats.tenants}
             isLoading={isLoading}
+            renderActions={(asset) => (
+              <div className="flex justify-end gap-1">
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/environment/m365/${asset.id}/edit`)}>
+                  <Pencil className="w-4 h-4" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteM365Target({ id: asset.id, name: asset.name })}>
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
           />
         </div>
       </div>
@@ -379,6 +409,13 @@ export default function EnvironmentPage() {
         domainName={deleteFirewallTarget?.name || ''}
         onConfirm={handleDeleteFirewall}
         loading={deleteFirewallLoading}
+      />
+      <DeleteEnvironmentDomainDialog
+        open={!!deleteM365Target}
+        onOpenChange={(open) => { if (!open) setDeleteM365Target(null); }}
+        domainName={deleteM365Target?.name || ''}
+        onConfirm={handleDeleteM365}
+        loading={deleteM365Loading}
       />
     </AppLayout>
   );
