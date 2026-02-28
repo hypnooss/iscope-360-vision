@@ -424,9 +424,9 @@ export default function M365TenantEditPage() {
                 {testing ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
                 Testar
               </Button>
-              <Button variant="outline" size="sm" onClick={handleRevalidatePermissions} disabled={revalidating || tenant.connection_status === 'disconnected'}>
-                {revalidating ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
-                Revalidar Permissões
+              <Button variant="outline" size="sm" onClick={handleRevalidatePermissions} disabled={revalidating || waitingForConsent || tenant.connection_status === 'disconnected'}>
+                {(revalidating || waitingForConsent) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
+                {waitingForConsent ? 'Aguardando consentimento...' : 'Revalidar Permissões'}
               </Button>
               <Button
                 variant="outline" size="sm"
