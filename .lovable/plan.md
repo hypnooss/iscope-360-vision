@@ -1,14 +1,26 @@
 
 
-## Plan: Ajustar cards de permissões - menor altura, maior largura, 3 colunas
+## Plan: Cards de permissões com duas linhas internas
 
-### Ambos os arquivos: `AddM365TenantPage.tsx` e `M365TenantEditPage.tsx`
+Voltar ao layout de duas linhas nos mini-cards: nome na primeira linha, descrição na segunda.
 
-1. **Grid de 3 colunas fixas** — Alterar `grid-cols-2 md:grid-cols-3 lg:grid-cols-4` para `grid-cols-1 md:grid-cols-3` em todos os grids de permissões (Graph e RBAC).
+### `src/pages/environment/AddM365TenantPage.tsx`
 
-2. **Cards mais largos e menos altos** — Alterar o padding dos cards de `p-3` para `py-2 px-3` e mudar `space-y-1` para layout inline: colocar nome e descrição na mesma linha usando `flex items-center gap-2` com a descrição ao lado do nome separada por um `—` ou exibir descrição em linha abaixo com menos padding (`pl-5 mt-0.5`).
+**Linhas 434-438** — Alterar card Graph de `flex items-center gap-2` inline para layout vertical:
+```
+<div className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 space-y-0.5">
+  <div className="flex items-center gap-2">
+    <Check icon /> <span nome />
+  </div>
+  <p className="text-xs text-muted-foreground pl-5">{descrição}</p>
+</div>
+```
 
-**Arquivos afetados:**
-- `src/pages/environment/AddM365TenantPage.tsx` (linhas 432, 434, 449, 451)
-- `src/pages/environment/M365TenantEditPage.tsx` (linhas 259, 263, 280, 284)
+**Linhas 449-453** — Mesmo ajuste para cards RBAC.
+
+### `src/pages/environment/M365TenantEditPage.tsx`
+
+**Linhas 263-270** — Mesmo ajuste para cards Graph (com status dot).
+
+**Linhas 282-289** — Mesmo ajuste para cards RBAC.
 
