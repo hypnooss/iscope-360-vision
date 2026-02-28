@@ -1875,11 +1875,14 @@ Deno.serve(async (req) => {
     }
 
     // Always try to enrich with Graph API for new modules (even if agent data exists)
-    if (dataSource === 'agent' && (riskyUsersData.length === 0 || caPolicies.length === 0)) {
+    if (dataSource === 'agent' && (riskyUsersData.length === 0 || caPolicies.length === 0 || signInLogs.length === 0 || auditLogs.length === 0)) {
       const token = await getGraphToken(supabase, snapshot.tenant_record_id);
       if (token) {
         console.log('[m365-analyzer] Enriching agent data with Graph API for Entra ID modules...');
+        const periodFilter = snapshot.period_start ? `&$filter=createdDateTime ge ${snapshot.period_start}` : '';
         const enrichCalls = [];
+
+        // Existing enrichment calls
         if (riskyUsersData.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100'));
         else enrichCalls.push(Promise.resolve(null));
         if (credentialRegistration.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/reports/credentialUserRegistrationDetails?$top=999'));
@@ -1891,15 +1894,23 @@ Deno.serve(async (req) => {
         if (serviceHealthData.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/issues?$top=50'));
         else enrichCalls.push(Promise.resolve(null));
 
-        const [riskRes, credRes, caRes, appRes, shRes] = await Promise.all(enrichCalls);
+        // NEW: Sign-in logs and audit logs for Security Risk, Identity, and Audit modules
+        if (signInLogs.length === 0) enrichCalls.push(graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=500${periodFilter}`));
+        else enrichCalls.push(Promise.resolve(null));
+        if (auditLogs.length === 0) enrichCalls.push(graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=500${periodFilter}`));
+        else enrichCalls.push(Promise.resolve(null));
+
+        const [riskRes, credRes, caRes, appRes, shRes, signInRes, auditRes] = await Promise.all(enrichCalls);
         if (riskRes && riskyUsersData.length === 0) riskyUsersData = Array.isArray(riskRes.value) ? riskRes.value : [];
         if (credRes && credentialRegistration.length === 0) credentialRegistration = Array.isArray(credRes.value) ? credRes.value : [];
         if (caRes && caPolicies.length === 0) caPolicies = Array.isArray(caRes.value) ? caRes.value : [];
         if (appRes && recentApps.length === 0) recentApps = Array.isArray(appRes.value) ? appRes.value : [];
         if (shRes && serviceHealthData.length === 0) serviceHealthData = Array.isArray(shRes.value) ? shRes.value : [];
+        if (signInRes && signInLogs.length === 0) signInLogs = Array.isArray(signInRes.value) ? signInRes.value : [];
+        if (auditRes && auditLogs.length === 0) auditLogs = Array.isArray(auditRes.value) ? auditRes.value : [];
 
         dataSource = 'hybrid';
-        console.log(`[m365-analyzer] Enriched: riskyUsers=${riskyUsersData.length}, credReg=${credentialRegistration.length}, caPolicies=${caPolicies.length}`);
+        console.log(`[m365-analyzer] Enriched: riskyUsers=${riskyUsersData.length}, credReg=${credentialRegistration.length}, caPolicies=${caPolicies.length}, signIns=${signInLogs.length}, audits=${auditLogs.length}`);
       }
     }
 
