@@ -558,7 +558,7 @@ function normalizeEvaluationLogic(rawLogic: Record<string, unknown>): Normalized
 
   // Typed evaluation logic: array_check, object_check, threshold_check
   const logicType = rawLogic?.type as string | undefined;
-  if (logicType === 'array_check' || logicType === 'object_check' || logicType === 'threshold_check') {
+  if (logicType === 'array_check' || logicType === 'object_check' || logicType === 'threshold_check' || logicType === 'filtered_count_check') {
     return {
       source_key: (rawLogic.source_key as string) || '',
       field_path: (rawLogic.path as string) || (rawLogic.field as string) || '',
