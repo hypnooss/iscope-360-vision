@@ -164,6 +164,8 @@ serve(async (req) => {
 
     const appUrl = `https://graph.microsoft.com/v1.0/applications/${objectId}`;
 
+    const currentPermissions = app.requiredResourceAccess || [];
+
     // Check and add missing permissions
     const addedPermissions: string[] = [];
 
