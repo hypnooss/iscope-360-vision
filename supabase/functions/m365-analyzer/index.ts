@@ -1878,6 +1878,21 @@ Deno.serve(async (req) => {
     // ── Run analysis modules ──
     const allInsights: M365AnalyzerInsight[] = [];
 
+    const securityRisk = analyzeSecurityRisk(signInLogs, riskyUsersData);
+    allInsights.push(...securityRisk.insights);
+
+    const identityAccess = analyzeIdentityAccess(auditLogs, credentialRegistration, recentApps, signInLogs);
+    allInsights.push(...identityAccess.insights);
+
+    const conditionalAccessResult = analyzeConditionalAccess(caPolicies, auditLogs);
+    allInsights.push(...conditionalAccessResult.insights);
+
+    const exchangeHealth = analyzeExchangeHealth(serviceHealthData, exoMessageTrace, exoSharedMailboxes, exoConnectors);
+    allInsights.push(...exchangeHealth.insights);
+
+    const auditCompliance = analyzeAuditCompliance(auditLogs, exoInboxRules);
+    allInsights.push(...auditCompliance.insights);
+
     const phishing = analyzePhishingThreats(emailActivity, threatData, exoAntiPhish, exoSafeLinks, exoSafeAttach, exoContentFilter);
     allInsights.push(...phishing.insights);
 
@@ -1901,6 +1916,39 @@ Deno.serve(async (req) => {
 
     // Build metrics in the exact shape expected by the frontend
     const allMetrics = {
+      securityRisk: {
+        highRiskSignIns: securityRisk.metrics.highRiskSignIns || 0,
+        mfaFailures: securityRisk.metrics.mfaFailures || 0,
+        impossibleTravel: securityRisk.metrics.impossibleTravel || 0,
+        blockedAccounts: securityRisk.metrics.blockedAccounts || 0,
+        riskyUsers: securityRisk.metrics.riskyUsers || 0,
+      },
+      identity: {
+        newUsers: identityAccess.metrics.newUsers || 0,
+        disabledUsers: identityAccess.metrics.disabledUsers || 0,
+        noMfaUsers: identityAccess.metrics.noMfaUsers || 0,
+        noConditionalAccess: identityAccess.metrics.noConditionalAccess || 0,
+        serviceAccountInteractive: identityAccess.metrics.serviceAccountInteractive || 0,
+        recentAppRegistrations: identityAccess.metrics.recentAppRegistrations || 0,
+      },
+      conditionalAccess: {
+        disabledPolicies: conditionalAccessResult.metrics.disabledPolicies || 0,
+        reportOnlyPolicies: conditionalAccessResult.metrics.reportOnlyPolicies || 0,
+        excludedUsers: conditionalAccessResult.metrics.excludedUsers || 0,
+        recentlyCreated: conditionalAccessResult.metrics.recentlyCreated || 0,
+      },
+      exchangeHealth: {
+        serviceIncidents: exchangeHealth.metrics.serviceIncidents || 0,
+        messageTraceFailures: exchangeHealth.metrics.messageTraceFailures || 0,
+        sharedMailboxesNoOwner: exchangeHealth.metrics.sharedMailboxesNoOwner || 0,
+        connectorFailures: exchangeHealth.metrics.connectorFailures || 0,
+      },
+      audit: {
+        mailboxAuditAlerts: auditCompliance.metrics.mailboxAuditAlerts || 0,
+        adminAuditChanges: auditCompliance.metrics.adminAuditChanges || 0,
+        newDelegations: auditCompliance.metrics.newDelegations || 0,
+        activeEdiscovery: auditCompliance.metrics.activeEdiscovery || 0,
+      },
       phishing: {
         totalBlocked: phishing.metrics.totalBlocked || 0,
         quarantined: phishing.metrics.quarantined || 0,
@@ -1938,7 +1986,7 @@ Deno.serve(async (req) => {
         fullAccessGrants: operational.metrics.fullAccessGrants || 0,
       },
       dataSource,
-      normalizationVersion: 3,
+      normalizationVersion: 4,
       stepsReceived,
     };
 
