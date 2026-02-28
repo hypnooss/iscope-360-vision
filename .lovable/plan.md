@@ -1,29 +1,25 @@
 
 
-## Plan: Remove scheduling UI from creation forms + Add M365 tenant wizard page
+## Plan: Convert M365 Tenant page from modal to inline wizard
 
-### 1. Remove scheduling UI from External Domain creation
-**`src/pages/AddExternalDomainPage.tsx`**
-- Remove the "Agendamento de Análise" Card UI (lines 340-426) — only the visual card, not the underlying types/helpers
-- Remove schedule-related fields from `formData` state and the schedule insert logic from `handleSubmit` (lines 199-223)
-- Remove unused imports (`Clock`, `Separator`) and constants (`HOURS`, `DAYS_OF_WEEK`, `DAYS_OF_MONTH`, `ScheduleFrequency`, `calculateNextRunAt`)
+The current `AddM365TenantPage` renders `SimpleTenantConnectionWizard` as a Dialog/modal. We need to convert it to a full-page wizard matching the firewall wizard layout pattern.
 
-### 2. Remove Step 4 (Agendamento) from Firewall wizard
-**`src/pages/environment/AddFirewallPage.tsx`**
-- Remove step 4 from `STEPS` array (line 89), keeping only 3 steps: Fabricante, Instruções, Configuração
-- Remove the entire Step 4 UI block (lines 1054-1150)
-- Replace the "Próximo" button on Step 3 (line 1046) with the submit button (currently in Step 4)
-- Remove schedule state variables and the schedule insert from `handleSubmit` (lines 504-516)
-- Remove unused schedule constants (`HOURS`, `DAYS_OF_WEEK`, `DAYS_OF_MONTH`, `calculateNextRunAt`, `ScheduleFrequency`) and `Clock` import
+### Changes
 
-### 3. Create M365 Tenant wizard page
-**New file: `src/pages/environment/AddM365TenantPage.tsx`**
-- Full page with `AppLayout`, breadcrumbs (Ambiente > Novo Item > Microsoft 365), back button, header
-- Renders the `SimpleTenantConnectionWizard` as an always-open dialog (or extracts its form content inline)
-- On success, navigates to `/scope-m365/tenant-connection`
+**`src/pages/environment/AddM365TenantPage.tsx`** — Rewrite as a full-page wizard:
+- Use the same layout as `AddFirewallPage`: `AppLayout` → breadcrumbs → back button + header → `StepIndicator` → step content in a `Card`
+- Define 3 wizard steps: `Workspace` (select client), `Autenticação` (admin email + "Como funciona?" info + start consent), `Resultado` (success/error)
+- Move all logic currently inside `SimpleTenantConnectionWizard` (client loading, agent linking, tenant discovery, OAuth flow, message listener) directly into this page component
+- Footer buttons at the bottom of the card (Voltar/Próximo/Conectar/Concluir) following the firewall wizard pattern
+- Navigation: back button and "Cancelar" go to `/environment/new`; "Concluir" on success goes to `/scope-m365/tenant-connection`
 
-### 4. Update routing
-**`src/pages/AddAssetPage.tsx`** — Change M365 route from `/scope-m365/tenant-connection` to `/environment/new/m365`
+**No changes** to `SimpleTenantConnectionWizard.tsx` — it remains available for use elsewhere (e.g., TenantConnectionPage dialog).
 
-**`src/App.tsx`** — Add route `/environment/new/m365` → `AddM365TenantPage` and lazy import
+### Step breakdown
+
+| Step | Title | Content |
+|------|-------|---------|
+| 1 - Workspace | Select workspace | Client selector (same as current form top section) |
+| 2 - Autenticação | Admin email + consent | Email input, "Como funciona?" card, "Conectar" button triggers OAuth popup |
+| 3 - Resultado | Connection result | Spinner while authenticating → success/error display with "Concluir" |
 
