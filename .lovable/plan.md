@@ -1,25 +1,20 @@
 
 
-## Plan: Convert M365 Tenant page from modal to inline wizard
+## Plan: Reestruturar M365 Analyzer — IMPLEMENTADO ✅
 
-The current `AddM365TenantPage` renders `SimpleTenantConnectionWizard` as a Dialog/modal. We need to convert it to a full-page wizard matching the firewall wizard layout pattern.
+O M365 Analyzer foi reestruturado de 7 para 12 categorias de análise, adicionando cobertura completa de Entra ID (identidade, MFA, Conditional Access) e Auditoria/Compliance.
 
-### Changes
+### Categorias implementadas
+1. **security_risk** — Sign-ins alto risco, falhas MFA, impossible travel, contas bloqueadas
+2. **identity_access** — Novos usuários, sem MFA, service accounts, app registrations
+3. **conditional_access** — Políticas desabilitadas, report-only, exclusões
+4. **exchange_health** — Service health, falhas de entrega, shared mailboxes sem owner
+5. **audit_compliance** — Admin audit, delegações, mailbox audit, e-discovery
+6-12. Categorias existentes mantidas (phishing, mailbox, behavioral, compromise, rules, exfiltration, operational)
 
-**`src/pages/environment/AddM365TenantPage.tsx`** — Rewrite as a full-page wizard:
-- Use the same layout as `AddFirewallPage`: `AppLayout` → breadcrumbs → back button + header → `StepIndicator` → step content in a `Card`
-- Define 3 wizard steps: `Workspace` (select client), `Autenticação` (admin email + "Como funciona?" info + start consent), `Resultado` (success/error)
-- Move all logic currently inside `SimpleTenantConnectionWizard` (client loading, agent linking, tenant discovery, OAuth flow, message listener) directly into this page component
-- Footer buttons at the bottom of the card (Voltar/Próximo/Conectar/Concluir) following the firewall wizard pattern
-- Navigation: back button and "Cancelar" go to `/environment/new`; "Concluir" on success goes to `/scope-m365/tenant-connection`
-
-**No changes** to `SimpleTenantConnectionWizard.tsx` — it remains available for use elsewhere (e.g., TenantConnectionPage dialog).
-
-### Step breakdown
-
-| Step | Title | Content |
-|------|-------|---------|
-| 1 - Workspace | Select workspace | Client selector (same as current form top section) |
-| 2 - Autenticação | Admin email + consent | Email input, "Como funciona?" card, "Conectar" button triggers OAuth popup |
-| 3 - Resultado | Connection result | Spinner while authenticating → success/error display with "Concluir" |
-
+### Arquivos alterados
+- `src/types/m365AnalyzerInsights.ts` — 5 novas categorias + métricas expandidas
+- `src/hooks/useM365AnalyzerData.ts` — parseMetrics atualizado
+- `supabase/functions/trigger-m365-analyzer/index.ts` — payload com 12 módulos
+- `supabase/functions/m365-analyzer/index.ts` — 5 novos módulos de análise + Graph API enriquecimento
+- `src/pages/m365/M365AnalyzerDashboardPage.tsx` — Resumo executivo + métricas novas + ícones
