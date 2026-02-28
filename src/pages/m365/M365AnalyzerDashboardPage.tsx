@@ -26,7 +26,8 @@ import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
   Mail, Users, Lock, ExternalLink, FileWarning,
   Clock, Settings, Loader2, Activity, Database,
-  Inbox, UserX, Send, ShieldAlert,
+  Inbox, UserX, Send, ShieldAlert, Key,
+  Fingerprint, HeartPulse, ClipboardCheck, ShieldCheck,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -48,6 +49,11 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 const CATEGORY_ICONS: Record<M365AnalyzerCategory, React.ComponentType<{ className?: string }>> = {
+  security_risk: ShieldCheck,
+  identity_access: Key,
+  conditional_access: Fingerprint,
+  exchange_health: HeartPulse,
+  audit_compliance: ClipboardCheck,
   phishing_threats: Mail,
   mailbox_capacity: Inbox,
   behavioral_baseline: Activity,
