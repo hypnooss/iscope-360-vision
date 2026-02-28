@@ -664,12 +664,6 @@ export default function AddM365TenantPage() {
           {/* Footer buttons */}
           <div className="flex justify-between mt-6">
             <div>
-              {step === 2 && !waitingForAuth && (
-                <Button variant="outline" onClick={handleBack} className="gap-2">
-                  <ArrowLeft className="w-4 h-4" />
-                  Voltar
-                </Button>
-              )}
               {step === 2 && waitingForAuth && (
                 <Button
                   variant="outline"
@@ -694,10 +688,16 @@ export default function AddM365TenantPage() {
                 </>
               )}
               {step === 2 && !waitingForAuth && (
-                <Button onClick={handleNext} disabled={!canProceedStep2} className="gap-2">
-                  <ExternalLink className="w-4 h-4" />
-                  Conectar
-                </Button>
+                <>
+                  <Button variant="outline" onClick={handleBack} className="gap-2">
+                    <ArrowLeft className="w-4 h-4" />
+                    Voltar
+                  </Button>
+                  <Button onClick={handleNext} disabled={!canProceedStep2} className="gap-2">
+                    <ExternalLink className="w-4 h-4" />
+                    Conectar
+                  </Button>
+                </>
               )}
               {step === 3 && (
                 <Button onClick={handleFinish} className="gap-2">
