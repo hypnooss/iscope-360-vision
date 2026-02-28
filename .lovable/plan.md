@@ -1,26 +1,22 @@
 
 
-## Plan: Cards de permissões com duas linhas internas
+## Plan: Exibir info do Agent e remover botão Editar na tela de edição do Tenant M365
 
-Voltar ao layout de duas linhas nos mini-cards: nome na primeira linha, descrição na segunda.
+### Arquivo: `src/pages/environment/M365TenantEditPage.tsx`
 
-### `src/pages/environment/AddM365TenantPage.tsx`
+**1. Adicionar query para buscar agent vinculado**
+- Query na tabela `m365_tenant_agents` com join em `agents(id, name, certificate_thumbprint, azure_certificate_key_id)` filtrado por `tenant_record_id = id`.
 
-**Linhas 434-438** — Alterar card Graph de `flex items-center gap-2` inline para layout vertical:
-```
-<div className="rounded-lg py-2 px-3 bg-muted/50 border border-border/50 space-y-0.5">
-  <div className="flex items-center gap-2">
-    <Check icon /> <span nome />
-  </div>
-  <p className="text-xs text-muted-foreground pl-5">{descrição}</p>
-</div>
-```
+**2. Adicionar seção "Agent para Análise PowerShell" no card**
+- Entre a seção de Workspace/Status e Permissões, inserir nova seção com:
+  - Título: "Agent para Análise PowerShell" (com ícone `Monitor`)
+  - Subtítulo "Agent Vinculado"
+  - Nome do agent + Badge "Cert OK" (verde) ou "Pendente" (amarelo)
+  - Se tiver certificado: mostrar "Certificado registrado no Azure" + key_id em fonte mono
+  - Se não tiver agent vinculado: texto "Nenhum agent vinculado"
 
-**Linhas 449-453** — Mesmo ajuste para cards RBAC.
-
-### `src/pages/environment/M365TenantEditPage.tsx`
-
-**Linhas 263-270** — Mesmo ajuste para cards Graph (com status dot).
-
-**Linhas 282-289** — Mesmo ajuste para cards RBAC.
+**3. Remover botão "Editar" dos action buttons**
+- Remover o `<Button>` com ícone `Pencil` e texto "Editar" (linha 306-308)
+- Remover o state `showEditDialog` e o componente `TenantEditDialog` (já não será mais necessário)
+- Remover imports não utilizados (`Pencil`, `TenantEditDialog`)
 
