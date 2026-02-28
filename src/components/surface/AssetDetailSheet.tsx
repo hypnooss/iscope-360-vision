@@ -317,19 +317,19 @@ export function AssetDetailSheet({
 
         <Tabs defaultValue="analise" className="flex flex-col h-[calc(100vh-140px)]">
           <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-6 h-auto py-0">
-            <TabsTrigger value="analise" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-sm">
+            <TabsTrigger value="analise" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3 text-xs">
               <Search className="w-3.5 h-3.5 mr-1.5" />
               Análise
             </TabsTrigger>
-            <TabsTrigger value="servicos" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-sm">
+            <TabsTrigger value="servicos" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3 text-xs">
               <Network className="w-3.5 h-3.5 mr-1.5" />
               Serviços
             </TabsTrigger>
-            <TabsTrigger value="cves" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-sm">
+            <TabsTrigger value="cves" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3 text-xs">
               <Bug className="w-3.5 h-3.5 mr-1.5" />
               CVEs ({cves.length})
             </TabsTrigger>
-            <TabsTrigger value="certificados" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-sm">
+            <TabsTrigger value="certificados" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3 text-xs">
               <Lock className="w-3.5 h-3.5 mr-1.5" />
               Certificados ({tlsCerts.length})
             </TabsTrigger>
