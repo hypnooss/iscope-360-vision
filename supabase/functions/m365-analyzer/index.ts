@@ -1832,7 +1832,9 @@ Deno.serve(async (req) => {
         console.log('[m365-analyzer] Got Graph API token, collecting data...');
         dataSource = dataSource === 'agent' ? 'hybrid' : 'graph_api';
 
-        const periodFilter = snapshot.period_start ? `&$filter=createdDateTime ge ${snapshot.period_start}` : '';
+        // Use fixed 24h window for signInLogs/auditLogs (ISO 8601 format required by Graph API)
+        const periodStartISO = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const periodFilter = `&$filter=createdDateTime ge ${periodStartISO}`;
 
         const [emailData, mailboxData, signInData, auditData, threatStatus,
                riskyUsersRes, credRegRes, caPoliciesRes, recentAppsRes, serviceHealthRes] = await Promise.all([
@@ -1842,7 +1844,7 @@ Deno.serve(async (req) => {
           graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=500${periodFilter}`),
           graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getEmailActivityUserDetail(period=\'D1\')'),
           graphGet(token, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100'),
-          graphGet(token, 'https://graph.microsoft.com/v1.0/reports/credentialUserRegistrationDetails?$top=999'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=999'),
           graphGet(token, 'https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies'),
           graphGet(token, 'https://graph.microsoft.com/v1.0/applications?$orderby=createdDateTime desc&$top=50'),
           graphGet(token, 'https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/issues?$top=50'),
