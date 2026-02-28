@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowLeft, Clock, Globe } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Globe } from 'lucide-react';
 
 import { getExternalDomainError } from '@/lib/urlValidation';
 import { supabase } from '@/integrations/supabase/client';
@@ -16,9 +16,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-
-type ScheduleFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
 
 interface Client {
   id: string;
@@ -31,26 +28,6 @@ interface Agent {
   client_id: string | null;
 }
 
-const HOURS = Array.from({ length: 24 }, (_, i) => ({
-  value: i.toString(),
-  label: `${i.toString().padStart(2, '0')}:00`,
-}));
-
-const DAYS_OF_WEEK = [
-  { value: '0', label: 'Domingo' },
-  { value: '1', label: 'Segunda-feira' },
-  { value: '2', label: 'Terça-feira' },
-  { value: '3', label: 'Quarta-feira' },
-  { value: '4', label: 'Quinta-feira' },
-  { value: '5', label: 'Sexta-feira' },
-  { value: '6', label: 'Sábado' },
-];
-
-const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => ({
-  value: (i + 1).toString(),
-  label: (i + 1).toString(),
-}));
-
 function normalizeExternalDomain(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return trimmed;
@@ -62,31 +39,6 @@ function normalizeExternalDomain(input: string): string {
     }
   }
   return trimmed;
-}
-
-function calculateNextRunAt(
-  frequency: ScheduleFrequency,
-  hour: number,
-  dayOfWeek: number,
-  dayOfMonth: number
-): string | null {
-  if (frequency === 'manual') return null;
-  const now = new Date();
-  let next: Date;
-  if (frequency === 'daily') {
-    next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1);
-  } else if (frequency === 'weekly') {
-    const currentDay = now.getDay();
-    let daysAhead = dayOfWeek - currentDay;
-    if (daysAhead < 0) daysAhead += 7;
-    next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysAhead, hour, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 7);
-  } else {
-    next = new Date(now.getFullYear(), now.getMonth(), dayOfMonth, hour, 0, 0);
-    if (next <= now) next.setMonth(next.getMonth() + 1);
-  }
-  return next.toISOString();
 }
 
 export default function AddExternalDomainPage() {
@@ -105,10 +57,6 @@ export default function AddExternalDomainPage() {
     client_id: '',
     agent_id: '',
     domain: '',
-    schedule: 'manual' as ScheduleFrequency,
-    scheduled_hour: 2,
-    scheduled_day_of_week: 1,
-    scheduled_day_of_month: 1,
   });
 
   // For non-super users, auto-select their client
@@ -118,7 +66,6 @@ export default function AddExternalDomainPage() {
         const { data } = await supabase.from('clients').select('id, name').order('name');
         setClients(data || []);
       } else if (user?.id) {
-        // Get user's client(s)
         const { data: userClients } = await supabase
           .from('user_clients')
           .select('client_id, clients(id, name)')
@@ -177,7 +124,7 @@ export default function AddExternalDomainPage() {
 
     setSaving(true);
     try {
-      const { data: inserted, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from('external_domains')
         .insert({
           client_id: formData.client_id,
@@ -194,32 +141,6 @@ export default function AddExternalDomainPage() {
       if (insertError) {
         toast.error('Erro ao adicionar domínio: ' + insertError.message);
         return;
-      }
-
-      if (formData.schedule !== 'manual') {
-        const nextRunAt = calculateNextRunAt(
-          formData.schedule,
-          formData.scheduled_hour,
-          formData.scheduled_day_of_week,
-          formData.scheduled_day_of_month
-        );
-
-        const { error: scheduleError } = await supabase
-          .from('external_domain_schedules')
-          .insert({
-            domain_id: inserted.id,
-            frequency: formData.schedule,
-            is_active: true,
-            created_by: user.id,
-            scheduled_hour: formData.scheduled_hour,
-            scheduled_day_of_week: formData.scheduled_day_of_week,
-            scheduled_day_of_month: formData.scheduled_day_of_month,
-            next_run_at: nextRunAt,
-          } as any);
-
-        if (scheduleError) {
-          toast.error('Domínio criado, mas falhou ao salvar frequência', { description: scheduleError.message });
-        }
       }
 
       toast.success('Domínio adicionado com sucesso!');
@@ -334,94 +255,6 @@ export default function AddExternalDomainPage() {
                 regulamentos.
               </AlertDescription>
             </Alert>
-          </CardContent>
-        </Card>
-
-        {/* Card: Agendamento */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Clock className="w-5 h-5 text-teal-400" />
-              Agendamento de Análise
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">Configure a frequência de execução das análises</p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Frequência</Label>
-              <Select
-                value={formData.schedule}
-                onValueChange={(v) => setFormData((prev) => ({ ...prev, schedule: v as ScheduleFrequency }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="manual">Manual</SelectItem>
-                  <SelectItem value="daily">Diário</SelectItem>
-                  <SelectItem value="weekly">Semanal</SelectItem>
-                  <SelectItem value="monthly">Mensal</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            </div>
-
-            {formData.schedule !== 'manual' && (
-              <>
-                <Separator />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Horário</Label>
-                    <Select
-                      value={formData.scheduled_hour.toString()}
-                      onValueChange={(v) => setFormData((prev) => ({ ...prev, scheduled_hour: parseInt(v) }))}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {HOURS.map(h => <SelectItem key={h.value} value={h.value}>{h.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {formData.schedule === 'weekly' && (
-                    <div className="space-y-2">
-                      <Label>Dia da Semana</Label>
-                      <Select
-                        value={formData.scheduled_day_of_week.toString()}
-                        onValueChange={(v) => setFormData((prev) => ({ ...prev, scheduled_day_of_week: parseInt(v) }))}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {DAYS_OF_WEEK.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {formData.schedule === 'monthly' && (
-                    <div className="space-y-2">
-                      <Label>Dia do Mês</Label>
-                      <Select
-                        value={formData.scheduled_day_of_month.toString()}
-                        onValueChange={(v) => setFormData((prev) => ({ ...prev, scheduled_day_of_month: parseInt(v) }))}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {DAYS_OF_MONTH.map(d => <SelectItem key={d.value} value={d.value}>Dia {d.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                </div>
-
-                <p className="text-sm text-muted-foreground">
-                  {formData.schedule === 'daily' && `A análise será executada todos os dias às ${formData.scheduled_hour.toString().padStart(2, '0')}:00 (UTC).`}
-                  {formData.schedule === 'weekly' && `A análise será executada toda ${DAYS_OF_WEEK.find(d => d.value === formData.scheduled_day_of_week.toString())?.label} às ${formData.scheduled_hour.toString().padStart(2, '0')}:00 (UTC).`}
-                  {formData.schedule === 'monthly' && `A análise será executada todo dia ${formData.scheduled_day_of_month} do mês às ${formData.scheduled_hour.toString().padStart(2, '0')}:00 (UTC).`}
-                </p>
-              </>
-            )}
           </CardContent>
         </Card>
 

@@ -31,7 +31,7 @@ const assetTypes = [
     icon: Cloud,
     iconColor: 'text-blue-400',
     bgColor: 'bg-blue-400/10',
-    route: '/scope-m365/tenant-connection',
+    route: '/environment/new/m365',
   },
 ];
 
