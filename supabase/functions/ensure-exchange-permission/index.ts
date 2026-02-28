@@ -149,6 +149,22 @@ serve(async (req) => {
 
     const appUrl = `https://graph.microsoft.com/v1.0/applications/${objectId}`;
 
+    // Read current manifest
+    console.log("[ensure-exchange-permission] Reading current app manifest...");
+    const appResponse = await fetch(`${appUrl}?$select=requiredResourceAccess`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!appResponse.ok) {
+      const error = await appResponse.text();
+      console.error("[ensure-exchange-permission] Failed to read app manifest:", error);
+      return new Response(
+        JSON.stringify({ success: false, error: "Failed to read app manifest", skipped: true }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const app = await appResponse.json();
     const currentPermissions = app.requiredResourceAccess || [];
 
     // Check and add missing permissions
