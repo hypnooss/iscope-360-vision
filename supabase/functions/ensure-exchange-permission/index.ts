@@ -94,14 +94,6 @@ serve(async (req) => {
       );
     }
 
-    if (!globalConfig.app_object_id) {
-      console.log("[ensure-exchange-permission] No app_object_id configured");
-      return new Response(
-        JSON.stringify({ success: false, error: "App Object ID not configured", skipped: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     if (!globalConfig.validation_tenant_id) {
       console.log("[ensure-exchange-permission] No validation_tenant_id configured");
       return new Response(
@@ -141,23 +133,37 @@ serve(async (req) => {
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
 
-    // Get current app registration
-    console.log("[ensure-exchange-permission] Fetching app registration...");
-    const appUrl = `https://graph.microsoft.com/v1.0/applications/${globalConfig.app_object_id}`;
-    const appResponse = await fetch(appUrl, {
+    // Auto-discover the Object ID using the app_id (Client ID)
+    console.log("[ensure-exchange-permission] Auto-discovering Object ID for app_id:", globalConfig.app_id);
+    const lookupUrl = `https://graph.microsoft.com/v1.0/applications(appId='${globalConfig.app_id}')?$select=id,requiredResourceAccess`;
+    const lookupResponse = await fetch(lookupUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    if (!appResponse.ok) {
-      const error = await appResponse.text();
-      console.error("[ensure-exchange-permission] Failed to get app registration:", error);
+    if (!lookupResponse.ok) {
+      const error = await lookupResponse.text();
+      console.error("[ensure-exchange-permission] Failed to discover Object ID:", error);
       return new Response(
-        JSON.stringify({ success: false, error: "Failed to get app registration", skipped: true }),
+        JSON.stringify({ success: false, error: "Failed to discover app Object ID", skipped: true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const app = await appResponse.json();
+    const app = await lookupResponse.json();
+    const objectId = app.id;
+    console.log("[ensure-exchange-permission] Discovered Object ID:", objectId);
+
+    // Save discovered Object ID back to config for other functions
+    if (globalConfig.app_object_id !== objectId) {
+      await supabase
+        .from("m365_global_config")
+        .update({ app_object_id: objectId })
+        .neq("app_object_id", objectId);
+      console.log("[ensure-exchange-permission] Updated app_object_id in config");
+    }
+
+    const appUrl = `https://graph.microsoft.com/v1.0/applications/${objectId}`;
+
     const currentPermissions = app.requiredResourceAccess || [];
 
     // Check and add missing permissions
