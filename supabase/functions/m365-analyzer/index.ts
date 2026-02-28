@@ -197,7 +197,8 @@ async function graphGet(token: string, url: string): Promise<any> {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ConsistencyLevel: 'eventual' },
     });
     if (!res.ok) {
-      console.warn(`[m365-analyzer] Graph API ${res.status}: ${url}`);
+      const errorBody = await res.text();
+      console.warn(`[m365-analyzer] Graph API ${res.status}: ${url} — ${errorBody.substring(0, 300)}`);
       return null;
     }
     return await res.json();
