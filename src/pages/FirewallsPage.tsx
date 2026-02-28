@@ -207,39 +207,20 @@ export default function FirewallsPage() {
     setAnalyzing(firewall.id);
     
     try {
-      const { data, error } = await supabase.functions.invoke('fortigate-compliance', {
-        body: { url: firewall.fortigate_url, apiKey: firewall.api_key },
+      const { data, error } = await supabase.functions.invoke('trigger-firewall-analysis', {
+        body: { firewall_id: firewall.id },
       });
 
       if (error) throw error;
-      if (data.error) throw new Error(data.details || data.error);
-
-      // Save to history - use overallScore from edge function
-      const score = data.overallScore ?? data.score ?? 0;
-      
-      const { error: historyError } = await supabase.from('analysis_history').insert({
-        firewall_id: firewall.id,
-        score: score,
-        report_data: data,
-        analyzed_by: user?.id,
-      });
-
-      if (historyError) {
-        console.error('Error saving analysis history:', historyError);
+      if (!data?.success) {
+        throw new Error(data?.error || 'Erro ao agendar análise');
       }
 
-      // Update firewall last analysis
-      await supabase.from('firewalls').update({
-        last_analysis_at: new Date().toISOString(),
-        last_score: score,
-        serial_number: data.serialNumber || firewall.serial_number,
-      }).eq('id', firewall.id);
-
       await fetchData();
-      toast.success(`Análise concluída! Score: ${score}%`);
+      toast.success(data.message || 'Análise agendada com sucesso. O agent irá processar em breve.');
 
-      // Navigate to view the report
-      navigate(`/firewalls/${firewall.id}/analysis`, { state: { report: data } });
+      // Navigate to compliance page to follow progress
+      navigate(`/firewalls/${firewall.id}/compliance`);
     } catch (error: any) {
       toast.error('Erro na análise: ' + error.message);
     } finally {
