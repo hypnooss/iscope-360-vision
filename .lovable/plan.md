@@ -1,20 +1,12 @@
 
 
-## Plan: Consolidar M365 Tenant Edit em card único
+## Plan: Remove title from M365 tenant add page
 
-### Mudanças em `src/pages/environment/M365TenantEditPage.tsx`
+### `src/pages/environment/AddM365TenantPage.tsx`
 
-1. **Unificar tudo em um único Card** — Mesclar os 3 cards (Info Grid, Permissões, Ações) em um só.
+1. **Remove the title block** (lines 577-590) — the `div` with back button, Cloud icon, "Conectar Microsoft 365" heading and subtitle.
 
-2. **Remover métricas de análise** — Remover os campos "Última Análise", "Score" e "Agendamento" do grid. Manter apenas "Workspace".
+2. **Add spacing before StepIndicator** — wrap StepIndicator in `<div className="pt-10">` to match the firewall page pattern.
 
-3. **Mover status de conexão para dentro do card** — Tirar o badge do header externo e colocá-lo dentro do card, ao lado do workspace info.
-
-4. **Permissões sempre visíveis** — Remover o toggle expand/collapse (`showPermissions` state, `ChevronDown`/`ChevronUp`). Exibir a seção de permissões e RBAC diretamente, sempre aberta.
-
-5. **Remover botão "Analisar"** — Remover o handler `handleAnalyze`, state `analyzing`, e o botão.
-
-6. **Alinhar botões à direita** — Os botões restantes (Testar, Editar, Revalidar Permissões, Desconectar, Excluir) ficam alinhados à direita com `justify-end`.
-
-7. **Cleanup** — Remover imports não utilizados (`Play`, `TrendingUp`, `Calendar`, `ChevronDown`, `ChevronUp`) e queries desnecessárias (`lastAnalysis`, `schedule`).
+3. **Cleanup unused imports** — remove `ArrowLeft` and `Cloud` from lucide-react imports (if not used elsewhere in the file).
 
