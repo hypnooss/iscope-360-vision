@@ -455,7 +455,26 @@ serve(async (req) => {
           const response = await fetch('https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
-          granted = response.ok;
+          if (response.ok) {
+            granted = true;
+          } else {
+            const errBody = await response.json().catch(() => ({}));
+            const errCode = errBody?.error?.code || '';
+            const errMsg = errBody?.error?.message || '';
+            console.log(`Permission ${permission}: ${response.status} - code: ${errCode} - msg: ${errMsg}`);
+            // If the error is a licensing issue (not a permission issue), treat as granted
+            if (response.status === 403 && (
+              errCode.includes('NonPremiumTenant') ||
+              errCode.includes('NotSupported') ||
+              errMsg.toLowerCase().includes('license') ||
+              errMsg.toLowerCase().includes('premium')
+            )) {
+              granted = true;
+              console.log(`Permission ${permission}: 403 but license issue - treating as granted`);
+            } else {
+              granted = false;
+            }
+          }
           console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
         } else if (permission === 'MailboxSettings.Read') {
           // Fetch up to 5 users to find one with an active mailbox
