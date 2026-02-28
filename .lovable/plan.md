@@ -1,62 +1,38 @@
 
 
-## Plano: Implementar Shadow Rules no novo sistema de Compliance
+## Plano: Barra de status de análise nas telas de Compliance
 
-### Contexto
+### Problema
+Ao clicar em "Executar Análise" nas telas de Compliance (Firewall e Domain), o botão muda brevemente para "Analisando..." mas volta ao normal assim que a edge function responde. Não há indicação visual de que o agent está processando a tarefa.
 
-A verificação de Shadow Rules (`net-004`) existe na edge function **legada** `fortigate-compliance`, mas o sistema migrou para o modelo de regras em BD (`compliance_rules`) + avaliação em `agent-task-result`. A lógica de Shadow Rules precisa de um novo tipo de avaliação porque requer filtros compostos (status=enable, action≠deny, bytes=0 ou hit_count=0) que não são suportados pelos tipos atuais (`array_check`, `object_check`, `threshold_check`).
+### Solução
+Adicionar polling do status da tarefa (`agent_tasks`) e exibir uma barra de progresso similar à do Surface Analyzer, com auto-refetch dos dados quando a tarefa for concluída.
 
 ### Mudanças
 
-#### 1. Novo tipo de avaliação `filtered_count_check` em `agent-task-result/index.ts`
+#### 1. `src/pages/firewall/FirewallCompliancePage.tsx`
 
-Adicionar suporte a um novo tipo genérico que:
-- Recebe um array de objetos (via `path`)
-- Aplica `pre_filters` sequenciais (include/exclude por campo e valor)
-- Aplica `match_condition` final (ex: campo = 0)
-- Pass se nenhum item restante atender a condição, fail caso contrário
-- Gera evidências com os itens que falharam
+- Adicionar estado `activeTaskId` que é preenchido quando `handleRefresh` retorna o `task_id`
+- Adicionar `useQuery` com `refetchInterval: 5000` para pollar `agent_tasks.status` enquanto o task está pendente/processing
+- Quando o status mudar para `completed`/`failed`/`timeout`, limpar `activeTaskId` e invalidar os queries de snapshots para carregar os novos dados
+- Renderizar card de progresso (estilo glass-card com Loader2 + texto + botão Atualizar) entre o header e o conteúdo, quando `isRunning === true`
+- Remover o `setIsRefreshing(false)` imediato — só desligar quando o polling detectar conclusão
 
-Lógica resumida:
+#### 2. `src/pages/external-domain/ExternalDomainCompliancePage.tsx`
+
+- Mesmas mudanças: estado `activeTaskId`, polling via `useQuery`, card de progresso, auto-refetch ao concluir
+
+#### Componente de progresso (inline em ambas as páginas)
 ```text
-1. Resolve array from path (+ .results fallback)
-2. Apply pre_filters: [{field, op, value}] — filter IN (keep matching) or OUT (remove matching)
-3. Apply match_conditions: [{field, op, value}] — items matching ALL = "violating"
-4. status = violating.length === 0 ? 'pass' : 'fail'
-5. Evidence = list of violating items with label fields
+┌──────────────────────────────────────────────────────┐
+│ ⟳ Análise em andamento...           ⟳ Atualizar     │
+│ ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░                │
+└──────────────────────────────────────────────────────┘
 ```
 
-Registrar o tipo no `evaluateTypedLogic` switch.
+Sem barra de porcentagem exata (compliance não tem progresso granular), apenas indicador indeterminado com tempo decorrido.
 
-#### 2. Criar regra `net-004` no banco de dados (`compliance_rules`)
-
-Inserir via SQL a regra com `evaluation_logic`:
-```json
-{
-  "type": "filtered_count_check",
-  "path": "results",
-  "pre_filters": [
-    {"field": "status", "op": "equals", "value": "enable"},
-    {"field": "action", "op": "not_in", "value": ["deny", "block"]}
-  ],
-  "match_conditions": [
-    {"field": "bytes", "op": "lte", "value": 0},
-    {"field": "hit_count", "op": "lte", "value": 0, "join": "or"}
-  ],
-  "evidence_label": "Regra #{policyid}: {name}",
-  "evidence_value": "{srcintf} → {dstintf} · action: {action}"
-}
-```
-
-Associada ao `device_type_id` do FortiGate, categoria "Configuração de Rede", código `net-004`.
-
-### Arquivos editados (1)
-- `supabase/functions/agent-task-result/index.ts` — adicionar `filtered_count_check`
-
-### Ação manual necessária (1)
-- Inserir regra `net-004` na tabela `compliance_rules` via Admin > Templates ou SQL
-
-### Requer deploy
-- Edge function `agent-task-result`
-- Re-executar análise de Compliance
+### Arquivos editados (2)
+- `src/pages/firewall/FirewallCompliancePage.tsx`
+- `src/pages/external-domain/ExternalDomainCompliancePage.tsx`
 
