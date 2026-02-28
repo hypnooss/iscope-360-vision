@@ -26,7 +26,8 @@ import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
   Mail, Users, Lock, ExternalLink, FileWarning,
   Clock, Settings, Loader2, Activity, Database,
-  Inbox, UserX, Send, ShieldAlert,
+  Inbox, UserX, Send, ShieldAlert, Key,
+  Fingerprint, HeartPulse, ClipboardCheck, ShieldCheck,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -48,6 +49,11 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 const CATEGORY_ICONS: Record<M365AnalyzerCategory, React.ComponentType<{ className?: string }>> = {
+  security_risk: ShieldCheck,
+  identity_access: Key,
+  conditional_access: Fingerprint,
+  exchange_health: HeartPulse,
+  audit_compliance: ClipboardCheck,
   phishing_threats: Mail,
   mailbox_capacity: Inbox,
   behavioral_baseline: Activity,
@@ -418,6 +424,67 @@ export default function M365AnalyzerDashboardPage() {
               ))}
         </div>
 
+        {/* Executive Summary - New Categories */}
+        {snapshot && m && (
+          <Card className="glass-card border-primary/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ShieldCheck className="w-4 h-4 text-primary" />
+                Resumo Executivo
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div className="space-y-2 p-3 rounded-lg bg-secondary/30">
+                  <div className="flex items-center gap-2 text-sm font-medium"><ShieldCheck className="w-4 h-4 text-rose-400" /> Segurança e Risco</div>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                    <span>Sign-ins alto risco: <b className="text-foreground">{m.securityRisk?.highRiskSignIns ?? 0}</b></span>
+                    <span>Falhas MFA: <b className="text-foreground">{m.securityRisk?.mfaFailures ?? 0}</b></span>
+                    <span>Impossible travel: <b className="text-foreground">{m.securityRisk?.impossibleTravel ?? 0}</b></span>
+                    <span>Contas bloqueadas: <b className="text-foreground">{m.securityRisk?.blockedAccounts ?? 0}</b></span>
+                  </div>
+                </div>
+                <div className="space-y-2 p-3 rounded-lg bg-secondary/30">
+                  <div className="flex items-center gap-2 text-sm font-medium"><Key className="w-4 h-4 text-orange-400" /> Identidade</div>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                    <span>Sem MFA: <b className="text-foreground">{m.identity?.noMfaUsers ?? 0}</b></span>
+                    <span>Sem CA: <b className="text-foreground">{m.identity?.noConditionalAccess ?? 0}</b></span>
+                    <span>Novos: <b className="text-foreground">{m.identity?.newUsers ?? 0}</b></span>
+                    <span>App Reg: <b className="text-foreground">{m.identity?.recentAppRegistrations ?? 0}</b></span>
+                  </div>
+                </div>
+                <div className="space-y-2 p-3 rounded-lg bg-secondary/30">
+                  <div className="flex items-center gap-2 text-sm font-medium"><Fingerprint className="w-4 h-4 text-warning" /> Conditional Access</div>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                    <span>Desabilitadas: <b className="text-foreground">{m.conditionalAccess?.disabledPolicies ?? 0}</b></span>
+                    <span>Report-only: <b className="text-foreground">{m.conditionalAccess?.reportOnlyPolicies ?? 0}</b></span>
+                    <span>Exclusões: <b className="text-foreground">{m.conditionalAccess?.excludedUsers ?? 0}</b></span>
+                    <span>Novas: <b className="text-foreground">{m.conditionalAccess?.recentlyCreated ?? 0}</b></span>
+                  </div>
+                </div>
+                <div className="space-y-2 p-3 rounded-lg bg-secondary/30">
+                  <div className="flex items-center gap-2 text-sm font-medium"><HeartPulse className="w-4 h-4 text-primary" /> Exchange Health</div>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                    <span>Incidentes: <b className="text-foreground">{m.exchangeHealth?.serviceIncidents ?? 0}</b></span>
+                    <span>Falhas trace: <b className="text-foreground">{m.exchangeHealth?.messageTraceFailures ?? 0}</b></span>
+                    <span>Shared s/ owner: <b className="text-foreground">{m.exchangeHealth?.sharedMailboxesNoOwner ?? 0}</b></span>
+                    <span>Conectores: <b className="text-foreground">{m.exchangeHealth?.connectorFailures ?? 0}</b></span>
+                  </div>
+                </div>
+                <div className="space-y-2 p-3 rounded-lg bg-secondary/30">
+                  <div className="flex items-center gap-2 text-sm font-medium"><ClipboardCheck className="w-4 h-4 text-muted-foreground" /> Auditoria</div>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                    <span>Admin changes: <b className="text-foreground">{m.audit?.adminAuditChanges ?? 0}</b></span>
+                    <span>Delegações: <b className="text-foreground">{m.audit?.newDelegations ?? 0}</b></span>
+                    <span>Mailbox audit: <b className="text-foreground">{m.audit?.mailboxAuditAlerts ?? 0}</b></span>
+                    <span>E-discovery: <b className="text-foreground">{m.audit?.activeEdiscovery ?? 0}</b></span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Metrics summary */}
         {snapshot && m && (
           <Card className="glass-card">
@@ -429,6 +496,13 @@ export default function M365AnalyzerDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
+                  <ShieldCheck className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <div>
+                    <div className="text-lg font-bold text-foreground">{m.securityRisk?.riskyUsers ?? 0}</div>
+                    <div className="text-xs text-muted-foreground">Usuários em Risco</div>
+                  </div>
+                </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
                   <Mail className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
@@ -444,10 +518,10 @@ export default function M365AnalyzerDashboardPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                  <Activity className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <Key className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{m.behavioral?.anomalousUsers ?? 0}</div>
-                    <div className="text-xs text-muted-foreground">Comportamentos Anômalos</div>
+                    <div className="text-lg font-bold text-foreground">{m.identity?.noMfaUsers ?? 0}</div>
+                    <div className="text-xs text-muted-foreground">Sem MFA</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
@@ -472,17 +546,10 @@ export default function M365AnalyzerDashboardPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                  <ShieldAlert className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <Fingerprint className="w-5 h-5 text-muted-foreground shrink-0" />
                   <div>
-                    <div className="text-lg font-bold text-foreground">{(m.operational?.smtpAuthEnabled ?? 0) + (m.operational?.legacyProtocols ?? 0)}</div>
-                    <div className="text-xs text-muted-foreground">Riscos Operacionais</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                  <UserX className="w-5 h-5 text-muted-foreground shrink-0" />
-                  <div>
-                    <div className="text-lg font-bold text-foreground">{m.compromise?.correlatedAlerts ?? 0}</div>
-                    <div className="text-xs text-muted-foreground">Alertas Correlacionados</div>
+                    <div className="text-lg font-bold text-foreground">{m.conditionalAccess?.disabledPolicies ?? 0}</div>
+                    <div className="text-xs text-muted-foreground">CA Desabilitadas</div>
                   </div>
                 </div>
               </div>

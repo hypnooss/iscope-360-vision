@@ -3,6 +3,11 @@
 export type M365AnalyzerSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
 export type M365AnalyzerCategory =
+  | 'security_risk'
+  | 'identity_access'
+  | 'conditional_access'
+  | 'exchange_health'
+  | 'audit_compliance'
   | 'phishing_threats'
   | 'mailbox_capacity'
   | 'behavioral_baseline'
@@ -69,6 +74,40 @@ export interface M365AnalyzerMetrics {
     inactiveWithActivity: number;
     fullAccessGrants: number;
   };
+  // New categories
+  securityRisk: {
+    highRiskSignIns: number;
+    mfaFailures: number;
+    impossibleTravel: number;
+    blockedAccounts: number;
+    riskyUsers: number;
+  };
+  identity: {
+    newUsers: number;
+    disabledUsers: number;
+    noMfaUsers: number;
+    noConditionalAccess: number;
+    serviceAccountInteractive: number;
+    recentAppRegistrations: number;
+  };
+  conditionalAccess: {
+    disabledPolicies: number;
+    reportOnlyPolicies: number;
+    excludedUsers: number;
+    recentlyCreated: number;
+  };
+  exchangeHealth: {
+    serviceIncidents: number;
+    messageTraceFailures: number;
+    sharedMailboxesNoOwner: number;
+    connectorFailures: number;
+  };
+  audit: {
+    mailboxAuditAlerts: number;
+    adminAuditChanges: number;
+    newDelegations: number;
+    activeEdiscovery: number;
+  };
 }
 
 export interface M365AnalyzerSnapshot {
@@ -87,6 +126,11 @@ export interface M365AnalyzerSnapshot {
 }
 
 export const M365_ANALYZER_CATEGORY_LABELS: Record<M365AnalyzerCategory, string> = {
+  security_risk: 'Segurança e Risco',
+  identity_access: 'Identidade e Acesso',
+  conditional_access: 'Conditional Access',
+  exchange_health: 'Saúde Exchange Online',
+  audit_compliance: 'Auditoria e Compliance',
   phishing_threats: 'Phishing e Ameaças',
   mailbox_capacity: 'Capacidade de Mailbox',
   behavioral_baseline: 'Baseline Comportamental',
@@ -97,6 +141,11 @@ export const M365_ANALYZER_CATEGORY_LABELS: Record<M365AnalyzerCategory, string>
 };
 
 export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
+  'security_risk',
+  'identity_access',
+  'conditional_access',
+  'exchange_health',
+  'audit_compliance',
   'phishing_threats',
   'mailbox_capacity',
   'behavioral_baseline',

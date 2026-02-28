@@ -1046,6 +1046,538 @@ function analyzeOperationalRisks(
 }
 
 // ============================================
+// Module 8: Security & Risk (Entra ID sign-ins)
+// ============================================
+
+function analyzeSecurityRisk(
+  signInLogs: any[],
+  riskyUsersData: any[],
+): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
+  const insights: M365AnalyzerInsight[] = [];
+  const metrics: Record<string, any> = {
+    highRiskSignIns: 0,
+    mfaFailures: 0,
+    impossibleTravel: 0,
+    blockedAccounts: 0,
+    riskyUsers: 0,
+  };
+
+  // Risky users from Identity Protection
+  if (riskyUsersData.length > 0) {
+    const highRisk = riskyUsersData.filter((u: any) => u.riskLevel === 'high');
+    const medRisk = riskyUsersData.filter((u: any) => u.riskLevel === 'medium');
+    metrics.riskyUsers = riskyUsersData.length;
+
+    if (highRisk.length > 0) {
+      insights.push({
+        id: 'risky_users_high',
+        category: 'security_risk',
+        name: 'Usuários com Risco Alto',
+        description: `${highRisk.length} usuário(s) com nível de risco ALTO no Identity Protection`,
+        severity: 'critical',
+        affectedUsers: highRisk.slice(0, 20).map((u: any) => u.userPrincipalName || u.userDisplayName || ''),
+        count: highRisk.length,
+        recommendation: 'Force reset de senha e investigue possível comprometimento.',
+      });
+    }
+    if (medRisk.length > 0) {
+      insights.push({
+        id: 'risky_users_medium',
+        category: 'security_risk',
+        name: 'Usuários com Risco Médio',
+        description: `${medRisk.length} usuário(s) com nível de risco MÉDIO`,
+        severity: 'high',
+        affectedUsers: medRisk.slice(0, 20).map((u: any) => u.userPrincipalName || u.userDisplayName || ''),
+        count: medRisk.length,
+        recommendation: 'Valide a legitimidade dos sign-ins com os usuários.',
+      });
+    }
+  }
+
+  // Analyze sign-in logs for MFA failures, blocked accounts, impossible travel
+  if (signInLogs.length > 0) {
+    const mfaFailureCodes = new Set([50074, 50076, 53003, 500121]);
+    const blockedCode = 50053;
+    const mfaFailUsers = new Set<string>();
+    const blockedUsers = new Set<string>();
+    const userCountryTimestamps: Record<string, { country: string; time: number }[]> = {};
+
+    for (const log of signInLogs) {
+      const user = log.userPrincipalName || '';
+      const errorCode = log.status?.errorCode ?? log.errorCode ?? 0;
+      const country = log.location?.countryOrRegion || '';
+      const ts = new Date(log.createdDateTime || 0).getTime();
+      const riskLevel = (log.riskLevelDuringSignIn || '').toLowerCase();
+
+      if (riskLevel === 'high' || riskLevel === 'medium') {
+        metrics.highRiskSignIns++;
+      }
+
+      if (mfaFailureCodes.has(errorCode)) {
+        metrics.mfaFailures++;
+        mfaFailUsers.add(user);
+      }
+
+      if (errorCode === blockedCode) {
+        blockedUsers.add(user);
+      }
+
+      if (user && country && ts > 0) {
+        if (!userCountryTimestamps[user]) userCountryTimestamps[user] = [];
+        userCountryTimestamps[user].push({ country, time: ts });
+      }
+    }
+
+    metrics.blockedAccounts = blockedUsers.size;
+
+    if (mfaFailUsers.size > 0) {
+      insights.push({
+        id: 'mfa_failures',
+        category: 'security_risk',
+        name: 'Falhas de MFA Detectadas',
+        description: `${mfaFailUsers.size} usuário(s) com falhas de MFA — possível password spray`,
+        severity: mfaFailUsers.size > 10 ? 'critical' : 'high',
+        affectedUsers: [...mfaFailUsers].slice(0, 20),
+        count: metrics.mfaFailures,
+        recommendation: 'Verifique se há tentativa de ataque de password spray.',
+      });
+    }
+
+    if (blockedUsers.size > 0) {
+      insights.push({
+        id: 'blocked_accounts',
+        category: 'security_risk',
+        name: 'Contas Bloqueadas',
+        description: `${blockedUsers.size} conta(s) bloqueada(s) — possível brute force`,
+        severity: blockedUsers.size > 5 ? 'critical' : 'high',
+        affectedUsers: [...blockedUsers].slice(0, 20),
+        count: blockedUsers.size,
+        recommendation: 'Investigue tentativas de brute force e valide com os usuários.',
+      });
+    }
+
+    // Impossible travel detection
+    for (const [user, entries] of Object.entries(userCountryTimestamps)) {
+      const sorted = entries.sort((a, b) => a.time - b.time);
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].country !== sorted[i - 1].country) {
+          const timeDiffMin = (sorted[i].time - sorted[i - 1].time) / 60000;
+          if (timeDiffMin < 60) {
+            metrics.impossibleTravel++;
+            insights.push({
+              id: `impossible_travel_${user.replace(/[^a-z0-9]/gi, '_')}`,
+              category: 'security_risk',
+              name: 'Impossible Travel Detectado',
+              description: `${user}: login de ${sorted[i - 1].country} e ${sorted[i].country} em ${Math.round(timeDiffMin)}min`,
+              severity: 'critical',
+              affectedUsers: [user],
+              recommendation: 'Valide legitimidade com o usuário imediatamente.',
+            });
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return { insights, metrics };
+}
+
+// ============================================
+// Module 9: Identity & Access
+// ============================================
+
+function analyzeIdentityAccess(
+  auditLogs: any[],
+  credentialRegistration: any[],
+  recentApps: any[],
+  signInLogs: any[],
+): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
+  const insights: M365AnalyzerInsight[] = [];
+  const metrics: Record<string, any> = {
+    newUsers: 0,
+    disabledUsers: 0,
+    noMfaUsers: 0,
+    noConditionalAccess: 0,
+    serviceAccountInteractive: 0,
+    recentAppRegistrations: 0,
+  };
+
+  // New users and disabled users from audit logs
+  if (Array.isArray(auditLogs)) {
+    for (const log of auditLogs) {
+      const activity = (log.activityDisplayName || '').toLowerCase();
+      if (activity === 'add user' || activity.includes('add user')) {
+        metrics.newUsers++;
+      }
+      if (activity === 'disable account' || activity.includes('disable account')) {
+        metrics.disabledUsers++;
+      }
+    }
+    if (metrics.newUsers > 0) {
+      insights.push({
+        id: 'new_users_created',
+        category: 'identity_access',
+        name: 'Novos Usuários Criados',
+        description: `${metrics.newUsers} novo(s) usuário(s) criado(s) no período`,
+        severity: metrics.newUsers > 10 ? 'medium' : 'info',
+        count: metrics.newUsers,
+        recommendation: 'Verifique se os novos usuários foram criados com autorização.',
+      });
+    }
+  }
+
+  // MFA registration status
+  if (credentialRegistration.length > 0) {
+    const noMfa = credentialRegistration.filter((u: any) =>
+      u.isMfaRegistered === false || u.isMfaCapable === false
+    );
+    metrics.noMfaUsers = noMfa.length;
+
+    if (noMfa.length > 0) {
+      insights.push({
+        id: 'users_no_mfa',
+        category: 'identity_access',
+        name: 'Usuários sem MFA Configurado',
+        description: `${noMfa.length} usuário(s) sem registro de MFA — gap de segurança`,
+        severity: noMfa.length > 20 ? 'critical' : noMfa.length > 5 ? 'high' : 'medium',
+        affectedUsers: noMfa.slice(0, 20).map((u: any) => u.userPrincipalName || ''),
+        count: noMfa.length,
+        recommendation: 'Exija registro de MFA para todos os usuários.',
+      });
+    }
+  }
+
+  // Recent app registrations
+  if (recentApps.length > 0) {
+    metrics.recentAppRegistrations = recentApps.length;
+    const recentOnes = recentApps.filter((app: any) => {
+      const created = new Date(app.createdDateTime || 0).getTime();
+      return Date.now() - created < 7 * 24 * 60 * 60 * 1000; // 7 days
+    });
+    if (recentOnes.length > 0) {
+      insights.push({
+        id: 'recent_app_registrations',
+        category: 'identity_access',
+        name: 'App Registrations Recentes',
+        description: `${recentOnes.length} app(s) registrada(s) nos últimos 7 dias — possível Shadow IT`,
+        severity: recentOnes.length > 5 ? 'high' : 'medium',
+        count: recentOnes.length,
+        recommendation: 'Verifique se os registros de aplicação são autorizados.',
+      });
+    }
+  }
+
+  // Service accounts with interactive login
+  if (signInLogs.length > 0) {
+    const serviceAccounts = new Set<string>();
+    for (const log of signInLogs) {
+      const user = (log.userPrincipalName || '').toLowerCase();
+      if (user.includes('svc') || user.includes('service') || user.includes('noreply') || user.includes('admin@')) {
+        if (log.isInteractive === true) {
+          serviceAccounts.add(user);
+        }
+      }
+    }
+    metrics.serviceAccountInteractive = serviceAccounts.size;
+    if (serviceAccounts.size > 0) {
+      insights.push({
+        id: 'service_account_interactive',
+        category: 'identity_access',
+        name: 'Service Account com Login Interativo',
+        description: `${serviceAccounts.size} service account(s) com uso interativo indevido`,
+        severity: 'high',
+        affectedUsers: [...serviceAccounts].slice(0, 20),
+        count: serviceAccounts.size,
+        recommendation: 'Service accounts devem usar apenas autenticação não-interativa.',
+      });
+    }
+  }
+
+  return { insights, metrics };
+}
+
+// ============================================
+// Module 10: Conditional Access
+// ============================================
+
+function analyzeConditionalAccess(
+  caPolicies: any[],
+  auditLogs: any[],
+): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
+  const insights: M365AnalyzerInsight[] = [];
+  const metrics: Record<string, any> = {
+    disabledPolicies: 0,
+    reportOnlyPolicies: 0,
+    excludedUsers: 0,
+    recentlyCreated: 0,
+  };
+
+  if (caPolicies.length === 0) {
+    insights.push({
+      id: 'no_ca_policies',
+      category: 'conditional_access',
+      name: 'Nenhuma Política de Conditional Access',
+      description: 'O tenant não tem políticas de Conditional Access configuradas',
+      severity: 'critical',
+      recommendation: 'Implemente políticas de CA para proteger o acesso ao tenant.',
+    });
+    return { insights, metrics };
+  }
+
+  for (const policy of caPolicies) {
+    const name = policy.displayName || policy.id || 'Unknown';
+    const state = (policy.state || '').toLowerCase();
+
+    if (state === 'disabled') {
+      metrics.disabledPolicies++;
+      insights.push({
+        id: `ca_disabled_${name.replace(/[^a-z0-9]/gi, '_')}`,
+        category: 'conditional_access',
+        name: 'Política de CA Desabilitada',
+        description: `Política "${name}" está desabilitada — alto risco de exposição`,
+        severity: 'high',
+        recommendation: 'Ative a política ou documente o motivo da desabilitação.',
+      });
+    }
+
+    if (state === 'enabledforreportingbutnotenforced') {
+      metrics.reportOnlyPolicies++;
+      insights.push({
+        id: `ca_reportonly_${name.replace(/[^a-z0-9]/gi, '_')}`,
+        category: 'conditional_access',
+        name: 'Política de CA em Report-Only',
+        description: `Política "${name}" em Report-only — não está sendo aplicada`,
+        severity: 'medium',
+        recommendation: 'Avalie se a política deve ser ativada.',
+      });
+    }
+
+    // Check excluded users
+    const excludedUsers = policy.conditions?.users?.excludeUsers || [];
+    const excludedGroups = policy.conditions?.users?.excludeGroups || [];
+    const totalExcluded = excludedUsers.length + excludedGroups.length;
+    if (totalExcluded > 0) {
+      metrics.excludedUsers += totalExcluded;
+      if (totalExcluded > 5) {
+        insights.push({
+          id: `ca_excluded_${name.replace(/[^a-z0-9]/gi, '_')}`,
+          category: 'conditional_access',
+          name: 'Muitas Exclusões em Política de CA',
+          description: `Política "${name}" tem ${totalExcluded} exclusão(ões) — backdoor involuntário`,
+          severity: totalExcluded > 10 ? 'high' : 'medium',
+          recommendation: 'Minimize exclusões em políticas de Conditional Access.',
+        });
+      }
+    }
+  }
+
+  // New policies from audit logs
+  if (Array.isArray(auditLogs)) {
+    for (const log of auditLogs) {
+      const activity = (log.activityDisplayName || '').toLowerCase();
+      if (activity.includes('conditional access') && (activity.includes('add') || activity.includes('create'))) {
+        metrics.recentlyCreated++;
+      }
+    }
+    if (metrics.recentlyCreated > 0) {
+      insights.push({
+        id: 'ca_new_policies',
+        category: 'conditional_access',
+        name: 'Novas Políticas de CA Criadas',
+        description: `${metrics.recentlyCreated} nova(s) política(s) de CA criada(s) no período`,
+        severity: 'info',
+        count: metrics.recentlyCreated,
+        recommendation: 'Verifique se as mudanças foram planejadas.',
+      });
+    }
+  }
+
+  return { insights, metrics };
+}
+
+// ============================================
+// Module 11: Exchange Health
+// ============================================
+
+function analyzeExchangeHealth(
+  serviceHealthData: any[],
+  exoMessageTrace: any[],
+  exoSharedMailboxes: any[],
+  exoConnectors: any[],
+): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
+  const insights: M365AnalyzerInsight[] = [];
+  const metrics: Record<string, any> = {
+    serviceIncidents: 0,
+    messageTraceFailures: 0,
+    sharedMailboxesNoOwner: 0,
+    connectorFailures: 0,
+  };
+
+  // Service health incidents
+  if (serviceHealthData.length > 0) {
+    const activeIncidents = serviceHealthData.filter((i: any) =>
+      (i.status || '').toLowerCase() !== 'resolved' && (i.status || '').toLowerCase() !== 'servicerestored'
+    );
+    metrics.serviceIncidents = activeIncidents.length;
+    if (activeIncidents.length > 0) {
+      insights.push({
+        id: 'service_health_incidents',
+        category: 'exchange_health',
+        name: 'Incidentes Ativos Microsoft',
+        description: `${activeIncidents.length} incidente(s) ativo(s) de serviço Exchange Online`,
+        severity: activeIncidents.length > 2 ? 'high' : 'medium',
+        count: activeIncidents.length,
+        recommendation: 'Monitore os incidentes no painel de Service Health da Microsoft.',
+      });
+    }
+  }
+
+  // Message trace failures
+  if (exoMessageTrace.length > 0) {
+    const failures = exoMessageTrace.filter((msg: any) => {
+      const status = (msg.Status || msg.DeliveryStatus || '').toLowerCase();
+      return status !== 'delivered' && status !== 'resolved' && status !== '';
+    });
+    metrics.messageTraceFailures = failures.length;
+    if (failures.length > 0) {
+      insights.push({
+        id: 'message_trace_failures',
+        category: 'exchange_health',
+        name: 'Falhas na Entrega de Email',
+        description: `${failures.length} email(s) com falha de entrega no período`,
+        severity: failures.length > 50 ? 'high' : 'medium',
+        count: failures.length,
+        recommendation: 'Investigue os problemas de entrega e verifique conectores.',
+      });
+    }
+  }
+
+  // Shared mailboxes without owner
+  if (exoSharedMailboxes.length > 0) {
+    const noOwner = exoSharedMailboxes.filter((mb: any) =>
+      (mb.RecipientTypeDetails || '').includes('Shared') &&
+      (!mb.GrantSendOnBehalfTo || mb.GrantSendOnBehalfTo === '{}' || mb.GrantSendOnBehalfTo === '')
+    );
+    metrics.sharedMailboxesNoOwner = noOwner.length;
+    if (noOwner.length > 0) {
+      insights.push({
+        id: 'shared_mailbox_no_owner',
+        category: 'exchange_health',
+        name: 'Shared Mailboxes sem Owner',
+        description: `${noOwner.length} shared mailbox(es) sem proprietário definido — falta de governança`,
+        severity: 'medium',
+        count: noOwner.length,
+        recommendation: 'Atribua proprietários a todas as shared mailboxes.',
+      });
+    }
+  }
+
+  // Connector failures
+  if (exoConnectors.length > 0) {
+    const failedConnectors = exoConnectors.filter((c: any) =>
+      (c.Status || c.Enabled) === false || (c.LastValidationResult || '').toLowerCase().includes('fail')
+    );
+    metrics.connectorFailures = failedConnectors.length;
+    if (failedConnectors.length > 0) {
+      insights.push({
+        id: 'connector_failures',
+        category: 'exchange_health',
+        name: 'Problemas em Conectores',
+        description: `${failedConnectors.length} conector(es) com falha ou desabilitado(s)`,
+        severity: 'high',
+        count: failedConnectors.length,
+        recommendation: 'Verifique a configuração e validação dos conectores híbridos.',
+      });
+    }
+  }
+
+  return { insights, metrics };
+}
+
+// ============================================
+// Module 12: Audit & Compliance
+// ============================================
+
+function analyzeAuditCompliance(
+  auditLogs: any[],
+  exoInboxRules: any[],
+): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
+  const insights: M365AnalyzerInsight[] = [];
+  const metrics: Record<string, any> = {
+    mailboxAuditAlerts: 0,
+    adminAuditChanges: 0,
+    newDelegations: 0,
+    activeEdiscovery: 0,
+  };
+
+  if (!Array.isArray(auditLogs)) return { insights, metrics };
+
+  for (const log of auditLogs) {
+    const activity = (log.activityDisplayName || '').toLowerCase();
+    const user = log.initiatedBy?.user?.userPrincipalName || '';
+
+    // Admin audit changes
+    if (activity.includes('reset password') || activity.includes('update user') ||
+        activity.includes('add member to role') || activity.includes('remove member from role')) {
+      metrics.adminAuditChanges++;
+    }
+
+    // New delegations
+    if (activity.includes('add-mailboxpermission') || activity.includes('mailbox permission') ||
+        activity.includes('add delegated') || activity.includes('grant') && activity.includes('access')) {
+      metrics.newDelegations++;
+      insights.push({
+        id: `delegation_${user.replace(/[^a-z0-9]/gi, '_')}_${metrics.newDelegations}`,
+        category: 'audit_compliance',
+        name: 'Nova Delegação de Acesso',
+        description: `${user} concedeu delegação: ${log.activityDisplayName || activity}`,
+        severity: 'high',
+        affectedUsers: user ? [user] : [],
+        recommendation: 'Verifique se a delegação foi autorizada.',
+      });
+    }
+
+    // E-discovery
+    if (activity.includes('ediscovery') || activity.includes('compliance search') || activity.includes('content search')) {
+      metrics.activeEdiscovery++;
+    }
+
+    // Mailbox audit alerts (non-owner access)
+    if (activity.includes('mailboxlogin') || activity.includes('mailbox audit') ||
+        (activity.includes('access') && activity.includes('mailbox'))) {
+      metrics.mailboxAuditAlerts++;
+    }
+  }
+
+  if (metrics.adminAuditChanges > 0) {
+    insights.push({
+      id: 'admin_audit_changes',
+      category: 'audit_compliance',
+      name: 'Mudanças Administrativas Críticas',
+      description: `${metrics.adminAuditChanges} mudança(s) administrativa(s) crítica(s) detectada(s)`,
+      severity: metrics.adminAuditChanges > 10 ? 'high' : 'medium',
+      count: metrics.adminAuditChanges,
+      recommendation: 'Monitore mudanças de senhas, roles e permissões.',
+    });
+  }
+
+  if (metrics.mailboxAuditAlerts > 0) {
+    insights.push({
+      id: 'mailbox_audit_alerts',
+      category: 'audit_compliance',
+      name: 'Acessos a Mailbox Detectados',
+      description: `${metrics.mailboxAuditAlerts} acesso(s) a caixas postais de terceiros detectado(s)`,
+      severity: metrics.mailboxAuditAlerts > 5 ? 'high' : 'medium',
+      count: metrics.mailboxAuditAlerts,
+      recommendation: 'Verifique se os acessos são autorizados.',
+    });
+  }
+
+  return { insights, metrics };
+}
+
+// ============================================
 // Score Calculator
 // ============================================
 
@@ -1133,12 +1665,21 @@ Deno.serve(async (req) => {
     let exoMalwareFilter: any[] = [];
     let exoRemoteDomains: any[] = [];
 
-    // NEW: Phase 3 operational data
+    // Phase 3 operational data
     let exoMailboxStats: any[] = [];
     let exoMailboxQuota: any[] = [];
     let exoMessageTrace: any[] = [];
     let exoInboxRules: any[] = [];
     let exoAuthPolicy: any[] = [];
+
+    // NEW: Entra ID / Identity data
+    let riskyUsersData: any[] = [];
+    let credentialRegistration: any[] = [];
+    let caPolicies: any[] = [];
+    let recentApps: any[] = [];
+    let serviceHealthData: any[] = [];
+    let exoSharedMailboxes: any[] = [];
+    let exoConnectors: any[] = [];
 
     let dataSource = 'none';
     let stepsReceived: string[] = [];
@@ -1179,6 +1720,15 @@ Deno.serve(async (req) => {
       exoInboxRules = get('exo_inbox_rules');
       exoAuthPolicy = get('exo_auth_policy');
 
+      // NEW: Entra ID / Identity data from agent
+      riskyUsersData = get('risky_users');
+      credentialRegistration = get('credential_registration');
+      caPolicies = get('conditional_access_policies');
+      recentApps = get('recent_app_registrations');
+      serviceHealthData = get('service_health');
+      exoSharedMailboxes = get('exo_shared_mailboxes');
+      exoConnectors = get('exo_connectors');
+
       // Alternate key names
       if (exoForwarding.length === 0) exoForwarding = get('exo_forwarding');
       if (exoAntiPhish.length === 0) exoAntiPhish = get('exo_antiphish_policy');
@@ -1206,8 +1756,9 @@ Deno.serve(async (req) => {
         exoMailboxStats.length + exoMailboxQuota.length + exoMessageTrace.length +
         exoInboxRules.length + exoAuthPolicy.length;
       const graphTotal = signInLogs.length + auditLogs.length + emailActivity.length + mailboxUsage.length + threatData.length;
+      const entraTotal = riskyUsersData.length + credentialRegistration.length + caPolicies.length + recentApps.length + serviceHealthData.length;
 
-      console.log(`[m365-analyzer] Agent data: EXO items=${exoTotal}, Graph items=${graphTotal}, mailboxStats=${exoMailboxStats.length}, messageTrace=${exoMessageTrace.length}, inboxRules=${exoInboxRules.length}, authPolicy=${exoAuthPolicy.length}`);
+      console.log(`[m365-analyzer] Agent data: EXO=${exoTotal}, Graph=${graphTotal}, Entra=${entraTotal}`);
     }
 
     // ── Graph API fallback: only if NO useful data at all ──
@@ -1227,12 +1778,18 @@ Deno.serve(async (req) => {
 
         const periodFilter = snapshot.period_start ? `&$filter=createdDateTime ge ${snapshot.period_start}` : '';
 
-        const [emailData, mailboxData, signInData, auditData, threatStatus] = await Promise.all([
+        const [emailData, mailboxData, signInData, auditData, threatStatus,
+               riskyUsersRes, credRegRes, caPoliciesRes, recentAppsRes, serviceHealthRes] = await Promise.all([
           graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getEmailActivityUserDetail(period=\'D1\')'),
           graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period=\'D1\')'),
           graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=500${periodFilter}`),
           graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=500${periodFilter}`),
           graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getEmailActivityUserDetail(period=\'D1\')'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/reports/credentialUserRegistrationDetails?$top=999'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/applications?$orderby=createdDateTime desc&$top=50'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/issues?$top=50'),
         ]);
 
         if (emailActivity.length === 0) emailActivity = Array.isArray(emailData?.value) ? emailData.value : [];
@@ -1240,6 +1797,13 @@ Deno.serve(async (req) => {
         if (signInLogs.length === 0) signInLogs = Array.isArray(signInData?.value) ? signInData.value : [];
         if (auditLogs.length === 0) auditLogs = Array.isArray(auditData?.value) ? auditData.value : [];
         if (threatData.length === 0) threatData = Array.isArray(threatStatus?.value) ? threatStatus.value : [];
+        if (riskyUsersData.length === 0) riskyUsersData = Array.isArray(riskyUsersRes?.value) ? riskyUsersRes.value : [];
+        if (credentialRegistration.length === 0) credentialRegistration = Array.isArray(credRegRes?.value) ? credRegRes.value : [];
+        if (caPolicies.length === 0) caPolicies = Array.isArray(caPoliciesRes?.value) ? caPoliciesRes.value : [];
+        if (recentApps.length === 0) recentApps = Array.isArray(recentAppsRes?.value) ? recentAppsRes.value : [];
+        if (serviceHealthData.length === 0) serviceHealthData = Array.isArray(serviceHealthRes?.value) ? serviceHealthRes.value : [];
+
+        console.log(`[m365-analyzer] Graph enrichment: riskyUsers=${riskyUsersData.length}, credReg=${credentialRegistration.length}, caPolicies=${caPolicies.length}, apps=${recentApps.length}, serviceHealth=${serviceHealthData.length}`);
       } else if (dataSource === 'none') {
         console.error('[m365-analyzer] No data source available');
         await supabase
@@ -1252,6 +1816,35 @@ Deno.serve(async (req) => {
         );
       } else {
         console.log('[m365-analyzer] Graph API unavailable, proceeding with agent data only');
+      }
+    }
+
+    // Always try to enrich with Graph API for new modules (even if agent data exists)
+    if (dataSource === 'agent' && (riskyUsersData.length === 0 || caPolicies.length === 0)) {
+      const token = await getGraphToken(supabase, snapshot.tenant_record_id);
+      if (token) {
+        console.log('[m365-analyzer] Enriching agent data with Graph API for Entra ID modules...');
+        const enrichCalls = [];
+        if (riskyUsersData.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100'));
+        else enrichCalls.push(Promise.resolve(null));
+        if (credentialRegistration.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/reports/credentialUserRegistrationDetails?$top=999'));
+        else enrichCalls.push(Promise.resolve(null));
+        if (caPolicies.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies'));
+        else enrichCalls.push(Promise.resolve(null));
+        if (recentApps.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/applications?$orderby=createdDateTime desc&$top=50'));
+        else enrichCalls.push(Promise.resolve(null));
+        if (serviceHealthData.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/issues?$top=50'));
+        else enrichCalls.push(Promise.resolve(null));
+
+        const [riskRes, credRes, caRes, appRes, shRes] = await Promise.all(enrichCalls);
+        if (riskRes && riskyUsersData.length === 0) riskyUsersData = Array.isArray(riskRes.value) ? riskRes.value : [];
+        if (credRes && credentialRegistration.length === 0) credentialRegistration = Array.isArray(credRes.value) ? credRes.value : [];
+        if (caRes && caPolicies.length === 0) caPolicies = Array.isArray(caRes.value) ? caRes.value : [];
+        if (appRes && recentApps.length === 0) recentApps = Array.isArray(appRes.value) ? appRes.value : [];
+        if (shRes && serviceHealthData.length === 0) serviceHealthData = Array.isArray(shRes.value) ? shRes.value : [];
+
+        dataSource = 'hybrid';
+        console.log(`[m365-analyzer] Enriched: riskyUsers=${riskyUsersData.length}, credReg=${credentialRegistration.length}, caPolicies=${caPolicies.length}`);
       }
     }
 
@@ -1285,6 +1878,21 @@ Deno.serve(async (req) => {
     // ── Run analysis modules ──
     const allInsights: M365AnalyzerInsight[] = [];
 
+    const securityRisk = analyzeSecurityRisk(signInLogs, riskyUsersData);
+    allInsights.push(...securityRisk.insights);
+
+    const identityAccess = analyzeIdentityAccess(auditLogs, credentialRegistration, recentApps, signInLogs);
+    allInsights.push(...identityAccess.insights);
+
+    const conditionalAccessResult = analyzeConditionalAccess(caPolicies, auditLogs);
+    allInsights.push(...conditionalAccessResult.insights);
+
+    const exchangeHealth = analyzeExchangeHealth(serviceHealthData, exoMessageTrace, exoSharedMailboxes, exoConnectors);
+    allInsights.push(...exchangeHealth.insights);
+
+    const auditCompliance = analyzeAuditCompliance(auditLogs, exoInboxRules);
+    allInsights.push(...auditCompliance.insights);
+
     const phishing = analyzePhishingThreats(emailActivity, threatData, exoAntiPhish, exoSafeLinks, exoSafeAttach, exoContentFilter);
     allInsights.push(...phishing.insights);
 
@@ -1308,6 +1916,39 @@ Deno.serve(async (req) => {
 
     // Build metrics in the exact shape expected by the frontend
     const allMetrics = {
+      securityRisk: {
+        highRiskSignIns: securityRisk.metrics.highRiskSignIns || 0,
+        mfaFailures: securityRisk.metrics.mfaFailures || 0,
+        impossibleTravel: securityRisk.metrics.impossibleTravel || 0,
+        blockedAccounts: securityRisk.metrics.blockedAccounts || 0,
+        riskyUsers: securityRisk.metrics.riskyUsers || 0,
+      },
+      identity: {
+        newUsers: identityAccess.metrics.newUsers || 0,
+        disabledUsers: identityAccess.metrics.disabledUsers || 0,
+        noMfaUsers: identityAccess.metrics.noMfaUsers || 0,
+        noConditionalAccess: identityAccess.metrics.noConditionalAccess || 0,
+        serviceAccountInteractive: identityAccess.metrics.serviceAccountInteractive || 0,
+        recentAppRegistrations: identityAccess.metrics.recentAppRegistrations || 0,
+      },
+      conditionalAccess: {
+        disabledPolicies: conditionalAccessResult.metrics.disabledPolicies || 0,
+        reportOnlyPolicies: conditionalAccessResult.metrics.reportOnlyPolicies || 0,
+        excludedUsers: conditionalAccessResult.metrics.excludedUsers || 0,
+        recentlyCreated: conditionalAccessResult.metrics.recentlyCreated || 0,
+      },
+      exchangeHealth: {
+        serviceIncidents: exchangeHealth.metrics.serviceIncidents || 0,
+        messageTraceFailures: exchangeHealth.metrics.messageTraceFailures || 0,
+        sharedMailboxesNoOwner: exchangeHealth.metrics.sharedMailboxesNoOwner || 0,
+        connectorFailures: exchangeHealth.metrics.connectorFailures || 0,
+      },
+      audit: {
+        mailboxAuditAlerts: auditCompliance.metrics.mailboxAuditAlerts || 0,
+        adminAuditChanges: auditCompliance.metrics.adminAuditChanges || 0,
+        newDelegations: auditCompliance.metrics.newDelegations || 0,
+        activeEdiscovery: auditCompliance.metrics.activeEdiscovery || 0,
+      },
       phishing: {
         totalBlocked: phishing.metrics.totalBlocked || 0,
         quarantined: phishing.metrics.quarantined || 0,
@@ -1345,7 +1986,7 @@ Deno.serve(async (req) => {
         fullAccessGrants: operational.metrics.fullAccessGrants || 0,
       },
       dataSource,
-      normalizationVersion: 3,
+      normalizationVersion: 4,
       stepsReceived,
     };
 

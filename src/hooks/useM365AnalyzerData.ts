@@ -15,6 +15,11 @@ const defaultMetrics: M365AnalyzerMetrics = {
   rules: { externalForwards: 0, autoDelete: 0, suspiciousRules: [] },
   exfiltration: { highVolumeExternal: 0, topExternalDomains: [] },
   operational: { smtpAuthEnabled: 0, legacyProtocols: 0, inactiveWithActivity: 0, fullAccessGrants: 0 },
+  securityRisk: { highRiskSignIns: 0, mfaFailures: 0, impossibleTravel: 0, blockedAccounts: 0, riskyUsers: 0 },
+  identity: { newUsers: 0, disabledUsers: 0, noMfaUsers: 0, noConditionalAccess: 0, serviceAccountInteractive: 0, recentAppRegistrations: 0 },
+  conditionalAccess: { disabledPolicies: 0, reportOnlyPolicies: 0, excludedUsers: 0, recentlyCreated: 0 },
+  exchangeHealth: { serviceIncidents: 0, messageTraceFailures: 0, sharedMailboxesNoOwner: 0, connectorFailures: 0 },
+  audit: { mailboxAuditAlerts: 0, adminAuditChanges: 0, newDelegations: 0, activeEdiscovery: 0 },
 };
 
 function safeArray<T>(val: unknown): T[] {
@@ -36,6 +41,11 @@ function parseMetrics(raw: unknown): M365AnalyzerMetrics {
   const ru = m.rules ?? {};
   const ex = m.exfiltration ?? {};
   const op = m.operational ?? {};
+  const sr = m.securityRisk ?? m.security_risk ?? {};
+  const id = m.identity ?? m.identity_access ?? {};
+  const ca = m.conditionalAccess ?? m.conditional_access ?? {};
+  const eh = m.exchangeHealth ?? m.exchange_health ?? {};
+  const au = m.audit ?? m.audit_compliance ?? {};
 
   return {
     phishing: {
@@ -73,6 +83,39 @@ function parseMetrics(raw: unknown): M365AnalyzerMetrics {
       legacyProtocols: safeNum(op.legacyProtocols ?? op.legacyAuthUsers),
       inactiveWithActivity: safeNum(op.inactiveWithActivity),
       fullAccessGrants: safeNum(op.fullAccessGrants),
+    },
+    securityRisk: {
+      highRiskSignIns: safeNum(sr.highRiskSignIns),
+      mfaFailures: safeNum(sr.mfaFailures),
+      impossibleTravel: safeNum(sr.impossibleTravel),
+      blockedAccounts: safeNum(sr.blockedAccounts),
+      riskyUsers: safeNum(sr.riskyUsers),
+    },
+    identity: {
+      newUsers: safeNum(id.newUsers),
+      disabledUsers: safeNum(id.disabledUsers),
+      noMfaUsers: safeNum(id.noMfaUsers),
+      noConditionalAccess: safeNum(id.noConditionalAccess),
+      serviceAccountInteractive: safeNum(id.serviceAccountInteractive),
+      recentAppRegistrations: safeNum(id.recentAppRegistrations),
+    },
+    conditionalAccess: {
+      disabledPolicies: safeNum(ca.disabledPolicies),
+      reportOnlyPolicies: safeNum(ca.reportOnlyPolicies),
+      excludedUsers: safeNum(ca.excludedUsers),
+      recentlyCreated: safeNum(ca.recentlyCreated),
+    },
+    exchangeHealth: {
+      serviceIncidents: safeNum(eh.serviceIncidents),
+      messageTraceFailures: safeNum(eh.messageTraceFailures),
+      sharedMailboxesNoOwner: safeNum(eh.sharedMailboxesNoOwner),
+      connectorFailures: safeNum(eh.connectorFailures),
+    },
+    audit: {
+      mailboxAuditAlerts: safeNum(au.mailboxAuditAlerts),
+      adminAuditChanges: safeNum(au.adminAuditChanges),
+      newDelegations: safeNum(au.newDelegations),
+      activeEdiscovery: safeNum(au.activeEdiscovery),
     },
   };
 }
@@ -192,7 +235,6 @@ export function useM365AnalyzerProgress(tenantRecordId?: string) {
 
         const taskStatus = (taskData as any)?.status;
         if (taskStatus && ['completed', 'failed', 'timeout', 'cancelled'].includes(taskStatus)) {
-          // Auto-reconcile: mark orphan snapshot as failed directly
           await supabase
             .from('m365_analyzer_snapshots' as any)
             .update({ status: 'failed', metrics: { recovered_reason: `orphan_task_${taskStatus}` } })
