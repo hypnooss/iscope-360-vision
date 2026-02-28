@@ -94,14 +94,6 @@ serve(async (req) => {
       );
     }
 
-    if (!globalConfig.app_object_id) {
-      console.log("[ensure-exchange-permission] No app_object_id configured");
-      return new Response(
-        JSON.stringify({ success: false, error: "App Object ID not configured", skipped: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     if (!globalConfig.validation_tenant_id) {
       console.log("[ensure-exchange-permission] No validation_tenant_id configured");
       return new Response(
