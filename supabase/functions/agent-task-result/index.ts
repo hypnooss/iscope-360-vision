@@ -625,6 +625,8 @@ function evaluateTypedLogic(
     return evaluateObjectCheck(rawLogic, sourceData, rule);
   } else if (logicType === 'threshold_check') {
     return evaluateThresholdCheck(rawLogic, sourceData, rule);
+  } else if (logicType === 'filtered_count_check') {
+    return evaluateFilteredCountCheck(rawLogic, sourceData, rule);
   }
 
   return null;
@@ -755,6 +757,113 @@ function evaluateObjectCheck(
   }
 
   return { status: 'unknown', evidence: [], details: 'Condição não reconhecida' };
+}
+
+// ---- filtered_count_check ----
+// Filters an array with pre_filters, then finds violating items via match_conditions.
+// Pass if zero violations, fail otherwise. Generates evidence per violation.
+function evaluateFilteredCountCheck(
+  logic: Record<string, unknown>,
+  sourceData: unknown,
+  rule: ComplianceRule
+): TypedLogicResult {
+  const path = logic.path as string | undefined;
+  let raw = path ? getNestedPath(sourceData, path) : sourceData;
+
+  // Fallback: if raw is an object with .results, use that
+  if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'results' in (raw as Record<string, unknown>)) {
+    raw = (raw as Record<string, unknown>).results;
+  }
+
+  if (!Array.isArray(raw)) {
+    return {
+      status: 'not_found',
+      evidence: [{ field: rule.code, value: 'Dados não encontrados', status: 'not_found' }],
+      details: rule.pass_description || 'Dados não disponíveis para avaliação',
+    };
+  }
+
+  const preFilters = (logic.pre_filters || []) as Array<{ field: string; op: string; value: unknown }>;
+  const matchConditions = (logic.match_conditions || []) as Array<{ field: string; op: string; value: unknown; join?: string }>;
+  const evidenceLabelTpl = (logic.evidence_label || '{name}') as string;
+  const evidenceValueTpl = (logic.evidence_value || '') as string;
+
+  // Apply pre_filters sequentially to narrow the array
+  let filtered = raw as Array<Record<string, unknown>>;
+  for (const pf of preFilters) {
+    filtered = filtered.filter((item) => {
+      const fieldVal = item[pf.field];
+      switch (pf.op) {
+        case 'equals': return fieldVal === pf.value;
+        case 'not_equals': return fieldVal !== pf.value;
+        case 'in': return Array.isArray(pf.value) && pf.value.includes(fieldVal);
+        case 'not_in': return Array.isArray(pf.value) && !pf.value.includes(fieldVal);
+        case 'exists': return fieldVal !== undefined && fieldVal !== null;
+        case 'not_exists': return fieldVal === undefined || fieldVal === null;
+        case 'gt': return typeof fieldVal === 'number' && fieldVal > (pf.value as number);
+        case 'gte': return typeof fieldVal === 'number' && fieldVal >= (pf.value as number);
+        case 'lt': return typeof fieldVal === 'number' && fieldVal < (pf.value as number);
+        case 'lte': return typeof fieldVal === 'number' && fieldVal <= (pf.value as number);
+        default: return true;
+      }
+    });
+  }
+
+  // Apply match_conditions to find violating items
+  // Default join is AND; if any condition has join:"or", use OR logic
+  const hasOrJoin = matchConditions.some(mc => mc.join === 'or');
+
+  const matchesCondition = (item: Record<string, unknown>, mc: { field: string; op: string; value: unknown }): boolean => {
+    const fieldVal = item[mc.field];
+    const numVal = typeof fieldVal === 'number' ? fieldVal : (typeof fieldVal === 'string' ? parseFloat(fieldVal) : NaN);
+    switch (mc.op) {
+      case 'equals': return fieldVal === mc.value;
+      case 'not_equals': return fieldVal !== mc.value;
+      case 'lte': return !isNaN(numVal) && numVal <= (mc.value as number);
+      case 'gte': return !isNaN(numVal) && numVal >= (mc.value as number);
+      case 'lt': return !isNaN(numVal) && numVal < (mc.value as number);
+      case 'gt': return !isNaN(numVal) && numVal > (mc.value as number);
+      case 'eq': return !isNaN(numVal) && numVal === (mc.value as number);
+      default: return false;
+    }
+  };
+
+  const violating = filtered.filter((item) => {
+    if (hasOrJoin) {
+      // OR: any condition matching = violating
+      return matchConditions.some(mc => matchesCondition(item, mc));
+    } else {
+      // AND: all conditions must match
+      return matchConditions.every(mc => matchesCondition(item, mc));
+    }
+  });
+
+  // Template interpolation helper
+  const interpolate = (tpl: string, item: Record<string, unknown>): string => {
+    return tpl.replace(/\{(\w+)\}/g, (_, key) => String(item[key] ?? ''));
+  };
+
+  const evidence = violating.slice(0, 50).map((item) => ({
+    field: interpolate(evidenceLabelTpl, item),
+    value: interpolate(evidenceValueTpl, item),
+    status: 'fail',
+  }));
+
+  if (violating.length === 0) {
+    return {
+      status: 'pass',
+      evidence: [{ field: rule.code, value: `Nenhuma violação encontrada em ${filtered.length} itens analisados`, status: 'pass' }],
+      details: rule.pass_description || `Nenhuma violação encontrada (${filtered.length} itens verificados)`,
+    };
+  }
+
+  return {
+    status: 'fail',
+    evidence,
+    details: rule.fail_description
+      ? rule.fail_description.replace('{count}', String(violating.length))
+      : `${violating.length} violação(ões) encontrada(s) em ${filtered.length} itens analisados`,
+  };
 }
 
 function evaluateThresholdCheck(
@@ -3165,7 +3274,7 @@ function processComplianceRules(
     // =====================================================
     const rawLogic = rule.evaluation_logic;
     const logicType = rawLogic?.type as string | undefined;
-    if (logicType === 'array_check' || logicType === 'object_check' || logicType === 'threshold_check') {
+    if (logicType === 'array_check' || logicType === 'object_check' || logicType === 'threshold_check' || logicType === 'filtered_count_check') {
       const typedResult = evaluateTypedLogic(rawLogic, sourceData, rule);
       if (typedResult) {
         checks.push({
