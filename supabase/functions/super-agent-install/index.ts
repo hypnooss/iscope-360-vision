@@ -39,6 +39,8 @@ SERVICE_USER="iscope"
 
 UPDATE="0"
 UNINSTALL="0"
+LOCAL_AGENT=""
+LOCAL_SUPERVISOR=""
 
 mask_code() {
   local code="$1"
@@ -63,6 +65,8 @@ Opções:
   --state-dir         (default: /var/lib/iscope-agent)
   --update            (reinstala/atualiza)
   --uninstall         (remove serviço e diretórios)
+  --local-agent       caminho local do .tar.gz do agent (modo offline)
+  --local-supervisor  caminho local do .tar.gz do supervisor (modo offline)
 EOF
 }
 
@@ -99,6 +103,10 @@ parse_args() {
         UPDATE="1"; shift 1 ;;
       --uninstall)
         UNINSTALL="1"; shift 1 ;;
+      --local-agent)
+        LOCAL_AGENT="\${2:-}"; shift 2 ;;
+      --local-supervisor)
+        LOCAL_SUPERVISOR="\${2:-}"; shift 2 ;;
       -h|--help)
         usage; exit 0 ;;
       *)
@@ -514,6 +522,43 @@ get_signed_url() {
 }
 
 download_release() {
+  # --- Modo offline: usar pacotes locais ---
+  if [[ -n "\$LOCAL_AGENT" ]] || [[ -n "\$LOCAL_SUPERVISOR" ]]; then
+    if [[ -z "\$LOCAL_AGENT" ]] || [[ -z "\$LOCAL_SUPERVISOR" ]]; then
+      echo "Erro: --local-agent e --local-supervisor devem ser fornecidos juntos."
+      exit 1
+    fi
+    if [[ ! -f "\$LOCAL_AGENT" ]]; then
+      echo "Erro: arquivo não encontrado: \$LOCAL_AGENT"
+      exit 1
+    fi
+    if [[ ! -f "\$LOCAL_SUPERVISOR" ]]; then
+      echo "Erro: arquivo não encontrado: \$LOCAL_SUPERVISOR"
+      exit 1
+    fi
+
+    echo "Modo offline: usando pacotes locais"
+    echo "  Agent:      \$LOCAL_AGENT"
+    echo "  Supervisor: \$LOCAL_SUPERVISOR"
+
+    # --- Limpar e extrair (preservando venv, .env, logs) ---
+    find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 \\
+      ! -name 'venv' \\
+      ! -name '.env' \\
+      ! -name 'storage' \\
+      ! -name 'logs' \\
+      -exec rm -rf {} + 2>/dev/null || true
+
+    echo "Extraindo pacote do Agent..."
+    tar -xzf "\$LOCAL_AGENT" -C "$INSTALL_DIR"
+
+    echo "Extraindo pacote do Supervisor..."
+    tar -xzf "\$LOCAL_SUPERVISOR" -C "$INSTALL_DIR"
+
+    echo "Pacotes extraídos com sucesso em $INSTALL_DIR"
+    return
+  fi
+
   # --- Determinar nomes dos pacotes ---
   local file_agent file_sup
   if [[ "$AGENT_VERSION" == "latest" ]]; then
