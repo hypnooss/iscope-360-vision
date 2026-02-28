@@ -191,6 +191,11 @@ Deno.serve(async (req) => {
           period_start: periodStart,
           period_end: now,
           analysis_modules: [
+            'security_risk',
+            'identity_access',
+            'conditional_access',
+            'exchange_health',
+            'audit_compliance',
             'phishing_threats',
             'mailbox_capacity',
             'behavioral_baseline',
