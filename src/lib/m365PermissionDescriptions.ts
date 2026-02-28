@@ -26,7 +26,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
 export const GRAPH_PERMISSIONS = [
   'User.Read.All', 'Directory.Read.All', 'Group.Read.All',
   'Application.Read.All', 'AuditLog.Read.All', 'Organization.Read.All',
-  'Policy.Read.All', 'MailboxSettings.Read', 'Mail.Read',
+  'Policy.Read.All', 'IdentityRiskyUser.Read.All', 'MailboxSettings.Read', 'Mail.Read',
   'RoleManagement.ReadWrite.Directory', 'Sites.Read.All',
   'Application.ReadWrite.All', 'Reports.Read.All',
 ];

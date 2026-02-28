@@ -20,6 +20,7 @@ const REQUIRED_PERMISSIONS = [
   'AuditLog.Read.All',
   'Policy.Read.All',
   'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
+  'IdentityRiskyUser.Read.All', // Required for Identity Protection risky users
   // Exchange Online
   'MailboxSettings.Read',
   'Mail.Read',

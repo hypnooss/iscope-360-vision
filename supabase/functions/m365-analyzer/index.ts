@@ -1882,13 +1882,15 @@ Deno.serve(async (req) => {
       const token = await getGraphToken(supabase, snapshot.tenant_record_id);
       if (token) {
         console.log('[m365-analyzer] Enriching agent data with Graph API for Entra ID modules...');
-        const periodFilter = snapshot.period_start ? `&$filter=createdDateTime ge ${snapshot.period_start}` : '';
+        // Use fixed 24h window for signInLogs/auditLogs (ISO 8601 format required by Graph API)
+        const enrichPeriodStartISO = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const periodFilter = `&$filter=createdDateTime ge ${enrichPeriodStartISO}`;
         const enrichCalls = [];
 
         // Existing enrichment calls
         if (riskyUsersData.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100'));
         else enrichCalls.push(Promise.resolve(null));
-        if (credentialRegistration.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/reports/credentialUserRegistrationDetails?$top=999'));
+        if (credentialRegistration.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=999'));
         else enrichCalls.push(Promise.resolve(null));
         if (caPolicies.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies'));
         else enrichCalls.push(Promise.resolve(null));

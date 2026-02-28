@@ -214,6 +214,9 @@ async function testPermission(accessToken: string, permission: string, appObject
         // Use same endpoint as Read permission - write permission is validated by successful API call
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
         break;
+      case 'IdentityRiskyUser.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1';
+        break;
       case 'Application.ReadWrite.All': {
         // Test certificate upload permission by trying to read the app's keyCredentials
         if (!appObjectId) {
