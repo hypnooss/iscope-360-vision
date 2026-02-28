@@ -83,6 +83,68 @@ function parseSizeToBytes(sizeStr: unknown): number {
 // Graph API Helper
 // ============================================
 
+// Decrypt AES-256-GCM secret (hex IV:ciphertext format used by m365_global_config)
+async function decryptSecretHex(encrypted: string): Promise<string | null> {
+  if (!encrypted.includes(':')) return null;
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex || keyHex.length !== 64) return null;
+  try {
+    const [ivHex, ctHex] = encrypted.split(':');
+    const keyBytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) keyBytes[i] = parseInt(keyHex.substr(i * 2, 2), 16);
+    const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt']);
+    const iv = new Uint8Array(ivHex.length / 2);
+    for (let i = 0; i < iv.length; i++) iv[i] = parseInt(ivHex.substr(i * 2, 2), 16);
+    const ct = new Uint8Array(ctHex.length / 2);
+    for (let i = 0; i < ct.length; i++) ct[i] = parseInt(ctHex.substr(i * 2, 2), 16);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+    return new TextDecoder().decode(decrypted);
+  } catch (e) {
+    console.error('[m365-analyzer] Hex decryption failed:', e);
+    return null;
+  }
+}
+
+// Decrypt AES-GCM secret (legacy Base64 format used by m365_app_credentials)
+async function decryptSecretBase64(encrypted: string): Promise<string | null> {
+  const encryptionKey = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!encryptionKey) return null;
+  try {
+    const keyBytes = new TextEncoder().encode(encryptionKey.padEnd(32, '0').slice(0, 32));
+    const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
+    const combined = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+    return new TextDecoder().decode(decrypted);
+  } catch {
+    return null;
+  }
+}
+
+// Unified decryption: tries hex format first, then base64 legacy
+async function decryptSecret(encrypted: string): Promise<string | null> {
+  if (encrypted.includes(':')) return await decryptSecretHex(encrypted);
+  return await decryptSecretBase64(encrypted);
+}
+
+async function requestGraphToken(tenantId: string, clientId: string, clientSecret: string): Promise<string | null> {
+  const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: clientId,
+    client_secret: clientSecret,
+    scope: 'https://graph.microsoft.com/.default',
+  });
+  const res = await fetch(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  if (!res.ok) {
+    console.error('[m365-analyzer] Token request failed:', await res.text());
+    return null;
+  }
+  const tokenData: GraphTokenResult = await res.json();
+  return tokenData.access_token;
+}
+
 async function getGraphToken(supabase: any, tenantRecordId: string): Promise<string | null> {
   const { data: tenant } = await supabase
     .from('m365_tenants')
@@ -92,48 +154,41 @@ async function getGraphToken(supabase: any, tenantRecordId: string): Promise<str
 
   if (!tenant) return null;
 
+  // Strategy 1: Per-tenant credentials (m365_app_credentials)
   const { data: cred } = await supabase
     .from('m365_app_credentials')
     .select('azure_app_id, client_secret_encrypted, auth_type')
     .eq('tenant_record_id', tenantRecordId)
     .eq('is_active', true)
     .limit(1)
-    .single();
+    .maybeSingle();
 
-  if (!cred || !cred.client_secret_encrypted) return null;
-
-  const encryptionKey = Deno.env.get('M365_ENCRYPTION_KEY');
-  if (!encryptionKey) return null;
-
-  let clientSecret: string;
-  try {
-    const keyBytes = new TextEncoder().encode(encryptionKey.padEnd(32, '0').slice(0, 32));
-    const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
-    const combined = Uint8Array.from(atob(cred.client_secret_encrypted), c => c.charCodeAt(0));
-    const iv = combined.slice(0, 12);
-    const encrypted = combined.slice(12);
-    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, encrypted);
-    clientSecret = new TextDecoder().decode(decrypted);
-  } catch {
-    return null;
+  if (cred?.client_secret_encrypted) {
+    const secret = await decryptSecret(cred.client_secret_encrypted);
+    if (secret) {
+      console.log('[m365-analyzer] Using per-tenant credentials');
+      const token = await requestGraphToken(tenant.tenant_id, cred.azure_app_id, secret);
+      if (token) return token;
+    }
   }
 
-  const tokenUrl = `https://login.microsoftonline.com/${tenant.tenant_id}/oauth2/v2.0/token`;
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: cred.azure_app_id,
-    client_secret: clientSecret,
-    scope: 'https://graph.microsoft.com/.default',
-  });
+  // Strategy 2: Global multi-tenant app (m365_global_config) — same pattern as other edge functions
+  const { data: globalConfig } = await supabase
+    .from('m365_global_config')
+    .select('app_id, client_secret_encrypted')
+    .limit(1)
+    .maybeSingle();
 
-  const res = await fetch(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
-  if (!res.ok) {
-    console.error('[m365-analyzer] Token request failed:', await res.text());
-    return null;
+  if (globalConfig?.client_secret_encrypted && globalConfig?.app_id) {
+    const secret = await decryptSecret(globalConfig.client_secret_encrypted);
+    if (secret) {
+      console.log('[m365-analyzer] Using global multi-tenant credentials (fallback)');
+      return await requestGraphToken(tenant.tenant_id, globalConfig.app_id, secret);
+    }
   }
 
-  const tokenData: GraphTokenResult = await res.json();
-  return tokenData.access_token;
+  console.warn('[m365-analyzer] No valid credentials found for tenant', tenantRecordId);
+  return null;
 }
 
 async function graphGet(token: string, url: string): Promise<any> {
