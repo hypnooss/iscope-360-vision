@@ -222,15 +222,8 @@ export function UnifiedComplianceCard({
 
         {/* Conteúdo abaixo (fora do flex do ícone) */}
         {contextualMessage && (
-          <p className="text-sm text-muted-foreground line-clamp-2 pr-2">
+          <p className="text-sm text-muted-foreground line-clamp-2 pr-2 ml-[2.75rem]">
             {contextualMessage}
-          </p>
-        )}
-
-        {isFailed && item.recommendation && (
-          <p className="text-xs text-primary flex items-start gap-1">
-            <ChevronRight className="w-3 h-3 flex-shrink-0 mt-0.5" />
-            <span>{item.recommendation}</span>
           </p>
         )}
 
