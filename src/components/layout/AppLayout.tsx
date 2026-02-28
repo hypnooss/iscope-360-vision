@@ -118,7 +118,7 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     color: 'text-orange-500',
     items: [
       { label: 'Compliance', href: '/scope-firewall/compliance', icon: FileText },
-      { label: 'Analyzer', href: '/scope-firewall/analyzer', icon: Activity },
+      { label: 'Analyzer', href: '/scope-firewall/analyzer', icon: Radar },
       { label: 'CVEs', href: '/scope-firewall/cves', icon: ShieldCheck },
       { label: 'Execuções', href: '/scope-firewall/executions', icon: Activity },
     ],
@@ -137,10 +137,10 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     color: 'text-blue-500',
     items: [
       { label: 'Compliance', href: '/scope-m365/posture', icon: FileText },
+      { label: 'Analyzer', href: '/scope-m365/analyzer', icon: Radar },
       { label: 'CVEs', href: '/scope-m365/cves', icon: ShieldCheck },
       { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
       { label: 'Exchange Online', href: '/scope-m365/exchange-online', icon: Mail },
-      { label: 'Analyzer', href: '/scope-m365/analyzer', icon: Activity },
       { label: 'Execuções', href: '/scope-m365/executions', icon: Activity },
     ],
   },
