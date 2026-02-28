@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
+import { PERMISSION_DESCRIPTIONS as PERM_DESCRIPTIONS, GRAPH_PERMISSIONS, DIRECTORY_ROLES as DIR_ROLES_LIST } from '@/lib/m365PermissionDescriptions';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -36,26 +37,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
-const PERMISSION_CATEGORIES = {
-  'Entra ID': [
-    'User.Read.All', 'Directory.Read.All', 'Group.Read.All',
-    'Application.Read.All', 'AuditLog.Read.All', 'Organization.Read.All', 'Policy.Read.All',
-  ],
-  'Exchange Online': ['MailboxSettings.Read', 'Mail.Read', 'RoleManagement.ReadWrite.Directory'],
-  'SharePoint': ['Sites.Read.All'],
-  'Certificados': ['Application.ReadWrite.All'],
-  'Outros': ['Reports.Read.All'],
-};
-
-const DIRECTORY_ROLES = {
-  'Exchange Online': ['Exchange Administrator'],
-  'SharePoint': ['SharePoint Administrator'],
-};
-
-const ALL_PERMISSIONS = [
-  ...Object.values(PERMISSION_CATEGORIES).flat(),
-  ...Object.values(DIRECTORY_ROLES).flat(),
-];
+const ALL_PERMISSIONS = [...GRAPH_PERMISSIONS, ...DIR_ROLES_LIST];
 
 export default function M365TenantEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -274,51 +256,43 @@ export default function M365TenantEditPage() {
                   Permissões ({grantedCount}/{ALL_PERMISSIONS.length})
                 </p>
                 <p className="text-xs text-muted-foreground mb-3">Permissões do Microsoft Graph</p>
-                <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-                  {Object.entries(PERMISSION_CATEGORIES).map(([category, perms]) => (
-                    <div key={category} className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">{category}</p>
-                      <ul className="text-sm space-y-1">
-                        {perms.map(permName => {
-                          const perm = permissions.find((p: any) => p.permission_name === permName);
-                          return (
-                            <li key={permName} className="flex items-center gap-2">
-                              <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                                perm?.status === 'granted' ? 'bg-green-500' :
-                                perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                              )} />
-                              <span className="text-xs truncate">{permName}</span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  ))}
+                <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  {GRAPH_PERMISSIONS.map(permName => {
+                    const perm = permissions.find((p: any) => p.permission_name === permName);
+                    return (
+                      <div key={permName} className="rounded-lg p-3 bg-muted/50 border border-border/50 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
+                            perm?.status === 'granted' ? 'bg-green-500' :
+                            perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                          )} />
+                          <span className="text-xs font-mono font-medium text-foreground truncate">{permName}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground pl-4">{PERM_DESCRIPTIONS[permName] || ''}</p>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
               <div className="pt-4 border-t border-border/50">
                 <p className="text-xs text-muted-foreground mb-3">Roles do Diretório (RBAC)</p>
-                <div className="grid gap-4 grid-cols-2">
-                  {Object.entries(DIRECTORY_ROLES).map(([category, roles]) => (
-                    <div key={category} className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">{category}</p>
-                      <ul className="text-sm space-y-1">
-                        {roles.map(roleName => {
-                          const perm = permissions.find((p: any) => p.permission_name === roleName);
-                          return (
-                            <li key={roleName} className="flex items-center gap-2">
-                              <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                                perm?.status === 'granted' ? 'bg-green-500' :
-                                perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                              )} />
-                              <span className="text-xs truncate">{roleName}</span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  ))}
+                <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  {DIR_ROLES_LIST.map(roleName => {
+                    const perm = permissions.find((p: any) => p.permission_name === roleName);
+                    return (
+                      <div key={roleName} className="rounded-lg p-3 bg-muted/50 border border-border/50 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
+                            perm?.status === 'granted' ? 'bg-green-500' :
+                            perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                          )} />
+                          <span className="text-xs font-medium text-foreground truncate">{roleName}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground pl-4">{PERM_DESCRIPTIONS[roleName] || ''}</p>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>

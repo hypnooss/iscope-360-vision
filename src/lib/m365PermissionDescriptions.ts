@@ -1,0 +1,36 @@
+export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
+  // Entra ID
+  'User.Read.All': 'Leitura de perfis de usuários',
+  'Directory.Read.All': 'Leitura de diretório e usuários',
+  'Group.Read.All': 'Leitura de grupos e membros',
+  'Application.Read.All': 'Leitura de aplicativos registrados',
+  'AuditLog.Read.All': 'Leitura de logs de auditoria',
+  'Organization.Read.All': 'Leitura de dados da organização',
+  'Policy.Read.All': 'Leitura de políticas de segurança',
+  // Exchange Online
+  'MailboxSettings.Read': 'Leitura de configurações de caixa de correio',
+  'Mail.Read': 'Leitura de configurações de e-mail',
+  'RoleManagement.ReadWrite.Directory': 'Gestão de roles do diretório',
+  // SharePoint
+  'Sites.Read.All': 'Leitura de sites do SharePoint',
+  // Certificados
+  'Application.ReadWrite.All': 'Gestão de certificados e credenciais',
+  // Outros
+  'Reports.Read.All': 'Leitura de relatórios de uso',
+  // Directory Roles
+  'Exchange Administrator': 'Administração do Exchange Online',
+  'SharePoint Administrator': 'Administração do SharePoint Online',
+};
+
+export const GRAPH_PERMISSIONS = [
+  'User.Read.All', 'Directory.Read.All', 'Group.Read.All',
+  'Application.Read.All', 'AuditLog.Read.All', 'Organization.Read.All',
+  'Policy.Read.All', 'MailboxSettings.Read', 'Mail.Read',
+  'RoleManagement.ReadWrite.Directory', 'Sites.Read.All',
+  'Application.ReadWrite.All', 'Reports.Read.All',
+];
+
+export const DIRECTORY_ROLES = [
+  'Exchange Administrator',
+  'SharePoint Administrator',
+];
