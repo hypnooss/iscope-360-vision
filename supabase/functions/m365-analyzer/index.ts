@@ -197,7 +197,8 @@ async function graphGet(token: string, url: string): Promise<any> {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ConsistencyLevel: 'eventual' },
     });
     if (!res.ok) {
-      console.warn(`[m365-analyzer] Graph API ${res.status}: ${url}`);
+      const errorBody = await res.text();
+      console.warn(`[m365-analyzer] Graph API ${res.status}: ${url} — ${errorBody.substring(0, 300)}`);
       return null;
     }
     return await res.json();
@@ -1831,7 +1832,9 @@ Deno.serve(async (req) => {
         console.log('[m365-analyzer] Got Graph API token, collecting data...');
         dataSource = dataSource === 'agent' ? 'hybrid' : 'graph_api';
 
-        const periodFilter = snapshot.period_start ? `&$filter=createdDateTime ge ${snapshot.period_start}` : '';
+        // Use fixed 24h window for signInLogs/auditLogs (ISO 8601 format required by Graph API)
+        const periodStartISO = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const periodFilter = `&$filter=createdDateTime ge ${periodStartISO}`;
 
         const [emailData, mailboxData, signInData, auditData, threatStatus,
                riskyUsersRes, credRegRes, caPoliciesRes, recentAppsRes, serviceHealthRes] = await Promise.all([
@@ -1841,7 +1844,7 @@ Deno.serve(async (req) => {
           graphGet(token, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=500${periodFilter}`),
           graphGet(token, 'https://graph.microsoft.com/v1.0/reports/getEmailActivityUserDetail(period=\'D1\')'),
           graphGet(token, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100'),
-          graphGet(token, 'https://graph.microsoft.com/v1.0/reports/credentialUserRegistrationDetails?$top=999'),
+          graphGet(token, 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=999'),
           graphGet(token, 'https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies'),
           graphGet(token, 'https://graph.microsoft.com/v1.0/applications?$orderby=createdDateTime desc&$top=50'),
           graphGet(token, 'https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/issues?$top=50'),
@@ -1879,13 +1882,15 @@ Deno.serve(async (req) => {
       const token = await getGraphToken(supabase, snapshot.tenant_record_id);
       if (token) {
         console.log('[m365-analyzer] Enriching agent data with Graph API for Entra ID modules...');
-        const periodFilter = snapshot.period_start ? `&$filter=createdDateTime ge ${snapshot.period_start}` : '';
+        // Use fixed 24h window for signInLogs/auditLogs (ISO 8601 format required by Graph API)
+        const enrichPeriodStartISO = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const periodFilter = `&$filter=createdDateTime ge ${enrichPeriodStartISO}`;
         const enrichCalls = [];
 
         // Existing enrichment calls
         if (riskyUsersData.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100'));
         else enrichCalls.push(Promise.resolve(null));
-        if (credentialRegistration.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/reports/credentialUserRegistrationDetails?$top=999'));
+        if (credentialRegistration.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=999'));
         else enrichCalls.push(Promise.resolve(null));
         if (caPolicies.length === 0) enrichCalls.push(graphGet(token, 'https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies'));
         else enrichCalls.push(Promise.resolve(null));

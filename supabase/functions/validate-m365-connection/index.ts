@@ -29,6 +29,7 @@ const REQUIRED_PERMISSIONS = [
   'AuditLog.Read.All',
   'Organization.Read.All',
   'Policy.Read.All',
+  'IdentityRiskyUser.Read.All', // Required for Identity Protection risky users
   // Exchange Online
   'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
   'MailboxSettings.Read',
@@ -377,6 +378,12 @@ serve(async (req) => {
           // Test ability to read/write directory role assignments
           // NOTE: This endpoint does not support $top or $select parameters
           const response = await fetch('https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions', {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          granted = response.ok;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
+        } else if (permission === 'IdentityRiskyUser.Read.All') {
+          const response = await fetch('https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
           granted = response.ok;

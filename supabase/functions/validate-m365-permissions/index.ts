@@ -18,6 +18,7 @@ const REQUIRED_PERMISSIONS = [
   'Organization.Read.All',
   'Domain.Read.All',
   'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
+  'IdentityRiskyUser.Read.All', // Required for Identity Protection risky users
 ];
 
 const RECOMMENDED_PERMISSIONS = [
@@ -212,6 +213,9 @@ async function testPermission(accessToken: string, permission: string, appObject
       case 'RoleManagement.ReadWrite.Directory':
         // Use same endpoint as Read permission - write permission is validated by successful API call
         url = 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions';
+        break;
+      case 'IdentityRiskyUser.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1';
         break;
       case 'Application.ReadWrite.All': {
         // Test certificate upload permission by trying to read the app's keyCredentials
