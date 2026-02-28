@@ -49,7 +49,7 @@ export default function M365TenantEditPage() {
   const [disconnecting, setDisconnecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [revalidating, setRevalidating] = useState(false);
-
+  const [waitingForConsent, setWaitingForConsent] = useState(false);
   // Fetch tenant data
   const { data: tenant, isLoading: tenantLoading } = useQuery({
     queryKey: ['m365-tenant-edit', id],
