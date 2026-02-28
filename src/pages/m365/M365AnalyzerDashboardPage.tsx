@@ -10,11 +10,12 @@ import { useLatestM365AnalyzerSnapshot, useM365AnalyzerProgress } from '@/hooks/
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
-import { ScoreGauge } from '@/components/ScoreGauge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -29,7 +30,7 @@ import {
   UserX, Send, ShieldAlert, ShieldCheck,
   TrendingUp, TrendingDown, Minus, Eye,
   Ban, Search, CheckCircle2, Radar,
-  ToggleLeft,
+  ToggleLeft, Lightbulb,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -59,7 +60,18 @@ const SEVERITY_CONFIG = {
   low: { label: 'Low', icon: Info, border: 'border-primary/30', bg: 'bg-primary/10', text: 'text-primary', glow: '' },
 } as const;
 
-type SeverityFilter = 'all' | 'critical' | 'high' | 'medium';
+// ─── Configurational keywords to filter out ──────────────────────────────────
+const CONFIG_KEYWORDS = [
+  'desabilitado', 'disabled', 'configuração', 'configuracao', 'policy',
+  'habilitado', 'enabled', 'anti-spam', 'intelligence',
+];
+
+function isConfigurationalInsight(insight: M365AnalyzerInsight): boolean {
+  const name = insight.name.toLowerCase();
+  if (CONFIG_KEYWORDS.some(kw => name.includes(kw))) return true;
+  if ((insight.count === undefined || insight.count === 0) && (!insight.affectedUsers || insight.affectedUsers.length === 0)) return true;
+  return false;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function timeAgo(dateStr: string): string {
@@ -72,6 +84,13 @@ function timeAgo(dateStr: string): string {
   return `há ${Math.floor(hours / 24)}d`;
 }
 
+function riskLevel(score: number): { label: string; color: string } {
+  if (score >= 81) return { label: 'CRÍTICO', color: 'text-rose-400' };
+  if (score >= 61) return { label: 'ALTO', color: 'text-orange-400' };
+  if (score >= 31) return { label: 'MODERADO', color: 'text-warning' };
+  return { label: 'BAIXO', color: 'text-emerald-400' };
+}
+
 function StatusDot({ status }: { status: 'ok' | 'running' | 'error' }) {
   const colors = {
     ok: 'bg-emerald-400 shadow-[0_0_6px_hsl(160_60%_50%/0.6)]',
@@ -81,31 +100,51 @@ function StatusDot({ status }: { status: 'ok' | 'running' | 'error' }) {
   return <span className={cn('inline-block w-2.5 h-2.5 rounded-full', colors[status])} />;
 }
 
-// ─── Incident Card ───────────────────────────────────────────────────────────
-function IncidentCard({ insight }: { insight: M365AnalyzerInsight }) {
+// ─── Compact Incident Card ───────────────────────────────────────────────────
+function IncidentCard({ insight, compact }: { insight: M365AnalyzerInsight; compact?: boolean }) {
   const sev = SEVERITY_CONFIG[insight.severity as keyof typeof SEVERITY_CONFIG] ?? SEVERITY_CONFIG.medium;
   const isCritical = insight.severity === 'critical';
+  const prevCount = (insight.metadata as any)?.previousCount;
+  const description = insight.description && insight.description.length > 120
+    ? insight.description.slice(0, 117) + '...'
+    : insight.description;
 
   return (
     <Card className={cn(
       'glass-card border transition-all',
       sev.border,
       isCritical && sev.glow,
+      isCritical && 'bg-rose-500/5',
     )}>
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-start justify-between gap-2">
+      <CardContent className={cn('space-y-1.5', compact ? 'p-2' : 'p-3')}>
+        {/* Row 1: Name + severity badge */}
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <sev.icon className={cn('w-4 h-4 shrink-0', sev.text)} />
-            <h4 className="text-sm font-semibold text-foreground truncate">{insight.name}</h4>
+            <sev.icon className={cn('w-4 h-4 shrink-0', sev.text, isCritical && 'animate-pulse')} />
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <h4 className="text-sm font-semibold text-foreground truncate cursor-default">{insight.name}</h4>
+                </TooltipTrigger>
+                {insight.description && (
+                  <TooltipContent side="top" className="max-w-xs text-xs">
+                    {insight.description}
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
           </div>
-          <Badge variant="outline" className={cn('text-[10px] shrink-0 border', sev.bg, sev.text, sev.border)}>
+          <Badge variant="outline" className={cn(
+            'shrink-0 border',
+            sev.bg, sev.text, sev.border,
+            isCritical ? 'text-sm font-bold' : 'text-[10px]',
+          )}>
             {insight.severity}
           </Badge>
         </div>
 
-        <p className="text-sm text-muted-foreground">{insight.description}</p>
-
-        <div className="flex items-center gap-4 flex-wrap text-xs text-muted-foreground">
+        {/* Row 2: Compact metrics line */}
+        <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
           {insight.count !== undefined && insight.count > 0 && (
             <span className="flex items-center gap-1">
               <Activity className="w-3 h-3" />
@@ -116,33 +155,51 @@ function IncidentCard({ insight }: { insight: M365AnalyzerInsight }) {
             <span className="flex items-center gap-1">
               <Users className="w-3 h-3" />
               {insight.affectedUsers.length} usuário{insight.affectedUsers.length > 1 ? 's' : ''}
-              <span className="text-foreground/70">
-                ({insight.affectedUsers.slice(0, 2).join(', ')}{insight.affectedUsers.length > 2 ? ` +${insight.affectedUsers.length - 2}` : ''})
-              </span>
             </span>
+          )}
+          {/* Trend indicator */}
+          {prevCount !== undefined && insight.count !== undefined && (
+            <span className={cn('flex items-center gap-0.5 font-medium',
+              insight.count > prevCount ? 'text-rose-400' : insight.count < prevCount ? 'text-emerald-400' : 'text-muted-foreground'
+            )}>
+              {insight.count > prevCount ? <TrendingUp className="w-3 h-3" /> : insight.count < prevCount ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+              {insight.count > prevCount ? `+${insight.count - prevCount}` : insight.count < prevCount ? `${insight.count - prevCount}` : '='} vs anterior
+            </span>
+          )}
+          {prevCount === undefined && insight.count !== undefined && insight.count > 0 && (
+            <Badge variant="secondary" className="text-[10px] h-4">Novo</Badge>
+          )}
+          {/* Recommendation tooltip */}
+          {insight.recommendation && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex items-center gap-0.5 text-primary/70 cursor-help">
+                    <Lightbulb className="w-3 h-3" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-xs">
+                  {insight.recommendation}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
         </div>
 
-        {insight.recommendation && (
-          <div className="text-xs text-primary/80 bg-primary/5 rounded p-2">
-            💡 {insight.recommendation}
-          </div>
-        )}
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 pt-1">
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5">
-            <Eye className="w-3 h-3" /> Ver Detalhes
+        {/* Row 3: Actions - hierarchy: primary destructive first */}
+        <div className="flex items-center gap-1.5 pt-0.5">
+          {(insight.severity === 'critical' || insight.severity === 'high') && (
+            <Button variant="destructive" size="sm" className="h-6 text-[11px] gap-1 px-2">
+              <Ban className="w-3 h-3" /> Bloquear
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 px-2">
+            <Eye className="w-3 h-3" /> Detalhes
           </Button>
           {(insight.severity === 'critical' || insight.severity === 'high') && (
-            <>
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5 text-rose-400 hover:text-rose-300">
-                <Ban className="w-3 h-3" /> Bloquear Login
-              </Button>
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5 text-warning hover:text-warning/80">
-                <Search className="w-3 h-3" /> Investigar
-              </Button>
-            </>
+            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 px-2 text-warning hover:text-warning/80">
+              <Search className="w-3 h-3" /> Investigar
+            </Button>
           )}
         </div>
       </CardContent>
@@ -150,7 +207,7 @@ function IncidentCard({ insight }: { insight: M365AnalyzerInsight }) {
   );
 }
 
-// ─── Ranking List (reused for External Movement) ─────────────────────────────
+// ─── Ranking List ────────────────────────────────────────────────────────────
 function RankingList({ items, labelKey, periodLabel }: { items: { [key: string]: any; count: number }[]; labelKey: string; periodLabel?: string }) {
   if (!items?.length) return <p className="text-muted-foreground text-sm py-4 text-center">Nenhum dado disponível</p>;
   const maxCount = Math.max(...items.map(i => i.count), 1);
@@ -180,6 +237,33 @@ function RankingList({ items, labelKey, periodLabel }: { items: { [key: string]:
   );
 }
 
+// ─── Severity Column ─────────────────────────────────────────────────────────
+function SeverityColumn({ severity, incidents, compact }: {
+  severity: 'critical' | 'high' | 'medium';
+  incidents: M365AnalyzerInsight[];
+  compact?: boolean;
+}) {
+  const cfg = SEVERITY_CONFIG[severity];
+  return (
+    <div className="space-y-2">
+      <div className={cn('flex items-center gap-2 px-2 py-1.5 rounded-lg', cfg.bg)}>
+        <cfg.icon className={cn('w-4 h-4', cfg.text)} />
+        <span className={cn('text-sm font-bold', cfg.text)}>{cfg.label}</span>
+        <Badge variant="outline" className={cn('ml-auto text-[10px]', cfg.text, cfg.border)}>{incidents.length}</Badge>
+      </div>
+      {incidents.length === 0 ? (
+        <p className="text-xs text-muted-foreground text-center py-3">—</p>
+      ) : (
+        <div className="space-y-2">
+          {incidents.map((ins, i) => (
+            <IncidentCard key={ins.id || i} insight={ins} compact={compact} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═════════════════════════════════════════════════════════════════════════════
@@ -192,7 +276,6 @@ export default function M365AnalyzerDashboardPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [triggering, setTriggering] = useState(false);
-  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [compactMode, setCompactMode] = useState(false);
 
   const { tenants, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
@@ -344,35 +427,35 @@ export default function M365AnalyzerDashboardPage() {
   // ─── Derived data ────────────────────────────────────────────────────────
   const m = snapshot?.metrics;
   const score = snapshot?.score ?? 0;
+  const risk = riskLevel(score);
 
-  // Filter insights to operational categories only
-  const operationalInsights = (snapshot?.insights ?? []).filter(
-    i => OPERATIONAL_CATEGORIES.includes(i.category as M365AnalyzerCategory)
-  );
-  const anomalyInsights = (snapshot?.insights ?? []).filter(
-    i => ANOMALY_CATEGORIES.includes(i.category as M365AnalyzerCategory)
-  );
+  // Filter insights: operational only + remove configurational items
+  const operationalInsights = (snapshot?.insights ?? [])
+    .filter(i => OPERATIONAL_CATEGORIES.includes(i.category as M365AnalyzerCategory))
+    .filter(i => !isConfigurationalInsight(i));
+  const anomalyInsights = (snapshot?.insights ?? [])
+    .filter(i => ANOMALY_CATEGORIES.includes(i.category as M365AnalyzerCategory))
+    .filter(i => !isConfigurationalInsight(i));
 
-  // Severity counts (operational only)
-  const sevCounts = {
-    critical: operationalInsights.filter(i => i.severity === 'critical').length,
-    high: operationalInsights.filter(i => i.severity === 'high').length,
-    medium: operationalInsights.filter(i => i.severity === 'medium').length,
-  };
-
-  // Filtered incidents
-  const filteredIncidents = severityFilter === 'all'
-    ? operationalInsights.filter(i => i.severity !== 'low' && i.severity !== 'info')
-    : operationalInsights.filter(i => i.severity === severityFilter);
+  // Group by severity for columns
+  const criticalIncidents = operationalInsights.filter(i => i.severity === 'critical');
+  const highIncidents = operationalInsights.filter(i => i.severity === 'high');
+  const mediumIncidents = operationalInsights.filter(i => i.severity === 'medium');
+  const totalIncidents = criticalIncidents.length + highIncidents.length + mediumIncidents.length;
 
   // Status dot
   const dotStatus: 'ok' | 'running' | 'error' = isRunning ? 'running' : lastFailed ? 'error' : 'ok';
 
   const pad = compactMode ? 'p-3' : 'p-4';
 
+  // Check if external movement has data
+  const hasExternalDomains = (m?.exfiltration?.topExternalDomains?.length ?? 0) > 0;
+  const hasRiskUsers = (m?.compromise?.topRiskUsers?.length ?? 0) > 0;
+  const hasExternalMovement = hasExternalDomains || hasRiskUsers;
+
   return (
     <AppLayout>
-      <div className={cn('p-6 lg:p-8 space-y-6', compactMode && 'space-y-4')}>
+      <div className={cn('p-6 lg:p-8 space-y-5', compactMode && 'space-y-3')}>
         <PageBreadcrumb items={[{ label: 'Microsoft 365' }, { label: 'Analyzer' }]} />
 
         {/* ═══ 1. HEADER ═══ */}
@@ -480,57 +563,45 @@ export default function M365AnalyzerDashboardPage() {
           </Card>
         )}
 
-        {/* ═══ 2. SCORE DE RISCO ATUAL ═══ */}
+        {/* ═══ 2. RISCO ATUAL (textual) ═══ */}
         {snapshot && (
-          <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-6 items-start">
-            <Card className={cn(
-              'glass-card border-primary/20 flex items-center justify-center',
-              score > 70 && 'border-rose-500/30 shadow-[0_0_20px_hsl(350_70%_50%/0.1)]',
-            )}>
-              <CardContent className="p-6 flex flex-col items-center gap-3">
-                <ScoreGauge score={score} size="md" />
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Risco Atual</span>
-              </CardContent>
-            </Card>
-
-            {/* Severity filter badges */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 flex-wrap">
-                {(['critical', 'high', 'medium'] as const).map(sev => {
-                  const cfg = SEVERITY_CONFIG[sev];
-                  const count = sevCounts[sev];
-                  const isActive = severityFilter === sev;
-                  return (
-                    <button
-                      key={sev}
-                      onClick={() => setSeverityFilter(isActive ? 'all' : sev)}
-                      className={cn(
-                        'flex items-center gap-2 px-4 py-3 rounded-lg border transition-all cursor-pointer',
-                        cfg.bg, cfg.border, cfg.text,
-                        isActive && 'ring-1 ring-offset-1 ring-offset-background',
-                        isActive && sev === 'critical' && 'ring-rose-400',
-                        isActive && sev === 'high' && 'ring-orange-400',
-                        isActive && sev === 'medium' && 'ring-warning',
-                      )}
-                    >
-                      <cfg.icon className="w-5 h-5" />
-                      <span className="text-2xl font-bold">{count}</span>
-                      <span className="text-xs opacity-80">{cfg.label}</span>
-                    </button>
-                  );
-                })}
-                {severityFilter !== 'all' && (
-                  <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setSeverityFilter('all')}>
-                    Limpar filtro
-                  </Button>
-                )}
+          <Card className={cn(
+            'glass-card border-primary/20',
+            score > 70 && 'border-rose-500/30 shadow-[0_0_20px_hsl(350_70%_50%/0.1)]',
+          )}>
+            <CardContent className={cn('flex flex-col md:flex-row md:items-center gap-4', compactMode ? 'p-3' : 'p-4')}>
+              {/* Risk label */}
+              <div className="flex items-center gap-3">
+                <ShieldAlert className={cn('w-6 h-6', risk.color)} />
+                <div>
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Risco Atual</span>
+                  <div className="flex items-center gap-2">
+                    <span className={cn('text-xl font-bold', risk.color)}>{risk.label}</span>
+                    <span className="text-lg text-muted-foreground font-mono">{score}/100</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Snapshot metadata */}
-              <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
+              {/* Severity counters */}
+              <div className="flex items-center gap-3 flex-wrap md:ml-auto">
+                {(['critical', 'high', 'medium'] as const).map(sev => {
+                  const cfg = SEVERITY_CONFIG[sev];
+                  const counts = { critical: criticalIncidents.length, high: highIncidents.length, medium: mediumIncidents.length };
+                  return (
+                    <div key={sev} className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md border', cfg.bg, cfg.border)}>
+                      <cfg.icon className={cn('w-4 h-4', cfg.text)} />
+                      <span className={cn('text-lg font-bold', cfg.text)}>{counts[sev]}</span>
+                      <span className={cn('text-xs', cfg.text)}>{cfg.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Period metadata */}
+              <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground md:ml-4">
                 {snapshot.period_start && snapshot.period_end && (
                   <span>
-                    Período: {new Date(snapshot.period_start).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    {new Date(snapshot.period_start).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                     {' → '}
                     {new Date(snapshot.period_end).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                   </span>
@@ -539,82 +610,85 @@ export default function M365AnalyzerDashboardPage() {
                   <Badge variant="secondary" className="text-[10px]">{(snapshot as any).snapshotCount} coletas</Badge>
                 )}
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Loading skeleton */}
         {isLoading && (
-          <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6">
-            <Skeleton className="h-48 rounded-xl" />
-            <div className="space-y-3">
-              <Skeleton className="h-14 rounded-lg w-full" />
-              <Skeleton className="h-14 rounded-lg w-3/4" />
+          <div className="space-y-3">
+            <Skeleton className="h-16 rounded-xl" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Skeleton className="h-32 rounded-xl" />
+              <Skeleton className="h-32 rounded-xl" />
+              <Skeleton className="h-32 rounded-xl" />
             </div>
           </div>
         )}
 
-        {/* ═══ 3. INCIDENTES ATIVOS ═══ */}
+        {/* ═══ 3-5. TABS: Incidentes / Anomalias / Movimento Externo ═══ */}
         {snapshot && (
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <ShieldAlert className="w-5 h-5 text-rose-400" />
-              <h2 className={cn('font-bold text-foreground', compactMode ? 'text-base' : 'text-lg')}>
-                Incidentes Ativos
-              </h2>
-              <Badge variant="secondary" className="text-xs">{filteredIncidents.length}</Badge>
-            </div>
+          <Tabs defaultValue="incidents" className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="incidents" className="gap-1.5">
+                <ShieldAlert className="w-4 h-4" />
+                Incidentes
+                {totalIncidents > 0 && <Badge variant="secondary" className="text-[10px] ml-1 h-4 px-1">{totalIncidents}</Badge>}
+              </TabsTrigger>
+              <TabsTrigger value="anomalies" className="gap-1.5">
+                <Activity className="w-4 h-4" />
+                Anomalias
+                {anomalyInsights.length > 0 && <Badge variant="secondary" className="text-[10px] ml-1 h-4 px-1">{anomalyInsights.length}</Badge>}
+              </TabsTrigger>
+              {hasExternalMovement && (
+                <TabsTrigger value="external" className="gap-1.5">
+                  <ExternalLink className="w-4 h-4" />
+                  Movimento Externo
+                </TabsTrigger>
+              )}
+            </TabsList>
 
-            {filteredIncidents.length === 0 ? (
-              <Card className="glass-card border-emerald-500/20">
-                <CardContent className="py-10 text-center">
-                  <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-400 mb-3" />
-                  <h3 className="text-base font-semibold text-foreground mb-1">Nenhum incidente ativo</h3>
-                  <p className="text-sm text-muted-foreground">Nenhum evento operacional crítico detectado no período.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className={cn('grid gap-3', compactMode ? 'gap-2' : 'gap-3')}>
-                {filteredIncidents.map((insight, i) => (
-                  <IncidentCard key={insight.id || i} insight={insight} />
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* ═══ 4. ANOMALIAS DE COMPORTAMENTO ═══ */}
-        {snapshot && anomalyInsights.length > 0 && (
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Activity className="w-5 h-5 text-warning" />
-              <h2 className={cn('font-bold text-foreground', compactMode ? 'text-base' : 'text-lg')}>
-                Anomalias de Comportamento
-              </h2>
-              <Badge variant="secondary" className="text-xs">{anomalyInsights.length}</Badge>
-            </div>
-            <div className={cn('grid gap-3', compactMode ? 'gap-2' : 'gap-3')}>
-              {anomalyInsights.map((insight, i) => (
-                <IncidentCard key={insight.id || i} insight={insight} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* ═══ 5. MOVIMENTO EXTERNO ═══ */}
-        {snapshot && m && (
-          (() => {
-            const hasExternalDomains = (m.exfiltration?.topExternalDomains?.length ?? 0) > 0;
-            const hasRiskUsers = (m.compromise?.topRiskUsers?.length ?? 0) > 0;
-            if (!hasExternalDomains && !hasRiskUsers) return null;
-            return (
-              <section>
-                <div className="flex items-center gap-2 mb-4">
-                  <ExternalLink className="w-5 h-5 text-primary" />
-                  <h2 className={cn('font-bold text-foreground', compactMode ? 'text-base' : 'text-lg')}>
-                    Movimento Externo
-                  </h2>
+            {/* Tab: Incidentes - 3 severity columns */}
+            <TabsContent value="incidents">
+              {totalIncidents === 0 ? (
+                <Card className="glass-card border-emerald-500/20">
+                  <CardContent className="py-8 text-center">
+                    <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-400 mb-2" />
+                    <h3 className="text-sm font-semibold text-foreground mb-1">Nenhum incidente ativo</h3>
+                    <p className="text-xs text-muted-foreground">Nenhum evento operacional crítico detectado no período.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <SeverityColumn severity="critical" incidents={criticalIncidents} compact={compactMode} />
+                  <SeverityColumn severity="high" incidents={highIncidents} compact={compactMode} />
+                  <SeverityColumn severity="medium" incidents={mediumIncidents} compact={compactMode} />
                 </div>
+              )}
+            </TabsContent>
+
+            {/* Tab: Anomalias */}
+            <TabsContent value="anomalies">
+              {anomalyInsights.length === 0 ? (
+                <Card className="glass-card border-emerald-500/20">
+                  <CardContent className="py-8 text-center">
+                    <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-400 mb-2" />
+                    <h3 className="text-sm font-semibold text-foreground mb-1">Sem anomalias recentes</h3>
+                    <p className="text-xs text-muted-foreground">Nenhum desvio comportamental detectado.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className={cn('grid gap-2', compactMode ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 gap-3')}>
+                  {anomalyInsights.map((insight, i) => (
+                    <IncidentCard key={insight.id || i} insight={insight} compact={compactMode} />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Tab: Movimento Externo */}
+            {hasExternalMovement && (
+              <TabsContent value="external">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {hasExternalDomains && (
                     <Card className="glass-card">
@@ -622,7 +696,7 @@ export default function M365AnalyzerDashboardPage() {
                         <CardTitle className="text-sm">Top Domínios Externos</CardTitle>
                       </CardHeader>
                       <CardContent className={compactMode ? 'p-3 pt-0' : undefined}>
-                        <RankingList items={m.exfiltration?.topExternalDomains ?? []} labelKey="domain" periodLabel="Últimas coletas" />
+                        <RankingList items={m?.exfiltration?.topExternalDomains ?? []} labelKey="domain" periodLabel="Últimas coletas" />
                       </CardContent>
                     </Card>
                   )}
@@ -633,7 +707,7 @@ export default function M365AnalyzerDashboardPage() {
                       </CardHeader>
                       <CardContent className={compactMode ? 'p-3 pt-0' : undefined}>
                         <div className="space-y-2">
-                          {(m.compromise?.topRiskUsers ?? []).slice(0, 8).map((u, i) => (
+                          {(m?.compromise?.topRiskUsers ?? []).slice(0, 8).map((u, i) => (
                             <div key={i} className="py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
                               <div className="flex items-center gap-3">
                                 <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">{i + 1}</span>
@@ -651,9 +725,9 @@ export default function M365AnalyzerDashboardPage() {
                     </Card>
                   )}
                 </div>
-              </section>
-            );
-          })()
+              </TabsContent>
+            )}
+          </Tabs>
         )}
 
         {/* Empty state */}
