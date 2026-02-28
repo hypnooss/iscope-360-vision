@@ -190,6 +190,13 @@ export default function M365TenantEditPage() {
         return;
       }
 
+      // 1.5 Ensure all required permissions are in the App Registration manifest
+      try {
+        await supabase.functions.invoke('ensure-exchange-permission');
+      } catch {
+        // non-blocking - continue with consent even if manifest update fails
+      }
+
       // 2. Get app_id to build admin consent URL
       const { data: configData, error: configError } = await supabase.functions.invoke('get-m365-config', {
         body: {},
