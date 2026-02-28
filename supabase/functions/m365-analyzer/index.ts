@@ -1665,12 +1665,21 @@ Deno.serve(async (req) => {
     let exoMalwareFilter: any[] = [];
     let exoRemoteDomains: any[] = [];
 
-    // NEW: Phase 3 operational data
+    // Phase 3 operational data
     let exoMailboxStats: any[] = [];
     let exoMailboxQuota: any[] = [];
     let exoMessageTrace: any[] = [];
     let exoInboxRules: any[] = [];
     let exoAuthPolicy: any[] = [];
+
+    // NEW: Entra ID / Identity data
+    let riskyUsersData: any[] = [];
+    let credentialRegistration: any[] = [];
+    let caPolicies: any[] = [];
+    let recentApps: any[] = [];
+    let serviceHealthData: any[] = [];
+    let exoSharedMailboxes: any[] = [];
+    let exoConnectors: any[] = [];
 
     let dataSource = 'none';
     let stepsReceived: string[] = [];
