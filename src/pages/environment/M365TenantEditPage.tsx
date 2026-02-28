@@ -9,7 +9,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TenantEditDialog } from '@/components/m365/TenantEditDialog';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -30,11 +29,11 @@ import {
   Unplug,
   Clock,
   RefreshCw,
-  Pencil,
   Trash2,
   Loader2,
   ArrowLeft,
   ExternalLink,
+  Monitor,
 } from 'lucide-react';
 
 const ALL_PERMISSIONS = [...GRAPH_PERMISSIONS, ...DIR_ROLES_LIST];
@@ -44,7 +43,6 @@ export default function M365TenantEditPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -82,6 +80,21 @@ export default function M365TenantEditPage() {
     enabled: !!id,
   });
 
+  // Fetch linked agent
+  const { data: tenantAgent } = useQuery({
+    queryKey: ['m365-tenant-agent', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('m365_tenant_agents')
+        .select('*, agents(id, name, certificate_thumbprint, azure_certificate_key_id)')
+        .eq('tenant_record_id', id!)
+        .eq('enabled', true)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
 
   const grantedCount = ALL_PERMISSIONS.filter(p =>
     permissions.find((perm: any) => perm.permission_name === p && perm.status === 'granted')
@@ -169,20 +182,6 @@ export default function M365TenantEditPage() {
     }
   };
 
-  const handleSave = async (tenantId: string, updates: { display_name?: string; tenant_domain?: string }) => {
-    try {
-      const { error } = await supabase.from('m365_tenants').update(updates).eq('id', tenantId);
-      if (error) throw error;
-      toast.success('Tenant atualizado');
-      queryClient.invalidateQueries({ queryKey: ['m365-tenant-edit', id] });
-      return { success: true };
-    } catch (err: any) {
-      toast.error('Erro: ' + err.message);
-      return { success: false, error: err.message };
-    }
-  };
-
-
   if (tenantLoading) {
     return (
       <AppLayout>
@@ -206,6 +205,9 @@ export default function M365TenantEditPage() {
       </AppLayout>
     );
   }
+
+  const agent = (tenantAgent as any)?.agents;
+  const hasCert = !!(agent?.certificate_thumbprint);
 
   return (
     <AppLayout>
@@ -247,6 +249,41 @@ export default function M365TenantEditPage() {
                 <p className="text-sm font-medium">{(tenant as any).clients?.name || '—'}</p>
               </div>
               {getStatusBadge(tenant.connection_status)}
+            </div>
+
+            {/* Agent para Análise PowerShell */}
+            <div className="pt-4 border-t border-border/50">
+              <div className="flex items-center gap-2 mb-3">
+                <Monitor className="w-4 h-4 text-muted-foreground" />
+                <p className="text-sm font-medium text-muted-foreground">Agent para Análise PowerShell</p>
+              </div>
+              {agent ? (
+                <div className="rounded-lg py-3 px-4 bg-muted/50 border border-border/50 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-foreground">{agent.name}</p>
+                    <Badge className={cn(
+                      "text-xs",
+                      hasCert
+                        ? "bg-green-500/10 text-green-500 border-green-500/20"
+                        : "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
+                    )}>
+                      {hasCert ? (
+                        <><CheckCircle className="w-3 h-3 mr-1" />Cert OK</>
+                      ) : (
+                        <><AlertTriangle className="w-3 h-3 mr-1" />Pendente</>
+                      )}
+                    </Badge>
+                  </div>
+                  {agent.azure_certificate_key_id && (
+                    <div className="space-y-0.5">
+                      <p className="text-xs text-muted-foreground">Certificado registrado no Azure</p>
+                      <p className="text-xs font-mono text-foreground/70">{agent.azure_certificate_key_id}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Nenhum agent vinculado</p>
+              )}
             </div>
 
             {/* Permissions */}
@@ -303,9 +340,6 @@ export default function M365TenantEditPage() {
                 {testing ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
                 Testar
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setShowEditDialog(true)}>
-                <Pencil className="w-3 h-3 mr-1" />Editar
-              </Button>
               <Button variant="outline" size="sm" onClick={handleRevalidatePermissions} disabled={revalidating || tenant.connection_status === 'disconnected'}>
                 {revalidating ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
                 Revalidar Permissões
@@ -329,19 +363,6 @@ export default function M365TenantEditPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Edit Dialog */}
-      {tenant && (
-        <TenantEditDialog
-          tenant={{
-            ...tenant,
-            client: (tenant as any).clients || { id: tenant.client_id, name: '—' },
-          } as any}
-          open={showEditDialog}
-          onOpenChange={setShowEditDialog}
-          onSave={handleSave}
-        />
-      )}
 
       {/* Disconnect Dialog */}
       <AlertDialog open={showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>
