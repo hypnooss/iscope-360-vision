@@ -169,14 +169,14 @@ export default function M365TenantEditPage() {
     try {
       // 1. First validate current permissions
       const { data, error } = await supabase.functions.invoke('validate-m365-permissions', {
-        body: { tenant_record_id: id },
+        body: { tenant_id: tenant?.tenant_id },
       });
       if (error) throw error;
       
       queryClient.invalidateQueries({ queryKey: ['m365-tenant-permissions', id] });
 
-      const failedRequired = data?.results?.filter((r: any) => r.status !== 'granted' && r.required)?.length || 0;
-      const failedRecommended = data?.results?.filter((r: any) => r.status !== 'granted' && !r.required)?.length || 0;
+      const failedRequired = data?.permissions?.filter((r: any) => !r.granted && r.type === 'required')?.length || 0;
+      const failedRecommended = data?.permissions?.filter((r: any) => !r.granted && r.type === 'recommended')?.length || 0;
       const totalFailed = failedRequired + failedRecommended;
 
       if (totalFailed === 0) {
