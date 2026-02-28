@@ -1720,6 +1720,15 @@ Deno.serve(async (req) => {
       exoInboxRules = get('exo_inbox_rules');
       exoAuthPolicy = get('exo_auth_policy');
 
+      // NEW: Entra ID / Identity data from agent
+      riskyUsersData = get('risky_users');
+      credentialRegistration = get('credential_registration');
+      caPolicies = get('conditional_access_policies');
+      recentApps = get('recent_app_registrations');
+      serviceHealthData = get('service_health');
+      exoSharedMailboxes = get('exo_shared_mailboxes');
+      exoConnectors = get('exo_connectors');
+
       // Alternate key names
       if (exoForwarding.length === 0) exoForwarding = get('exo_forwarding');
       if (exoAntiPhish.length === 0) exoAntiPhish = get('exo_antiphish_policy');
@@ -1747,8 +1756,9 @@ Deno.serve(async (req) => {
         exoMailboxStats.length + exoMailboxQuota.length + exoMessageTrace.length +
         exoInboxRules.length + exoAuthPolicy.length;
       const graphTotal = signInLogs.length + auditLogs.length + emailActivity.length + mailboxUsage.length + threatData.length;
+      const entraTotal = riskyUsersData.length + credentialRegistration.length + caPolicies.length + recentApps.length + serviceHealthData.length;
 
-      console.log(`[m365-analyzer] Agent data: EXO items=${exoTotal}, Graph items=${graphTotal}, mailboxStats=${exoMailboxStats.length}, messageTrace=${exoMessageTrace.length}, inboxRules=${exoInboxRules.length}, authPolicy=${exoAuthPolicy.length}`);
+      console.log(`[m365-analyzer] Agent data: EXO=${exoTotal}, Graph=${graphTotal}, Entra=${entraTotal}`);
     }
 
     // ── Graph API fallback: only if NO useful data at all ──
