@@ -1,12 +1,10 @@
 
 
-## Plan: Remove title from M365 tenant add page
+## Plan: Auto-advance on device type selection in AddFirewallPage
 
-### `src/pages/environment/AddM365TenantPage.tsx`
+### `src/pages/environment/AddFirewallPage.tsx`
 
-1. **Remove the title block** (lines 577-590) — the `div` with back button, Cloud icon, "Conectar Microsoft 365" heading and subtitle.
+1. **Line 520** — Change the `onClick` handler of device type buttons from `setSelectedDeviceTypeId(dt.id)` to `{ setSelectedDeviceTypeId(dt.id); setStep(2); }` so selecting a device type immediately advances to step 2.
 
-2. **Add spacing before StepIndicator** — wrap StepIndicator in `<div className="pt-10">` to match the firewall page pattern.
-
-3. **Cleanup unused imports** — remove `ArrowLeft` and `Cloud` from lucide-react imports (if not used elsewhere in the file).
+2. **Lines 549-552** — Remove the "Próximo" button from the step 1 footer, keeping only the "Voltar" button.
 
