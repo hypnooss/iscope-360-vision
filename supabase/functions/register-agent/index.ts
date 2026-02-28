@@ -338,11 +338,11 @@ serve(async (req) => {
 
     console.log("[register-agent] Tokens generated successfully");
 
-    // Step 5: Update agent with jwt_secret, certificate info, capabilities and clear activation code
+    // Step 5: Update agent with jwt_secret, certificate info, capabilities
+    // NOTE: activation_code is NOT cleared here to allow retry if agent crashes before saving state.
+    // It will be cleared on the first successful heartbeat instead.
     const updateData: Record<string, any> = {
       jwt_secret: jwtSecret,
-      activation_code: null,
-      activation_code_expires_at: null,
       last_seen: new Date().toISOString(),
     };
     
