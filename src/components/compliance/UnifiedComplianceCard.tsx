@@ -210,13 +210,13 @@ export function UnifiedComplianceCard({
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 flex-1 min-w-0">
             {/* Ícone de status */}
-            <div className={cn('p-2 rounded-lg border flex-shrink-0', statusConfig.bgClass)}>
+            <div className={cn('p-2 rounded-lg border flex-shrink-0 mt-0.5', statusConfig.bgClass)}>
               <StatusIcon className={cn('w-4 h-4', statusConfig.iconClass)} />
             </div>
 
             <div className="flex-1 min-w-0">
               {/* Code + Name + Severity badge */}
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-medium text-foreground truncate">
                   {item.name}
                 </span>
@@ -227,7 +227,7 @@ export function UnifiedComplianceCard({
 
               {/* Mensagem contextual */}
               {contextualMessage && (
-                <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                <p className="text-sm text-muted-foreground mt-2 line-clamp-2 pr-2">
                   {contextualMessage}
                 </p>
               )}
