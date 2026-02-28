@@ -1,36 +1,14 @@
 
 
-## Plan: Exibir permissões em mini-cards estilizados
+## Plan: Ajustar cards de permissões - menor altura, maior largura, 3 colunas
 
-Alterar a exibição de permissões em ambas as páginas para usar pequenos cards escuros (como no print), com o nome da permissão em destaque e uma descrição abaixo, em vez de listas simples com bullets.
+### Ambos os arquivos: `AddM365TenantPage.tsx` e `M365TenantEditPage.tsx`
 
-### Dados de descrição das permissões
+1. **Grid de 3 colunas fixas** — Alterar `grid-cols-2 md:grid-cols-3 lg:grid-cols-4` para `grid-cols-1 md:grid-cols-3` em todos os grids de permissões (Graph e RBAC).
 
-Criar um mapa compartilhado de descrições para cada permissão, ex:
-- `Application.ReadWrite.All` → "Gestão de certificados e credenciais"
-- `Directory.Read.All` → "Leitura de diretório e usuários"
-- `User.Read.All` → "Leitura de perfis de usuários"
-- `Mail.Read` → "Leitura de configurações de e-mail"
-- `Organization.Read.All` → "Leitura de dados da organização"
-- `Policy.Read.All` → "Leitura de políticas de segurança"
-- `RoleManagement.Read.All` → "Leitura de roles e atribuições"
-- `SecurityEvents.Read.All` → "Leitura de eventos de segurança"
-- etc.
+2. **Cards mais largos e menos altos** — Alterar o padding dos cards de `p-3` para `py-2 px-3` e mudar `space-y-1` para layout inline: colocar nome e descrição na mesma linha usando `flex items-center gap-2` com a descrição ao lado do nome separada por um `—` ou exibir descrição em linha abaixo com menos padding (`pl-5 mt-0.5`).
 
-### `src/pages/environment/AddM365TenantPage.tsx`
-
-**Linhas 431-451** — Substituir o grid de categorias com listas por um grid flat de mini-cards (`grid-cols-2 md:grid-cols-3 lg:grid-cols-4`). Cada card:
-- Fundo `bg-muted/50` com `rounded-lg p-3 border border-border/50`
-- Ícone verde `Check` + nome da permissão em `text-xs font-mono font-medium`
-- Descrição em `text-xs text-muted-foreground`
-
-Remover o agrupamento por categoria (Entra ID, Exchange, etc.) — exibir todas as permissões Graph em um grid flat.
-
-**Linhas 458-474** — Mesmo tratamento para as roles RBAC, num grid separado abaixo.
-
-### `src/pages/environment/M365TenantEditPage.tsx`
-
-**Linhas 277-297** — Substituir o grid de categorias por mini-cards no mesmo estilo. Cada card mostra o status dot (verde/vermelho/âmbar) + nome + descrição.
-
-**Linhas 302-322** — Mesmo tratamento para roles RBAC.
+**Arquivos afetados:**
+- `src/pages/environment/AddM365TenantPage.tsx` (linhas 432, 434, 449, 451)
+- `src/pages/environment/M365TenantEditPage.tsx` (linhas 259, 263, 280, 284)
 
