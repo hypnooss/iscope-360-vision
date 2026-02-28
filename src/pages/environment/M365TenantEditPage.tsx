@@ -31,17 +31,10 @@ import {
   RefreshCw,
   Pencil,
   Trash2,
-  Play,
   Loader2,
-  TrendingUp,
-  Calendar,
-  ChevronDown,
-  ChevronUp,
   ArrowLeft,
   ExternalLink,
 } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 
 const PERMISSION_CATEGORIES = {
   'Entra ID': [
@@ -69,14 +62,12 @@ export default function M365TenantEditPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [showPermissions, setShowPermissions] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
   const [testing, setTesting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
   const [revalidating, setRevalidating] = useState(false);
 
   // Fetch tenant data
@@ -109,37 +100,6 @@ export default function M365TenantEditPage() {
     enabled: !!id,
   });
 
-  // Fetch last posture analysis
-  const { data: lastAnalysis } = useQuery({
-    queryKey: ['m365-tenant-last-analysis', id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('m365_posture_history')
-        .select('score, status, created_at')
-        .eq('tenant_record_id', id!)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!id,
-  });
-
-  // Fetch schedule
-  const { data: schedule } = useQuery({
-    queryKey: ['m365-tenant-schedule', id],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('m365_analyzer_schedules')
-        .select('*')
-        .eq('tenant_record_id', id!)
-        .eq('is_active', true)
-        .maybeSingle();
-      return data;
-    },
-    enabled: !!id,
-  });
 
   const grantedCount = ALL_PERMISSIONS.filter(p =>
     permissions.find((perm: any) => perm.permission_name === p && perm.status === 'granted')
@@ -227,22 +187,6 @@ export default function M365TenantEditPage() {
     }
   };
 
-  const handleAnalyze = async () => {
-    setAnalyzing(true);
-    try {
-      const { error } = await supabase.functions.invoke('trigger-m365-posture-analysis', {
-        body: { tenant_record_id: id },
-      });
-      if (error) throw error;
-      toast.success('Análise iniciada com sucesso');
-      navigate('/scope-m365/executions');
-    } catch (err: any) {
-      toast.error('Erro ao iniciar análise: ' + (err.message || 'Erro desconhecido'));
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
   const handleSave = async (tenantId: string, updates: { display_name?: string; tenant_domain?: string }) => {
     try {
       const { error } = await supabase.from('m365_tenants').update(updates).eq('id', tenantId);
@@ -256,9 +200,6 @@ export default function M365TenantEditPage() {
     }
   };
 
-  const canAnalyze = tenant?.connection_status === 'connected' || tenant?.connection_status === 'partial';
-
-  const FREQ_LABELS: Record<string, string> = { daily: 'Diário', weekly: 'Semanal', monthly: 'Mensal', hourly: 'Por hora' };
 
   if (tenantLoading) {
     return (
@@ -312,163 +253,103 @@ export default function M365TenantEditPage() {
               </div>
             </div>
           </div>
-          {getStatusBadge(tenant.connection_status)}
         </div>
 
-        {/* Info Grid */}
+        {/* Single unified card */}
         <Card className="glass-card">
-          <CardContent className="p-6">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+          <CardContent className="p-6 space-y-6">
+            {/* Workspace + Status */}
+            <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">Workspace</p>
                 <p className="text-sm font-medium">{(tenant as any).clients?.name || '—'}</p>
               </div>
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Última Análise</p>
-                {lastAnalysis ? (
-                  <p className="text-sm font-medium">
-                    {format(new Date(lastAnalysis.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Nunca analisado</p>
-                )}
+              {getStatusBadge(tenant.connection_status)}
+            </div>
+
+            {/* Permissions */}
+            <div className="space-y-6">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-3">
+                  Permissões ({grantedCount}/{ALL_PERMISSIONS.length})
+                </p>
+                <p className="text-xs text-muted-foreground mb-3">Permissões do Microsoft Graph</p>
+                <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+                  {Object.entries(PERMISSION_CATEGORIES).map(([category, perms]) => (
+                    <div key={category} className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">{category}</p>
+                      <ul className="text-sm space-y-1">
+                        {perms.map(permName => {
+                          const perm = permissions.find((p: any) => p.permission_name === permName);
+                          return (
+                            <li key={permName} className="flex items-center gap-2">
+                              <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
+                                perm?.status === 'granted' ? 'bg-green-500' :
+                                perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                              )} />
+                              <span className="text-xs truncate">{permName}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Score</p>
-                {lastAnalysis?.score != null ? (
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className={cn("w-4 h-4",
-                      lastAnalysis.score >= 80 ? "text-green-500" :
-                      lastAnalysis.score >= 60 ? "text-yellow-500" : "text-red-500"
-                    )} />
-                    <span className={cn("text-sm font-bold",
-                      lastAnalysis.score >= 80 ? "text-green-500" :
-                      lastAnalysis.score >= 60 ? "text-yellow-500" : "text-red-500"
-                    )}>
-                      {lastAnalysis.score}%
-                    </span>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">—</p>
-                )}
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Agendamento</p>
-                <div className="flex items-center gap-1.5 text-sm">
-                  <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-                  <span className={schedule ? 'text-foreground' : 'text-muted-foreground'}>
-                    {schedule ? FREQ_LABELS[schedule.frequency] || schedule.frequency : 'Não configurado'}
-                  </span>
+
+              <div className="pt-4 border-t border-border/50">
+                <p className="text-xs text-muted-foreground mb-3">Roles do Diretório (RBAC)</p>
+                <div className="grid gap-4 grid-cols-2">
+                  {Object.entries(DIRECTORY_ROLES).map(([category, roles]) => (
+                    <div key={category} className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">{category}</p>
+                      <ul className="text-sm space-y-1">
+                        {roles.map(roleName => {
+                          const perm = permissions.find((p: any) => p.permission_name === roleName);
+                          return (
+                            <li key={roleName} className="flex items-center gap-2">
+                              <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
+                                perm?.status === 'granted' ? 'bg-green-500' :
+                                perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
+                              )} />
+                              <span className="text-xs truncate">{roleName}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
 
-        {/* Permissions Section */}
-        <Card className="glass-card">
-          <CardContent className="p-6">
-            <button
-              onClick={() => setShowPermissions(!showPermissions)}
-              className="flex items-center justify-between w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <span className="flex items-center gap-2 font-medium">
-                Permissões ({grantedCount}/{ALL_PERMISSIONS.length})
-              </span>
-              {showPermissions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-
-            {showPermissions && (
-              <div className="mt-4 space-y-6">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-3">Permissões do Microsoft Graph</p>
-                  <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-                    {Object.entries(PERMISSION_CATEGORIES).map(([category, perms]) => (
-                      <div key={category} className="space-y-2">
-                        <p className="text-xs font-medium text-muted-foreground">{category}</p>
-                        <ul className="text-sm space-y-1">
-                          {perms.map(permName => {
-                            const perm = permissions.find((p: any) => p.permission_name === permName);
-                            return (
-                              <li key={permName} className="flex items-center gap-2">
-                                <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                                  perm?.status === 'granted' ? 'bg-green-500' :
-                                  perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                                )} />
-                                <span className="text-xs truncate">{permName}</span>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-border/50">
-                  <p className="text-xs text-muted-foreground mb-3">Roles do Diretório (RBAC)</p>
-                  <div className="grid gap-4 grid-cols-2">
-                    {Object.entries(DIRECTORY_ROLES).map(([category, roles]) => (
-                      <div key={category} className="space-y-2">
-                        <p className="text-xs font-medium text-muted-foreground">{category}</p>
-                        <ul className="text-sm space-y-1">
-                          {roles.map(roleName => {
-                            const perm = permissions.find((p: any) => p.permission_name === roleName);
-                            return (
-                              <li key={roleName} className="flex items-center gap-2">
-                                <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                                  perm?.status === 'granted' ? 'bg-green-500' :
-                                  perm?.status === 'denied' ? 'bg-red-500' : 'bg-amber-500'
-                                )} />
-                                <span className="text-xs truncate">{roleName}</span>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Action Buttons */}
-        <Card className="glass-card">
-          <CardContent className="p-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex flex-wrap items-center gap-2 flex-1">
-                <Button variant="outline" size="sm" onClick={handleTest} disabled={testing || tenant.connection_status === 'disconnected'}>
-                  {testing ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                  Testar
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setShowEditDialog(true)}>
-                  <Pencil className="w-3 h-3 mr-1" />Editar
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleRevalidatePermissions} disabled={revalidating || tenant.connection_status === 'disconnected'}>
-                  {revalidating ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
-                  Revalidar Permissões
-                </Button>
-                <Button
-                  variant="outline" size="sm"
-                  className="text-warning hover:text-warning hover:bg-warning/10 border-border"
-                  onClick={() => setShowDisconnectDialog(true)}
-                  disabled={tenant.connection_status === 'disconnected'}
-                >
-                  <Unplug className="w-3 h-3 mr-1" />Desconectar
-                </Button>
-                <Button
-                  variant="outline" size="sm"
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10 border-border"
-                  onClick={() => setShowDeleteDialog(true)}
-                >
-                  <Trash2 className="w-3 h-3 mr-1" />Excluir
-                </Button>
-              </div>
-              <Button onClick={handleAnalyze} disabled={!canAnalyze || analyzing} className="gap-2">
-                {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                {analyzing ? 'Analisando...' : 'Analisar'}
+            {/* Action Buttons - right aligned */}
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-4 border-t border-border/50">
+              <Button variant="outline" size="sm" onClick={handleTest} disabled={testing || tenant.connection_status === 'disconnected'}>
+                {testing ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                Testar
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowEditDialog(true)}>
+                <Pencil className="w-3 h-3 mr-1" />Editar
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleRevalidatePermissions} disabled={revalidating || tenant.connection_status === 'disconnected'}>
+                {revalidating ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
+                Revalidar Permissões
+              </Button>
+              <Button
+                variant="outline" size="sm"
+                className="text-warning hover:text-warning hover:bg-warning/10 border-border"
+                onClick={() => setShowDisconnectDialog(true)}
+                disabled={tenant.connection_status === 'disconnected'}
+              >
+                <Unplug className="w-3 h-3 mr-1" />Desconectar
+              </Button>
+              <Button
+                variant="outline" size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10 border-border"
+                onClick={() => setShowDeleteDialog(true)}
+              >
+                <Trash2 className="w-3 h-3 mr-1" />Excluir
               </Button>
             </div>
           </CardContent>
