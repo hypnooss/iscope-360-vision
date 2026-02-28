@@ -423,30 +423,56 @@ export default function AddM365TenantPage() {
         </p>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         <h3 className="text-sm font-semibold flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-primary" />
-          Permissões solicitadas (Microsoft Graph)
+          Permissões do Microsoft Graph
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 ml-1">
-          {[
-            { name: 'Application.ReadWrite.All', desc: 'Gestão de certificados e credenciais' },
-            { name: 'Directory.Read.All', desc: 'Leitura de diretório e usuários' },
-            { name: 'User.Read.All', desc: 'Leitura de perfis de usuários' },
-            { name: 'Mail.Read', desc: 'Leitura de configurações de e-mail' },
-            { name: 'Organization.Read.All', desc: 'Leitura de dados da organização' },
-            { name: 'Policy.Read.All', desc: 'Leitura de políticas de segurança' },
-            { name: 'RoleManagement.Read.All', desc: 'Leitura de roles e atribuições' },
-            { name: 'SecurityEvents.Read.All', desc: 'Leitura de eventos de segurança' },
-          ].map((perm) => (
-            <div key={perm.name} className="flex items-start gap-2 text-xs py-1 px-2 rounded bg-muted/50">
-              <Check className="w-3 h-3 text-green-500 mt-0.5 flex-shrink-0" />
-              <div>
-                <span className="font-mono text-[11px]">{perm.name}</span>
-                <p className="text-muted-foreground text-[10px]">{perm.desc}</p>
-              </div>
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+          {Object.entries({
+            'Entra ID': ['User.Read.All', 'Directory.Read.All', 'Group.Read.All', 'Application.Read.All', 'AuditLog.Read.All', 'Organization.Read.All', 'Policy.Read.All'],
+            'Exchange Online': ['MailboxSettings.Read', 'Mail.Read', 'RoleManagement.ReadWrite.Directory'],
+            'SharePoint': ['Sites.Read.All'],
+            'Certificados': ['Application.ReadWrite.All'],
+            'Outros': ['Reports.Read.All'],
+          }).map(([category, perms]) => (
+            <div key={category} className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">{category}</p>
+              <ul className="text-sm space-y-1">
+                {perms.map(permName => (
+                  <li key={permName} className="flex items-center gap-2">
+                    <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+                    <span className="text-xs font-mono truncate">{permName}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           ))}
+        </div>
+
+        <div className="pt-3 border-t border-border/50">
+          <h3 className="text-sm font-semibold flex items-center gap-2 mb-3">
+            <AlertCircle className="w-4 h-4 text-primary" />
+            Roles do Diretório (RBAC)
+          </h3>
+          <div className="grid gap-4 grid-cols-2">
+            {Object.entries({
+              'Exchange Online': ['Exchange Administrator'],
+              'SharePoint': ['SharePoint Administrator'],
+            }).map(([category, roles]) => (
+              <div key={category} className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">{category}</p>
+                <ul className="text-sm space-y-1">
+                  {roles.map(role => (
+                    <li key={role} className="flex items-center gap-2">
+                      <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+                      <span className="text-xs truncate">{role}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -633,7 +659,7 @@ export default function AddM365TenantPage() {
           ]}
         />
 
-        <div className="pt-10 max-w-2xl mx-auto">
+        <div className="pt-10 max-w-4xl mx-auto">
           <StepIndicator current={step} />
 
           <Card>
@@ -654,11 +680,6 @@ export default function AddM365TenantPage() {
           {/* Footer buttons */}
           <div className="flex justify-between mt-6">
             <div>
-              {step === 1 && (
-                <Button variant="outline" onClick={() => navigate('/environment/new')}>
-                  Cancelar
-                </Button>
-              )}
               {step === 2 && !waitingForAuth && (
                 <Button variant="outline" onClick={handleBack} className="gap-2">
                   <ArrowLeft className="w-4 h-4" />
@@ -676,12 +697,17 @@ export default function AddM365TenantPage() {
                 </Button>
               )}
             </div>
-            <div>
+            <div className="flex gap-2">
               {step === 1 && (
-                <Button onClick={handleNext} disabled={!canProceedStep1} className="gap-2">
-                  Próximo
-                  <ArrowRight className="w-4 h-4" />
-                </Button>
+                <>
+                  <Button variant="outline" onClick={() => navigate('/environment/new')}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleNext} disabled={!canProceedStep1} className="gap-2">
+                    Próximo
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </>
               )}
               {step === 2 && !waitingForAuth && (
                 <Button onClick={handleNext} disabled={!canProceedStep2} className="gap-2">
