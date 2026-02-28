@@ -1308,7 +1308,7 @@ export type Database = {
           {
             foreignKeyName: "external_domain_schedules_domain_id_fkey"
             columns: ["domain_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "external_domains"
             referencedColumns: ["id"]
           },
