@@ -1,20 +1,30 @@
 
 
-## Plan: Reestruturar M365 Analyzer — IMPLEMENTADO ✅
+## Plan: Add edit/delete actions to M365 tenant rows + Create M365 tenant edit page
 
-O M365 Analyzer foi reestruturado de 7 para 12 categorias de análise, adicionando cobertura completa de Entra ID (identidade, MFA, Conditional Access) e Auditoria/Compliance.
+### 1. Add edit/delete icons to M365 tenant table in EnvironmentPage
 
-### Categorias implementadas
-1. **security_risk** — Sign-ins alto risco, falhas MFA, impossible travel, contas bloqueadas
-2. **identity_access** — Novos usuários, sem MFA, service accounts, app registrations
-3. **conditional_access** — Políticas desabilitadas, report-only, exclusões
-4. **exchange_health** — Service health, falhas de entrega, shared mailboxes sem owner
-5. **audit_compliance** — Admin audit, delegações, mailbox audit, e-discovery
-6-12. Categorias existentes mantidas (phishing, mailbox, behavioral, compromise, rules, exfiltration, operational)
+**`src/pages/EnvironmentPage.tsx`** (lines 358-365):
+- Add `renderActions` to the M365 `AssetCategorySection`, matching the pattern used for firewalls and domains
+- Edit icon navigates to `/environment/m365/{id}/edit`
+- Delete icon opens a confirmation dialog (reuse `DeleteEnvironmentDomainDialog` or add a new state for M365 delete)
+- Add delete handler for M365 tenants (delete from `m365_tenant_agents`, `m365_tenant_permissions`, `m365_tenants`)
+- Update `navigationUrl` for m365 tenants to `/environment/m365/{id}/edit`
 
-### Arquivos alterados
-- `src/types/m365AnalyzerInsights.ts` — 5 novas categorias + métricas expandidas
-- `src/hooks/useM365AnalyzerData.ts` — parseMetrics atualizado
-- `supabase/functions/trigger-m365-analyzer/index.ts` — payload com 12 módulos
-- `supabase/functions/m365-analyzer/index.ts` — 5 novos módulos de análise + Graph API enriquecimento
-- `src/pages/m365/M365AnalyzerDashboardPage.tsx` — Resumo executivo + métricas novas + ícones
+### 2. Create M365 tenant edit page
+
+**New file: `src/pages/environment/M365TenantEditPage.tsx`**
+
+Full-page edit screen inspired by the screenshot, with these sections:
+
+- **Header**: Tenant name, domain, connection status badge
+- **Info grid**: Workspace, Ultima Analise, Score, Agendamento
+- **Permissions section** (collapsible): Reuse the permission categories/roles display from `TenantStatusCard`
+- **Directory Roles (RBAC)**: Exchange Administrator, SharePoint Administrator
+- **Action buttons at bottom**: Testar, Editar (opens `TenantEditDialog`), Revalidar Permissoes, Desconectar, Excluir, Analisar
+- Fetch tenant data by ID from `m365_tenants`, permissions from `m365_tenant_permissions`, last analysis from `m365_posture_history`
+
+### 3. Register route
+
+**`src/App.tsx`**: Add route `/environment/m365/:id/edit` → `M365TenantEditPage`
+
