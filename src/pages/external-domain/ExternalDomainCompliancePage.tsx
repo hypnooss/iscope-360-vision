@@ -14,8 +14,9 @@ import { ComplianceCategory, ComplianceReport, SubdomainSummary } from '@/types/
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
-  Loader2, FileDown, Globe, RefreshCw, XCircle, Play, Clock, Building2, Settings,
+  Loader2, FileDown, Globe, RefreshCw, XCircle, Play, Clock, Building2, Settings, ChevronDown, FileText, ClipboardList,
 } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from "@/lib/utils";
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -543,11 +544,31 @@ export default function ExternalDomainCompliancePage() {
               </SelectContent>
             </Select>
 
-            <Button onClick={handleRefresh} disabled={isRefreshing || !selectedDomainId}>
-              {isRefreshing
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
-                : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button disabled={!selectedDomainId} className="gap-0 pr-0">
+                  <span className="px-3">Executar Ações</span>
+                  <span className="border-l border-primary-foreground/30 h-full flex items-center px-2">
+                    <ChevronDown className="w-4 h-4" />
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleRefresh} disabled={isRefreshing}>
+                  {isRefreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                  Gerar Análise
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => toast.info('Exportar PDF será implementado em breve.')}>
+                  <FileDown className="w-4 h-4 mr-2" />Exportar PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => toast.info('Exportar CVE será implementado em breve.')}>
+                  <FileText className="w-4 h-4 mr-2" />Exportar CVE
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => toast.info('Criar GMUD será implementado em breve.')}>
+                  <ClipboardList className="w-4 h-4 mr-2" />Criar GMUD
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               size="icon"
