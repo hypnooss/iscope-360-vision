@@ -114,18 +114,45 @@ export function mapM365Insight(insight: M365Insight): UnifiedComplianceItem {
  * Mapeia M365AgentInsight (Postura M365 - Agent/PowerShell) para UnifiedComplianceItem
  */
 export function mapM365AgentInsight(insight: M365AgentInsight): UnifiedComplianceItem {
+  // Build evidence from affectedEntities (same pattern as other mappers)
+  const evidence: EvidenceItem[] = [];
+  if (insight.affectedEntities && insight.affectedEntities.length > 0) {
+    evidence.push({
+      label: 'Itens afetados',
+      value: `${insight.affectedEntities.length} item(ns)`,
+      type: 'text',
+    });
+    evidence.push({
+      label: 'Entidades afetadas',
+      value: insight.affectedEntities.map(e => e.name).join('\n'),
+      type: 'list',
+    });
+  }
+
+  // Build rawData with all available context
+  const rawData: Record<string, unknown> = {};
+  if (insight.apiEndpoint) rawData.endpoint = insight.apiEndpoint;
+  if (insight.status) rawData.status = insight.status;
+  if (insight.affectedEntities?.length) rawData.affectedCount = insight.affectedEntities.length;
+  if (insight.category) rawData.category = insight.category;
+  if (insight.rawData && Object.keys(insight.rawData).length > 0) rawData.rawData = insight.rawData;
+
   return {
     id: insight.id,
-    code: insight.id, // Agent insights usam o code como id
+    code: insight.id,
     name: insight.name,
-    description: insight.description,
+    description: insight.criteria || insight.description,
     category: insight.category,
     status: normalizeStatus(insight.status),
     severity: normalizeSeverity(insight.severity),
-    failDescription: insight.description,
+    failDescription: insight.failDescription || insight.description,
     recommendation: insight.recommendation,
-    details: insight.details,
-    rawData: insight.rawData,
+    technicalRisk: insight.technicalRisk,
+    businessImpact: insight.businessImpact,
+    apiEndpoint: insight.apiEndpoint,
+    details: insight.description,
+    evidence,
+    rawData: Object.keys(rawData).length > 0 ? rawData : undefined,
     affectedEntities: insight.affectedEntities?.map((e, i) => ({
       id: `${insight.id}-${i}`,
       displayName: e.name,
