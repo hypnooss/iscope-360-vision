@@ -1,24 +1,32 @@
 
 
-## Corrigir exibição de Evidências e Dados Brutos no M365 Compliance
+## Corrigir campos ausentes nos itens de M365 Compliance
 
-### Problema 1: Entidades afetadas na mesma linha
-No `EvidenceItemDisplay`, quando `type === 'list'`, o valor (que contém `\n` entre entidades) é renderizado como texto simples em um `<p>` tag, que ignora quebras de linha. Precisa renderizar cada entidade em sua propria linha.
+### Problema
+Alguns itens no M365 Compliance (especialmente os vindos do Agent/PowerShell) não exibem "Impacto no Negócio", "Risco Técnico" e "Análise Efetuada" na sheet lateral. Isso ocorre porque:
 
-### Problema 2: Dados Brutos (JSON) vazio
-No `mapM365Insight`, o `rawData` é condicionado a `insight.evidencias && insight.evidencias.length > 0`. Se `evidencias` for um array vazio `[]`, o `rawData` fica `undefined`. Alem disso, devemos incluir mais dados brutos uteis (como o endpoint, status, affected count) para que a aba Dados tenha conteudo mesmo quando `evidencias` esta vazio.
+1. **Tipo `M365AgentInsight`** não inclui os campos `technicalRisk`, `businessImpact`, `apiEndpoint`, `criteria` que o backend já envia
+2. **`mapM365AgentInsight`** não mapeia esses campos para `UnifiedComplianceItem`
+3. **`mapM365AgentInsight`** não constrói `evidence` a partir de `affectedEntities`
+4. **Edge function `createNotFoundInsight`** envia `riscoTecnico: ''` e `impactoNegocio: ''` em vez de usar os valores da regra
 
-### Alteracoes
+### Alterações
 
-**Arquivo 1: `src/components/compliance/EvidenceDisplay.tsx`**
-- Adicionar tratamento para `type === 'list'` ANTES do fallback padrao (antes da linha 520)
-- Quando `type === 'list'`, dividir o valor por `\n` e renderizar cada item em uma linha separada com borda lateral, igual ao padrao de nameservers
+**1. `src/types/m365Insights.ts` — Expandir `M365AgentInsight`**
+Adicionar campos opcionais: `criteria`, `passDescription`, `failDescription`, `notFoundDescription`, `technicalRisk`, `businessImpact`, `apiEndpoint`. Esses campos já são enviados pelo backend (`agent-task-result`).
 
-**Arquivo 2: `src/lib/complianceMappers.ts`**
-- Na funcao `mapM365Insight`, construir `rawData` de forma mais robusta: incluir `evidencias` (quando existir), mais o objeto completo do insight (ou campos selecionados como `endpointUsado`, `status`, `affectedCount`, `category`) para que a aba Dados sempre tenha conteudo quando ha dados disponiveis
-- Alterar a condicao para: se `insight.evidencias` existir (array com itens) OU se existirem outros dados relevantes
+**2. `src/lib/complianceMappers.ts` — Enriquecer `mapM365AgentInsight`**
+- Mapear `technicalRisk`, `businessImpact`, `apiEndpoint` para os campos correspondentes do `UnifiedComplianceItem`
+- Usar `criteria` como `description` (texto estático da regra)
+- Usar `description` existente como `details` (análise dinâmica)
+- Construir `evidence` a partir de `affectedEntities` (mesmo padrão dos outros mappers)
+- Construir `rawData` com dados relevantes (endpoint, status, rawData original)
+
+**3. `supabase/functions/m365-security-posture/index.ts` — Corrigir `createNotFoundInsight`**
+Alterar linhas 826-827 para usar `rule.technical_risk` e `rule.business_impact` em vez de strings vazias, garantindo que mesmo itens "Não Encontrado" tenham contexto técnico.
 
 ### Arquivos a editar
-1. `src/components/compliance/EvidenceDisplay.tsx` — adicionar handler para `type === 'list'`
-2. `src/lib/complianceMappers.ts` — enriquecer `rawData` com mais campos do insight
+1. `src/types/m365Insights.ts` — adicionar 7 campos opcionais ao `M365AgentInsight`
+2. `src/lib/complianceMappers.ts` — enriquecer `mapM365AgentInsight` com todos os campos
+3. `supabase/functions/m365-security-posture/index.ts` — corrigir `createNotFoundInsight` (linhas 826-827)
 
