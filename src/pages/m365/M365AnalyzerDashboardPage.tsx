@@ -529,10 +529,9 @@ export default function M365AnalyzerDashboardPage() {
 
   const pad = compactMode ? 'p-3' : 'p-4';
 
-  // Check if external movement has data
-  const hasExternalDomains = (m?.exfiltration?.topExternalDomains?.length ?? 0) > 0;
-  const hasRiskUsers = (m?.compromise?.topRiskUsers?.length ?? 0) > 0;
-  const hasExternalMovement = hasExternalDomains || hasRiskUsers;
+  // External movement data
+  const { data: extMovementData } = useExternalMovementData(selectedTenantId || undefined);
+  const extMovementCount = extMovementData?.totalAlerts ?? 0;
 
   return (
     <AppLayout>
