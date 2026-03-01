@@ -569,15 +569,6 @@ export default function M365AnalyzerDashboardPage() {
             >
               <Settings className="w-4 h-4" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              title={compactMode ? 'Modo normal' : 'Modo compacto (SOC)'}
-              onClick={() => setCompactMode(!compactMode)}
-            >
-              <ToggleLeft className={cn('w-4 h-4', compactMode && 'text-primary')} />
-            </Button>
           </div>
         </div>
 
