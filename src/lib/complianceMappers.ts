@@ -63,6 +63,21 @@ export function mapComplianceCheck(check: ComplianceCheck): UnifiedComplianceIte
  * Mapeia M365Insight (Postura M365 - Graph API) para UnifiedComplianceItem
  */
 export function mapM365Insight(insight: M365Insight): UnifiedComplianceItem {
+  // Build evidence from affectedEntities (same pattern as Exchange/Security mappers)
+  const evidence: EvidenceItem[] = [];
+  if (insight.affectedEntities && insight.affectedEntities.length > 0) {
+    evidence.push({
+      label: 'Itens afetados',
+      value: `${insight.affectedCount} item(ns)`,
+      type: 'text',
+    });
+    evidence.push({
+      label: 'Entidades afetadas',
+      value: insight.affectedEntities.map(e => e.displayName || e.userPrincipalName || e.id).join('\n'),
+      type: 'list',
+    });
+  }
+
   return {
     id: insight.id,
     code: insight.code,
@@ -76,6 +91,11 @@ export function mapM365Insight(insight: M365Insight): UnifiedComplianceItem {
     technicalRisk: insight.riscoTecnico,
     businessImpact: insight.impactoNegocio,
     apiEndpoint: insight.endpointUsado,
+    details: insight.riscoTecnico || insight.descricaoExecutiva,
+    evidence,
+    rawData: insight.evidencias && insight.evidencias.length > 0
+      ? { evidencias: insight.evidencias } as Record<string, unknown>
+      : undefined,
     affectedEntities: insight.affectedEntities,
     affectedCount: insight.affectedCount,
     remediation: insight.remediacao,
