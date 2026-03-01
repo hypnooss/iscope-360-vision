@@ -23,9 +23,21 @@ const IDENTITY_RISKY_USER_READ_ALL_ID = "dc5007c0-2d7d-4c42-879c-2dab87571379";
 const DEVICE_MGMT_MANAGED_DEVICES_READ_ALL_ID = "e4c9e354-4dc5-45b8-9e7c-e1393b0b1a20";
 const DEVICE_MGMT_CONFIGURATION_READ_ALL_ID = "dc377aa6-52d8-4e23-b271-b3b7f5e4f6c4";
 
-// Security
+// Security / Defender
 const SECURITY_ALERT_READ_ALL_ID = "472e4a40-bb78-4d68-a2bb-8ac1c8de0c8c";
 const SECURITY_EVENTS_READ_ALL_ID = "bf394140-e372-4bf9-a898-299cfc7564e5";
+const AUDIT_LOG_READ_ALL_ID = "b0afded3-3588-46d8-8b3d-9842eff778da";
+const SECURITY_INCIDENT_READ_ALL_ID = "45cc0394-e837-488b-a098-1c7ce2c0e0b5";
+const INFORMATION_PROTECTION_POLICY_READ_ALL_ID = "19da66cb-0fb0-49a4-b7a2-3607ae4e9acf";
+const ATTACK_SIMULATION_READ_ALL_ID = "93283d0a-6322-4fa8-966b-813c78c0e1b4";
+
+// Teams
+const TEAM_SETTINGS_READ_ALL_ID = "242607bd-1d2c-432c-82eb-bdb27baa23ab";
+const CHANNEL_READ_BASIC_ALL_ID = "59a6b24b-4225-4393-a6be-42ed3eab75c4";
+const TEAM_MEMBER_READ_ALL_ID = "660b7406-55f1-41ca-a0ed-0b035e182f3e";
+
+// SharePoint Admin
+const SHAREPOINT_TENANT_SETTINGS_READ_ALL_ID = "83d4163d-a2d8-4e3b-b3a5-5d4b1a5e5f6e";
 
 const REQUIRED_PERMISSIONS = [
   { resourceAppId: EXCHANGE_RESOURCE_ID, permissionId: EXCHANGE_MANAGE_AS_APP_ID, name: "Exchange.ManageAsApp" },
@@ -35,6 +47,14 @@ const REQUIRED_PERMISSIONS = [
   { resourceAppId: GRAPH_RESOURCE_ID, permissionId: DEVICE_MGMT_CONFIGURATION_READ_ALL_ID, name: "DeviceManagementConfiguration.Read.All" },
   { resourceAppId: GRAPH_RESOURCE_ID, permissionId: SECURITY_ALERT_READ_ALL_ID, name: "SecurityAlert.Read.All" },
   { resourceAppId: GRAPH_RESOURCE_ID, permissionId: SECURITY_EVENTS_READ_ALL_ID, name: "SecurityEvents.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: AUDIT_LOG_READ_ALL_ID, name: "AuditLog.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: SECURITY_INCIDENT_READ_ALL_ID, name: "SecurityIncident.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: INFORMATION_PROTECTION_POLICY_READ_ALL_ID, name: "InformationProtectionPolicy.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: ATTACK_SIMULATION_READ_ALL_ID, name: "AttackSimulation.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: TEAM_SETTINGS_READ_ALL_ID, name: "TeamSettings.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: CHANNEL_READ_BASIC_ALL_ID, name: "Channel.ReadBasic.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: TEAM_MEMBER_READ_ALL_ID, name: "TeamMember.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: SHAREPOINT_TENANT_SETTINGS_READ_ALL_ID, name: "SharePointTenantSettings.Read.All" },
 ];
 
 function fromHex(hex: string): Uint8Array {

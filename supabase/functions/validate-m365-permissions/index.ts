@@ -25,17 +25,27 @@ const RECOMMENDED_PERMISSIONS = [
   'Group.Read.All',
   'Application.Read.All',
   'Policy.Read.All',
-  'Reports.Read.All', // Usage reports
-  'RoleManagement.Read.Directory', // Read-only role management
+  'Reports.Read.All',
+  'AuditLog.Read.All',
+  'RoleManagement.Read.Directory',
   // Exchange Online
   'MailboxSettings.Read',
   'Mail.Read',
   // Intune / Device Management
   'DeviceManagementManagedDevices.Read.All',
   'DeviceManagementConfiguration.Read.All',
-  // Security
+  // Security / Defender
   'SecurityAlert.Read.All',
   'SecurityEvents.Read.All',
+  'SecurityIncident.Read.All',
+  'AttackSimulation.Read.All',
+  'InformationProtectionPolicy.Read.All',
+  // Teams
+  'TeamSettings.Read.All',
+  'Channel.ReadBasic.All',
+  'TeamMember.Read.All',
+  // SharePoint Admin
+  'SharePointTenantSettings.Read.All',
 ];
 
 // Certificate Upload - only tested if app_object_id is provided
@@ -347,6 +357,84 @@ async function testPermission(accessToken: string, permission: string, appObject
         break;
       case 'SecurityEvents.Read.All':
         url = 'https://graph.microsoft.com/v1.0/security/secureScores?$top=1&$select=id';
+        break;
+      case 'AuditLog.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=1&$select=id';
+        break;
+      case 'SecurityIncident.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/security/incidents?$top=1&$select=id';
+        break;
+      case 'AttackSimulation.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/security/attackSimulation/simulations?$top=1';
+        break;
+      case 'InformationProtectionPolicy.Read.All':
+        url = 'https://graph.microsoft.com/beta/informationProtection/policy/labels';
+        break;
+      case 'TeamSettings.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/teamwork/teamsAppSettings';
+        break;
+      case 'Channel.ReadBasic.All': {
+        // Test by getting a team then checking its channels
+        const teamsResp = await fetch(
+          "https://graph.microsoft.com/v1.0/groups?$filter=resourceProvisioningOptions/Any(x:x eq 'Team')&$top=1&$select=id",
+          { headers: { 'Authorization': `Bearer ${accessToken}`, 'ConsistencyLevel': 'eventual' } }
+        );
+        if (!teamsResp.ok) {
+          const errBody = await teamsResp.json().catch(() => ({}));
+          // If we can't list groups, treat Channel permission as unknown
+          console.log(`Permission ${permission}: could not list teams (${teamsResp.status})`);
+          return teamsResp.status !== 403;
+        }
+        const teamsData = await teamsResp.json();
+        const teamId = teamsData.value?.[0]?.id;
+        if (!teamId) {
+          console.log(`Permission ${permission}: no teams found - treating as granted`);
+          return true;
+        }
+        const channelResp = await fetch(
+          `https://graph.microsoft.com/v1.0/teams/${teamId}/channels?$top=1&$select=id`,
+          { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
+        if (channelResp.ok) {
+          await channelResp.text();
+          console.log(`Permission ${permission} test succeeded`);
+          return true;
+        }
+        const channelErr = await channelResp.text();
+        console.log(`Permission ${permission} test failed (${channelResp.status}): ${channelErr.substring(0, 200)}`);
+        return false;
+      }
+      case 'TeamMember.Read.All': {
+        const tmTeamsResp = await fetch(
+          "https://graph.microsoft.com/v1.0/groups?$filter=resourceProvisioningOptions/Any(x:x eq 'Team')&$top=1&$select=id",
+          { headers: { 'Authorization': `Bearer ${accessToken}`, 'ConsistencyLevel': 'eventual' } }
+        );
+        if (!tmTeamsResp.ok) {
+          console.log(`Permission ${permission}: could not list teams (${tmTeamsResp.status})`);
+          await tmTeamsResp.text();
+          return tmTeamsResp.status !== 403;
+        }
+        const tmTeamsData = await tmTeamsResp.json();
+        const tmTeamId = tmTeamsData.value?.[0]?.id;
+        if (!tmTeamId) {
+          console.log(`Permission ${permission}: no teams found - treating as granted`);
+          return true;
+        }
+        const memberResp = await fetch(
+          `https://graph.microsoft.com/v1.0/teams/${tmTeamId}/members?$top=1`,
+          { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
+        if (memberResp.ok) {
+          await memberResp.text();
+          console.log(`Permission ${permission} test succeeded`);
+          return true;
+        }
+        const memberErr = await memberResp.text();
+        console.log(`Permission ${permission} test failed (${memberResp.status}): ${memberErr.substring(0, 200)}`);
+        return false;
+      }
+      case 'SharePointTenantSettings.Read.All':
+        url = 'https://graph.microsoft.com/beta/admin/sharepoint/settings';
         break;
       default:
         return false;
