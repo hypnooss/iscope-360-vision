@@ -1,26 +1,14 @@
 
 
-## Correcao do Score de Risco no M365 Analyzer
+## Ajustes estéticos no dropdown "Executar Ações"
 
-### Problema
-O banco de dados armazena `score = 0` (nao `null`) nos snapshots. O operador `??` (nullish coalescing) so faz fallback para `null` ou `undefined`, mas **nao** para `0`. Por isso, o calculo local `computeRiskScore()` nunca e executado.
+### Mudanças em ambos os arquivos
 
-### Solucao
-Alterar a logica na linha 513 de `src/pages/m365/M365AnalyzerDashboardPage.tsx`:
+**1. `src/pages/firewall/FirewallCompliancePage.tsx`**
+- Linha 394: adicionar `className="min-w-[200px]"` ao `DropdownMenuContent`
+- Linha 406-407: alterar "Criar GMUD" para "Gerar GMUD" (texto e toast)
 
-**De:**
-```ts
-const score = snapshot?.score ?? computeRiskScore(operationalInsights);
-```
-
-**Para:**
-```ts
-const score = snapshot?.score || computeRiskScore(operationalInsights);
-```
-
-O operador `||` faz fallback quando o valor e falsy (`0`, `null`, `undefined`), garantindo que o calculo local seja usado sempre que o backend nao fornecer um score real.
-
-### Impacto
-- Nenhum efeito colateral: se o backend algum dia calcular um score > 0, ele sera usado.
-- Correcao imediata sem necessidade de nova coleta.
+**2. `src/pages/external-domain/ExternalDomainCompliancePage.tsx`**
+- Linha 556: adicionar `className="min-w-[200px]"` ao `DropdownMenuContent`
+- Linha 568-569: alterar "Criar GMUD" para "Gerar GMUD" (texto e toast)
 
