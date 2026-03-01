@@ -36,6 +36,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast as sonnerToast } from 'sonner';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
+import { ExternalMovementTab } from '@/components/m365/analyzer/ExternalMovementTab';
+import { useExternalMovementData } from '@/hooks/useExternalMovementData';
 
 // ─── Operational categories only ─────────────────────────────────────────────
 const OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
