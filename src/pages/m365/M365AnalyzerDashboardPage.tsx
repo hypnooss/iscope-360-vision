@@ -497,13 +497,21 @@ export default function M365AnalyzerDashboardPage() {
 
   // ─── Derived data ────────────────────────────────────────────────────────
   const m = snapshot?.metrics;
-  const score = snapshot?.score ?? 0;
-  const risk = riskLevel(score);
 
   // Filter insights: operational only + remove configurational items
   const operationalInsights = (snapshot?.insights ?? [])
     .filter(i => OPERATIONAL_CATEGORIES.includes(i.category as M365AnalyzerCategory))
     .filter(i => !isConfigurationalInsight(i));
+
+  // Compute risk score from insights when backend doesn't provide one
+  const computeRiskScore = (insights: typeof operationalInsights): number => {
+    const weights: Record<string, number> = { critical: 15, high: 8, medium: 3, low: 1 };
+    const total = insights.reduce((sum, i) => sum + (weights[i.severity] ?? 0), 0);
+    return Math.min(100, total);
+  };
+
+  const score = snapshot?.score ?? computeRiskScore(operationalInsights);
+  const risk = riskLevel(score);
   const anomalyInsights = (snapshot?.insights ?? [])
     .filter(i => ANOMALY_CATEGORIES.includes(i.category as M365AnalyzerCategory))
     .filter(i => !isConfigurationalInsight(i));
