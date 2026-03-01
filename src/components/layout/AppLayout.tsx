@@ -136,7 +136,7 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     icon: Cloud,
     color: 'text-blue-500',
     items: [
-      { label: 'Compliance', href: '/scope-m365/posture', icon: FileText },
+      { label: 'Compliance', href: '/scope-m365/compliance', icon: FileText },
       { label: 'Analyzer', href: '/scope-m365/analyzer', icon: Radar },
       { label: 'CVEs', href: '/scope-m365/cves', icon: ShieldCheck },
       { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },

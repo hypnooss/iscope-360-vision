@@ -218,7 +218,7 @@ export default function M365ReportsPage() {
 
     setLoadingReportId(analysis.id);
     try {
-      navigate(`/scope-m365/posture/report/${analysis.id}`, {
+      navigate(`/scope-m365/compliance/report/${analysis.id}`, {
         state: {
           tenantMeta: {
             tenant_record_id: group.tenant_record_id,

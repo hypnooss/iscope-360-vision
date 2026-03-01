@@ -129,14 +129,15 @@ const App = () => (
                   <Route path="/scope-external-domain/analyzer/findings" element={<AllFindingsPage />} />
 
                    {/* Microsoft 365 Module */}
-                  <Route path="/scope-m365" element={<Navigate to="/scope-m365/posture" replace />} />
-                  <Route path="/scope-m365/dashboard" element={<Navigate to="/scope-m365/posture" replace />} />
-                  <Route path="/scope-m365/analysis" element={<Navigate to="/scope-m365/posture" replace />} />
-                  <Route path="/scope-m365/tenant-connection" element={<Navigate to="/scope-m365/posture" replace />} />
+                  <Route path="/scope-m365" element={<Navigate to="/scope-m365/compliance" replace />} />
+                  <Route path="/scope-m365/dashboard" element={<Navigate to="/scope-m365/compliance" replace />} />
+                  <Route path="/scope-m365/analysis" element={<Navigate to="/scope-m365/compliance" replace />} />
+                  <Route path="/scope-m365/tenant-connection" element={<Navigate to="/scope-m365/compliance" replace />} />
+                  <Route path="/scope-m365/posture" element={<Navigate to="/scope-m365/compliance" replace />} />
                   <Route path="/scope-m365/executions" element={<M365ExecutionsPage />} />
                   <Route path="/scope-m365/reports" element={<M365ReportsPage />} />
-                  <Route path="/scope-m365/posture/report/:reportId" element={<M365PostureReportPage />} />
-                  <Route path="/scope-m365/posture" element={<M365PosturePage />} />
+                  <Route path="/scope-m365/compliance/report/:reportId" element={<M365PostureReportPage />} />
+                  <Route path="/scope-m365/compliance" element={<M365PosturePage />} />
                   <Route path="/scope-m365/oauth-callback" element={<OAuthCallbackPage />} />
                   <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />
                   <Route path="/scope-m365/entra-id/security-insights" element={<EntraIdSecurityInsightsPage />} />
