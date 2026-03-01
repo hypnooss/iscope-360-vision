@@ -1,20 +1,41 @@
 
 
-## Correção: Unique constraint em `external_domain_schedules.domain_id`
+## Transformar "Executar Análise" em Dropdown "Executar Ações" nas telas de Compliance
 
-### Problema
-O `ScheduleDialog` usa `upsert(..., { onConflict: 'domain_id' })`, mas a tabela `external_domain_schedules` não tem uma constraint `UNIQUE` na coluna `domain_id`. O Postgres rejeita com: *"there is no unique or exclusion constraint matching the ON CONFLICT specification"*.
+### Escopo
 
-### Solução
-Adicionar uma constraint `UNIQUE` na coluna `domain_id` via migration SQL:
+Duas telas de Compliance possuem o botao "Executar Analise":
 
-```sql
-ALTER TABLE public.external_domain_schedules
-  ADD CONSTRAINT external_domain_schedules_domain_id_key UNIQUE (domain_id);
+1. `src/pages/firewall/FirewallCompliancePage.tsx` (linha 343-347)
+2. `src/pages/external-domain/ExternalDomainCompliancePage.tsx` (linha 546-550)
+
+### Mudancas por arquivo
+
+**Ambos os arquivos - mesma logica:**
+
+- Substituir o `<Button>` atual por um `<DropdownMenu>` com trigger estilizado
+- O trigger sera: `Executar Ações` + divisor vertical (`|`) + icone `ChevronDown`
+- O trigger NAO executa nenhuma acao alem de abrir o menu
+- 4 itens no dropdown:
+  - **Gerar Análise** (icone `Play`) - chama a funcao `handleRefresh` existente
+  - **Exportar PDF** (icone `FileDown`) - placeholder/toast por enquanto (ExternalDomain ja tem PDF, Firewall nao tem nessa tela)
+  - **Exportar CVE** (icone `FileText`) - placeholder/toast
+  - **Criar GMUD** (icone `ClipboardList`) - placeholder/toast
+- Importar `DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger` e icones adicionais (`ChevronDown, FileDown, ClipboardList`)
+- O item "Gerar Análise" fica desabilitado durante `isRefreshing` e mostra spinner
+- O trigger inteiro fica desabilitado se nao houver firewall/dominio selecionado
+
+### Estrutura visual do botao
+
+```text
+[ Executar Ações  |  ▾ ]
 ```
 
-Isso é semanticamente correto — cada domínio deve ter no máximo um agendamento.
-
-### Verificação adicional
-Verificar se as outras tabelas de schedule (`analysis_schedules` e `m365_analyzer_schedules`) têm o mesmo problema e corrigir preventivamente se necessário.
+Ao clicar:
+```text
+  ▸ Gerar Análise
+  ▸ Exportar PDF
+  ▸ Exportar CVE
+  ▸ Criar GMUD
+```
 
