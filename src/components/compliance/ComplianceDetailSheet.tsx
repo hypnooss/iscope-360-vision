@@ -141,7 +141,7 @@ export function ComplianceDetailSheet({ item, open, onOpenChange }: ComplianceDe
   })();
 
   // Determine available tabs
-  const hasEvidence = item.evidence && item.evidence.length > 0;
+  const hasEvidence = (item.evidence && item.evidence.length > 0) || (item.affectedEntities && item.affectedEntities.length > 0);
   const hasAdminData = canViewAdminDetails && (item.apiEndpoint || (item.rawData && Object.keys(item.rawData).length > 0));
 
   return (
@@ -200,9 +200,9 @@ export function ComplianceDetailSheet({ item, open, onOpenChange }: ComplianceDe
             )}
 
             {/* Analysis performed */}
-            {(item.details || (item.description && item.description !== contextualMessage)) && (
+            {item.details && (
               <Section title="ANÁLISE EFETUADA" icon={FileText}>
-                {item.details || item.description}
+                {item.details}
               </Section>
             )}
 
@@ -240,9 +240,16 @@ export function ComplianceDetailSheet({ item, open, onOpenChange }: ComplianceDe
                 EVIDÊNCIAS COLETADAS
               </h5>
               <div className="space-y-2">
-                {item.evidence!.map((ev, index) => (
+                {item.evidence && item.evidence.map((ev, index) => (
                   <EvidenceItemDisplay key={index} item={ev} />
                 ))}
+                {/* Fallback: show affectedEntities when no formal evidence */}
+                {(!item.evidence || item.evidence.length === 0) && item.affectedEntities && item.affectedEntities.length > 0 && (
+                  <>
+                    <EvidenceItemDisplay item={{ label: 'Itens afetados', value: `${item.affectedEntities.length} item(ns)`, type: 'text' }} />
+                    <EvidenceItemDisplay item={{ label: 'Entidades afetadas', value: item.affectedEntities.map(e => e.displayName).join('\n'), type: 'list' }} />
+                  </>
+                )}
               </div>
             </TabsContent>
           )}
