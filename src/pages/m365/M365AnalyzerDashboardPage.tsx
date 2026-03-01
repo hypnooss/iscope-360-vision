@@ -510,7 +510,7 @@ export default function M365AnalyzerDashboardPage() {
     return Math.min(100, total);
   };
 
-  const score = snapshot?.score ?? computeRiskScore(operationalInsights);
+  const score = snapshot?.score || computeRiskScore(operationalInsights);
   const risk = riskLevel(score);
   const anomalyInsights = (snapshot?.insights ?? [])
     .filter(i => ANOMALY_CATEGORIES.includes(i.category as M365AnalyzerCategory))
