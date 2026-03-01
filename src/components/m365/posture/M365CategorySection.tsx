@@ -162,6 +162,7 @@ export function M365CategorySection({ category, label, items, index }: M365Categ
               <UnifiedComplianceCard
                 key={item.id}
                 item={item}
+                categoryColorKey={`${colorName}-500`}
                 onClick={() => handleCardClick(item)}
               />
             ))}
