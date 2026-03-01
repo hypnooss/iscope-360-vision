@@ -741,7 +741,7 @@ export default function M365PostureReportPage() {
                     key={cat.category}
                     category={cat.category}
                     label={CATEGORY_LABELS[cat.category as M365RiskCategory] || cat.label || cat.category}
-                    insights={insights.filter((i: any) => i.category === cat.category)}
+                    items={insights.filter((i: any) => i.category === cat.category)}
                     index={index}
                   />
                 ))

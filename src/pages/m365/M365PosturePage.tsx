@@ -8,35 +8,27 @@ import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { CommandCentralLayout, MiniStat, DetailRow } from '@/components/CommandCentral';
 import { 
   RefreshCw, 
   AlertTriangle, 
   Lock,
-  Server,
-  CheckCircle2,
   Clock,
-  XCircle,
   Play,
   Settings,
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
-import { 
-  M365CategoryCard, 
-  M365SeverityBreakdown,
-  M365InsightCard,
-  TenantSelector
-} from '@/components/m365/posture';
-import { ScoreGauge } from '@/components/ScoreGauge';
+import { TenantSelector } from '@/components/m365/posture';
+import { M365CategorySection } from '@/components/m365/posture/M365CategorySection';
 import { useM365SecurityPosture } from '@/hooks/useM365SecurityPosture';
+import { mapM365Insight, mapM365AgentInsight } from '@/lib/complianceMappers';
 import { 
   M365RiskCategory, 
   CATEGORY_LABELS,
-  groupInsightsByCategory 
 } from '@/types/m365Insights';
+import { UnifiedComplianceItem } from '@/types/unifiedCompliance';
 
 export default function M365PosturePage() {
   const { user, loading: authLoading } = useAuth();
@@ -96,7 +88,18 @@ export default function M365PosturePage() {
     );
   }
 
-  const groupedInsights = data?.insights ? groupInsightsByCategory(data.insights) : null;
+  // Merge Graph insights + Agent insights into unified items grouped by category
+  const allUnifiedItems: UnifiedComplianceItem[] = [
+    ...(data?.insights?.map(mapM365Insight) || []),
+    ...(agentInsights?.map(mapM365AgentInsight) || []),
+  ];
+
+  const groupedItems = allUnifiedItems.reduce<Record<string, UnifiedComplianceItem[]>>((acc, item) => {
+    const cat = item.category;
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {});
 
   return (
     <AppLayout>
@@ -224,163 +227,24 @@ export default function M365PosturePage() {
               }
             />
 
-            {/* Categories Grid */}
-            <div>
-              <h2 className="text-lg font-semibold text-foreground mb-4">Categorias de Risco</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {data?.categoryBreakdown?.map((category) => (
-                  <M365CategoryCard
-                    key={category.category}
-                    category={category.category}
-                    stats={{
-                      count: category.count,
-                      score: category.score,
-                      criticalCount: category.criticalCount ?? 0,
-                      highCount: category.highCount ?? 0,
-                    }}
-                    onClick={() => {
-                      const element = document.getElementById(`category-${category.category}`);
-                      element?.scrollIntoView({ behavior: 'smooth' });
-                    }}
-                    loading={isLoading}
+            {/* Verificações por Categoria */}
+            {Object.keys(groupedItems).length > 0 && (
+              <div className="space-y-2">
+                <h2 className="text-lg font-semibold text-foreground mb-4">Verificações por Categoria</h2>
+                {(Object.keys(groupedItems) as M365RiskCategory[]).map((category, index) => (
+                  <M365CategorySection
+                    key={category}
+                    category={category}
+                    label={CATEGORY_LABELS[category] || category}
+                    items={groupedItems[category]}
+                    index={index}
                   />
                 ))}
-              </div>
-            </div>
-
-            {/* Agent Insights Section */}
-            {(agentInsights.length > 0 || isAgentPending) && (
-              <>
-                <Separator className="my-8" />
-                
-                <Card className="glass-card">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Server className="w-5 h-5 text-muted-foreground" />
-                        <CardTitle className="text-base">Coleta via Agent (PowerShell)</CardTitle>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {agentStatus === 'completed' && (
-                          <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
-                            Concluído
-                          </Badge>
-                        )}
-                        {isAgentPending && (
-                          <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
-                            <Clock className="w-3 h-3 mr-1 animate-pulse" />
-                            Aguardando Agent
-                          </Badge>
-                        )}
-                        {agentStatus === 'failed' && (
-                          <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">
-                            <XCircle className="w-3 h-3 mr-1" />
-                            Falhou
-                          </Badge>
-                        )}
-                        {agentStatus === 'partial' && (
-                          <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
-                            <AlertTriangle className="w-3 h-3 mr-1" />
-                            Parcial
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Dados coletados do Exchange Online e SharePoint via PowerShell
-                    </p>
-                  </CardHeader>
-                  <CardContent>
-                    {isAgentPending && agentInsights.length === 0 && (
-                      <div className="flex items-center justify-center py-8 text-muted-foreground">
-                        <RefreshCw className="w-5 h-5 animate-spin mr-2" />
-                        <span>Aguardando agent processar coleta...</span>
-                      </div>
-                    )}
-                    
-                    {agentInsights.length > 0 && (
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {agentInsights.map((insight) => (
-                          <Card key={insight.id} className="border bg-card/50">
-                            <CardContent className="p-4">
-                              <div className="flex items-start justify-between mb-2">
-                                <h4 className="font-medium text-sm">{insight.name}</h4>
-                                <Badge 
-                                  variant="outline" 
-                                  className={
-                                    insight.status === 'pass' ? 'text-green-600 border-green-200' :
-                                    insight.status === 'fail' ? 'text-red-600 border-red-200' :
-                                    insight.status === 'warn' ? 'text-amber-600 border-amber-200' :
-                                    'text-slate-600 border-slate-200'
-                                  }
-                                >
-                                  {insight.status === 'pass' ? 'OK' : 
-                                   insight.status === 'fail' ? 'Falha' :
-                                   insight.status === 'warn' ? 'Atenção' : 'N/A'}
-                                </Badge>
-                              </div>
-                              <p className="text-sm text-muted-foreground mb-2">{insight.description}</p>
-                              {insight.details && (
-                                <p className="text-xs text-muted-foreground/80 bg-muted/50 p-2 rounded">{insight.details}</p>
-                              )}
-                              {insight.affectedEntities && insight.affectedEntities.length > 0 && (
-                                <div className="mt-2 text-xs text-muted-foreground">
-                                  <span className="font-medium">{insight.affectedEntities.length} entidade(s) afetada(s)</span>
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </>
-            )}
-
-            <Separator className="my-8" />
-
-            {/* Insights by Category */}
-            {groupedInsights && (
-              <div className="space-y-8">
-                <h2 className="text-lg font-semibold text-foreground">Insights Detalhados (Graph API)</h2>
-                
-                {(Object.keys(groupedInsights) as M365RiskCategory[]).map((category) => {
-                  const categoryInsights = groupedInsights[category];
-                  if (categoryInsights.length === 0) return null;
-                  
-                  const failedCount = categoryInsights.filter(i => i.status === 'fail').length;
-                  
-                  return (
-                    <div key={category} id={`category-${category}`} className="scroll-mt-24">
-                      <div className="flex items-center gap-3 mb-4">
-                        <h3 className="text-base font-semibold text-foreground">
-                          {CATEGORY_LABELS[category]}
-                        </h3>
-                        <Badge variant="secondary">
-                          {categoryInsights.length} verificação{categoryInsights.length !== 1 ? 'ões' : ''}
-                        </Badge>
-                        {failedCount > 0 && (
-                          <Badge variant="outline" className="status-fail">
-                            {failedCount} falha{failedCount !== 1 ? 's' : ''}
-                          </Badge>
-                        )}
-                      </div>
-                      
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {categoryInsights.map((insight) => (
-                          <M365InsightCard key={insight.id} insight={insight} />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             )}
 
             {/* Empty State */}
-            {!isLoading && !error && (!data?.insights || data.insights.length === 0) && (
+            {!isLoading && !error && allUnifiedItems.length === 0 && (
               <Card className="glass-card">
                 <CardContent className="p-12 text-center">
                   <AlertTriangle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
