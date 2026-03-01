@@ -731,6 +731,287 @@ function evaluateRule(
         break;
       }
 
+      case 'check_security_alerts': {
+        const alerts = (data as any)?.value || [];
+        const active = alerts.filter((a: any) => a.status !== 'resolved');
+        const highSev = active.filter((a: any) => a.severity === 'high' || a.severity === 'critical');
+        affectedCount = active.length;
+        affectedEntities = active.slice(0, 20).map((a: any) => ({
+          id: a.id, displayName: a.title || a.displayName || 'Alert',
+          details: { severity: a.severity, status: a.status }
+        }));
+        status = highSev.length > (evaluate.high_threshold || 0) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{{count}}', String(active.length)).replace('{{high}}', String(highSev.length))
+          : rule.pass_description || '';
+        break;
+      }
+
+      case 'check_security_incidents': {
+        const incidents = (data as any)?.value || [];
+        const activeInc = incidents.filter((i: any) => i.status !== 'resolved' && i.status !== 'redirected');
+        affectedCount = activeInc.length;
+        affectedEntities = activeInc.slice(0, 20).map((i: any) => ({
+          id: i.id, displayName: i.displayName || 'Incident',
+          details: { severity: i.severity, status: i.status }
+        }));
+        status = activeInc.length > 0 ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{{count}}', String(activeInc.length)).replace('{{active}}', String(activeInc.filter((i: any) => i.status === 'active').length))
+          : rule.pass_description || '';
+        break;
+      }
+
+      case 'check_attack_simulation': {
+        const simulations = (data as any)?.value || [];
+        if (simulations.length === 0) {
+          status = 'fail'; affectedCount = 0;
+          description = rule.fail_description || '';
+        } else {
+          const avgRate = simulations.reduce((s: number, sim: any) => s + (sim.report?.simulationEventsContent?.compromisedRate || 0), 0) / simulations.length;
+          affectedCount = simulations.length; status = 'pass';
+          description = (rule.pass_description || '').replace('{{count}}', String(simulations.length)).replace('{{rate}}', String(Math.round(avgRate * 100)));
+        }
+        affectedEntities = simulations.slice(0, 20).map((s: any) => ({
+          id: s.id, displayName: s.displayName || 'Simulation',
+          details: { status: s.status, launchDateTime: s.launchDateTime }
+        }));
+        break;
+      }
+
+      case 'check_secure_score': {
+        const scores = (data as any)?.value || [];
+        if (scores.length === 0) { status = 'fail'; description = rule.not_found_description || ''; break; }
+        const latest = scores[0];
+        const current = latest.currentScore || 0;
+        const max = latest.maxScore || 1;
+        const pct = Math.round((current / max) * 100);
+        affectedCount = current;
+        status = pct >= (evaluate.min_percentage || 60) ? 'pass' : 'fail';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '')
+          .replace('{{current}}', String(current)).replace('{{max}}', String(max)).replace('{{percentage}}', String(pct));
+        break;
+      }
+
+      case 'check_protection_labels': {
+        const labels = (data as any)?.value || [];
+        affectedCount = labels.length;
+        affectedEntities = labels.slice(0, 20).map((l: any) => ({ id: l.id || '', displayName: l.name || l.displayName || 'Label' }));
+        status = affectedCount >= (evaluate.min_count || 1) ? 'pass' : 'fail';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '').replace('{{count}}', String(affectedCount));
+        break;
+      }
+
+      case 'check_device_compliance': {
+        const devices = (data as any)?.value || [];
+        const nonCompliant = devices.filter((d: any) => d.complianceState !== 'compliant');
+        affectedCount = nonCompliant.length;
+        affectedEntities = nonCompliant.slice(0, 20).map((d: any) => ({
+          id: d.id, displayName: d.deviceName || 'Device',
+          details: { complianceState: d.complianceState, os: d.operatingSystem }
+        }));
+        status = nonCompliant.length > 0 ? 'fail' : 'pass';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '')
+          .replace('{{count}}', String(nonCompliant.length)).replace('{{total}}', String(devices.length));
+        break;
+      }
+
+      case 'check_device_encryption': {
+        const devices = (data as any)?.value || [];
+        const unencrypted = devices.filter((d: any) => d.isEncrypted === false);
+        affectedCount = unencrypted.length;
+        affectedEntities = unencrypted.slice(0, 20).map((d: any) => ({
+          id: d.id, displayName: d.deviceName || 'Device',
+          details: { os: d.operatingSystem, encrypted: d.isEncrypted }
+        }));
+        status = unencrypted.length > 0 ? 'fail' : 'pass';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '').replace('{{count}}', String(unencrypted.length));
+        break;
+      }
+
+      case 'check_device_jailbreak': {
+        const devices = (data as any)?.value || [];
+        const jailbroken = devices.filter((d: any) => d.jailBroken === 'True' || d.jailBroken === true);
+        affectedCount = jailbroken.length;
+        affectedEntities = jailbroken.slice(0, 20).map((d: any) => ({
+          id: d.id, displayName: d.deviceName || 'Device', details: { os: d.operatingSystem }
+        }));
+        status = jailbroken.length > 0 ? 'fail' : 'pass';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '').replace('{{count}}', String(jailbroken.length));
+        break;
+      }
+
+      case 'check_device_os_update': {
+        const devices = (data as any)?.value || [];
+        const threshold = new Date(Date.now() - (evaluate.days_threshold || 30) * 24 * 60 * 60 * 1000);
+        const outdated = devices.filter((d: any) => {
+          if (!d.lastSyncDateTime) return true;
+          return new Date(d.lastSyncDateTime) < threshold;
+        });
+        affectedCount = outdated.length;
+        affectedEntities = outdated.slice(0, 20).map((d: any) => ({
+          id: d.id, displayName: d.deviceName || 'Device',
+          details: { os: d.operatingSystem, osVersion: d.osVersion, lastSync: d.lastSyncDateTime }
+        }));
+        status = outdated.length > (evaluate.threshold || 5) ? 'fail' : 'pass';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '').replace('{{count}}', String(outdated.length));
+        break;
+      }
+
+      case 'check_compliance_policies_exist': {
+        const policies = (data as any)?.value || [];
+        affectedCount = policies.length;
+        affectedEntities = policies.slice(0, 20).map((p: any) => ({ id: p.id, displayName: p.displayName || 'Policy' }));
+        status = policies.length > 0 ? 'pass' : 'fail';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '').replace('{{count}}', String(policies.length));
+        break;
+      }
+
+      case 'check_device_apps': {
+        const devices = (data as any)?.value || [];
+        affectedCount = devices.length;
+        status = 'pass';
+        description = (rule.pass_description || '').replace('{{count}}', String(devices.length));
+        break;
+      }
+
+      case 'check_pim_eligible': {
+        const assignments = (data as any)?.value || [];
+        affectedCount = assignments.length;
+        affectedEntities = assignments.slice(0, 20).map((a: any) => ({
+          id: a.id, displayName: a.principal?.displayName || a.directoryScopeId || 'Assignment',
+          details: { role: a.roleDefinition?.displayName }
+        }));
+        status = assignments.length > 0 ? 'pass' : 'fail';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '').replace('{{count}}', String(assignments.length));
+        break;
+      }
+
+      case 'check_pim_activations': {
+        const assignments = (data as any)?.value || [];
+        affectedCount = assignments.length;
+        affectedEntities = assignments.slice(0, 20).map((a: any) => ({
+          id: a.id, displayName: a.principal?.displayName || 'User',
+          details: { role: a.roleDefinition?.displayName, start: a.startDateTime }
+        }));
+        status = 'pass';
+        description = (rule.pass_description || '').replace('{{count}}', String(assignments.length));
+        break;
+      }
+
+      case 'check_pim_approval': {
+        const assignments = (data as any)?.value || [];
+        const noApproval = assignments.filter((a: any) => !a.isApprovalRequired);
+        affectedCount = noApproval.length;
+        affectedEntities = noApproval.slice(0, 20).map((a: any) => ({
+          id: a.id, displayName: a.roleDefinition?.displayName || 'Role'
+        }));
+        status = noApproval.length > 0 ? 'fail' : 'pass';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '').replace('{{count}}', String(noApproval.length));
+        break;
+      }
+
+      case 'check_pim_permanent_ratio': {
+        const activeAsgn = (data as any)?.value || [];
+        const eligibleAsgn = (secondaryResult?.data as any)?.value || [];
+        const permanent = activeAsgn.filter((a: any) => !a.endDateTime);
+        const total = permanent.length + eligibleAsgn.length;
+        const ratio = total > 0 ? Math.round((permanent.length / total) * 100) : 0;
+        affectedCount = permanent.length;
+        status = ratio > (evaluate.max_ratio || 50) ? 'fail' : 'pass';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '')
+          .replace('{{permanent}}', String(permanent.length)).replace('{{eligible}}', String(eligibleAsgn.length)).replace('{{ratio}}', String(ratio));
+        break;
+      }
+
+      case 'check_sharepoint_external_sharing': {
+        const sites = (data as any)?.value || [];
+        const extSites = sites.filter((s: any) => s.sharingCapability && s.sharingCapability !== 'disabled');
+        affectedCount = extSites.length;
+        affectedEntities = extSites.slice(0, 20).map((s: any) => ({
+          id: s.id, displayName: s.displayName || s.webUrl || 'Site',
+          details: { sharing: s.sharingCapability }
+        }));
+        status = extSites.length > 0 ? 'fail' : 'pass';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '')
+          .replace('{{count}}', String(extSites.length)).replace('{{total}}', String(sites.length));
+        break;
+      }
+
+      case 'check_sharepoint_anonymous_links': {
+        const settings = data as any;
+        const allowAnon = settings?.sharingCapability === 'ExternalUserAndGuestSharing';
+        affectedCount = allowAnon ? 1 : 0;
+        status = allowAnon ? 'fail' : 'pass';
+        description = status === 'fail' ? rule.fail_description || '' : rule.pass_description || '';
+        break;
+      }
+
+      case 'check_sharepoint_sensitivity_labels': {
+        const sites = (data as any)?.value || [];
+        const noLabel = sites.filter((s: any) => !s.sensitivityLabel?.id);
+        affectedCount = noLabel.length;
+        affectedEntities = noLabel.slice(0, 20).map((s: any) => ({ id: s.id, displayName: s.displayName || 'Site' }));
+        status = noLabel.length > (evaluate.threshold || 5) ? 'fail' : 'pass';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '')
+          .replace('{{count}}', String(noLabel.length)).replace('{{total}}', String(sites.length));
+        break;
+      }
+
+      case 'check_onedrive_sharing': {
+        const settings = data as any;
+        const permissive = settings?.oneDriveSharingCapability === 'ExternalUserAndGuestSharing';
+        affectedCount = permissive ? 1 : 0;
+        status = permissive ? 'fail' : 'pass';
+        description = status === 'fail' ? rule.fail_description || '' : rule.pass_description || '';
+        break;
+      }
+
+      case 'check_teams_guests': {
+        const teams = (data as any)?.value || [];
+        const withGuests = teams.filter((t: any) => (t.members || []).some((m: any) => m.userType === 'Guest'));
+        affectedCount = withGuests.length;
+        affectedEntities = withGuests.slice(0, 20).map((t: any) => ({
+          id: t.id, displayName: t.displayName || 'Team',
+          details: { guestCount: (t.members || []).filter((m: any) => m.userType === 'Guest').length }
+        }));
+        status = withGuests.length > (evaluate.threshold || 0) ? 'fail' : 'pass';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '')
+          .replace('{{count}}', String(withGuests.length)).replace('{{total}}', String(teams.length));
+        break;
+      }
+
+      case 'check_teams_public': {
+        const teams = (data as any)?.value || [];
+        const publicTeams = teams.filter((t: any) => t.visibility === 'Public');
+        affectedCount = publicTeams.length;
+        affectedEntities = publicTeams.slice(0, 20).map((t: any) => ({ id: t.id, displayName: t.displayName || 'Team' }));
+        status = publicTeams.length > (evaluate.threshold || 0) ? 'fail' : 'pass';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '').replace('{{count}}', String(publicTeams.length));
+        break;
+      }
+
+      case 'check_teams_owners': {
+        const teams = (data as any)?.value || [];
+        const badTeams = teams.filter((t: any) => (t.owners || []).length <= 1);
+        affectedCount = badTeams.length;
+        affectedEntities = badTeams.slice(0, 20).map((t: any) => ({
+          id: t.id, displayName: t.displayName || 'Team',
+          details: { ownerCount: (t.owners || []).length }
+        }));
+        status = badTeams.length > (evaluate.threshold || 5) ? 'fail' : 'pass';
+        description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '').replace('{{count}}', String(badTeams.length));
+        break;
+      }
+
+      case 'check_teams_private_channels': {
+        const teams = (data as any)?.value || [];
+        affectedCount = teams.length;
+        status = 'pass';
+        description = (rule.pass_description || '').replace('{{count}}', '0').replace('{{teams}}', String(teams.length));
+        break;
+      }
+
       default:
         // Unknown evaluation type - skip
         return null;

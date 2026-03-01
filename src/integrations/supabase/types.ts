@@ -2799,6 +2799,7 @@ export type Database = {
         | "exchange"
         | "defender"
         | "intune"
+        | "teams"
       module_permission: "view" | "edit" | "full"
       parse_type: "text" | "boolean" | "time" | "list" | "json" | "number"
       permission_status: "granted" | "pending" | "denied" | "missing"
@@ -2980,6 +2981,7 @@ export const Constants = {
         "exchange",
         "defender",
         "intune",
+        "teams",
       ],
       module_permission: ["view", "edit", "full"],
       parse_type: ["text", "boolean", "time", "list", "json", "number"],
