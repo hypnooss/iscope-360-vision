@@ -30,6 +30,12 @@ const RECOMMENDED_PERMISSIONS = [
   // Exchange Online
   'MailboxSettings.Read',
   'Mail.Read',
+  // Intune / Device Management
+  'DeviceManagementManagedDevices.Read.All',
+  'DeviceManagementConfiguration.Read.All',
+  // Security
+  'SecurityAlert.Read.All',
+  'SecurityEvents.Read.All',
 ];
 
 // Certificate Upload - only tested if app_object_id is provided
@@ -330,6 +336,18 @@ async function testPermission(accessToken: string, permission: string, appObject
         }
         return false;
       }
+      case 'DeviceManagementManagedDevices.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?$top=1&$select=id';
+        break;
+      case 'DeviceManagementConfiguration.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies?$top=1&$select=id';
+        break;
+      case 'SecurityAlert.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/security/alerts_v2?$top=1&$select=id';
+        break;
+      case 'SecurityEvents.Read.All':
+        url = 'https://graph.microsoft.com/v1.0/security/secureScores?$top=1&$select=id';
+        break;
       default:
         return false;
     }

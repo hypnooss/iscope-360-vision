@@ -19,10 +19,22 @@ const SHAREPOINT_SITES_FULLCONTROL_ID = "678536fe-1083-478a-9c59-b99265e6b0d3";
 const GRAPH_RESOURCE_ID = "00000003-0000-0000-c000-000000000000";
 const IDENTITY_RISKY_USER_READ_ALL_ID = "dc5007c0-2d7d-4c42-879c-2dab87571379";
 
+// Intune / Device Management
+const DEVICE_MGMT_MANAGED_DEVICES_READ_ALL_ID = "e4c9e354-4dc5-45b8-9e7c-e1393b0b1a20";
+const DEVICE_MGMT_CONFIGURATION_READ_ALL_ID = "dc377aa6-52d8-4e23-b271-b3b7f5e4f6c4";
+
+// Security
+const SECURITY_ALERT_READ_ALL_ID = "472e4a40-bb78-4d68-a2bb-8ac1c8de0c8c";
+const SECURITY_EVENTS_READ_ALL_ID = "bf394140-e372-4bf9-a898-299cfc7564e5";
+
 const REQUIRED_PERMISSIONS = [
   { resourceAppId: EXCHANGE_RESOURCE_ID, permissionId: EXCHANGE_MANAGE_AS_APP_ID, name: "Exchange.ManageAsApp" },
   { resourceAppId: SHAREPOINT_RESOURCE_ID, permissionId: SHAREPOINT_SITES_FULLCONTROL_ID, name: "Sites.FullControl.All" },
   { resourceAppId: GRAPH_RESOURCE_ID, permissionId: IDENTITY_RISKY_USER_READ_ALL_ID, name: "IdentityRiskyUser.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: DEVICE_MGMT_MANAGED_DEVICES_READ_ALL_ID, name: "DeviceManagementManagedDevices.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: DEVICE_MGMT_CONFIGURATION_READ_ALL_ID, name: "DeviceManagementConfiguration.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: SECURITY_ALERT_READ_ALL_ID, name: "SecurityAlert.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: SECURITY_EVENTS_READ_ALL_ID, name: "SecurityEvents.Read.All" },
 ];
 
 function fromHex(hex: string): Uint8Array {

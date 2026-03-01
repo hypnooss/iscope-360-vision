@@ -8,6 +8,12 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'Organization.Read.All': 'Leitura de dados da organização',
   'Policy.Read.All': 'Leitura de políticas de segurança',
   'IdentityRiskyUser.Read.All': 'Leitura de usuários de risco (Identity Protection)',
+  // Intune / Device Management
+  'DeviceManagementManagedDevices.Read.All': 'Leitura de dispositivos gerenciados (Intune)',
+  'DeviceManagementConfiguration.Read.All': 'Leitura de políticas de dispositivos (Intune)',
+  // Security
+  'SecurityAlert.Read.All': 'Leitura de alertas de segurança (Defender)',
+  'SecurityEvents.Read.All': 'Leitura de eventos de segurança',
   // Exchange Online
   'MailboxSettings.Read': 'Leitura de configurações de caixa de correio',
   'Mail.Read': 'Leitura de configurações de e-mail',
@@ -29,6 +35,8 @@ export const GRAPH_PERMISSIONS = [
   'Policy.Read.All', 'IdentityRiskyUser.Read.All', 'MailboxSettings.Read', 'Mail.Read',
   'RoleManagement.ReadWrite.Directory', 'Sites.Read.All',
   'Application.ReadWrite.All', 'Reports.Read.All',
+  'DeviceManagementManagedDevices.Read.All', 'DeviceManagementConfiguration.Read.All',
+  'SecurityAlert.Read.All', 'SecurityEvents.Read.All',
 ];
 
 export const DIRECTORY_ROLES = [
