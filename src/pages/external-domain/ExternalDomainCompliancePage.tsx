@@ -553,7 +553,7 @@ export default function ExternalDomainCompliancePage() {
                   </span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="min-w-[200px]">
                 <DropdownMenuItem onClick={handleRefresh} disabled={isRefreshing}>
                   {isRefreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
                   Gerar Análise
@@ -565,8 +565,8 @@ export default function ExternalDomainCompliancePage() {
                 <DropdownMenuItem onClick={() => toast.info('Exportar CVE será implementado em breve.')}>
                   <FileText className="w-4 h-4 mr-2" />Exportar CVE
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => toast.info('Criar GMUD será implementado em breve.')}>
-                  <ClipboardList className="w-4 h-4 mr-2" />Criar GMUD
+                <DropdownMenuItem onClick={() => toast.info('Gerar GMUD será implementado em breve.')}>
+                  <ClipboardList className="w-4 h-4 mr-2" />Gerar GMUD
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
