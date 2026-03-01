@@ -757,46 +757,9 @@ export default function M365AnalyzerDashboardPage() {
             </TabsContent>
 
             {/* Tab: Movimento Externo */}
-            {hasExternalMovement && (
-              <TabsContent value="external">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {hasExternalDomains && (
-                    <Card className="glass-card">
-                      <CardHeader className={compactMode ? 'p-3 pb-1' : undefined}>
-                        <CardTitle className="text-sm">Top Domínios Externos</CardTitle>
-                      </CardHeader>
-                      <CardContent className={compactMode ? 'p-3 pt-0' : undefined}>
-                        <RankingList items={m?.exfiltration?.topExternalDomains ?? []} labelKey="domain" periodLabel="Últimas coletas" />
-                      </CardContent>
-                    </Card>
-                  )}
-                  {hasRiskUsers && (
-                    <Card className="glass-card">
-                      <CardHeader className={compactMode ? 'p-3 pb-1' : undefined}>
-                        <CardTitle className="text-sm">Usuários em Risco</CardTitle>
-                      </CardHeader>
-                      <CardContent className={compactMode ? 'p-3 pt-0' : undefined}>
-                        <div className="space-y-2">
-                          {(m?.compromise?.topRiskUsers ?? []).slice(0, 8).map((u, i) => (
-                            <div key={i} className="py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
-                              <div className="flex items-center gap-3">
-                                <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">{i + 1}</span>
-                                <span className="text-sm font-medium text-foreground flex-1 truncate">{u.user}</span>
-                              </div>
-                              <div className="ml-8 mt-1 flex flex-wrap gap-1">
-                                {(u.reasons ?? []).map((r, j) => (
-                                  <Badge key={j} variant="outline" className="text-[10px]">{r}</Badge>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              </TabsContent>
-            )}
+            <TabsContent value="external">
+              <ExternalMovementTab tenantRecordId={selectedTenantId || undefined} compact={compactMode} />
+            </TabsContent>
           </Tabs>
         )}
 
