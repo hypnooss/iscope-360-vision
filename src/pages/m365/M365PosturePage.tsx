@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { CommandCentralLayout, MiniStat, DetailRow } from '@/components/CommandCentral';
 import { 
   RefreshCw, 
   AlertTriangle, 
@@ -195,35 +196,33 @@ export default function M365PosturePage() {
         {/* Main content - only show if tenants available */}
         {tenants.length > 0 && (
           <>
-            {/* Score Header */}
-            <Card className="glass-card overflow-hidden">
-              <div className="bg-gradient-to-br from-card via-card to-muted/20 p-6 lg:p-8">
-                <div className="flex flex-col lg:flex-row items-center gap-8">
-                  <div className="flex-shrink-0">
-                    <ScoreGauge
-                      score={data?.score ?? 0}
-                      size="lg"
-                      loading={isLoading}
-                    />
-                  </div>
-
-                  <div className="flex-1 text-center lg:text-left">
-                    {data?.errors && data.errors.length > 0 && (
-                      <Badge variant="outline" className="mt-2 text-warning border-warning/30">
-                        {data.errors.length} aviso(s) durante coleta
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="w-full lg:w-auto lg:min-w-[400px]">
-                    <M365SeverityBreakdown
-                      summary={data?.summary ?? { critical: 0, high: 0, medium: 0, low: 0, total: 0 }}
-                      loading={isLoading}
-                    />
-                  </div>
-                </div>
-              </div>
-            </Card>
+            {/* Command Central */}
+            <CommandCentralLayout
+              title={selectedTenant?.displayName || 'Microsoft 365'}
+              score={data?.score ?? 0}
+              miniStats={
+                <>
+                  <MiniStat value={data?.summary?.total ?? 0} label="Total" variant="primary" />
+                  <MiniStat value={(data?.summary?.total ?? 0) - (data?.summary?.critical ?? 0) - (data?.summary?.high ?? 0) - (data?.summary?.medium ?? 0) - (data?.summary?.low ?? 0)} label="Aprovadas" variant="success" />
+                  <MiniStat value={(data?.summary?.critical ?? 0) + (data?.summary?.high ?? 0) + (data?.summary?.medium ?? 0) + (data?.summary?.low ?? 0)} label="Falhas" variant="destructive" />
+                </>
+              }
+              detailRows={
+                <>
+                  <DetailRow label="Tenant" value={selectedTenant?.displayName || 'N/A'} />
+                  <DetailRow label="Domínio" value={selectedTenant?.domain || 'N/A'} />
+                  <DetailRow label="Última Coleta" value={data?.analyzedAt ? new Date(data.analyzedAt).toLocaleString('pt-BR') : 'N/A'} />
+                  <DetailRow 
+                    label="Agent" 
+                    value={agentStatus === 'completed' ? 'Conectado' : agentStatus === 'failed' ? 'Falhou' : isAgentPending ? 'Aguardando' : 'N/A'}
+                    indicator={agentStatus === 'completed' ? 'success' : agentStatus === 'failed' ? 'error' : undefined}
+                  />
+                  {data?.errors && data.errors.length > 0 && (
+                    <DetailRow label="Avisos" value={`${data.errors.length} aviso(s) durante coleta`} />
+                  )}
+                </>
+              }
+            />
 
             {/* Categories Grid */}
             <div>
