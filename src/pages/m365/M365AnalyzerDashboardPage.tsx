@@ -102,75 +102,74 @@ function StatusDot({ status }: { status: 'ok' | 'running' | 'error' }) {
 
 // ─── Compact Incident Card ───────────────────────────────────────────────────
 function IncidentCard({ insight, compact }: { insight: M365AnalyzerInsight; compact?: boolean }) {
+  const [detailOpen, setDetailOpen] = useState(false);
   const sev = SEVERITY_CONFIG[insight.severity as keyof typeof SEVERITY_CONFIG] ?? SEVERITY_CONFIG.medium;
   const isCritical = insight.severity === 'critical';
   const prevCount = (insight.metadata as any)?.previousCount;
-  const description = insight.description && insight.description.length > 120
-    ? insight.description.slice(0, 117) + '...'
-    : insight.description;
+
+  const tooltipText = insight.recommendation || insight.description || 'Sem informações adicionais';
 
   return (
-    <Card className={cn(
-      'glass-card border transition-all',
-      sev.border,
-      isCritical && sev.glow,
-      isCritical && 'bg-rose-500/5',
-    )}>
-      <CardContent className={cn('space-y-1.5', compact ? 'p-2' : 'p-3')}>
-        {/* Row 1: Name + severity badge */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <sev.icon className={cn('w-4 h-4 shrink-0', sev.text, isCritical && 'animate-pulse')} />
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <h4 className="text-sm font-semibold text-foreground truncate cursor-default">{insight.name}</h4>
-                </TooltipTrigger>
-                {insight.description && (
-                  <TooltipContent side="top" className="max-w-xs text-xs">
-                    {insight.description}
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-          <Badge variant="outline" className={cn(
-            'shrink-0 border',
-            sev.bg, sev.text, sev.border,
-            isCritical ? 'text-sm font-bold' : 'text-[10px]',
-          )}>
-            {insight.severity}
-          </Badge>
-        </div>
-
-        {/* Row 2: Compact metrics line */}
-        <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
-          {insight.count !== undefined && insight.count > 0 && (
-            <span className="flex items-center gap-1">
-              <Activity className="w-3 h-3" />
-              {insight.count} ocorrências
-            </span>
-          )}
-          {insight.affectedUsers && insight.affectedUsers.length > 0 && (
-            <span className="flex items-center gap-1">
-              <Users className="w-3 h-3" />
-              {insight.affectedUsers.length} usuário{insight.affectedUsers.length > 1 ? 's' : ''}
-            </span>
-          )}
-          {/* Trend indicator */}
-          {prevCount !== undefined && insight.count !== undefined && (
-            <span className={cn('flex items-center gap-0.5 font-medium',
-              insight.count > prevCount ? 'text-rose-400' : insight.count < prevCount ? 'text-emerald-400' : 'text-muted-foreground'
+    <>
+      <Card className={cn(
+        'glass-card border transition-all',
+        sev.border,
+        isCritical && sev.glow,
+        isCritical && 'bg-rose-500/5',
+      )}>
+        <CardContent className={cn('space-y-1.5', compact ? 'p-2' : 'p-3')}>
+          {/* Row 1: Name + severity badge */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <sev.icon className={cn('w-4 h-4 shrink-0', sev.text, isCritical && 'animate-pulse')} />
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <h4 className="text-sm font-semibold text-foreground truncate cursor-default">{insight.name}</h4>
+                  </TooltipTrigger>
+                  {insight.description && (
+                    <TooltipContent side="top" className="max-w-xs text-xs">
+                      {insight.description}
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Badge variant="outline" className={cn(
+              'shrink-0 border',
+              sev.bg, sev.text, sev.border,
+              isCritical ? 'text-sm font-bold' : 'text-[10px]',
             )}>
-              {insight.count > prevCount ? <TrendingUp className="w-3 h-3" /> : insight.count < prevCount ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
-              {insight.count > prevCount ? `+${insight.count - prevCount}` : insight.count < prevCount ? `${insight.count - prevCount}` : '='} vs anterior
-            </span>
-          )}
-          {prevCount === undefined && insight.count !== undefined && insight.count > 0 && (
-            <Badge variant="secondary" className="text-[10px] h-4">Novo</Badge>
-          )}
-          {/* Recommendation tooltip */}
-          {insight.recommendation && (
+              {insight.severity}
+            </Badge>
+          </div>
+
+          {/* Row 2: Compact metrics line */}
+          <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
+            {insight.count !== undefined && insight.count > 0 && (
+              <span className="flex items-center gap-1">
+                <Activity className="w-3 h-3" />
+                {insight.count} ocorrências
+              </span>
+            )}
+            {insight.affectedUsers && insight.affectedUsers.length > 0 && (
+              <span className="flex items-center gap-1">
+                <Users className="w-3 h-3" />
+                {insight.affectedUsers.length} usuário{insight.affectedUsers.length > 1 ? 's' : ''}
+              </span>
+            )}
+            {prevCount !== undefined && insight.count !== undefined && (
+              <span className={cn('flex items-center gap-0.5 font-medium',
+                insight.count > prevCount ? 'text-rose-400' : insight.count < prevCount ? 'text-emerald-400' : 'text-muted-foreground'
+              )}>
+                {insight.count > prevCount ? <TrendingUp className="w-3 h-3" /> : insight.count < prevCount ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+                {insight.count > prevCount ? `+${insight.count - prevCount}` : insight.count < prevCount ? `${insight.count - prevCount}` : '='} vs anterior
+              </span>
+            )}
+            {prevCount === undefined && insight.count !== undefined && insight.count > 0 && (
+              <Badge variant="secondary" className="text-[10px] h-4">Novo</Badge>
+            )}
+            {/* Lightbulb tooltip - micro explanation */}
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -179,31 +178,103 @@ function IncidentCard({ insight, compact }: { insight: M365AnalyzerInsight; comp
                   </span>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs text-xs">
-                  {insight.recommendation}
+                  {tooltipText}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-          )}
-        </div>
+          </div>
 
-        {/* Row 3: Actions - hierarchy: primary destructive first */}
-        <div className="flex items-center gap-1.5 pt-0.5">
-          {(insight.severity === 'critical' || insight.severity === 'high') && (
-            <Button variant="destructive" size="sm" className="h-6 text-[11px] gap-1 px-2">
-              <Ban className="w-3 h-3" /> Bloquear
+          {/* Row 3: Only Details button */}
+          <div className="flex items-center gap-1.5 pt-0.5">
+            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 px-2" onClick={() => setDetailOpen(true)}>
+              <Eye className="w-3 h-3" /> Detalhes
             </Button>
-          )}
-          <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 px-2">
-            <Eye className="w-3 h-3" /> Detalhes
-          </Button>
-          {(insight.severity === 'critical' || insight.severity === 'high') && (
-            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 px-2 text-warning hover:text-warning/80">
-              <Search className="w-3 h-3" /> Investigar
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Detail Dialog */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className={cn('p-2 rounded-lg', sev.bg)}>
+                <sev.icon className={cn('w-5 h-5', sev.text)} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <Badge variant="outline" className={cn('text-xs', sev.bg, sev.text, sev.border)}>
+                    {sev.label}
+                  </Badge>
+                  {insight.count !== undefined && (
+                    <Badge variant="secondary" className="text-xs">{insight.count} ocorrências</Badge>
+                  )}
+                </div>
+                <DialogTitle className="text-lg">{insight.name}</DialogTitle>
+              </div>
+            </div>
+            <DialogDescription className="mt-2">
+              {insight.description || 'Sem descrição disponível.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-5 py-4 -mx-6 px-6">
+            {/* Recommendation */}
+            {insight.recommendation && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Lightbulb className="w-4 h-4 text-warning" />
+                  <h4 className="font-medium text-sm">Recomendação</h4>
+                </div>
+                <p className="text-sm text-muted-foreground bg-warning/5 border border-warning/20 p-3 rounded-lg">
+                  {insight.recommendation}
+                </p>
+              </div>
+            )}
+
+            {/* Affected Users */}
+            {insight.affectedUsers && insight.affectedUsers.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="w-4 h-4 text-muted-foreground" />
+                  <h4 className="font-medium text-sm">
+                    Usuários Afetados ({insight.affectedUsers.length})
+                  </h4>
+                </div>
+                <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                  {insight.affectedUsers.map((userEntry, idx) => (
+                    <div key={idx} className="flex items-center p-2.5 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                      <UserX className="w-4 h-4 text-muted-foreground mr-2 shrink-0" />
+                      <span className="text-sm font-medium truncate">{userEntry}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Metadata */}
+            {insight.metadata && Object.keys(insight.metadata).length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Info className="w-4 h-4 text-muted-foreground" />
+                  <h4 className="font-medium text-sm">Detalhes Adicionais</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(insight.metadata).filter(([k]) => k !== 'previousCount').map(([key, value]) => (
+                    <div key={key} className="p-2 rounded-lg bg-muted/30 text-sm">
+                      <span className="text-muted-foreground text-xs">{key}</span>
+                      <p className="font-medium truncate">
+                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
