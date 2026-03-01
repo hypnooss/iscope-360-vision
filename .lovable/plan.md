@@ -1,33 +1,45 @@
 
 
-## Adicionar Command Central ao M365 Compliance
+## Refatorar M365 Compliance: Layout identico ao Firewall/Domain Compliance
 
-### Objetivo
-Substituir o card de score atual (linhas 199-226 do `M365PosturePage.tsx`) por um Command Central visual identico ao do Firewall Compliance, com o mesmo estilo dark com grid pattern, titulo centralizado, gauge na esquerda com mini stats, e coluna de detalhes na direita.
+### Situacao atual
+A tela M365 Compliance abaixo do Command Central tem:
+1. Grid de **M365CategoryCard** (cards resumo por categoria com score) -- secao "Categorias de Risco"
+2. Secao separada **"Coleta via Agent (PowerShell)"** com cards basicos
+3. Secao **"Insights Detalhados (Graph API)"** com `M365InsightCard` em grid 2 colunas, agrupados por categoria com titulo simples
 
-### Alteracao
+O Firewall Compliance usa:
+- `CategorySection` com header colapsivel (icone + nome + badges de severidade + pass rate %)
+- Cards em grid 2 colunas com `ComplianceCard`
+- Clique no card abre `ComplianceDetailSheet` (sheet lateral com abas)
 
-**Arquivo: `src/pages/m365/M365PosturePage.tsx`**
+### Plano
 
-1. Importar os componentes `MiniStat` e `DetailRow` do `Dashboard.tsx` -- como sao componentes internos, extrair para um arquivo compartilhado ou replicar localmente no M365PosturePage
+**1. Refatorar `M365CategorySection.tsx`** -- adicionar `ComplianceDetailSheet`
+- Ja existe e tem layout muito proximo do Firewall `CategorySection` (header colapsivel, badges, grid)
+- Adicionar estado `selectedInsight` + `sheetOpen`
+- Passar `onClick` ao `M365InsightCard` para abrir a sheet lateral em vez do collapsible inline
+- Renderizar `ComplianceDetailSheet` no final do componente
 
-2. Substituir o bloco `Score Header` (Card glass-card, linhas 199-226) pelo layout Command Central:
-   - Container `rounded-2xl border border-primary/20` com background gradient dark
-   - Grid pattern overlay (mesmo do Firewall)
-   - Titulo centralizado: nome do tenant selecionado (`selectedTenant?.name`)
-   - Grid 2 colunas: ScoreGauge + MiniStats na esquerda, DetailRows na direita
-   - MiniStats: Total, Aprovadas, Falhas (calculados a partir de `data?.summary`)
-   - Coluna direita: placeholder com dados basicos do tenant (dominio, ultima coleta, status do agent) -- detalhes a alinhar depois
+**2. Refatorar `M365InsightCard.tsx`** -- aceitar `onClick`
+- Receber prop opcional `onClick` e repassa-la ao `UnifiedComplianceCard`
+- Quando `onClick` presente, o card mostra "Detalhes >" em vez do collapsible
 
-3. Extrair `MiniStat` e `DetailRow` de `Dashboard.tsx` para `src/components/CommandCentral.tsx` compartilhado, evitando duplicacao de codigo entre Firewall e M365
+**3. Refatorar `M365PosturePage.tsx`** -- unificar layout
+- **Remover** a secao "Categorias de Risco" (grid de `M365CategoryCard`) -- linhas 227-249
+- **Remover** a secao separada "Coleta via Agent (PowerShell)" -- linhas 251-340
+- **Remover** o separador e titulo "Insights Detalhados (Graph API)" -- linhas 342-347
+- **Merge** agent insights com Graph insights antes do agrupamento por categoria: converter `agentInsights` (M365AgentInsight[]) para `M365Insight[]` e concatenar com `data.insights`
+- **Substituir** o bloco de categorias por `M365CategorySection` (o componente que ja existe com header colapsivel, badges, pass rate)
+- Titulo da secao: "Verificacoes por Categoria" (igual Firewall)
 
 ### Arquivos a editar
-1. **`src/components/CommandCentral.tsx`** (novo) -- exportar `MiniStat`, `DetailRow` e o wrapper `CommandCentralLayout` reutilizavel
-2. **`src/components/Dashboard.tsx`** -- importar de `CommandCentral.tsx` em vez de definir localmente
-3. **`src/pages/m365/M365PosturePage.tsx`** -- substituir o Score Header pelo Command Central usando os componentes compartilhados
+1. `src/components/m365/posture/M365InsightCard.tsx` -- aceitar e passar `onClick`
+2. `src/components/m365/posture/M365CategorySection.tsx` -- adicionar ComplianceDetailSheet + estado
+3. `src/pages/m365/M365PosturePage.tsx` -- merge agent insights, remover secoes separadas, usar M365CategorySection
 
 ### Resultado
-- Visual identico ao Firewall: dark card com grid, gauge, mini stats, detail rows
-- Coluna direita com dados placeholder (tenant name, domain, agent status) para alinhar conteudo depois
-- Componentes reutilizaveis para futuros modulos
+- Layout identico ao Firewall: headers collapsiveis por categoria com badges + pass rate, cards em grid 2 colunas, sheet lateral com abas ao clicar
+- Agent insights integrados nas categorias em vez de secao separada
+- Dialogs de Remediacao e Entidades Afetadas continuam funcionando via M365InsightCard
 
