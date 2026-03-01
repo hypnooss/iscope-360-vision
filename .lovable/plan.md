@@ -1,33 +1,40 @@
 
 
-## Diagnóstico: A função não foi deployada com o código atualizado
+## Diagnóstico das 4 permissões falhando
 
-### Evidência dos logs
+### Análise do fluxo completo
 
-Os logs da execução das 15:57 mostram claramente:
+O fluxo funciona assim:
+1. UI (`M365TenantEditPage`) chama `validate-m365-connection`
+2. A Edge Function testa cada permissão com um endpoint Graph API
+3. Resultados são gravados em `m365_tenant_permissions` com status `granted` ou `pending`
+4. A UI lê `m365_tenant_permissions` e exibe verde (granted), amber (pending/sem registro) ou vermelho (denied)
 
-```text
-Permission check complete: 16/16 granted
-Missing permissions: none
-```
+### Permissões falhando (24/28 = 4 falhando)
 
-O bloco de permissões adicionais (linhas 718-779 do código fonte) **nunca foi executado**. Se tivesse sido, o log mostraria `28/28` ou `X/28`. Isso confirma que a versão deployada da Edge Function `validate-m365-connection` **não contém o código das 12 permissões adicionais**.
+Os logs mostram: `SecurityAlert.Read.All`, `SecurityIncident.Read.All`, `InformationProtectionPolicy.Read.All`, `SharePointTenantSettings.Read.All`
 
-### Fluxo completo verificado
+### Problemas identificados no código
 
-```text
-1. UI (M365TenantEditPage) → chama validate-m365-connection
-2. Edge Function testa permissões → grava em m365_tenant_permissions
-3. UI lê m365_tenant_permissions → exibe 16/28 (só existem 16 registros)
-```
+**1. URLs erradas (2 permissões)**
+- `InformationProtectionPolicy.Read.All` usa `/v1.0/informationProtection/policy/labels` na `validate-m365-connection`, mas esse endpoint **não existe em v1.0** -- o correto é `/beta/informationProtection/policy/labels` (como já está em `validate-m365-permissions`)
+- `SharePointTenantSettings.Read.All` usa `/v1.0/admin/sharepoint/settings`, mas esse endpoint só existe em `/beta` (como já está em `validate-m365-permissions`)
 
-O código está correto no repositório. O problema é exclusivamente de **deploy**.
+**2. Falta de logging detalhado**
+O bloco de permissões adicionais **não loga o status HTTP, error code e mensagem** quando falha. Só loga "not granted", impossibilitando diagnóstico. Precisamos logar o status HTTP + error code + mensagem.
 
-### Ação necessária
+**3. Tolerância incompleta para SecurityAlert/SecurityIncident**
+Tenants sem licença Microsoft Defender retornam 403 com error code `"Forbidden"` ou `"UnknownError"` (não `"NonPremiumTenant"`). A tolerância atual só cobre `NonPremiumTenant`, `license` e `premium`. Devemos expandir para cobrir 403 em endpoints de segurança quando o Defender não está licenciado.
 
-1. **Re-deploy** da Edge Function `validate-m365-connection` para que a versão com as 12 permissões adicionais entre em produção
-2. Após o deploy, o usuário clica em "Revalidar Permissões" e o sistema testará 28 permissões, gravando todas em `m365_tenant_permissions`
+### Correções
 
-### Arquivos a alterar
-Nenhum arquivo precisa ser editado — apenas o re-deploy da função `validate-m365-connection`.
+**`supabase/functions/validate-m365-connection/index.ts`** -- 3 alterações:
+
+1. Corrigir URL de `InformationProtectionPolicy.Read.All` para usar `/beta`
+2. Corrigir URL de `SharePointTenantSettings.Read.All` para usar `/beta`
+3. Adicionar log detalhado do erro (status + code + message) quando a permissão falha
+4. Expandir tolerância de 403 para cobrir endpoints de segurança/defender sem licença (tratar qualquer 403 em endpoints `security/*` ou `admin/sharepoint` que não seja explicitamente "Insufficient privileges to complete the operation" como granted)
+
+### Arquivos a editar
+1. `supabase/functions/validate-m365-connection/index.ts`
 
