@@ -1,22 +1,14 @@
 
 
-## Conectar "Exportar PDF" nos dropdowns de Compliance
+## Ajustes estéticos no dropdown "Executar Ações"
 
-### 1. ExternalDomainCompliancePage.tsx (linha 561)
+### Mudanças em ambos os arquivos
 
-Substituir o `toast.info` placeholder por chamada ao `handleExportPDF` que ja existe na linha 464. Desabilitar se `!report` ou `isExportingPDF`.
+**1. `src/pages/firewall/FirewallCompliancePage.tsx`**
+- Linha 394: adicionar `className="min-w-[200px]"` ao `DropdownMenuContent`
+- Linha 406-407: alterar "Criar GMUD" para "Gerar GMUD" (texto e toast)
 
-```
-<DropdownMenuItem onClick={handleExportPDF} disabled={!report || isExportingPDF}>
-  {isExportingPDF ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
-  Exportar PDF
-</DropdownMenuItem>
-```
-
-### 2. FirewallCompliancePage.tsx (linhas 358-360)
-
-- Importar `FirewallPDF` de `@/components/pdf/FirewallPDF`, `usePDFDownload`, `sanitizePDFFilename`, `getPDFDateString`
-- Adicionar `const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();`
-- Criar funcao `handleExportPDF` que monta `<FirewallPDF>` com `report`, `deviceInfo` (name, url, vendor, clientName), `categoryConfigs` e logo base64
-- Substituir o placeholder toast no dropdown pelo `handleExportPDF`
+**2. `src/pages/external-domain/ExternalDomainCompliancePage.tsx`**
+- Linha 556: adicionar `className="min-w-[200px]"` ao `DropdownMenuContent`
+- Linha 568-569: alterar "Criar GMUD" para "Gerar GMUD" (texto e toast)
 
