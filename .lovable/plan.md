@@ -1,16 +1,31 @@
 
 
-## Ajustes nos cards de Compliance M365
+## Garantir abas Análise, Evidências e Dados na sheet lateral do M365 Compliance
 
-### Alteracao 1: Remover "itens afetados" do card
-No `UnifiedComplianceCard.tsx`, remover o bloco que exibe o link "X itens afetados" (linhas 230-245). Essa informacao ja esta disponivel na sheet lateral (`ComplianceDetailSheet`).
+### Problemas identificados
 
-### Alteracao 2: Passar `categoryColorKey` nos cards do M365
-No `M365CategorySection.tsx`, mapear o `colorName` (ex: `blue`) para o formato esperado pelo `CATEGORY_HOVER_CLASSES` (ex: `blue-500`) e passar como prop `categoryColorKey` ao `UnifiedComplianceCard`. Isso fara com que a borda do card e o chevron de "Detalhes" usem a cor da categoria no hover, identico ao Firewall e Domain.
+1. **"Análise Efetuada" não aparece**: No `mapM365Insight`, o campo `details` não é preenchido. Como `description` recebe `descricaoExecutiva` (mesmo valor que `contextualMessage`), a condição no `ComplianceDetailSheet` (linha 203) nunca é satisfeita.
 
-Mapeamento simples: `colorName + '-500'`, com excecoes para `cyan` (`cyan-600`) e `emerald` (`emerald-600`) se necessario. Para os valores atuais do M365 (`blue`, `purple`, `amber`, etc.) todos funcionam com `-500`.
+2. **Aba "Evidências" não aparece**: `mapM365Insight` não popula `evidence`. Os dados de `insight.evidencias` e `insight.affectedEntities` existem mas não são convertidos para `EvidenceItem[]`.
+
+3. **Aba "Dados" incompleta**: `mapM365Insight` não mapeia `rawData`. O campo `insight.evidencias` contém os dados brutos que poderiam alimentar `rawData`.
+
+### Alterações
+
+**Arquivo 1: `src/lib/complianceMappers.ts` — função `mapM365Insight`**
+
+- Adicionar `details` mapeado de `insight.riscoTecnico` ou de `insight.descricaoExecutiva` para garantir que "Análise Efetuada" apareça. Mais precisamente, usar a `descricaoExecutiva` como `details` (análise efetuada) e os textos de status como `description`/`failDescription`.
+- Adicionar `evidence` construído a partir de `insight.affectedEntities` (mesmo padrão dos mappers de Exchange/Security: label "Itens afetados" + "Entidades afetadas").
+- Adicionar `rawData` mapeado de `insight.evidencias` quando presente (objeto com chave `evidencias`).
+
+**Arquivo 2: `src/components/compliance/ComplianceDetailSheet.tsx`**
+
+- Alterar a lógica de `hasEvidence` e `hasAdminData` para garantir visibilidade:
+  - A aba "Evidências" deve aparecer sempre que houver `evidence` com itens OU `affectedEntities` com itens (mesmo sem evidence formal, listar affected entities).
+  - A aba "Dados" deve considerar `role === 'super_suporte'` além de `super_admin` (já está correto via `canViewAdminDetails`).
+  - Garantir que a condição de "Análise Efetuada" não seja tão restritiva: exibir sempre que `details` existir, independente de ser igual ao `contextualMessage`.
 
 ### Arquivos a editar
-1. **`src/components/compliance/UnifiedComplianceCard.tsx`** — remover bloco de "itens afetados" (linhas 230-245)
-2. **`src/components/m365/posture/M365CategorySection.tsx`** — passar `categoryColorKey={colorName + '-500'}` ao `UnifiedComplianceCard`
+1. `src/lib/complianceMappers.ts` — enriquecer `mapM365Insight` com `details`, `evidence` e `rawData`
+2. `src/components/compliance/ComplianceDetailSheet.tsx` — ajustar condição de exibição de "Análise Efetuada" e aba "Evidências" para incluir affected entities
 
