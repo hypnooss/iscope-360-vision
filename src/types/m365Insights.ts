@@ -375,6 +375,20 @@ export interface M365AgentInsight {
   recommendation?: string;
   affectedEntities?: Array<{ name: string; type: string; details?: string }>;
   rawData?: Record<string, unknown>;
+  /** Critério estático da regra (texto descritivo) */
+  criteria?: string;
+  /** Descrição quando passa */
+  passDescription?: string;
+  /** Descrição quando falha */
+  failDescription?: string;
+  /** Descrição quando não encontrado */
+  notFoundDescription?: string;
+  /** Risco técnico associado */
+  technicalRisk?: string;
+  /** Impacto no negócio */
+  businessImpact?: string;
+  /** Endpoint de API utilizado */
+  apiEndpoint?: string;
 }
 
 /**
