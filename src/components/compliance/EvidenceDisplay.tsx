@@ -517,6 +517,20 @@ export function EvidenceItemDisplay({ item }: EvidenceItemDisplayProps) {
     );
   }
 
+  // Renderização para listas (type === 'list') — cada item em sua própria linha
+  if (transformedItem.type === "list") {
+    const items = transformedItem.value.split("\n").filter(Boolean);
+    return (
+      <div className="bg-muted/30 rounded-md p-3 border border-border/30 space-y-3">
+        {items.map((val, idx) => (
+          <div key={idx} className="border-l-2 border-primary/30 pl-3 flex flex-col">
+            <span className="text-sm text-foreground font-mono">{val}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   // Renderização para JSON/código
   if (transformedItem.type === "code" || transformedItem.type === "json") {
     return <FormattedCodeEvidence item={transformedItem} />;

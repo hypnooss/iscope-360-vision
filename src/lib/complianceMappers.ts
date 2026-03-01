@@ -93,9 +93,15 @@ export function mapM365Insight(insight: M365Insight): UnifiedComplianceItem {
     apiEndpoint: insight.endpointUsado,
     details: insight.riscoTecnico || insight.descricaoExecutiva,
     evidence,
-    rawData: insight.evidencias && insight.evidencias.length > 0
-      ? { evidencias: insight.evidencias } as Record<string, unknown>
-      : undefined,
+    rawData: (() => {
+      const data: Record<string, unknown> = {};
+      if (insight.endpointUsado) data.endpoint = insight.endpointUsado;
+      if (insight.status) data.status = insight.status;
+      if (insight.affectedCount !== undefined) data.affectedCount = insight.affectedCount;
+      if (insight.category) data.category = insight.category;
+      if (insight.evidencias && insight.evidencias.length > 0) data.evidencias = insight.evidencias;
+      return Object.keys(data).length > 0 ? data : undefined;
+    })(),
     affectedEntities: insight.affectedEntities,
     affectedCount: insight.affectedCount,
     remediation: insight.remediacao,
