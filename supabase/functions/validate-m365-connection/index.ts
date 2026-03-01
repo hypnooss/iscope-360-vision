@@ -715,6 +715,69 @@ serve(async (req) => {
     });
     console.log(`SharePoint Administrator (Sites.FullControl.All): ${sharepointResult.granted ? 'granted' : 'not granted'}${sharepointResult.error ? ` (${sharepointResult.error})` : ''}`);
 
+    // ========== Test additional permissions (Intune, Defender, Teams, SharePoint Admin, Domain) ==========
+    const ADDITIONAL_PERMISSIONS: Array<{ name: string; testUrl: string }> = [
+      { name: 'DeviceManagementManagedDevices.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?$top=1&$select=id' },
+      { name: 'DeviceManagementConfiguration.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?$top=1&$select=id' },
+      { name: 'SecurityAlert.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/security/alerts_v2?$top=1&$select=id' },
+      { name: 'SecurityEvents.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/security/alerts?$top=1&$select=id' },
+      { name: 'SecurityIncident.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/security/incidents?$top=1&$select=id' },
+      { name: 'AttackSimulation.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/security/attackSimulation/simulations?$top=1' },
+      { name: 'InformationProtectionPolicy.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/informationProtection/policy/labels?$top=1' },
+      { name: 'TeamSettings.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/teams?$top=1&$select=id' },
+      { name: 'Channel.ReadBasic.All', testUrl: 'https://graph.microsoft.com/v1.0/teams?$select=id&$top=1' },
+      { name: 'TeamMember.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/teams?$select=id&$top=1' },
+      { name: 'SharePointTenantSettings.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/admin/sharepoint/settings' },
+      { name: 'Domain.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/domains?$top=1&$select=id' },
+    ];
+
+    for (const perm of ADDITIONAL_PERMISSIONS) {
+      let granted = false;
+      try {
+        const response = await fetch(perm.testUrl, {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+
+        if (response.ok) {
+          granted = true;
+        } else {
+          const errBody = await response.json().catch(() => ({}));
+          const errCode = errBody?.error?.code || '';
+          const errMsg = errBody?.error?.message || '';
+          const lowerMsg = errMsg.toLowerCase();
+
+          // Tolerance: treat license/service/context errors as "granted"
+          if (response.status === 400 && (
+            lowerMsg.includes('not applicable to target tenant') ||
+            lowerMsg.includes('service principal for resource') ||
+            lowerMsg.includes('service principal') && lowerMsg.includes('disabled')
+          )) {
+            granted = true;
+            console.log(`Permission ${perm.name}: 400 license/service issue - treating as granted`);
+          } else if (response.status === 412 || (response.status === 400 && lowerMsg.includes('not supported'))) {
+            granted = true;
+            console.log(`Permission ${perm.name}: ${response.status} app-only not supported - treating as granted`);
+          } else if (response.status === 403 && (
+            errCode.includes('NonPremiumTenant') ||
+            lowerMsg.includes('license') ||
+            lowerMsg.includes('premium')
+          )) {
+            granted = true;
+            console.log(`Permission ${perm.name}: 403 license issue - treating as granted`);
+          }
+        }
+        console.log(`Permission ${perm.name}: ${granted ? 'granted' : 'not granted'}`);
+      } catch (e) {
+        console.error(`Error testing ${perm.name}:`, e);
+      }
+
+      permissionResults.push({
+        name: perm.name,
+        granted,
+        required: false,
+      });
+    }
+
     const allPermissionsGranted = permissionResults.every(p => p.granted);
     const missingPermissions = permissionResults.filter(p => !p.granted).map(p => p.name);
     console.log(`Permission check complete: ${permissionResults.filter(p => p.granted).length}/${permissionResults.length} granted`);
