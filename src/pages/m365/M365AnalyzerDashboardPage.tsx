@@ -36,6 +36,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast as sonnerToast } from 'sonner';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
+import { ExternalMovementTab } from '@/components/m365/analyzer/ExternalMovementTab';
+import { useExternalMovementData } from '@/hooks/useExternalMovementData';
 
 // ─── Operational categories only ─────────────────────────────────────────────
 const OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
@@ -527,10 +529,9 @@ export default function M365AnalyzerDashboardPage() {
 
   const pad = compactMode ? 'p-3' : 'p-4';
 
-  // Check if external movement has data
-  const hasExternalDomains = (m?.exfiltration?.topExternalDomains?.length ?? 0) > 0;
-  const hasRiskUsers = (m?.compromise?.topRiskUsers?.length ?? 0) > 0;
-  const hasExternalMovement = hasExternalDomains || hasRiskUsers;
+  // External movement data
+  const { data: extMovementData } = useExternalMovementData(selectedTenantId || undefined);
+  const extMovementCount = extMovementData?.totalAlerts ?? 0;
 
   return (
     <AppLayout>
@@ -710,12 +711,11 @@ export default function M365AnalyzerDashboardPage() {
                 Anomalias
                 {anomalyInsights.length > 0 && <Badge variant="secondary" className="text-[10px] ml-1 h-4 px-1">{anomalyInsights.length}</Badge>}
               </TabsTrigger>
-              {hasExternalMovement && (
-                <TabsTrigger value="external" className="gap-1.5">
-                  <ExternalLink className="w-4 h-4" />
-                  Movimento Externo
-                </TabsTrigger>
-              )}
+              <TabsTrigger value="external" className="gap-1.5">
+                <ExternalLink className="w-4 h-4" />
+                Movimento Externo
+                {extMovementCount > 0 && <Badge variant="secondary" className="text-[10px] ml-1 h-4 px-1">{extMovementCount}</Badge>}
+              </TabsTrigger>
             </TabsList>
 
             {/* Tab: Incidentes - 3 severity columns */}
@@ -757,46 +757,9 @@ export default function M365AnalyzerDashboardPage() {
             </TabsContent>
 
             {/* Tab: Movimento Externo */}
-            {hasExternalMovement && (
-              <TabsContent value="external">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {hasExternalDomains && (
-                    <Card className="glass-card">
-                      <CardHeader className={compactMode ? 'p-3 pb-1' : undefined}>
-                        <CardTitle className="text-sm">Top Domínios Externos</CardTitle>
-                      </CardHeader>
-                      <CardContent className={compactMode ? 'p-3 pt-0' : undefined}>
-                        <RankingList items={m?.exfiltration?.topExternalDomains ?? []} labelKey="domain" periodLabel="Últimas coletas" />
-                      </CardContent>
-                    </Card>
-                  )}
-                  {hasRiskUsers && (
-                    <Card className="glass-card">
-                      <CardHeader className={compactMode ? 'p-3 pb-1' : undefined}>
-                        <CardTitle className="text-sm">Usuários em Risco</CardTitle>
-                      </CardHeader>
-                      <CardContent className={compactMode ? 'p-3 pt-0' : undefined}>
-                        <div className="space-y-2">
-                          {(m?.compromise?.topRiskUsers ?? []).slice(0, 8).map((u, i) => (
-                            <div key={i} className="py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
-                              <div className="flex items-center gap-3">
-                                <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">{i + 1}</span>
-                                <span className="text-sm font-medium text-foreground flex-1 truncate">{u.user}</span>
-                              </div>
-                              <div className="ml-8 mt-1 flex flex-wrap gap-1">
-                                {(u.reasons ?? []).map((r, j) => (
-                                  <Badge key={j} variant="outline" className="text-[10px]">{r}</Badge>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              </TabsContent>
-            )}
+            <TabsContent value="external">
+              <ExternalMovementTab tenantRecordId={selectedTenantId || undefined} compact={compactMode} />
+            </TabsContent>
           </Tabs>
         )}
 

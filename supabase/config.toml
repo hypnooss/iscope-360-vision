@@ -147,3 +147,6 @@ verify_jwt = false
 [functions.get-release-url]
 verify_jwt = false
 
+[functions.m365-external-movement]
+verify_jwt = false
+

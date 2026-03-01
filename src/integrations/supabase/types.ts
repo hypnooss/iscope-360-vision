@@ -1686,6 +1686,81 @@ export type Database = {
           },
         ]
       }
+      m365_external_movement_alerts: {
+        Row: {
+          affected_domains: string[] | null
+          alert_type: string
+          client_id: string
+          created_at: string
+          description: string | null
+          evidence: Json | null
+          id: string
+          is_anomalous: boolean
+          is_new: boolean
+          pct_increase: number | null
+          risk_score: number
+          severity: string
+          snapshot_id: string | null
+          tenant_record_id: string
+          title: string
+          user_id: string
+          z_score: number | null
+        }
+        Insert: {
+          affected_domains?: string[] | null
+          alert_type: string
+          client_id: string
+          created_at?: string
+          description?: string | null
+          evidence?: Json | null
+          id?: string
+          is_anomalous?: boolean
+          is_new?: boolean
+          pct_increase?: number | null
+          risk_score?: number
+          severity?: string
+          snapshot_id?: string | null
+          tenant_record_id: string
+          title: string
+          user_id: string
+          z_score?: number | null
+        }
+        Update: {
+          affected_domains?: string[] | null
+          alert_type?: string
+          client_id?: string
+          created_at?: string
+          description?: string | null
+          evidence?: Json | null
+          id?: string
+          is_anomalous?: boolean
+          is_new?: boolean
+          pct_increase?: number | null
+          risk_score?: number
+          severity?: string
+          snapshot_id?: string | null
+          tenant_record_id?: string
+          title?: string
+          user_id?: string
+          z_score?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_external_movement_alerts_snapshot_id_fkey"
+            columns: ["snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "m365_analyzer_snapshots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "m365_external_movement_alerts_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       m365_global_config: {
         Row: {
           app_id: string
@@ -2179,6 +2254,109 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "m365_user_baselines_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      m365_user_external_daily_stats: {
+        Row: {
+          client_id: string
+          created_at: string
+          date: string
+          domains_list: string[] | null
+          hour_distribution: Json | null
+          id: string
+          mean_hour: number | null
+          std_hour: number | null
+          tenant_record_id: string
+          total_external_emails: number
+          total_external_mb: number
+          unique_domains: number
+          user_id: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          date: string
+          domains_list?: string[] | null
+          hour_distribution?: Json | null
+          id?: string
+          mean_hour?: number | null
+          std_hour?: number | null
+          tenant_record_id: string
+          total_external_emails?: number
+          total_external_mb?: number
+          unique_domains?: number
+          user_id: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          date?: string
+          domains_list?: string[] | null
+          hour_distribution?: Json | null
+          id?: string
+          mean_hour?: number | null
+          std_hour?: number | null
+          tenant_record_id?: string
+          total_external_emails?: number
+          total_external_mb?: number
+          unique_domains?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_user_external_daily_stats_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      m365_user_external_domain_history: {
+        Row: {
+          client_id: string
+          created_at: string
+          domain: string
+          first_seen: string
+          id: string
+          last_seen: string
+          tenant_record_id: string
+          total_emails: number
+          total_mb: number
+          user_id: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          domain: string
+          first_seen?: string
+          id?: string
+          last_seen?: string
+          tenant_record_id: string
+          total_emails?: number
+          total_mb?: number
+          user_id: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          domain?: string
+          first_seen?: string
+          id?: string
+          last_seen?: string
+          tenant_record_id?: string
+          total_emails?: number
+          total_mb?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_user_external_domain_history_tenant_record_id_fkey"
             columns: ["tenant_record_id"]
             isOneToOne: false
             referencedRelation: "m365_tenants"
