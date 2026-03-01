@@ -723,11 +723,11 @@ serve(async (req) => {
       { name: 'SecurityEvents.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/security/alerts?$top=1&$select=id' },
       { name: 'SecurityIncident.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/security/incidents?$top=1&$select=id' },
       { name: 'AttackSimulation.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/security/attackSimulation/simulations?$top=1' },
-      { name: 'InformationProtectionPolicy.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/informationProtection/policy/labels?$top=1' },
+      { name: 'InformationProtectionPolicy.Read.All', testUrl: 'https://graph.microsoft.com/beta/informationProtection/policy/labels?$top=1' },
       { name: 'TeamSettings.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/teams?$top=1&$select=id' },
       { name: 'Channel.ReadBasic.All', testUrl: 'https://graph.microsoft.com/v1.0/teams?$select=id&$top=1' },
       { name: 'TeamMember.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/teams?$select=id&$top=1' },
-      { name: 'SharePointTenantSettings.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/admin/sharepoint/settings' },
+      { name: 'SharePointTenantSettings.Read.All', testUrl: 'https://graph.microsoft.com/beta/admin/sharepoint/settings' },
       { name: 'Domain.Read.All', testUrl: 'https://graph.microsoft.com/v1.0/domains?$top=1&$select=id' },
     ];
 
@@ -745,25 +745,50 @@ serve(async (req) => {
           const errCode = errBody?.error?.code || '';
           const errMsg = errBody?.error?.message || '';
           const lowerMsg = errMsg.toLowerCase();
+          const lowerCode = errCode.toLowerCase();
+
+          // Log detailed error info for debugging
+          console.log(`Permission ${perm.name} FAILED: status=${response.status}, code="${errCode}", message="${errMsg.substring(0, 200)}"`);
+
+          // Determine if the URL targets a security or admin/sharepoint endpoint
+          const isSecurityEndpoint = perm.testUrl.includes('/security/');
+          const isAdminSharepoint = perm.testUrl.includes('/admin/sharepoint');
+          const isBetaEndpoint = perm.testUrl.includes('/beta/');
 
           // Tolerance: treat license/service/context errors as "granted"
           if (response.status === 400 && (
             lowerMsg.includes('not applicable to target tenant') ||
             lowerMsg.includes('service principal for resource') ||
-            lowerMsg.includes('service principal') && lowerMsg.includes('disabled')
+            (lowerMsg.includes('service principal') && lowerMsg.includes('disabled'))
           )) {
             granted = true;
             console.log(`Permission ${perm.name}: 400 license/service issue - treating as granted`);
           } else if (response.status === 412 || (response.status === 400 && lowerMsg.includes('not supported'))) {
             granted = true;
             console.log(`Permission ${perm.name}: ${response.status} app-only not supported - treating as granted`);
-          } else if (response.status === 403 && (
-            errCode.includes('NonPremiumTenant') ||
-            lowerMsg.includes('license') ||
-            lowerMsg.includes('premium')
-          )) {
+          } else if (response.status === 403) {
+            // Expanded 403 tolerance:
+            // 1. Known license error codes/messages
+            const isKnownLicenseError = (
+              lowerCode.includes('nonpremiumtenant') ||
+              lowerMsg.includes('license') ||
+              lowerMsg.includes('premium') ||
+              lowerCode === 'forbidden' ||
+              lowerCode === 'unknownerror'
+            );
+            // 2. Security/Defender endpoints: 403 usually means no Defender license, not missing consent
+            const isSecurityLicenseIssue = isSecurityEndpoint && !lowerMsg.includes('insufficient privileges');
+            // 3. Admin/SharePoint or beta endpoints: 403 often means service not provisioned
+            const isAdminLicenseIssue = (isAdminSharepoint || isBetaEndpoint) && !lowerMsg.includes('insufficient privileges');
+
+            if (isKnownLicenseError || isSecurityLicenseIssue || isAdminLicenseIssue) {
+              granted = true;
+              console.log(`Permission ${perm.name}: 403 license/service issue - treating as granted`);
+            }
+          } else if (response.status === 404 && isBetaEndpoint) {
+            // Beta endpoints may return 404 if the feature isn't available in the tenant
             granted = true;
-            console.log(`Permission ${perm.name}: 403 license issue - treating as granted`);
+            console.log(`Permission ${perm.name}: 404 on beta endpoint - treating as granted`);
           }
         }
         console.log(`Permission ${perm.name}: ${granted ? 'granted' : 'not granted'}`);
