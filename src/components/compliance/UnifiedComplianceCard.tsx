@@ -227,22 +227,6 @@ export function UnifiedComplianceCard({
           </p>
         )}
 
-        {isFailed && item.affectedCount != null && item.affectedCount > 0 && (
-          <button
-            type="button"
-            className="flex items-center gap-2 text-xs text-amber-400 hover:text-amber-300 transition-colors cursor-pointer underline underline-offset-2"
-            onClick={(e) => {
-              e.stopPropagation();
-              onShowAffectedEntities?.();
-            }}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>
-              {item.affectedCount} {item.affectedCount === 1 ? 'item afetado' : 'itens afetados'}
-            </span>
-            <ChevronRight className="w-3 h-3" />
-          </button>
-        )}
       </div>
 
       {/* Link "Detalhes" — abre sheet lateral quando onClick presente */}
