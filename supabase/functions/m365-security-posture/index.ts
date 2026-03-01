@@ -395,9 +395,22 @@ function evaluateRule(
         const methods = (data as any)?.authenticationMethodConfigurations || [];
         const enabledMethods = methods.filter((m: any) => m.state === 'enabled');
         affectedCount = enabledMethods.length;
+        // Map known auth method IDs to readable names
+        const authMethodNames: Record<string, string> = {
+          'MicrosoftAuthenticator': 'Microsoft Authenticator',
+          'Fido2': 'Chave de Segurança FIDO2',
+          'Sms': 'SMS',
+          'TemporaryAccessPass': 'Passe de Acesso Temporário',
+          'Email': 'E-mail OTP',
+          'X509Certificate': 'Certificado X.509',
+          'SoftwareOath': 'Token OATH (Software)',
+          'HardwareOath': 'Token OATH (Hardware)',
+          'WindowsHelloForBusiness': 'Windows Hello for Business',
+          'Voice': 'Chamada de Voz',
+        };
         affectedEntities = enabledMethods.slice(0, 20).map((m: any) => ({
           id: m.id,
-          displayName: m.id,
+          displayName: authMethodNames[m.id] || m.id.replace(/([A-Z])/g, ' $1').trim(),
           details: { state: m.state }
         }));
         status = 'pass';
@@ -696,13 +709,19 @@ function evaluateRule(
 
       case 'count_oauth_consents': {
         const grants = (data as any)?.value || [];
+        // Build lookup map from service principals (secondary source)
+        const spList = (secondaryResult?.data as any)?.value || [];
+        const spMap = new Map<string, string>();
+        for (const sp of spList) {
+          spMap.set(sp.id, sp.displayName || sp.appDisplayName || sp.appId || sp.id);
+        }
         const allPrincipals = grants.filter((g: any) => 
           g.consentType === 'AllPrincipals' || g.scope?.includes('AllPrincipals')
         );
         affectedCount = allPrincipals.length;
         affectedEntities = allPrincipals.slice(0, 20).map((g: any) => ({
           id: g.id,
-          displayName: g.clientId || g.resourceId || 'OAuth Grant',
+          displayName: spMap.get(g.clientId) || g.clientId || 'OAuth Grant',
           details: { scope: g.scope, consentType: g.consentType }
         }));
         status = affectedCount > (evaluate.threshold || 20) ? 'fail' : 'pass';
