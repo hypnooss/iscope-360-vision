@@ -711,12 +711,11 @@ export default function M365AnalyzerDashboardPage() {
                 Anomalias
                 {anomalyInsights.length > 0 && <Badge variant="secondary" className="text-[10px] ml-1 h-4 px-1">{anomalyInsights.length}</Badge>}
               </TabsTrigger>
-              {hasExternalMovement && (
-                <TabsTrigger value="external" className="gap-1.5">
-                  <ExternalLink className="w-4 h-4" />
-                  Movimento Externo
-                </TabsTrigger>
-              )}
+              <TabsTrigger value="external" className="gap-1.5">
+                <ExternalLink className="w-4 h-4" />
+                Movimento Externo
+                {extMovementCount > 0 && <Badge variant="secondary" className="text-[10px] ml-1 h-4 px-1">{extMovementCount}</Badge>}
+              </TabsTrigger>
             </TabsList>
 
             {/* Tab: Incidentes - 3 severity columns */}
