@@ -558,8 +558,9 @@ export default function ExternalDomainCompliancePage() {
                   {isRefreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
                   Gerar Análise
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => toast.info('Exportar PDF será implementado em breve.')}>
-                  <FileDown className="w-4 h-4 mr-2" />Exportar PDF
+                <DropdownMenuItem onClick={handleExportPDF} disabled={!report || isExportingPDF}>
+                  {isExportingPDF ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
+                  Exportar PDF
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => toast.info('Exportar CVE será implementado em breve.')}>
                   <FileText className="w-4 h-4 mr-2" />Exportar CVE

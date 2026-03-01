@@ -12,6 +12,8 @@ import { ComplianceReport, ComplianceCategory } from '@/types/compliance';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, Play, Clock, Building2, FileText, RefreshCw, Settings, ChevronDown, FileDown, ClipboardList } from 'lucide-react';
+import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
+import { FirewallPDF } from '@/components/pdf/FirewallPDF';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -118,6 +120,7 @@ export default function FirewallCompliancePage() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [taskStartedAt, setTaskStartedAt] = useState<Date | null>(null);
   const queryClient = useQueryClient();
+  const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
 
@@ -296,6 +299,44 @@ export default function FirewallCompliancePage() {
     }
   };
 
+  const handleExportPDF = async () => {
+    if (!report || !firewallMeta) return;
+    try {
+      const filename = `iscope360-firewall-${sanitizePDFFilename(firewallMeta.name)}-${getPDFDateString()}.pdf`;
+      let logoBase64: string | undefined;
+      try {
+        const logoModule = await import('@/assets/logo-iscope.png');
+        const response = await fetch(logoModule.default);
+        const blob = await response.blob();
+        logoBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } catch {}
+
+      await downloadPDF(
+        <FirewallPDF
+          report={report}
+          deviceInfo={{
+            name: firewallMeta.name,
+            url: firewallMeta.fortigate_url || undefined,
+            vendor: deviceVendor || undefined,
+            clientName: clientName || undefined,
+          }}
+          logoBase64={logoBase64}
+          categoryConfigs={categoryConfigs}
+        />,
+        filename
+      );
+      toast.success('PDF exportado com sucesso!');
+    } catch (err) {
+      console.error('PDF export error:', err);
+      toast.error('Erro ao exportar PDF');
+    }
+  };
+
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth');
   }, [user, authLoading]);
@@ -355,8 +396,9 @@ export default function FirewallCompliancePage() {
                   {isRefreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
                   Gerar Análise
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => toast.info('Exportar PDF será implementado em breve.')}>
-                  <FileDown className="w-4 h-4 mr-2" />Exportar PDF
+                <DropdownMenuItem onClick={handleExportPDF} disabled={!report || isExportingPDF}>
+                  {isExportingPDF ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
+                  Exportar PDF
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => toast.info('Exportar CVE será implementado em breve.')}>
                   <FileText className="w-4 h-4 mr-2" />Exportar CVE
