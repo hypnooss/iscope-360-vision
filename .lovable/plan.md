@@ -1,40 +1,34 @@
 
 
-## Diagnóstico e Correções na Validação de Permissões M365
+## Problema: `validate-m365-connection` não testa as novas permissões
 
-### Diagnóstico do Tenant TASCHIBRA
+A UI lê as permissões de `m365_tenant_permissions`. Quem popula essa tabela é a função `validate-m365-connection`, mas ela só testa as **16 permissões originais** (13 Graph + Application.ReadWrite.All + Exchange Admin + SharePoint Admin).
 
-Os logs mostram 3 categorias de falhas:
+As 12 novas permissões (DeviceManagement*, Security*, Teams*, SharePointTenantSettings, AttackSimulation, InformationProtection, Domain, AuditLog no array RECOMMENDED) são testadas apenas por `validate-m365-permissions`, que salva em `m365_global_config` — nunca em `m365_tenant_permissions`.
 
-**1. Admin Consent NÃO concedido (real)** — 5 permissões:
-- `SecurityAlert.Read.All`, `SecurityEvents.Read.All`, `SecurityIncident.Read.All`, `TeamMember.Read.All`, `SharePointTenantSettings.Read.All`
-- Estas retornam 403 com "Missing application roles" — o tenant precisa re-consentir
+Por isso a UI mostra **16/28**: as 12 novas nunca foram inseridas na tabela per-tenant.
 
-**2. Sem licença no tenant (falso negativo — bug nosso)** — 3 permissões:
-- `DeviceManagementManagedDevices.Read.All` e `DeviceManagementConfiguration.Read.All` → 400 "Request not applicable to target tenant" (sem Intune)
-- `InformationProtectionPolicy.Read.All` → 400 "service principal disabled" (sem MIP/Purview)
-- **O consent PODE estar correto**, mas como o serviço não existe no tenant, o teste falha. Devemos tratar como "granted"
+### Correção
 
-**3. Endpoints de teste com bugs** — 3 permissões:
-- `TeamSettings.Read.All` → 412 "not supported in application-only context" — o endpoint `/teamwork/teamsAppSettings` não funciona com tokens app-only
-- `Channel.ReadBasic.All` → 400 "$top not allowed" no endpoint de channels
-- `Application.ReadWrite.All` → 404 porque usa o `app_object_id` do HOME tenant, mas o Graph API precisa do object ID no TENANT DO CLIENTE
+**`supabase/functions/validate-m365-connection/index.ts`** — Adicionar teste e upsert das 12 permissões faltantes:
 
-### Alterações necessárias
+Após o loop de `REQUIRED_PERMISSIONS` e os testes de Application.ReadWrite.All, Exchange Admin e SharePoint Admin, adicionar um novo bloco que testa as permissões adicionais usando a mesma lógica de tolerância já presente em `validate-m365-permissions`:
 
-**`supabase/functions/validate-m365-permissions/index.ts`:**
+- `DeviceManagementManagedDevices.Read.All`
+- `DeviceManagementConfiguration.Read.All`
+- `SecurityAlert.Read.All`
+- `SecurityEvents.Read.All`
+- `SecurityIncident.Read.All`
+- `AttackSimulation.Read.All`
+- `InformationProtectionPolicy.Read.All`
+- `TeamSettings.Read.All`
+- `Channel.ReadBasic.All`
+- `TeamMember.Read.All`
+- `SharePointTenantSettings.Read.All`
+- `Domain.Read.All`
 
-1. **Tratar erros de licença como "granted"**: Na função `testPermission`, quando o status for 400 e a mensagem contiver "not applicable to target tenant" ou "service principal for resource.*is disabled", retornar `true` (a permissão existe, o serviço é que não está disponível)
-
-2. **Corrigir endpoint `TeamSettings.Read.All`**: Trocar `/teamwork/teamsAppSettings` por `/teams?$top=1&$select=id` (usa `Group.Read.All` que já funciona, ou simplesmente testar via groups filter como já fazemos para Channel/TeamMember)
-
-3. **Corrigir endpoint `Channel.ReadBasic.All`**: Remover `$top=1` da query de channels — usar `/teams/{id}/channels?$select=id` sem paginação
-
-4. **Corrigir `Application.ReadWrite.All`**: Em vez de usar o `appObjectId` passado (que é do HOME tenant), fazer auto-discovery do object ID no tenant do cliente via `GET /applications(appId='{appId}')?$select=id,keyCredentials`
+Cada permissão será testada com o endpoint correto do Graph API, com tolerância para erros 400 (sem licença) e 412 (app-only not supported), e o resultado será incluído em `permissionResults` para ser gravado em `m365_tenant_permissions` via o upsert existente.
 
 ### Arquivos a editar
-1. `supabase/functions/validate-m365-permissions/index.ts` — 4 correções nos endpoints de teste + tolerância a erros de licença
-
-### Ação manual necessária
-Após o deploy das correções, o Admin Consent precisa ser re-disparado no tenant TASCHIBRA para as 5 permissões genuinamente faltantes. Isso é feito automaticamente pelo fluxo "Revalidar Permissões" da UI.
+1. `supabase/functions/validate-m365-connection/index.ts` — Adicionar array de permissões adicionais + loop de teste com tolerância + push nos resultados
 
