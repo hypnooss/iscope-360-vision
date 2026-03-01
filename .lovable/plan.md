@@ -1,51 +1,40 @@
 
 
-## Resolver nomes em vez de IDs nas evidências do M365 Compliance
+## Adicionar permissões faltantes e exibi-las no Tenant Edit
 
 ### Problema
-No `count_oauth_consents` (APP-005 - Consentimentos OAuth), o campo `displayName` das entidades afetadas usa `g.clientId` (um GUID do service principal) em vez do nome legível da aplicação. O endpoint `oauth2PermissionGrants` retorna apenas `clientId` como referência — é preciso cruzar com os dados de `service_principals` para obter o `displayName`.
-
-Há também um caso menor em `check_auth_methods` (linha 400) que usa `m.id` como displayName.
+Os endpoints de Intune (`/deviceManagement/*`), Security Alerts (`/security/alerts_v2`), Secure Score (`/security/secureScores`) e Teams (`/teamwork/teamSettings`) retornam 403 porque as permissões `DeviceManagementManagedDevices.Read.All`, `DeviceManagementConfiguration.Read.All`, `SecurityAlert.Read.All` e `SecurityEvents.Read.All` não estão no manifesto do App nem são validadas/exibidas. O endpoint `teams_settings` também usa um path inválido.
 
 ### Alterações
 
-**1. Migration SQL — Adicionar `secondary_source_key` ao APP-005**
-Criar nova migration para atualizar o `evaluation_logic` da regra APP-005, adicionando `"secondary_source_key": "service_principals"` para que os dados de service principals fiquem disponíveis no momento da avaliação.
+**1. `src/lib/m365PermissionDescriptions.ts` — Adicionar novas permissões**
+Incluir descrições e adicionar ao array `GRAPH_PERMISSIONS`:
+- `DeviceManagementManagedDevices.Read.All` — Leitura de dispositivos gerenciados (Intune)
+- `DeviceManagementConfiguration.Read.All` — Leitura de políticas de dispositivos (Intune)
+- `SecurityAlert.Read.All` — Leitura de alertas de segurança (Defender)
+- `SecurityEvents.Read.All` — Leitura de eventos de segurança
 
-```sql
-UPDATE compliance_rules 
-SET evaluation_logic = '{"source_key":"oauth2_permissions","secondary_source_key":"service_principals","evaluate":{"type":"count_oauth_consents","threshold":20}}'::jsonb 
-WHERE code = 'APP-005';
-```
+Isso automaticamente faz com que apareçam na tela Ambiente > Tenant, pois a UI já itera sobre `GRAPH_PERMISSIONS`.
 
-**2. `supabase/functions/m365-security-posture/index.ts` — Resolver nomes no `count_oauth_consents`**
-Na linha 697-712, usar `secondaryResult` (service principals) para resolver `clientId` → `displayName`:
+**2. `supabase/functions/ensure-exchange-permission/index.ts` — Adicionar ao manifesto**
+Incluir os 4 novos GUIDs de permissão no array `REQUIRED_PERMISSIONS` para que sejam adicionados automaticamente ao manifesto do App Registration no Azure:
+- `DeviceManagementManagedDevices.Read.All`: `e4c9e354-4dc5-45b8-9e7c-e1393b0b1a20`
+- `DeviceManagementConfiguration.Read.All`: `dc377aa6-52d8-4e23-b271-b3b7f5e4f6c4`
+- `SecurityAlert.Read.All`: `472e4a40-bb78-4d68-a2bb-8ac1c8de0c8c`
+- `SecurityEvents.Read.All`: `bf394140-e372-4bf9-a898-299cfc7564e5`
 
-```typescript
-case 'count_oauth_consents': {
-  const grants = (data as any)?.value || [];
-  // Build lookup map from service principals
-  const spList = (secondaryResult?.data as any)?.value || [];
-  const spMap = new Map<string, string>();
-  for (const sp of spList) {
-    spMap.set(sp.id, sp.displayName || sp.appId || sp.id);
-  }
-  const allPrincipals = grants.filter(...);
-  affectedEntities = allPrincipals.slice(0, 20).map((g: any) => ({
-    id: g.id,
-    displayName: spMap.get(g.clientId) || g.clientId || 'OAuth Grant',
-    details: { scope: g.scope, consentType: g.consentType }
-  }));
-  ...
-}
-```
+**3. `supabase/functions/validate-m365-permissions/index.ts` — Validar as novas permissões**
+Adicionar as 4 permissões ao array `RECOMMENDED_PERMISSIONS` para que sejam testadas durante a validação e o status salvo em `m365_tenant_permissions`.
 
-Também corrigir `check_auth_methods` (linha 400) para usar um nome mais descritivo: `displayName: m.id.replace(/([A-Z])/g, ' $1').trim()` ou mapear IDs conhecidos para nomes legíveis.
+**4. Migration SQL — Corrigir endpoint `teams_settings`**
+Atualizar o blueprint de Teams para usar o endpoint correto `/teamwork/teamsAppSettings` (v1.0) em vez de `/teamwork/teamSettings` (beta).
+
+**5. Inserir permissões na tabela `m365_required_permissions`**
+Inserir as 4 novas permissões para que fiquem registradas na base.
 
 ### Arquivos a editar
-1. Nova migration SQL — adicionar `secondary_source_key` ao APP-005
-2. `supabase/functions/m365-security-posture/index.ts` — resolver nomes via service principals lookup no `count_oauth_consents` e melhorar `check_auth_methods`
-
-### Nota
-Após deploy, será necessário re-executar a análise M365 Posture no tenant para que os nomes apareçam corretamente.
+1. `src/lib/m365PermissionDescriptions.ts` — 4 novas permissões + descrições
+2. `supabase/functions/ensure-exchange-permission/index.ts` — 4 GUIDs no manifesto
+3. `supabase/functions/validate-m365-permissions/index.ts` — 4 novas permissões na validação
+4. Nova migration SQL — corrigir endpoint Teams + inserir permissões na tabela
 
