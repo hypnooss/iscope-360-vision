@@ -1,32 +1,51 @@
 
 
-## Corrigir campos ausentes nos itens de M365 Compliance
+## Resolver nomes em vez de IDs nas evidências do M365 Compliance
 
 ### Problema
-Alguns itens no M365 Compliance (especialmente os vindos do Agent/PowerShell) não exibem "Impacto no Negócio", "Risco Técnico" e "Análise Efetuada" na sheet lateral. Isso ocorre porque:
+No `count_oauth_consents` (APP-005 - Consentimentos OAuth), o campo `displayName` das entidades afetadas usa `g.clientId` (um GUID do service principal) em vez do nome legível da aplicação. O endpoint `oauth2PermissionGrants` retorna apenas `clientId` como referência — é preciso cruzar com os dados de `service_principals` para obter o `displayName`.
 
-1. **Tipo `M365AgentInsight`** não inclui os campos `technicalRisk`, `businessImpact`, `apiEndpoint`, `criteria` que o backend já envia
-2. **`mapM365AgentInsight`** não mapeia esses campos para `UnifiedComplianceItem`
-3. **`mapM365AgentInsight`** não constrói `evidence` a partir de `affectedEntities`
-4. **Edge function `createNotFoundInsight`** envia `riscoTecnico: ''` e `impactoNegocio: ''` em vez de usar os valores da regra
+Há também um caso menor em `check_auth_methods` (linha 400) que usa `m.id` como displayName.
 
 ### Alterações
 
-**1. `src/types/m365Insights.ts` — Expandir `M365AgentInsight`**
-Adicionar campos opcionais: `criteria`, `passDescription`, `failDescription`, `notFoundDescription`, `technicalRisk`, `businessImpact`, `apiEndpoint`. Esses campos já são enviados pelo backend (`agent-task-result`).
+**1. Migration SQL — Adicionar `secondary_source_key` ao APP-005**
+Criar nova migration para atualizar o `evaluation_logic` da regra APP-005, adicionando `"secondary_source_key": "service_principals"` para que os dados de service principals fiquem disponíveis no momento da avaliação.
 
-**2. `src/lib/complianceMappers.ts` — Enriquecer `mapM365AgentInsight`**
-- Mapear `technicalRisk`, `businessImpact`, `apiEndpoint` para os campos correspondentes do `UnifiedComplianceItem`
-- Usar `criteria` como `description` (texto estático da regra)
-- Usar `description` existente como `details` (análise dinâmica)
-- Construir `evidence` a partir de `affectedEntities` (mesmo padrão dos outros mappers)
-- Construir `rawData` com dados relevantes (endpoint, status, rawData original)
+```sql
+UPDATE compliance_rules 
+SET evaluation_logic = '{"source_key":"oauth2_permissions","secondary_source_key":"service_principals","evaluate":{"type":"count_oauth_consents","threshold":20}}'::jsonb 
+WHERE code = 'APP-005';
+```
 
-**3. `supabase/functions/m365-security-posture/index.ts` — Corrigir `createNotFoundInsight`**
-Alterar linhas 826-827 para usar `rule.technical_risk` e `rule.business_impact` em vez de strings vazias, garantindo que mesmo itens "Não Encontrado" tenham contexto técnico.
+**2. `supabase/functions/m365-security-posture/index.ts` — Resolver nomes no `count_oauth_consents`**
+Na linha 697-712, usar `secondaryResult` (service principals) para resolver `clientId` → `displayName`:
+
+```typescript
+case 'count_oauth_consents': {
+  const grants = (data as any)?.value || [];
+  // Build lookup map from service principals
+  const spList = (secondaryResult?.data as any)?.value || [];
+  const spMap = new Map<string, string>();
+  for (const sp of spList) {
+    spMap.set(sp.id, sp.displayName || sp.appId || sp.id);
+  }
+  const allPrincipals = grants.filter(...);
+  affectedEntities = allPrincipals.slice(0, 20).map((g: any) => ({
+    id: g.id,
+    displayName: spMap.get(g.clientId) || g.clientId || 'OAuth Grant',
+    details: { scope: g.scope, consentType: g.consentType }
+  }));
+  ...
+}
+```
+
+Também corrigir `check_auth_methods` (linha 400) para usar um nome mais descritivo: `displayName: m.id.replace(/([A-Z])/g, ' $1').trim()` ou mapear IDs conhecidos para nomes legíveis.
 
 ### Arquivos a editar
-1. `src/types/m365Insights.ts` — adicionar 7 campos opcionais ao `M365AgentInsight`
-2. `src/lib/complianceMappers.ts` — enriquecer `mapM365AgentInsight` com todos os campos
-3. `supabase/functions/m365-security-posture/index.ts` — corrigir `createNotFoundInsight` (linhas 826-827)
+1. Nova migration SQL — adicionar `secondary_source_key` ao APP-005
+2. `supabase/functions/m365-security-posture/index.ts` — resolver nomes via service principals lookup no `count_oauth_consents` e melhorar `check_auth_methods`
+
+### Nota
+Após deploy, será necessário re-executar a análise M365 Posture no tenant para que os nomes apareçam corretamente.
 
