@@ -164,7 +164,7 @@ export default function M365CVEsPage() {
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6 animate-fade-in">
         <PageBreadcrumb items={[
-          { label: 'Microsoft 365', href: '/scope-m365/posture' },
+          { label: 'Microsoft 365', href: '/scope-m365/compliance' },
           { label: 'CVEs' },
         ]} />
         {/* Header */}

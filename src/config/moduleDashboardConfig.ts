@@ -18,7 +18,7 @@ export const MODULE_DASHBOARD_CONFIG: Record<string, ModuleDashboardConfig> = {
   },
   scope_m365: {
     statsKey: 'm365',
-    path: '/scope-m365/posture',
+    path: '/scope-m365/compliance',
     infraLabel: 'Tenants M365',
     cvePath: '/scope-m365/cves',
   },
