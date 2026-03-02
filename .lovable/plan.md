@@ -1,95 +1,123 @@
 
 
-## Problema Real: stdout do PowerShell é block-buffered em pipes no Linux
+## Diagnóstico: `[Console]::SetOut()` pode estar quebrando o pipe
 
-O .NET (que roda o pwsh) usa **block buffering** no `Console.Out` quando o stdout não é um TTY. Isso significa:
+O problema de zero output persiste porque o `Write-Output` do PowerShell **não usa `[Console]::Out`**. Ele escreve no pipeline stream do host, que tem seu próprio `TextWriter` interno. O `[Console]::SetOut($sw)` muda o `Console.Out` mas o host do PowerShell já cacheou o writer original no startup — então:
+
+1. O `SetOut` com novo StreamWriter pode ter **desconectado** o `Console.Out` do pipe real
+2. `Write-Output` continua usando o writer interno do host (o original, sem AutoFlush)
+3. `[Console]::Out.Flush()` agora faz flush do NOVO StreamWriter, que pode nem estar conectado ao pipe que Python lê
 
 ```text
-Python envia preamble via stdin
-  → PowerShell executa Import-Module (OK)
-  → PowerShell executa Connect-ExchangeOnline (~30-60s, OK)
-  → PowerShell executa Write-Output "---ISCOPE_SESSION_READY---"
-     → Output fica no buffer interno do .NET (~4KB) ← NÃO É FLUSHED
-  → Reader thread: nada chega ao pipe
-  → 120s depois: timeout com zero output capturado
+Python stdin pipe → pwsh
+                     │
+                     ├─ Host internal writer (original Console.Out) → Python stdout pipe
+                     │    └─ Write-Output usa ESTE ← block-buffered, sem flush
+                     │
+                     └─ $sw (novo StreamWriter via SetOut) → ???
+                          └─ [Console]::Out.Flush() faz flush DESTE ← não ajuda
 ```
 
-O `Write-Output` envia texto para o pipeline do PowerShell, que eventualmente vai para stdout, mas o `StreamWriter` subjacente só faz flush quando o buffer enche (4KB) ou o processo termina. Como o marker tem ~30 bytes, nunca enche.
+## Correção: 3 mudanças em `powershell.py`
 
-## Correção: `python-agent/agent/executors/powershell.py`
+### 1. Remover o hack `SetOut` e usar `[Console]::WriteLine()` para markers
 
-### 1. Adicionar auto-flush no início do preamble (`_build_interactive_preamble`, linhas 229-262)
+`[Console]::WriteLine()` escreve diretamente no stdout real, **bypassa o pipeline** do PowerShell. Combinado com flush do `Console.Out` original (sem SetOut), garante entrega imediata.
 
-Inserir no início do script (antes de qualquer Write-Output):
+No `_build_interactive_preamble` — remover as 4 linhas do SetOut e mudar o marker:
 
 ```python
 lines = [
-    # Force stdout auto-flush (critical for pipe communication on Linux)
-    "[Console]::Out.Flush()",
-    "$sw = [System.IO.StreamWriter]::new([Console]::OpenStandardOutput())",
-    "$sw.AutoFlush = $true",
-    "[Console]::SetOut($sw)",
-    "",
     "$ErrorActionPreference = 'Continue'",
-    # ... resto do preamble existente
+    "$ProgressPreference = 'SilentlyContinue'",
+    # ... resto do preamble ...
 ]
-```
 
-Isso faz com que cada `Write-Output` seja imediatamente flushed para o pipe.
-
-### 2. Adicionar flush explícito após o SESSION_READY_MARKER (linhas 257-260)
-
-Adicionar `[Console]::Out.Flush()` como safety net após o marker:
-
-```python
+# No final:
 lines.extend([
     "",
-    f'Write-Output "{self.SESSION_READY_MARKER}"',
+    f'[Console]::WriteLine("{self.SESSION_READY_MARKER}")',
     "[Console]::Out.Flush()",
 ])
 ```
 
-### 3. Adicionar flush nos command wrappers (`_build_interactive_command`, linhas 264-277)
+### 2. Usar `[Console]::WriteLine()` para TODOS os markers em `_build_interactive_command`
 
-Após cada `CMD_END_MARKER`:
+Os markers (CMD_START, CMD_END) usam `[Console]::WriteLine()` em vez de `Write-Output`. O JSON de dados continua com `Write-Output` (vai pelo pipeline normal):
 
 ```python
-def _build_interactive_command(self, cmd_name: str, cmd_text: str) -> str:
+def _build_interactive_command(self, cmd_name, cmd_text):
     return (
         f"try {{\n"
         f"    $__data = ({cmd_text} | ConvertTo-Json -Depth 10 -Compress)\n"
-        f'    Write-Output "{self.CMD_START_MARKER}"\n'
-        f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$true; 'data'=$__data }} | ConvertTo-Json -Compress)\n"
-        f'    Write-Output "{self.CMD_END_MARKER}"\n'
+        f'    [Console]::WriteLine("{self.CMD_START_MARKER}")\n'
+        f"    Write-Output (@{{ ... }} | ConvertTo-Json -Compress)\n"
+        f'    [Console]::WriteLine("{self.CMD_END_MARKER}")\n'
         f"    [Console]::Out.Flush()\n"
         f"}} catch {{\n"
-        f'    Write-Output "{self.CMD_START_MARKER}"\n'
-        f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$false; 'error'=$_.Exception.Message }} | ConvertTo-Json -Compress)\n"
-        f'    Write-Output "{self.CMD_END_MARKER}"\n'
+        f'    [Console]::WriteLine("{self.CMD_START_MARKER}")\n'
+        f"    Write-Output (@{{ ... }} | ConvertTo-Json -Compress)\n"
+        f'    [Console]::WriteLine("{self.CMD_END_MARKER}")\n'
         f"    [Console]::Out.Flush()\n"
         f"}}\n"
     )
 ```
 
-### 4. Adicionar flush no sync marker (`_drain_and_sync`, linha 333)
+### 3. Mesmo para `_drain_and_sync`
 
 ```python
-sync_cmd = f'Write-Output "{self.SYNC_MARKER}"\n[Console]::Out.Flush()\n'
+sync_cmd = f'[Console]::WriteLine("{self.SYNC_MARKER}")\n[Console]::Out.Flush()\n'
+```
+
+### 4. Adicionar logging ao reader thread
+
+Para diagnóstico imediato, cada linha lida é logada em DEBUG:
+
+```python
+def _reader():
+    try:
+        for line in iter(stdout.readline, ''):
+            self.logger.debug(f"[PS stdout] {line.rstrip()}")
+            q.put(line)
+    except Exception as e:
+        self.logger.warning(f"Reader thread error: {e}")
+    q.put(None)
+```
+
+### 5. Adicionar echo diagnóstico no início do preamble
+
+Para verificar se o pipe funciona, um `[Console]::WriteLine()` simples logo no início:
+
+```python
+lines = [
+    '[Console]::WriteLine("---ISCOPE_PIPE_TEST---")',
+    "[Console]::Out.Flush()",
+    "$ErrorActionPreference = 'Continue'",
+    # ...
+]
+```
+
+E no `run_interactive`, logo após enviar o preamble, logar se algo chega:
+
+```python
+proc.stdin.write(preamble)
+proc.stdin.flush()
+self.logger.info("Preamble sent, waiting for session ready...")
 ```
 
 ## Resumo
 
-| Local | Mudança |
-|-------|---------|
-| Preamble (início) | `[Console]::SetOut()` com AutoFlush=true |
-| Preamble (SESSION_READY) | `[Console]::Out.Flush()` após marker |
-| `_build_interactive_command` | `[Console]::Out.Flush()` após CMD_END |
-| `_drain_and_sync` | `[Console]::Out.Flush()` após SYNC_MARKER |
+| Local | Antes | Depois |
+|-------|-------|--------|
+| Preamble (início) | `SetOut` com novo StreamWriter | Removido (echo diagnóstico simples) |
+| Markers (SESSION_READY, CMD_START, CMD_END, SYNC) | `Write-Output` | `[Console]::WriteLine()` |
+| Reader thread | Silencioso | Loga cada linha em DEBUG |
+| Dados JSON | `Write-Output` | `Write-Output` (sem mudança) |
 
-## Impacto
+## Por que vai funcionar
 
-- Resolve o problema de zero output em pipes no Linux
-- Cada marker é imediatamente visível para a reader thread
-- O `Connect-ExchangeOnline` agora pode levar os 30-60s normais sem triggering timeout
-- Sem efeito colateral — o auto-flush apenas desativa o buffering desnecessário
+- `[Console]::WriteLine()` escreve direto no stdout file descriptor, sem passar pelo pipeline do PowerShell
+- `[Console]::Out.Flush()` faz flush do `Console.Out` ORIGINAL (sem SetOut interferindo)
+- O JSON continua fluindo pelo pipeline, mas fica entre markers que são entregues imediatamente
+- O reader thread com logging permite diagnóstico em tempo real
 
