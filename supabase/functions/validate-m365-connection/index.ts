@@ -828,6 +828,121 @@ serve(async (req) => {
       });
     }
 
+    // ========== Retry Logic for Azure AD Propagation Delay ==========
+    // When a new permission is added to the app manifest and Admin Consent is granted,
+    // the client_credentials token may take up to 5 minutes to reflect the new scope.
+    // We detect "scopes are missing in the token" errors and retry with a fresh token.
+    const failedPermissions = permissionResults.filter(p => !p.granted).map(p => p.name);
+    
+    if (failedPermissions.length > 0) {
+      // Build a test URL map for quick retesting
+      const RETRY_TEST_URLS: Record<string, string> = {
+        'User.Read.All': 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id',
+        'Directory.Read.All': 'https://graph.microsoft.com/v1.0/domains?$top=1',
+        'Group.Read.All': 'https://graph.microsoft.com/v1.0/groups?$top=1&$select=id',
+        'Application.Read.All': 'https://graph.microsoft.com/v1.0/applications?$top=1&$select=id',
+        'AuditLog.Read.All': 'https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=1',
+        'Organization.Read.All': 'https://graph.microsoft.com/v1.0/organization?$select=id',
+        'Policy.Read.All': 'https://graph.microsoft.com/v1.0/policies/conditionalAccessPolicies?$top=1',
+        'IdentityRiskyUser.Read.All': 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1',
+        'IdentityRiskEvent.Read.All': 'https://graph.microsoft.com/beta/identityProtection/riskDetections?$top=1',
+        'RoleManagement.ReadWrite.Directory': 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions',
+        'MailboxSettings.Read': 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id', // proxy test
+        'Mail.Read': 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id', // proxy test
+        'Sites.Read.All': 'https://graph.microsoft.com/v1.0/sites/root?$select=id',
+        'Reports.Read.All': 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=1',
+        'DeviceManagementManagedDevices.Read.All': 'https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?$top=1&$select=id',
+        'DeviceManagementConfiguration.Read.All': 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?$top=1&$select=id',
+        'SecurityAlert.Read.All': 'https://graph.microsoft.com/v1.0/security/alerts_v2?$top=1&$select=id',
+        'SecurityEvents.Read.All': 'https://graph.microsoft.com/v1.0/security/alerts?$top=1&$select=id',
+        'SecurityIncident.Read.All': 'https://graph.microsoft.com/v1.0/security/incidents?$top=1&$select=id',
+        'AttackSimulation.Read.All': 'https://graph.microsoft.com/v1.0/security/attackSimulation/simulations?$top=1',
+        'InformationProtectionPolicy.Read.All': 'https://graph.microsoft.com/beta/informationProtection/policy/labels?$top=1',
+        'TeamSettings.Read.All': 'https://graph.microsoft.com/v1.0/teams?$top=1&$select=id',
+        'Channel.ReadBasic.All': 'https://graph.microsoft.com/v1.0/teams?$select=id&$top=1',
+        'TeamMember.Read.All': 'https://graph.microsoft.com/v1.0/teams?$select=id&$top=1',
+        'SharePointTenantSettings.Read.All': 'https://graph.microsoft.com/beta/admin/sharepoint/settings',
+        'Domain.Read.All': 'https://graph.microsoft.com/v1.0/domains?$top=1&$select=id',
+      };
+
+      // First pass: check which failed permissions have "scopes are missing" error
+      const scopesMissingPermissions: string[] = [];
+      for (const permName of failedPermissions) {
+        const testUrl = RETRY_TEST_URLS[permName];
+        if (!testUrl) continue;
+        
+        try {
+          const checkResponse = await fetch(testUrl, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          if (!checkResponse.ok) {
+            const errText = await checkResponse.text().catch(() => '');
+            if (errText.toLowerCase().includes('scopes are missing')) {
+              scopesMissingPermissions.push(permName);
+              console.log(`Permission ${permName}: detected "scopes are missing" - will retry with new token`);
+            }
+          } else {
+            // Actually succeeded on recheck - update result
+            const idx = permissionResults.findIndex(p => p.name === permName);
+            if (idx !== -1) {
+              permissionResults[idx].granted = true;
+              console.log(`Permission ${permName}: succeeded on recheck - marking as granted`);
+            }
+          }
+        } catch (e) {
+          console.error(`Error rechecking ${permName}:`, e);
+        }
+      }
+
+      // If we found permissions with "scopes are missing", wait and retry with a fresh token
+      if (scopesMissingPermissions.length > 0) {
+        console.log(`Azure AD propagation delay detected for ${scopesMissingPermissions.length} permissions. Waiting 15 seconds for new token...`);
+        await new Promise(resolve => setTimeout(resolve, 15000));
+
+        // Get a fresh token
+        const retryTokenResponse = await fetch(tokenUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: tokenBody.toString(),
+        });
+
+        if (retryTokenResponse.ok) {
+          const retryTokenData = await retryTokenResponse.json();
+          const freshToken = retryTokenData.access_token;
+          console.log('Fresh token obtained for retry');
+
+          for (const permName of scopesMissingPermissions) {
+            const testUrl = RETRY_TEST_URLS[permName];
+            if (!testUrl) continue;
+
+            try {
+              const retryResponse = await fetch(testUrl, {
+                headers: { 'Authorization': `Bearer ${freshToken}` },
+              });
+              
+              const retryGranted = retryResponse.ok || retryResponse.status === 400;
+              console.log(`Permission ${permName} retry: ${retryResponse.status} - granted: ${retryGranted}`);
+
+              if (retryGranted) {
+                const idx = permissionResults.findIndex(p => p.name === permName);
+                if (idx !== -1) {
+                  permissionResults[idx].granted = true;
+                  console.log(`Permission ${permName}: granted after retry with fresh token ✅`);
+                }
+              } else {
+                const errText = await retryResponse.text().catch(() => '');
+                console.log(`Permission ${permName}: still failing after retry - ${errText.substring(0, 200)}`);
+              }
+            } catch (e) {
+              console.error(`Error retrying ${permName}:`, e);
+            }
+          }
+        } else {
+          console.error('Failed to obtain fresh token for retry:', retryTokenResponse.status);
+        }
+      }
+    }
+
     const allPermissionsGranted = permissionResults.every(p => p.granted);
     const missingPermissions = permissionResults.filter(p => !p.granted).map(p => p.name);
     console.log(`Permission check complete: ${permissionResults.filter(p => p.granted).length}/${permissionResults.length} granted`);
