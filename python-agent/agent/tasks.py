@@ -445,11 +445,80 @@ class TaskExecutor:
     def _execute_powershell_batch(self, task_id, steps, context, is_first=False, all_steps=None):
         """
         Execute multiple PowerShell steps in a single session.
+        Uses interactive (progressive) mode: opens one session, executes commands
+        one by one, and reports each result immediately via _report_step_result.
+        Falls back to legacy batch mode for single-command tasks.
+        
         Returns dict with 'step_results' list and optional 'abort' flag.
         """
+        executor = self._executors.get('powershell')
+        
+        # Use interactive mode for multi-step batches
+        if len(steps) > 1 and hasattr(executor, 'run_interactive'):
+            return self._execute_powershell_interactive(task_id, steps, context, executor, is_first)
+        
+        # Legacy batch mode (single command or fallback)
+        return self._execute_powershell_batch_legacy(task_id, steps, context, executor, is_first)
+    
+    def _execute_powershell_interactive(self, task_id, steps, context, executor, is_first=False):
+        """Execute PowerShell steps progressively using interactive session."""
         batch_start = time.time()
         
-        # Merge all commands into one executor call
+        module = steps[0].get('params', {}).get('module', 'unknown')
+        self.logger.info(
+            f"PowerShell interactive batch: module={module}, {len(steps)} steps"
+        )
+        
+        def report_callback(step_id, status, data, error, duration_ms):
+            """Callback invoked by executor for each completed command."""
+            if self._use_progressive:
+                self._report_step_result(task_id, step_id, status, data, error, duration_ms)
+        
+        try:
+            step_results = executor.run_interactive(steps, context, report_callback)
+        except Exception as e:
+            error_msg = str(e)
+            self.logger.error(f"PowerShell interactive batch error: {error_msg}")
+            
+            step_results = []
+            for step in steps:
+                step_id = step.get('id', 'unknown')
+                step_results.append({
+                    'step_id': step_id,
+                    'status': 'failed',
+                    'error': error_msg,
+                    'duration_ms': 0
+                })
+                if self._use_progressive:
+                    self._report_step_result(task_id, step_id, 'failed', None, error_msg, 0)
+            
+            return {
+                'step_results': step_results,
+                'abort': is_first and self._is_connectivity_error(error_msg),
+                'error_message': f'Falha de conectividade: {error_msg}' if is_first else None
+            }
+        
+        batch_duration = int((time.time() - batch_start) * 1000)
+        self.logger.info(
+            f"PowerShell interactive batch completed: {len(step_results)} results in {batch_duration}ms"
+        )
+        
+        # Check if first step failed with connectivity error (fail-fast)
+        if is_first and step_results and step_results[0].get('status') == 'failed':
+            first_error = step_results[0].get('error', '')
+            if self._is_connectivity_error(first_error):
+                return {
+                    'step_results': step_results,
+                    'abort': True,
+                    'error_message': f'Falha de conectividade: {first_error}'
+                }
+        
+        return {'step_results': step_results}
+    
+    def _execute_powershell_batch_legacy(self, task_id, steps, context, executor, is_first=False):
+        """Legacy batch execution: all commands in a single script."""
+        batch_start = time.time()
+        
         first_params = dict(steps[0].get('params', {}))
         merged_commands = []
         batch_timeouts = []
@@ -461,8 +530,6 @@ class TaskExecutor:
             if isinstance(timeout_value, (int, float)) and timeout_value > 0:
                 batch_timeouts.append(int(timeout_value))
 
-        # IMPORTANT: when batching many steps, we cannot reuse the first step timeout
-        # (e.g. 120s) for the whole batch; otherwise every command appears as timeout.
         default_batch_timeout = 300 + (max(0, len(merged_commands) - 1) * 30)
         computed_batch_timeout = max([default_batch_timeout, *batch_timeouts]) if batch_timeouts else default_batch_timeout
 
@@ -472,12 +539,10 @@ class TaskExecutor:
         
         module = first_params.get('module', 'unknown')
         self.logger.info(
-            f"PowerShell batch: module={module}, {len(steps)} steps, "
+            f"PowerShell legacy batch: module={module}, {len(steps)} steps, "
             f"{len(merged_commands)} commands, computed_timeout={computed_batch_timeout}s "
             f"(default={default_batch_timeout}s, step_timeouts={batch_timeouts})"
         )
-        
-        executor = self._executors.get('powershell')
         
         try:
             result = executor.run(merged_step, context)
@@ -485,7 +550,6 @@ class TaskExecutor:
             error_msg = str(e)
             self.logger.error(f"PowerShell batch execution error: {error_msg}")
             
-            # Report all steps as failed
             step_results = []
             for step in steps:
                 step_id = step.get('id', 'unknown')
@@ -507,7 +571,6 @@ class TaskExecutor:
         batch_duration = int((time.time() - batch_start) * 1000)
         per_step_duration = batch_duration // max(len(steps), 1)
         
-        # Check for batch-level error (connection failure)
         if result.get('error'):
             error_msg = result['error']
             self.logger.error(
@@ -533,7 +596,6 @@ class TaskExecutor:
                 'error_message': f'Falha de conectividade: {error_msg}' if is_first else None
             }
         
-        # Check for raw (non-JSON) output - treat as batch error
         if result.get('raw'):
             error_msg = f"PowerShell output is not valid JSON: {str(result.get('data', ''))[:200]}"
             self.logger.error(f"PowerShell batch raw output: {error_msg}")
@@ -555,7 +617,6 @@ class TaskExecutor:
                 'abort': False,
             }
         
-        # Unpack individual results and report progressively
         data = result.get('data', {})
         step_results = []
         
@@ -567,11 +628,9 @@ class TaskExecutor:
             if isinstance(data, dict) and cmd_name in data:
                 cmd_result = data[cmd_name]
                 
-                # Each command result has 'success' and 'data'/'error' from the PS script
                 if isinstance(cmd_result, dict):
                     if cmd_result.get('success') is False:
                         error_text = cmd_result.get('error', 'Command failed')
-                        # Detect unlicensed cmdlets as not_applicable
                         if 'is not recognized as a name of a cmdlet' in error_text:
                             step_status = 'not_applicable'
                             step_error = f"Cmdlet nao disponivel (licenca ausente): {error_text[:150]}"
@@ -582,7 +641,6 @@ class TaskExecutor:
                     else:
                         step_status = 'success'
                         step_error = None
-                        # Data comes as JSON string from ConvertTo-Json
                         raw_data = cmd_result.get('data')
                         if isinstance(raw_data, str):
                             import json
@@ -611,7 +669,6 @@ class TaskExecutor:
             if self._use_progressive:
                 self._report_step_result(task_id, step_id, step_status, step_data, step_error, per_step_duration)
         
-        # Free memory
         del result
         
         return {'step_results': step_results}
