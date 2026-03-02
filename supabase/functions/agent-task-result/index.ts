@@ -4851,10 +4851,11 @@ serve(async (req: Request) => {
             total: combinedInsights.length,
           };
 
-          // Recalculate score: penalize based on fail severity weights
-          const totalChecks = combinedInsights.length;
+          // Recalculate score: penalize based on fail severity weights (exclude not_found)
+          const applicableInsights = combinedInsights.filter((i: any) => i.status !== 'not_found');
+          const totalChecks = applicableInsights.length;
           let totalPenalty = 0;
-          for (const insight of combinedInsights) {
+          for (const insight of applicableInsights) {
             const i = insight as any;
             if (i.status === 'fail') {
               const sevWeight = i.severity === 'critical' ? 4 : i.severity === 'high' ? 3 : i.severity === 'medium' ? 2 : 1;

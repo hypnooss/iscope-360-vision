@@ -629,6 +629,7 @@ function calculateScore(checks: ComplianceCheck[]): number {
 
   for (const check of checks) {
     if (check.status === 'pending') continue; // Skip pending checks
+    if ((check.status as string) === 'not_found') continue; // Skip N/A checks
     
     const weight = weights[check.severity];
     totalWeight += weight;

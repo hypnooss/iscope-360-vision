@@ -61,18 +61,20 @@ export function M365CategorySection({ category, label, items, index }: M365Categ
     i.status !== 'fail' && i.status !== 'pass' && i.status !== 'warning'
   );
 
-  const nonPassItems = items.filter(i => i.status !== 'pass');
+  const nonPassItems = items.filter(i => i.status !== 'pass' && i.status !== 'not_found');
   const criticalCount = nonPassItems.filter(i => i.severity === 'critical').length;
   const highCount = nonPassItems.filter(i => i.severity === 'high').length;
   const mediumCount = nonPassItems.filter(i => i.severity === 'medium').length;
   const lowCount = nonPassItems.filter(i => i.severity === 'low').length;
 
-  // Calculate pass rate
-  const passRate = items.length > 0 
-    ? Math.round((passedItems.length / items.length) * 100) 
-    : 0;
+  // Calculate pass rate (exclude not_found items)
+  const applicableItems = items.filter(i => i.status !== 'not_found');
+  const passRate = applicableItems.length > 0 
+    ? Math.round((passedItems.length / applicableItems.length) * 100) 
+    : -1;
 
   const getPassRateColor = () => {
+    if (passRate === -1) return 'text-muted-foreground';
     if (passRate >= 80) return 'text-primary';
     if (passRate >= 60) return 'text-warning';
     return 'text-destructive';
@@ -141,7 +143,7 @@ export function M365CategorySection({ category, label, items, index }: M365Categ
 
           <div className="flex items-center gap-4">
             <span className={cn("text-lg font-semibold tabular-nums", getPassRateColor())}>
-              {passRate}%
+              {passRate === -1 ? 'N/A' : `${passRate}%`}
             </span>
             {isExpanded ? (
               <ChevronUp className="w-5 h-5 text-muted-foreground" />
