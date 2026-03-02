@@ -1,6 +1,7 @@
 """
 PowerShell executor for M365 commands.
 Uses certificate-based authentication for Exchange Online and Microsoft Graph.
+Supports both batch (run) and interactive (run_interactive) execution modes.
 """
 
 import json
@@ -8,8 +9,10 @@ import os
 import subprocess
 import shutil
 import tempfile
+import threading
+import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 
 from agent.executors.base import BaseExecutor
 
@@ -19,6 +22,11 @@ class PowerShellExecutor(BaseExecutor):
     Executes PowerShell commands for M365 analysis.
     Supports Exchange Online and Microsoft Graph modules.
     Supports both Certificate-Based Authentication (CBA) and Credential-based authentication.
+    
+    Two execution modes:
+    - run(): Batch mode - all commands in a single script (legacy, used for single commands/RBAC)
+    - run_interactive(): Progressive mode - persistent session, one command at a time with
+      immediate result reporting. Resilient to individual command timeouts.
     """
     
     CERT_DIR = Path("/var/lib/iscope-agent/certs")
@@ -31,14 +39,19 @@ class PowerShellExecutor(BaseExecutor):
     AUTH_MODE_CBA = "cba"  # Certificate-Based Authentication (default)
     AUTH_MODE_CREDENTIAL = "credential"  # Username/Password (for initial RBAC setup)
     
+    # Interactive session delimiters
+    CMD_START_MARKER = "---ISCOPE_CMD_START---"
+    CMD_END_MARKER = "---ISCOPE_CMD_END---"
+    SESSION_READY_MARKER = "---ISCOPE_SESSION_READY---"
+    
+    # Consecutive timeout threshold before killing session
+    MAX_CONSECUTIVE_TIMEOUTS = 3
+    
     # Supported modules and their connection commands
-    # PFX file is used for PowerShell compatibility (contains cert + private key)
     MODULES = {
         "ExchangeOnline": {
             "import": "Import-Module ExchangeOnlineManagement -ErrorAction Stop",
-            # CBA connection (default)
             "connect_cba": 'Connect-ExchangeOnline -AppId "{app_id}" -CertificateFilePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -Organization "{organization}" -ShowBanner:$false',
-            # Credential-based connection (for initial RBAC setup)
             "connect_credential": 'Connect-ExchangeOnline -Credential $cred -ShowBanner:$false',
             "disconnect": "Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue",
         },
@@ -59,7 +72,6 @@ class PowerShellExecutor(BaseExecutor):
         if self._pwsh_path:
             return self._pwsh_path
         
-        # Check common paths
         candidates = ["pwsh", "/usr/bin/pwsh", "/opt/microsoft/powershell/7/pwsh"]
         for candidate in candidates:
             path = shutil.which(candidate)
@@ -73,14 +85,11 @@ class PowerShellExecutor(BaseExecutor):
         """Check if all prerequisites are met for PowerShell execution."""
         errors = []
         
-        # Check pwsh
         pwsh = self._find_pwsh()
         if not pwsh:
             errors.append("PowerShell Core (pwsh) not found. Install with: sudo apt install -y powershell")
         
-        # Check PFX certificate (required for PowerShell)
         if not self.PFX_FILE.exists():
-            # Fallback: check if CRT/KEY exist (PFX might need regeneration)
             if self.CERT_FILE.exists() and self.KEY_FILE.exists():
                 errors.append(f"PFX file not found: {self.PFX_FILE}. Run 'sudo touch /var/lib/iscope-agent/check_components.flag && sudo systemctl restart iscope-agent' to regenerate")
             else:
@@ -108,29 +117,15 @@ class PowerShellExecutor(BaseExecutor):
         username: Optional[str] = None,
         password: Optional[str] = None
     ) -> str:
-        """
-        Build a PowerShell script with connection, commands, and cleanup.
-        
-        Args:
-            module: Module name (ExchangeOnline, MicrosoftGraph)
-            commands: List of command configurations
-            app_id: Azure App Registration ID
-            tenant_id: Azure Tenant ID
-            organization: Organization domain for Exchange (e.g., contoso.onmicrosoft.com)
-            auth_mode: Authentication mode ('cba' for certificate, 'credential' for username/password)
-            username: Admin username (required if auth_mode is 'credential')
-            password: Admin password (required if auth_mode is 'credential')
-        """
+        """Build a PowerShell script for batch execution (legacy mode)."""
         if module not in self.MODULES:
             raise ValueError(f"Unsupported module: {module}. Supported: {list(self.MODULES.keys())}")
         
         module_config = self.MODULES[module]
         
-        # Default organization to tenant domain if not provided
         if not organization:
             organization = f"{tenant_id}"
         
-        # Build script parts
         script_parts = [
             "$ErrorActionPreference = 'Stop'",
             "$ProgressPreference = 'SilentlyContinue'",
@@ -143,13 +138,10 @@ class PowerShellExecutor(BaseExecutor):
             "",
         ]
         
-        
-        # Add connection based on auth mode
         if auth_mode == self.AUTH_MODE_CREDENTIAL:
             if not username or not password:
                 raise ValueError("Username and password are required for credential-based authentication")
             
-            # Escape special characters in password for PowerShell
             escaped_password = password.replace('"', '`"').replace("'", "`'").replace('$', '`$')
             
             script_parts.extend([
@@ -158,13 +150,10 @@ class PowerShellExecutor(BaseExecutor):
                 f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
                 "",
                 "# Connect with credentials",
-                module_config["connect_credential"].format(
-                    tenant_id=tenant_id
-                ),
+                module_config["connect_credential"].format(tenant_id=tenant_id),
                 "",
             ])
         else:
-            # Default: CBA connection
             script_parts.extend([
                 "# Connect with certificate",
                 module_config["connect_cba"].format(
@@ -176,14 +165,12 @@ class PowerShellExecutor(BaseExecutor):
                 "",
             ])
         
-        # Initialize results
         script_parts.extend([
             "# Initialize results",
             "$results = @{}",
             "",
         ])
         
-        # Add commands
         for cmd in commands:
             cmd_name = cmd.get("name", cmd.get("command", "unknown"))
             cmd_text = cmd.get("command", "")
@@ -191,7 +178,6 @@ class PowerShellExecutor(BaseExecutor):
             if not cmd_text:
                 continue
             
-            # Wrap each command in try/catch
             script_parts.extend([
                 f"# Command: {cmd_name}",
                 "try {",
@@ -208,7 +194,6 @@ class PowerShellExecutor(BaseExecutor):
                 "",
             ])
         
-        # Cleanup and output
         script_parts.extend([
             "# Disconnect",
             module_config["disconnect"],
@@ -219,60 +204,456 @@ class PowerShellExecutor(BaseExecutor):
         ])
         
         return "\n".join(script_parts)
+
+    def _build_interactive_preamble(
+        self,
+        module: str,
+        app_id: str,
+        tenant_id: str,
+        organization: Optional[str] = None,
+        auth_mode: str = "cba",
+        username: Optional[str] = None,
+        password: Optional[str] = None
+    ) -> str:
+        """Build the PowerShell preamble (import + connect) for interactive sessions."""
+        if module not in self.MODULES:
+            raise ValueError(f"Unsupported module: {module}. Supported: {list(self.MODULES.keys())}")
+        
+        module_config = self.MODULES[module]
+        
+        if not organization:
+            organization = f"{tenant_id}"
+        
+        lines = [
+            "$ErrorActionPreference = 'Continue'",
+            "$ProgressPreference = 'SilentlyContinue'",
+            "$env:HOME = '/var/lib/iscope-agent'",
+            "",
+            module_config["import"],
+            "",
+        ]
+        
+        if auth_mode == self.AUTH_MODE_CREDENTIAL:
+            if not username or not password:
+                raise ValueError("Username and password are required for credential-based authentication")
+            escaped_password = password.replace('"', '`"').replace("'", "`'").replace('$', '`$')
+            lines.extend([
+                f'$secPassword = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force',
+                f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
+                module_config["connect_credential"].format(tenant_id=tenant_id),
+            ])
+        else:
+            lines.extend([
+                module_config["connect_cba"].format(
+                    app_id=app_id,
+                    cert_path=str(self.PFX_FILE),
+                    tenant_id=tenant_id,
+                    organization=organization
+                ),
+            ])
+        
+        lines.extend([
+            "",
+            f'Write-Output "{self.SESSION_READY_MARKER}"',
+        ])
+        
+        return "\n".join(lines) + "\n"
+    
+    def _build_interactive_command(self, cmd_name: str, cmd_text: str) -> str:
+        """Build a single command wrapped with delimiters for interactive parsing."""
+        return (
+            f"try {{\n"
+            f"    $__data = ({cmd_text} | ConvertTo-Json -Depth 10 -Compress)\n"
+            f'    Write-Output "{self.CMD_START_MARKER}"\n'
+            f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$true; 'data'=$__data }} | ConvertTo-Json -Compress)\n"
+            f'    Write-Output "{self.CMD_END_MARKER}"\n'
+            f"}} catch {{\n"
+            f'    Write-Output "{self.CMD_START_MARKER}"\n'
+            f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$false; 'error'=$_.Exception.Message }} | ConvertTo-Json -Compress)\n"
+            f'    Write-Output "{self.CMD_END_MARKER}"\n'
+            f"}}\n"
+        )
+    
+    def _read_until_marker(self, stdout, marker: str, timeout: int) -> Optional[str]:
+        """
+        Read lines from stdout until a marker line is found, with timeout.
+        Returns accumulated output (excluding the marker), or None on timeout.
+        """
+        lines = []
+        timed_out = threading.Event()
+        
+        def _timeout_handler():
+            timed_out.set()
+        
+        timer = threading.Timer(timeout, _timeout_handler)
+        timer.daemon = True
+        timer.start()
+        
+        try:
+            while not timed_out.is_set():
+                line = stdout.readline()
+                if not line:
+                    # EOF - process died
+                    break
+                line_stripped = line.strip()
+                if line_stripped == marker:
+                    return "\n".join(lines)
+                lines.append(line_stripped)
+        finally:
+            timer.cancel()
+        
+        if timed_out.is_set():
+            return None  # Timeout
+        
+        # EOF reached without marker
+        return "\n".join(lines) if lines else None
+    
+    def run_interactive(
+        self,
+        steps: List[Dict[str, Any]],
+        context: Dict[str, Any],
+        report_callback: Callable
+    ) -> List[Dict[str, Any]]:
+        """
+        Execute PowerShell commands progressively in an interactive session.
+        
+        Opens a single PowerShell process, sends commands one by one via stdin,
+        reads results from stdout, and calls report_callback immediately for each.
+        
+        Args:
+            steps: List of step configurations (each with params.commands)
+            context: Execution context with credentials
+            report_callback: Function(step_id, status, data, error, duration_ms) called per step
+            
+        Returns:
+            List of step result dicts [{step_id, status, error, duration_ms}, ...]
+        """
+        # Extract connection params from first step
+        first_params = steps[0].get('params', {})
+        module = first_params.get('module', 'ExchangeOnline')
+        app_id = first_params.get('app_id') or context.get('app_id') or ''
+        tenant_id = first_params.get('tenant_id') or context.get('tenant_id') or ''
+        organization = first_params.get('organization') or context.get('organization')
+        auth_mode = first_params.get('auth_mode', self.AUTH_MODE_CBA)
+        username = first_params.get('username')
+        password = first_params.get('password')
+        
+        # Check prerequisites
+        if auth_mode == self.AUTH_MODE_CREDENTIAL:
+            pwsh = self._find_pwsh()
+            if not pwsh:
+                error = "PowerShell Core (pwsh) not found"
+                return self._fail_all_steps(steps, error, report_callback)
+        else:
+            prereq = self._check_prerequisites()
+            if prereq.get("error"):
+                return self._fail_all_steps(steps, prereq["error"], report_callback)
+            pwsh = prereq["pwsh_path"]
+        
+        # Build command list from steps
+        cmd_list = []
+        for step in steps:
+            step_params = step.get('params', {})
+            cmds = step_params.get('commands', [])
+            cmd_timeout = step_params.get('timeout', 120)
+            if isinstance(cmd_timeout, (int, float)) and cmd_timeout > 0:
+                cmd_timeout = int(cmd_timeout)
+            else:
+                cmd_timeout = 120
+            
+            if cmds:
+                cmd = cmds[0]
+                cmd_list.append({
+                    'step_id': step.get('id', 'unknown'),
+                    'name': cmd.get('name', 'unknown'),
+                    'command': cmd.get('command', ''),
+                    'timeout': cmd_timeout,
+                })
+        
+        self.logger.info(
+            f"PowerShell interactive: module={module}, {len(cmd_list)} commands, "
+            f"auth={auth_mode}"
+        )
+        
+        # Start PowerShell process
+        env = os.environ.copy()
+        env["HOME"] = "/var/lib/iscope-agent"
+        cwd = str(self.CERT_DIR) if auth_mode == self.AUTH_MODE_CBA and self.CERT_DIR.exists() else None
+        
+        try:
+            proc = subprocess.Popen(
+                [pwsh, "-NoProfile", "-NonInteractive", "-Command", "-"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=cwd,
+                env=env,
+                bufsize=1,  # Line-buffered
+            )
+        except Exception as e:
+            error = f"Failed to start PowerShell: {e}"
+            self.logger.error(error)
+            return self._fail_all_steps(steps, error, report_callback)
+        
+        step_results = []
+        
+        try:
+            # Send preamble (import + connect)
+            preamble = self._build_interactive_preamble(
+                module=module,
+                app_id=app_id,
+                tenant_id=tenant_id,
+                organization=organization,
+                auth_mode=auth_mode,
+                username=username,
+                password=password,
+            )
+            proc.stdin.write(preamble)
+            proc.stdin.flush()
+            
+            # Wait for session ready (connection timeout: 120s)
+            self.logger.info("Waiting for PowerShell session to connect...")
+            ready_output = self._read_until_marker(proc.stdout, self.SESSION_READY_MARKER, timeout=120)
+            
+            if ready_output is None:
+                # Connection timed out or process died
+                error = "PowerShell session failed to connect within 120s"
+                stderr_output = ""
+                try:
+                    proc.kill()
+                    _, stderr_output = proc.communicate(timeout=5)
+                except Exception:
+                    pass
+                if stderr_output:
+                    error += f": {stderr_output.strip()[:500]}"
+                self.logger.error(error)
+                return self._fail_all_steps(steps, error, report_callback)
+            
+            self.logger.info("PowerShell session connected successfully")
+            
+            # Execute commands one by one
+            consecutive_timeouts = 0
+            
+            for cmd_info in cmd_list:
+                step_id = cmd_info['step_id']
+                cmd_name = cmd_info['name']
+                cmd_text = cmd_info['command']
+                cmd_timeout = cmd_info['timeout']
+                
+                if not cmd_text:
+                    sr = {'step_id': step_id, 'status': 'failed', 'error': 'Empty command', 'duration_ms': 0}
+                    step_results.append(sr)
+                    report_callback(step_id, 'failed', None, 'Empty command', 0)
+                    continue
+                
+                # Check if session is still alive
+                if proc.poll() is not None:
+                    error = "PowerShell session terminated unexpectedly"
+                    self.logger.error(f"{error} at command {cmd_name}")
+                    # Fail remaining commands
+                    remaining = [c for c in cmd_list if c['step_id'] not in {r['step_id'] for r in step_results}]
+                    for rem in remaining:
+                        sr = {'step_id': rem['step_id'], 'status': 'failed', 'error': error, 'duration_ms': 0}
+                        step_results.append(sr)
+                        report_callback(rem['step_id'], 'failed', None, error, 0)
+                    break
+                
+                self.logger.info(f"Executing command: {cmd_name} (timeout={cmd_timeout}s)")
+                cmd_start = time.time()
+                
+                # Send command
+                interactive_cmd = self._build_interactive_command(cmd_name, cmd_text)
+                try:
+                    proc.stdin.write(interactive_cmd)
+                    proc.stdin.flush()
+                except (BrokenPipeError, OSError) as e:
+                    error = f"PowerShell session broken: {e}"
+                    self.logger.error(error)
+                    duration = int((time.time() - cmd_start) * 1000)
+                    sr = {'step_id': step_id, 'status': 'failed', 'error': error, 'duration_ms': duration}
+                    step_results.append(sr)
+                    report_callback(step_id, 'failed', None, error, duration)
+                    # Fail remaining
+                    remaining = [c for c in cmd_list if c['step_id'] not in {r['step_id'] for r in step_results}]
+                    for rem in remaining:
+                        sr2 = {'step_id': rem['step_id'], 'status': 'failed', 'error': error, 'duration_ms': 0}
+                        step_results.append(sr2)
+                        report_callback(rem['step_id'], 'failed', None, error, 0)
+                    break
+                
+                # Read until CMD_START marker
+                pre_output = self._read_until_marker(proc.stdout, self.CMD_START_MARKER, timeout=cmd_timeout)
+                
+                if pre_output is None:
+                    # Timeout waiting for command to start producing output
+                    duration = int((time.time() - cmd_start) * 1000)
+                    error = f"Command timed out after {cmd_timeout}s"
+                    self.logger.warning(f"Command {cmd_name}: {error}")
+                    sr = {'step_id': step_id, 'status': 'failed', 'error': error, 'duration_ms': duration}
+                    step_results.append(sr)
+                    report_callback(step_id, 'failed', None, error, duration)
+                    
+                    consecutive_timeouts += 1
+                    if consecutive_timeouts >= self.MAX_CONSECUTIVE_TIMEOUTS:
+                        self.logger.error(
+                            f"{consecutive_timeouts} consecutive timeouts - killing session"
+                        )
+                        remaining = [c for c in cmd_list if c['step_id'] not in {r['step_id'] for r in step_results}]
+                        for rem in remaining:
+                            sr2 = {'step_id': rem['step_id'], 'status': 'failed',
+                                   'error': 'Session killed after consecutive timeouts', 'duration_ms': 0}
+                            step_results.append(sr2)
+                            report_callback(rem['step_id'], 'failed', None, sr2['error'], 0)
+                        break
+                    continue
+                
+                # CMD_START found, now read the JSON payload until CMD_END
+                remaining_timeout = max(30, cmd_timeout - int(time.time() - cmd_start))
+                json_output = self._read_until_marker(proc.stdout, self.CMD_END_MARKER, timeout=remaining_timeout)
+                
+                duration = int((time.time() - cmd_start) * 1000)
+                
+                if json_output is None:
+                    error = f"Command output timed out after producing start marker"
+                    self.logger.warning(f"Command {cmd_name}: {error}")
+                    sr = {'step_id': step_id, 'status': 'failed', 'error': error, 'duration_ms': duration}
+                    step_results.append(sr)
+                    report_callback(step_id, 'failed', None, error, duration)
+                    consecutive_timeouts += 1
+                    if consecutive_timeouts >= self.MAX_CONSECUTIVE_TIMEOUTS:
+                        self.logger.error(f"{consecutive_timeouts} consecutive timeouts - killing session")
+                        remaining = [c for c in cmd_list if c['step_id'] not in {r['step_id'] for r in step_results}]
+                        for rem in remaining:
+                            sr2 = {'step_id': rem['step_id'], 'status': 'failed',
+                                   'error': 'Session killed after consecutive timeouts', 'duration_ms': 0}
+                            step_results.append(sr2)
+                            report_callback(rem['step_id'], 'failed', None, sr2['error'], 0)
+                        break
+                    continue
+                
+                # Reset consecutive timeout counter on success
+                consecutive_timeouts = 0
+                
+                # Parse JSON result
+                step_status, step_data, step_error = self._parse_interactive_result(cmd_name, json_output)
+                
+                sr = {'step_id': step_id, 'status': step_status, 'error': step_error, 'duration_ms': duration}
+                step_results.append(sr)
+                report_callback(step_id, step_status, step_data, step_error, duration)
+                
+                self.logger.info(f"Command {cmd_name}: {step_status} ({duration}ms)")
+            
+            # Disconnect and exit
+            self._close_interactive_session(proc, module)
+            
+        except Exception as e:
+            self.logger.error(f"Interactive session error: {e}")
+            # Fail any remaining steps
+            reported_ids = {r['step_id'] for r in step_results}
+            for cmd_info in cmd_list:
+                if cmd_info['step_id'] not in reported_ids:
+                    sr = {'step_id': cmd_info['step_id'], 'status': 'failed',
+                          'error': f'Session error: {e}', 'duration_ms': 0}
+                    step_results.append(sr)
+                    report_callback(cmd_info['step_id'], 'failed', None, sr['error'], 0)
+            
+            try:
+                proc.kill()
+                proc.communicate(timeout=5)
+            except Exception:
+                pass
+        
+        return step_results
+    
+    def _parse_interactive_result(self, cmd_name: str, json_output: str):
+        """Parse the JSON output from an interactive command. Returns (status, data, error)."""
+        try:
+            result = json.loads(json_output.strip())
+        except json.JSONDecodeError as e:
+            return ('failed', None, f"Invalid JSON output: {e}")
+        
+        if not isinstance(result, dict):
+            return ('success', result, None)
+        
+        if result.get('success') is False:
+            error_text = result.get('error', 'Command failed')
+            # Detect unlicensed cmdlets as not_applicable
+            if 'is not recognized as a name of a cmdlet' in error_text:
+                return ('not_applicable', None, f"Cmdlet nao disponivel (licenca ausente): {error_text[:150]}")
+            return ('failed', None, error_text)
+        
+        # Parse nested JSON data
+        raw_data = result.get('data')
+        if isinstance(raw_data, str):
+            try:
+                parsed_data = json.loads(raw_data)
+            except (json.JSONDecodeError, ValueError):
+                parsed_data = raw_data
+        else:
+            parsed_data = raw_data
+        
+        return ('success', parsed_data, None)
+    
+    def _close_interactive_session(self, proc, module: str):
+        """Gracefully close an interactive PowerShell session."""
+        try:
+            module_config = self.MODULES.get(module, {})
+            disconnect_cmd = module_config.get("disconnect", "")
+            if disconnect_cmd:
+                proc.stdin.write(f"{disconnect_cmd}\n")
+            proc.stdin.write("exit\n")
+            proc.stdin.flush()
+            proc.communicate(timeout=15)
+        except Exception as e:
+            self.logger.warning(f"Error closing PowerShell session: {e}")
+            try:
+                proc.kill()
+                proc.communicate(timeout=5)
+            except Exception:
+                pass
+    
+    def _fail_all_steps(self, steps, error, report_callback):
+        """Mark all steps as failed and report them."""
+        results = []
+        for step in steps:
+            step_id = step.get('id', 'unknown')
+            sr = {'step_id': step_id, 'status': 'failed', 'error': error, 'duration_ms': 0}
+            results.append(sr)
+            report_callback(step_id, 'failed', None, error, 0)
+        return results
     
     def run(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute PowerShell commands with certificate or credential authentication.
-        
-        Step params:
-            module: str - Module to use (ExchangeOnline, MicrosoftGraph)
-            commands: List[Dict] - Commands to execute
-                - name: str - Result key name
-                - command: str - PowerShell command
-            app_id: str - Azure App ID (optional, can be in context)
-            tenant_id: str - Azure Tenant ID (optional, can be in context)
-            organization: str - Organization domain (optional)
-            timeout: int - Command timeout in seconds (default: 300)
-            auth_mode: str - Authentication mode ('cba' or 'credential', default: 'cba')
-            username: str - Admin username (required if auth_mode is 'credential')
-            password: str - Admin password (required if auth_mode is 'credential')
-        
-        Context:
-            app_id: str - Azure App ID
-            tenant_id: str - Azure Tenant ID
-            organization: str - Organization domain
+        Execute PowerShell commands in batch mode (legacy).
+        Used for single commands, RBAC setup, and fallback.
         """
         params = step.get("params", {})
         
-        # Get auth mode
         auth_mode = params.get("auth_mode", self.AUTH_MODE_CBA)
         
-        # For credential mode, we only need pwsh (not certificates)
         if auth_mode == self.AUTH_MODE_CREDENTIAL:
             pwsh = self._find_pwsh()
             if not pwsh:
                 return {"error": "PowerShell Core (pwsh) not found. Install with: sudo apt install -y powershell"}
             pwsh_path = pwsh
         else:
-            # Check prerequisites for CBA mode
             prereq = self._check_prerequisites()
             if prereq.get("error"):
                 self.logger.error(f"PowerShell prerequisites not met: {prereq['error']}")
                 return {"error": prereq["error"]}
             pwsh_path = prereq["pwsh_path"]
         
-        # Get parameters
         module = params.get("module", "ExchangeOnline")
         commands = params.get("commands", [])
         app_id = params.get("app_id") or context.get("app_id")
         tenant_id = params.get("tenant_id") or context.get("tenant_id")
         organization = params.get("organization") or context.get("organization")
-        default_timeout = 300 + (max(0, len(commands) - 1) * 30)  # Scale timeout with command count
+        default_timeout = 300 + (max(0, len(commands) - 1) * 30)
         timeout = params.get("timeout", default_timeout)
         username = params.get("username")
         password = params.get("password")
         
-        # Validate required params based on auth mode
         if auth_mode == self.AUTH_MODE_CREDENTIAL:
             if not username or not password:
                 return {"error": "username and password are required for credential-based authentication"}
@@ -290,7 +671,6 @@ class PowerShellExecutor(BaseExecutor):
         self.logger.info(f"Executing PowerShell {module} commands ({auth_mode} auth): {[c.get('name', 'unknown') for c in commands]}")
         
         try:
-            # Build script
             script = self._build_script(
                 module=module,
                 commands=commands,
@@ -304,10 +684,8 @@ class PowerShellExecutor(BaseExecutor):
             
             self.logger.debug(f"PowerShell script built, {len(script)} chars")
             
-            # Execute - use home directory for credential mode (no need for cert dir)
             cwd = str(self.CERT_DIR) if auth_mode == self.AUTH_MODE_CBA else None
             
-            # Write script to temp file (required for $PSScriptRoot support in EXO 3.9+)
             script_file = None
             try:
                 script_file = tempfile.NamedTemporaryFile(
@@ -339,12 +717,10 @@ class PowerShellExecutor(BaseExecutor):
                 self.logger.error(f"PowerShell execution failed: {error_msg}")
                 return {"error": error_msg, "exit_code": result.returncode}
             
-            # Parse output - extract JSON after delimiter marker
             output = result.stdout.strip()
             if not output:
                 return {"error": "No output from PowerShell script"}
             
-            # Extract content after the delimiter marker (ignores warnings/banners)
             marker = '---ISCOPE_JSON_START---'
             if marker in output:
                 output = output.split(marker, 1)[1].strip()
