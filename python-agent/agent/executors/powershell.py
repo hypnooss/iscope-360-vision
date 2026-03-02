@@ -43,6 +43,7 @@ class PowerShellExecutor(BaseExecutor):
     CMD_START_MARKER = "---ISCOPE_CMD_START---"
     CMD_END_MARKER = "---ISCOPE_CMD_END---"
     SESSION_READY_MARKER = "---ISCOPE_SESSION_READY---"
+    SYNC_MARKER = "---ISCOPE_SYNC---"
     
     # Consecutive timeout threshold before killing session
     MAX_CONSECUTIVE_TIMEOUTS = 3
@@ -308,6 +309,23 @@ class PowerShellExecutor(BaseExecutor):
         # EOF reached without marker
         return "\n".join(lines) if lines else None
     
+    def _drain_and_sync(self, proc, timeout: int = 30):
+        """
+        After a command timeout, send a sync marker and drain stdout until it appears.
+        This discards any residual output from the timed-out command, ensuring
+        the next command starts with a clean stdout stream.
+        """
+        try:
+            sync_cmd = f'Write-Output "{self.SYNC_MARKER}"\n'
+            proc.stdin.write(sync_cmd)
+            proc.stdin.flush()
+            self._read_until_marker(proc.stdout, self.SYNC_MARKER, timeout=timeout)
+            self.logger.debug("Post-timeout sync completed successfully")
+        except (BrokenPipeError, OSError) as e:
+            self.logger.warning(f"Sync after timeout failed (pipe broken): {e}")
+        except Exception as e:
+            self.logger.warning(f"Sync after timeout failed: {e}")
+    
     def run_interactive(
         self,
         steps: List[Dict[str, Any]],
@@ -506,6 +524,8 @@ class PowerShellExecutor(BaseExecutor):
                             step_results.append(sr2)
                             report_callback(rem['step_id'], 'failed', None, sr2['error'], 0)
                         break
+                    # Sync stdout before next command to discard residual output
+                    self._drain_and_sync(proc)
                     continue
                 
                 # CMD_START found, now read the JSON payload until CMD_END
@@ -530,6 +550,8 @@ class PowerShellExecutor(BaseExecutor):
                             step_results.append(sr2)
                             report_callback(rem['step_id'], 'failed', None, sr2['error'], 0)
                         break
+                    # Sync stdout before next command to discard residual output
+                    self._drain_and_sync(proc)
                     continue
                 
                 # Reset consecutive timeout counter on success
