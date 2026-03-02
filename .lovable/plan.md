@@ -1,123 +1,73 @@
 
 
-## Diagnóstico: `[Console]::SetOut()` pode estar quebrando o pipe
+## Root Cause: Invisible Characters in PowerShell Output
 
-O problema de zero output persiste porque o `Write-Output` do PowerShell **não usa `[Console]::Out`**. Ele escreve no pipeline stream do host, que tem seu próprio `TextWriter` interno. O `[Console]::SetOut($sw)` muda o `Console.Out` mas o host do PowerShell já cacheou o writer original no startup — então:
+The pipe works perfectly. Both `---ISCOPE_PIPE_TEST---` and `---ISCOPE_SESSION_READY---` arrive, but `line.strip() == marker` fails because `.NET` on Linux prepends invisible characters — most likely a UTF-8 BOM (`\ufeff`) on the first write, or ANSI escape sequences from PowerShell.
 
-1. O `SetOut` com novo StreamWriter pode ter **desconectado** o `Console.Out` do pipe real
-2. `Write-Output` continua usando o writer interno do host (o original, sem AutoFlush)
-3. `[Console]::Out.Flush()` agora faz flush do NOVO StreamWriter, que pode nem estar conectado ao pipe que Python lê
+The marker ends up in the `lines` list (not matched), the 120s timeout fires, and the code reports failure even though connection succeeded.
 
-```text
-Python stdin pipe → pwsh
-                     │
-                     ├─ Host internal writer (original Console.Out) → Python stdout pipe
-                     │    └─ Write-Output usa ESTE ← block-buffered, sem flush
-                     │
-                     └─ $sw (novo StreamWriter via SetOut) → ???
-                          └─ [Console]::Out.Flush() faz flush DESTE ← não ajuda
-```
+## Fix: `python-agent/agent/executors/powershell.py`
 
-## Correção: 3 mudanças em `powershell.py`
+### 1. Sanitize lines before comparison in `_read_until_marker`
 
-### 1. Remover o hack `SetOut` e usar `[Console]::WriteLine()` para markers
-
-`[Console]::WriteLine()` escreve diretamente no stdout real, **bypassa o pipeline** do PowerShell. Combinado com flush do `Console.Out` original (sem SetOut), garante entrega imediata.
-
-No `_build_interactive_preamble` — remover as 4 linhas do SetOut e mudar o marker:
+Strip BOM, null bytes, ANSI escape codes, and other non-printable characters before comparing:
 
 ```python
-lines = [
-    "$ErrorActionPreference = 'Continue'",
-    "$ProgressPreference = 'SilentlyContinue'",
-    # ... resto do preamble ...
-]
+import re
 
-# No final:
-lines.extend([
-    "",
-    f'[Console]::WriteLine("{self.SESSION_READY_MARKER}")',
-    "[Console]::Out.Flush()",
-])
+# Add as class constant
+ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07')
+
+def _sanitize_line(self, line: str) -> str:
+    """Remove BOM, ANSI escapes, null bytes and other invisible chars."""
+    line = line.replace('\ufeff', '')   # UTF-8 BOM
+    line = line.replace('\x00', '')     # Null bytes
+    line = self.ANSI_ESCAPE_RE.sub('', line)  # ANSI escape sequences
+    return line.strip()
 ```
 
-### 2. Usar `[Console]::WriteLine()` para TODOS os markers em `_build_interactive_command`
-
-Os markers (CMD_START, CMD_END) usam `[Console]::WriteLine()` em vez de `Write-Output`. O JSON de dados continua com `Write-Output` (vai pelo pipeline normal):
+### 2. Use `_sanitize_line` in `_read_until_marker`
 
 ```python
-def _build_interactive_command(self, cmd_name, cmd_text):
-    return (
-        f"try {{\n"
-        f"    $__data = ({cmd_text} | ConvertTo-Json -Depth 10 -Compress)\n"
-        f'    [Console]::WriteLine("{self.CMD_START_MARKER}")\n'
-        f"    Write-Output (@{{ ... }} | ConvertTo-Json -Compress)\n"
-        f'    [Console]::WriteLine("{self.CMD_END_MARKER}")\n'
-        f"    [Console]::Out.Flush()\n"
-        f"}} catch {{\n"
-        f'    [Console]::WriteLine("{self.CMD_START_MARKER}")\n'
-        f"    Write-Output (@{{ ... }} | ConvertTo-Json -Compress)\n"
-        f'    [Console]::WriteLine("{self.CMD_END_MARKER}")\n'
-        f"    [Console]::Out.Flush()\n"
-        f"}}\n"
-    )
+def _read_until_marker(self, read_queue, marker, timeout):
+    lines = []
+    deadline = time.time() + timeout
+    while True:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            return (False, "\n".join(lines))
+        try:
+            line = read_queue.get(timeout=remaining)
+        except queue.Empty:
+            return (False, "\n".join(lines))
+        if line is None:
+            return (False, "\n".join(lines))
+        line_clean = self._sanitize_line(line)
+        if line_clean == marker:
+            return (True, "\n".join(lines))
+        lines.append(line_clean)
 ```
 
-### 3. Mesmo para `_drain_and_sync`
+### 3. Add raw byte logging in reader thread for diagnostics
 
-```python
-sync_cmd = f'[Console]::WriteLine("{self.SYNC_MARKER}")\n[Console]::Out.Flush()\n'
-```
-
-### 4. Adicionar logging ao reader thread
-
-Para diagnóstico imediato, cada linha lida é logada em DEBUG:
+Log the raw `repr()` of each line at DEBUG level so we can see exactly what characters arrive:
 
 ```python
 def _reader():
     try:
         for line in iter(stdout.readline, ''):
-            self.logger.debug(f"[PS stdout] {line.rstrip()}")
+            self.logger.debug(f"[PS stdout raw] {repr(line)}")
             q.put(line)
     except Exception as e:
         self.logger.warning(f"Reader thread error: {e}")
     q.put(None)
 ```
 
-### 5. Adicionar echo diagnóstico no início do preamble
+### Summary
 
-Para verificar se o pipe funciona, um `[Console]::WriteLine()` simples logo no início:
-
-```python
-lines = [
-    '[Console]::WriteLine("---ISCOPE_PIPE_TEST---")',
-    "[Console]::Out.Flush()",
-    "$ErrorActionPreference = 'Continue'",
-    # ...
-]
-```
-
-E no `run_interactive`, logo após enviar o preamble, logar se algo chega:
-
-```python
-proc.stdin.write(preamble)
-proc.stdin.flush()
-self.logger.info("Preamble sent, waiting for session ready...")
-```
-
-## Resumo
-
-| Local | Antes | Depois |
-|-------|-------|--------|
-| Preamble (início) | `SetOut` com novo StreamWriter | Removido (echo diagnóstico simples) |
-| Markers (SESSION_READY, CMD_START, CMD_END, SYNC) | `Write-Output` | `[Console]::WriteLine()` |
-| Reader thread | Silencioso | Loga cada linha em DEBUG |
-| Dados JSON | `Write-Output` | `Write-Output` (sem mudança) |
-
-## Por que vai funcionar
-
-- `[Console]::WriteLine()` escreve direto no stdout file descriptor, sem passar pelo pipeline do PowerShell
-- `[Console]::Out.Flush()` faz flush do `Console.Out` ORIGINAL (sem SetOut interferindo)
-- O JSON continua fluindo pelo pipeline, mas fica entre markers que são entregues imediatamente
-- O reader thread com logging permite diagnóstico em tempo real
+| Change | Purpose |
+|--------|---------|
+| `_sanitize_line()` method | Strip BOM, ANSI codes, null bytes |
+| `_read_until_marker` uses sanitized comparison | Markers match regardless of invisible chars |
+| Reader thread logs `repr(line)` | Shows exact bytes for future diagnostics |
 
