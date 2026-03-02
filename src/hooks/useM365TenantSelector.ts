@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePreview } from '@/contexts/PreviewContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,9 +16,6 @@ export function useM365TenantSelector(workspaceId?: string | null) {
   const { isPreviewMode, previewTarget } = usePreview();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [tenants, setTenants] = useState<TenantOption[]>([]);
-  const [loading, setLoading] = useState(true);
-
   // Stable ref for setSearchParams to avoid re-render loops
   const setSearchParamsRef = useRef(setSearchParams);
   useEffect(() => {
@@ -26,22 +24,18 @@ export function useM365TenantSelector(workspaceId?: string | null) {
 
   const paramTenantId = searchParams.get('tenant');
 
-  // Stable loadTenants - no volatile deps
-  const loadTenants = useCallback(async () => {
-    if (!user) return;
+  const workspaceIds = isPreviewMode && previewTarget?.workspaces
+    ? previewTarget.workspaces.map(w => w.id)
+    : null;
 
-    setLoading(true);
-    try {
-      const workspaceIds = isPreviewMode && previewTarget?.workspaces
-        ? previewTarget.workspaces.map(w => w.id)
-        : null;
-
+  const { data: tenants = [], isLoading: loading } = useQuery({
+    queryKey: ['m365-tenants', workspaceId, user?.id, workspaceIds],
+    queryFn: async () => {
       let query = supabase
         .from('m365_tenants')
         .select('id, display_name, tenant_domain, client_id')
         .in('connection_status', ['connected', 'partial']);
 
-      // Filter by explicit workspaceId first, then by preview workspaces
       if (workspaceId) {
         query = query.eq('client_id', workspaceId);
       } else if (workspaceIds && workspaceIds.length > 0) {
@@ -52,24 +46,18 @@ export function useM365TenantSelector(workspaceId?: string | null) {
 
       if (error) {
         console.error('Error loading tenants:', error);
-        return;
+        return [];
       }
 
-      const options: TenantOption[] = (data || []).map(t => ({
+      return (data || []).map(t => ({
         id: t.id,
         displayName: t.display_name || 'Tenant M365',
         domain: t.tenant_domain || '',
       }));
-
-      setTenants(options);
-    } finally {
-      setLoading(false);
-    }
-  }, [user, isPreviewMode, previewTarget, workspaceId]);
-
-  useEffect(() => {
-    loadTenants();
-  }, [loadTenants]);
+    },
+    enabled: !!user,
+    staleTime: 1000 * 60 * 5,
+  });
 
   // Auto-select first tenant when tenants load and no tenant in URL
   useEffect(() => {
