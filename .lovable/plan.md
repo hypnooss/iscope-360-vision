@@ -1,28 +1,23 @@
 
 
-## Changes
+## Bug: Domain name displayed twice in selector
 
-### 1. Remove "Avisos" MiniStat card
-Remove line 369 (`{warnCount > 0 && <MiniStat ...>}`). Keep only Total, Aprovadas, and Falhas. The `warnCount` variable can also be removed.
+**Problem:** The domain selector at line 544 renders `{d.name} ({d.domain})`. When the `name` and `domain` fields contain the same value (e.g., both are `taschibra.com.br`), it shows `taschibra.com.br (taschibra.com.br)` — appearing duplicated.
 
-### 2. Sort categories by template `display_order` instead of severity
-Replace the current severity-based sorting with the `display_order` from `rule_categories` table (the template visualization tab).
+**Fix:** Show `{d.domain}` only when it differs from `{d.name}`. Otherwise show just `{d.name}`.
 
-- Import and use `useCategoryConfig` hook with the M365 device type ID (`5d1a7095-2d7b-4541-873d-4b03c3d6122f`)
-- Replace `sortedCategories` logic: look up each category's `display_order` from the fetched config, sort ascending by that order, fallback to 999 for unknown categories
+### Change in `src/pages/external-domain/ExternalDomainCompliancePage.tsx`
 
-```typescript
-const { data: categoryConfigs } = useCategoryConfig('5d1a7095-2d7b-4541-873d-4b03c3d6122f');
+**Line 544** — Change the SelectItem content:
+```tsx
+// Before
+<SelectItem key={d.id} value={d.id}>{d.name} ({d.domain})</SelectItem>
 
-const sortedCategories = (Object.keys(groupedItems) as M365RiskCategory[]).sort((a, b) => {
-  const aOrder = categoryConfigs?.find(c => c.name === a)?.display_order ?? 999;
-  const bOrder = categoryConfigs?.find(c => c.name === b)?.display_order ?? 999;
-  return aOrder - bOrder;
-});
+// After
+<SelectItem key={d.id} value={d.id}>
+  {d.name}{d.domain && d.domain !== d.name ? ` (${d.domain})` : ''}
+</SelectItem>
 ```
 
-### Files changed
-| File | Change |
-|------|--------|
-| `M365PosturePage.tsx` | Remove Avisos MiniStat; sort categories by template `display_order` |
+Single-line change, one file only.
 
