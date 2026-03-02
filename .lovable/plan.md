@@ -1,73 +1,100 @@
 
 
-## Root Cause: Invisible Characters in PowerShell Output
+## O problema real: os markers chegam mas NÃO fazem match
 
-The pipe works perfectly. Both `---ISCOPE_PIPE_TEST---` and `---ISCOPE_SESSION_READY---` arrive, but `line.strip() == marker` fails because `.NET` on Linux prepends invisible characters — most likely a UTF-8 BOM (`\ufeff`) on the first write, or ANSI escape sequences from PowerShell.
+O log prova que o pipe funciona — ambos os markers chegam:
+```
+---ISCOPE_PIPE_TEST---
+---ISCOPE_SESSION_READY---
+```
 
-The marker ends up in the `lines` list (not matched), the 120s timeout fires, and the code reports failure even though connection succeeded.
+Mas `_read_until_marker` retorna `found=False` com ambos na lista `lines`. Isso significa que `line_clean == marker` é `False` mesmo com strings visualmente idênticas.
 
-## Fix: `python-agent/agent/executors/powershell.py`
+## Duas causas prováveis (ambas serão corrigidas)
 
-### 1. Sanitize lines before comparison in `_read_until_marker`
+### 1. Encoding mismatch no Popen
 
-Strip BOM, null bytes, ANSI escape codes, and other non-printable characters before comparing:
+`text=True` sem `encoding` explícito usa `locale.getpreferredencoding()`. Se o locale do sistema não for UTF-8 (ex: `POSIX`, `C`, `ASCII`), caracteres podem ser decodificados incorretamente. Além disso, `.NET` pode emitir bytes que o codec do locale não interpreta como esperado.
+
+### 2. Comparação frágil `==` com caracteres residuais
+
+A `_sanitize_line` remove BOM, ANSI e null bytes, mas pode haver outros caracteres invisíveis (carriage return `\r`, soft hyphen, zero-width spaces, etc.) que sobrevivem ao `strip()`.
+
+## Correções em `python-agent/agent/executors/powershell.py`
+
+### 1. Forçar UTF-8 no Popen (linha 433-442)
 
 ```python
-import re
+proc = subprocess.Popen(
+    [pwsh, "-NoProfile", "-NonInteractive", "-Command", "-"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+    encoding='utf-8',
+    errors='replace',
+    cwd=cwd,
+    env=env,
+    bufsize=1,
+)
+```
 
-# Add as class constant
-ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07')
+### 2. Sanitização agressiva + comparação com `in` (linhas 288-293, 338-341)
 
+```python
 def _sanitize_line(self, line: str) -> str:
-    """Remove BOM, ANSI escapes, null bytes and other invisible chars."""
-    line = line.replace('\ufeff', '')   # UTF-8 BOM
-    line = line.replace('\x00', '')     # Null bytes
-    line = self.ANSI_ESCAPE_RE.sub('', line)  # ANSI escape sequences
+    line = line.replace('\ufeff', '')
+    line = line.replace('\x00', '')
+    line = line.replace('\r', '')
+    line = self.ANSI_ESCAPE_RE.sub('', line)
+    # Remove ALL non-printable characters
+    line = ''.join(c for c in line if c.isprintable() or c in ('\n', '\t'))
     return line.strip()
 ```
 
-### 2. Use `_sanitize_line` in `_read_until_marker`
+E na comparação em `_read_until_marker`:
 
 ```python
-def _read_until_marker(self, read_queue, marker, timeout):
-    lines = []
-    deadline = time.time() + timeout
-    while True:
-        remaining = deadline - time.time()
-        if remaining <= 0:
-            return (False, "\n".join(lines))
-        try:
-            line = read_queue.get(timeout=remaining)
-        except queue.Empty:
-            return (False, "\n".join(lines))
-        if line is None:
-            return (False, "\n".join(lines))
-        line_clean = self._sanitize_line(line)
-        if line_clean == marker:
-            return (True, "\n".join(lines))
-        lines.append(line_clean)
+line_clean = self._sanitize_line(line)
+if marker in line_clean or line_clean == marker:
+    return (True, "\n".join(lines))
 ```
 
-### 3. Add raw byte logging in reader thread for diagnostics
+### 3. Diagnóstico em INFO (não DEBUG) no reader thread (linhas 304-308)
 
-Log the raw `repr()` of each line at DEBUG level so we can see exactly what characters arrive:
+O nível de log do agente é INFO, então logs DEBUG nunca aparecem. Mudar para INFO temporariamente:
 
 ```python
 def _reader():
     try:
         for line in iter(stdout.readline, ''):
-            self.logger.debug(f"[PS stdout raw] {repr(line)}")
+            self.logger.info(f"[PS raw] {repr(line)}")
             q.put(line)
     except Exception as e:
         self.logger.warning(f"Reader thread error: {e}")
     q.put(None)
 ```
 
-### Summary
+Isso vai finalmente mostrar os bytes EXATOS que chegam do PowerShell.
 
-| Change | Purpose |
-|--------|---------|
-| `_sanitize_line()` method | Strip BOM, ANSI codes, null bytes |
-| `_read_until_marker` uses sanitized comparison | Markers match regardless of invisible chars |
-| Reader thread logs `repr(line)` | Shows exact bytes for future diagnostics |
+### 4. Adicionar `PYTHONIOENCODING=utf-8` ao env do processo (segurança extra)
+
+```python
+env = os.environ.copy()
+env["HOME"] = "/var/lib/iscope-agent"
+env["PYTHONIOENCODING"] = "utf-8"
+env["DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION"] = "0"
+```
+
+O `DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION=0` desativa ANSI codes do .NET quando stdout não é TTY.
+
+## Resumo
+
+| Mudança | Propósito |
+|---------|-----------|
+| `encoding='utf-8', errors='replace'` no Popen | Eliminar locale mismatch |
+| `DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION=0` | Desativar ANSI do .NET |
+| Sanitização agressiva (non-printable chars) | Remover QUALQUER caractere invisível |
+| `marker in line_clean` | Match resiliente |
+| Reader thread em INFO com `repr()` | Diagnóstico visível no log |
 
