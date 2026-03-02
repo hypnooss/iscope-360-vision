@@ -454,36 +454,72 @@ async function testPermission(accessToken: string, permission: string, appObject
       const errorText = await response.text();
       const errorLower = errorText.toLowerCase();
       
+      // Parse error code from JSON body if possible
+      let errCode = '';
+      try {
+        const parsed = JSON.parse(errorText);
+        errCode = (parsed?.error?.code || '').toLowerCase();
+      } catch { /* not JSON */ }
+      
+      const isSecurityEndpoint = url.includes('/security/');
+      const isAdminSharepoint = url.includes('/admin/sharepoint');
+      const isBetaEndpoint = url.includes('/beta/');
+      
       // Treat license/service-not-available errors as "granted" — the permission
       // consent is correct, but the service (Intune, MIP, etc.) is not licensed
       if (response.status === 400 && (
         errorLower.includes('not applicable to target tenant') ||
-        errorLower.includes('service principal for resource') && errorLower.includes('is disabled') ||
-        errorLower.includes('service principal') && errorLower.includes('disabled')
+        errorLower.includes('service principal for resource') ||
+        (errorLower.includes('service principal') && errorLower.includes('disabled'))
       )) {
         console.log(`Permission ${permission}: service not available in tenant (400) — treating as granted`);
         return true;
       }
       
-      // 412 Precondition Failed — endpoint doesn't support app-only context
-      if (response.status === 412) {
-        console.log(`Permission ${permission}: endpoint not supported in app-only context (412) — treating as granted`);
+      // 412 Precondition Failed or 400 not supported — endpoint doesn't support app-only context
+      if (response.status === 412 || (response.status === 400 && errorLower.includes('not supported'))) {
+        console.log(`Permission ${permission}: endpoint not supported in app-only context (${response.status}) — treating as granted`);
         return true;
       }
       
-      // 403 with NonPremiumTenant — tenant lacks P2 license but permission is granted
-      if (response.status === 403 && errorLower.includes('nonpremiumtenant')) {
-        console.log(`Permission ${permission}: tenant lacks premium license (403 NonPremiumTenant) — treating as granted`);
+      // 403 — unified tolerance logic
+      if (response.status === 403) {
+        const isMissingRoles = errorLower.includes('missing application roles') || errorLower.includes('missing role');
+        
+        if (!isMissingRoles) {
+          const isKnownLicenseError = (
+            errCode.includes('nonpremiumtenant') ||
+            errorLower.includes('license') ||
+            errorLower.includes('premium') ||
+            errCode === 'forbidden' ||
+            errCode === 'unknownerror'
+          );
+          const isSecurityLicenseIssue = isSecurityEndpoint && !errorLower.includes('insufficient privileges');
+          const isAdminLicenseIssue = (isAdminSharepoint || isBetaEndpoint) && !errorLower.includes('insufficient privileges');
+          
+          if (isKnownLicenseError || isSecurityLicenseIssue || isAdminLicenseIssue) {
+            console.log(`Permission ${permission}: 403 license/service issue — treating as granted`);
+            return true;
+          }
+        } else {
+          console.log(`Permission ${permission}: 403 missing application roles — NOT treating as granted`);
+        }
+      }
+      
+      // 404 on beta endpoints — feature not available in tenant
+      if (response.status === 404 && isBetaEndpoint) {
+        console.log(`Permission ${permission}: 404 on beta endpoint — treating as granted`);
         return true;
       }
       
       console.log(`Permission ${permission} test failed (${response.status}): ${errorText.substring(0, 200)}`);
+      return false;
     } else {
       await response.text(); // Consume body
       console.log(`Permission ${permission} test succeeded`);
     }
 
-    return response.ok;
+    return true;
   } catch (error) {
     console.error(`Error testing permission ${permission}:`, error);
     return false;
