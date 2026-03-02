@@ -1,64 +1,49 @@
 
 
-## Diagnóstico: Itens N/A inflando o score negativamente
+## Problema
 
-### Problema Confirmado
+O fluxo atual do M365 Compliance é:
 
-Você está correto. Itens com status `not_found` (N/A) **estão sendo contabilizados no denominador** do cálculo de score, o que penaliza injustamente categorias inteiras onde o serviço não está licenciado.
+1. `trigger-m365-posture-analysis` dispara Graph API + cria agent task em paralelo
+2. Graph API termina em ~30s → status muda para `completed`
+3. Frontend detecta `completed` e exibe os resultados (incompletos — sem dados do Agent)
+4. Agent termina minutos depois → `agent-task-result` faz merge silencioso dos insights do PowerShell
 
-O problema ocorre em **4 motores de scoring independentes**, cada um com uma variação diferente do bug:
+O Domain Compliance funciona diferente: só gera o relatório quando o agent completa (`agent-task-result`), garantindo que todos os dados estejam presentes.
 
-| Motor | Arquivo | Como trata N/A | Impacto |
-|---|---|---|---|
-| **M365 Posture** | `m365-security-posture` | `not_found` conta no `totalChecks` usado como `maxPenalty` | Dilui o score (mais checks = menor penalidade % por falha) |
-| **M365 Posture (Agent merge)** | `agent-task-result` | `maxPenalty = totalChecks * 4` inclui N/A | Idem |
-| **Entra ID Compliance** | `entra-id-compliance` | N/A conta no `totalWeight` mas não ganha `earnedWeight` → **penaliza diretamente** (0 pontos para N/A) |
-| **Frontend passRate** | Firewall/External Domain pages | `passRate = pass / total * 100` — N/A não é `pass`, então reduz a taxa | Mostra 0% para categorias 100% N/A |
+## Solução
 
-### Exemplo concreto (Intune)
-
-6 regras Intune, todas `not_found`. No cálculo do `entra-id-compliance`:
-- `totalWeight = 6 * weight` (contabiliza)
-- `earnedWeight = 0` (N/A não ganha pontos)
-- Score da categoria = **0%** ← deveria ser **excluída**
-
-### Solução
-
-Filtrar itens `not_found` de **todos** os cálculos de score, tanto no backend quanto no frontend. Itens N/A devem ser exibidos na UI (para transparência) mas **não devem afetar o score**.
+Quando o tenant tem agent vinculado, o Graph API não deve marcar como `completed` — deve usar `partial`. O `agent-task-result` é quem marca `completed` após fazer o merge.
 
 ### Alterações
 
-**Backend (3 Edge Functions):**
+**1. `supabase/functions/trigger-m365-posture-analysis/index.ts`**
 
-| Arquivo | Alteração |
-|---|---|
-| `m365-security-posture/index.ts` | Filtrar `not_found` antes de calcular `totalPenalty` e `categoryBreakdown.score` |
-| `agent-task-result/index.ts` | Filtrar `not_found` antes de calcular `maxPenalty` e `recalculatedScore` |
-| `entra-id-compliance/index.ts` | No `calculateScore`, fazer `continue` para `status === 'not_found'` (igual já faz para `pending`) |
+Na função `runAnalysis()` (linha ~263-277), ao salvar os resultados do Graph API:
+- Se `agentTaskId` existe → salvar com `status: 'partial'` (em vez de `completed`)
+- Se não tem agent → manter `status: 'completed'`
 
-**Frontend (4 locais com `calculatePassRate`):**
+Passar `agentTaskId` para dentro do closure `runAnalysis` (já está acessível via escopo).
 
-| Arquivo | Alteração |
-|---|---|
-| `src/pages/firewall/FirewallCompliancePage.tsx` | Excluir checks com `status === 'not_found'` do cálculo |
-| `src/pages/external-domain/ExternalDomainCompliancePage.tsx` | Idem |
-| `src/pages/external-domain/ExternalDomainAnalysisReportPage.tsx` | Idem |
-| `src/pages/FirewallAnalysis.tsx` | Idem |
-| `src/components/m365/exchange/ExchangeComplianceSection.tsx` | Idem |
-| `src/components/pdf/sections/PDFCategorySection.tsx` | Idem |
+**2. `supabase/functions/agent-task-result/index.ts`**
 
-**Lógica unificada para `calculatePassRate`:**
-```typescript
-const calculatePassRate = (checks: { status: string }[]): number => {
-  const applicable = checks.filter(c => c.status !== 'not_found');
-  if (!applicable.length) return -1; // -1 = categoria inteira N/A
-  return Math.round((applicable.filter(c => c.status === 'pass').length / applicable.length) * 100);
-};
+No bloco M365 Tenant (linha ~4870-4879), ao atualizar `m365_posture_history`:
+- Adicionar `status: 'completed'` no update (além de `agent_status`, `summary`, `score`)
+- Assim o frontend só vê `completed` quando TODOS os dados estão disponíveis
+
+**3. `src/hooks/useM365SecurityPosture.ts`**
+
+No polling (linha ~134-148):
+- Alterar condição de parada: além de `completed` e `failed`, também parar em `partial` **apenas se não houver agent** (mas isso já é tratado pelo backend agora)
+- Na prática, basta manter o polling como está — ele já espera por `completed`
+
+### Fluxo resultante
+
+```text
+COM Agent:
+  trigger → Graph API termina → status='partial' → Agent termina → agent-task-result marca 'completed' → frontend exibe
+
+SEM Agent:
+  trigger → Graph API termina → status='completed' → frontend exibe
 ```
-
-Quando `passRate === -1`, a UI exibirá "N/A" em vez de "0%".
-
-**CategorySection / M365CategorySection (UI):**
-- Quando `passRate === -1`, renderizar badge "N/A" cinza em vez do percentual
-- Manter todos os itens visíveis dentro da categoria para transparência
 
