@@ -802,7 +802,9 @@ serve(async (req) => {
               lowerCode === 'unknownerror'
             );
             // 2. Security/Defender endpoints: 403 usually means no Defender license, not missing consent
-            const isSecurityLicenseIssue = isSecurityEndpoint && !lowerMsg.includes('insufficient privileges');
+            // But "missing application roles" or "missing role" means permission not consented — do NOT treat as granted
+            const isMissingRoles = lowerMsg.includes('missing application roles') || lowerMsg.includes('missing role');
+            const isSecurityLicenseIssue = isSecurityEndpoint && !lowerMsg.includes('insufficient privileges') && !isMissingRoles;
             // 3. Admin/SharePoint or beta endpoints: 403 often means service not provisioned
             const isAdminLicenseIssue = (isAdminSharepoint || isBetaEndpoint) && !lowerMsg.includes('insufficient privileges');
 
