@@ -123,7 +123,7 @@ Deno.serve(async (req) => {
     try {
       const { data, error } = await graphFetchSafe(
         access_token,
-        '/roleManagement/directory/roleAssignmentScheduleInstances?$filter=assignmentType eq \'Activated\'&$expand=principal',
+        '/roleManagement/directory/roleAssignmentScheduleInstances?$filter=assignmentType eq \'Activated\'&$expand=principal,roleDefinition',
         { beta: true }
       );
       
@@ -148,8 +148,15 @@ Deno.serve(async (req) => {
           affectedCount: recentActivations.length,
           affectedEntities: recentActivations.slice(0, 15).map((a: any) => ({
             id: a.id,
-            displayName: a.principal?.displayName || 'Usuário',
-            details: { startDateTime: a.startDateTime, endDateTime: a.endDateTime }
+            displayName: a.principal?.displayName && a.principal.displayName !== 'User'
+              ? a.principal.displayName
+              : a.principal?.userPrincipalName || a.principal?.displayName || 'Usuário',
+            userPrincipalName: a.principal?.userPrincipalName || '',
+            details: {
+              roleName: a.roleDefinition?.displayName || '',
+              startDateTime: a.startDateTime,
+              endDateTime: a.endDateTime,
+            }
           })),
           remediacao: {
             productAfetado: 'entra_id',
