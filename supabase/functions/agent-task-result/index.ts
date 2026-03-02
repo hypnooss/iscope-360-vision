@@ -212,6 +212,12 @@ function evaluateAgentRule(
   const passWhen = evalLogic.pass_when as string;
   const conditions = evalLogic.conditions as Array<Record<string, unknown>> | undefined;
 
+  // === Custom evaluator types (evaluate.type) ===
+  const evaluate = evalLogic.evaluate as Record<string, unknown> | undefined;
+  if (evaluate?.type === 'check_suspicious_inbox_rules') {
+    return evaluateSuspiciousInboxRules(rule, data);
+  }
+
   // === array_empty: pass when the data array is empty (no violations) ===
   if (passWhen === 'array_empty') {
     if (!Array.isArray(data)) {
@@ -320,6 +326,56 @@ function evaluateAgentRule(
 
   console.warn(`[evaluateAgentRule] Unknown pass_when: ${passWhen} for rule ${rule.code}`);
   return null;
+}
+
+/**
+ * Evaluate EXO-022: Check for suspicious inbox rules (forward/redirect)
+ */
+function evaluateSuspiciousInboxRules(
+  rule: ComplianceRule,
+  data: unknown
+): { status: 'pass' | 'fail' | 'warn'; description: string; details?: string; affectedEntities?: Array<{ name: string; type: string; details?: string }>; rawData?: Record<string, unknown> } {
+  const items = Array.isArray(data) ? data : [];
+  
+  if (items.length === 0) {
+    return {
+      status: 'pass',
+      description: rule.pass_description || 'Nenhuma regra de inbox encontrada',
+      rawData: { total: 0, suspicious: 0 },
+    };
+  }
+
+  // Filter for suspicious rules: enabled rules with ForwardTo, ForwardAsAttachmentTo, or RedirectTo set
+  const suspiciousRules = items.filter((item: Record<string, unknown>) => {
+    if (!item.Enabled) return false;
+    const forwardTo = item.ForwardTo;
+    const forwardAsAttachment = item.ForwardAsAttachmentTo;
+    const redirectTo = item.RedirectTo;
+    return (forwardTo && forwardTo !== '' && forwardTo !== null) ||
+           (forwardAsAttachment && forwardAsAttachment !== '' && forwardAsAttachment !== null) ||
+           (redirectTo && redirectTo !== '' && redirectTo !== null);
+  });
+
+  const hasSuspicious = suspiciousRules.length > 0;
+  return {
+    status: hasSuspicious ? (suspiciousRules.length > 3 ? 'fail' : 'warn') : 'pass',
+    description: hasSuspicious
+      ? (rule.fail_description || `${suspiciousRules.length} regra(s) de encaminhamento suspeita(s) detectada(s)`)
+      : (rule.pass_description || 'Nenhuma regra de encaminhamento suspeita encontrada'),
+    details: hasSuspicious
+      ? `${suspiciousRules.length} regra(s) com forward/redirect de ${items.length} total`
+      : `${items.length} regra(s) de inbox verificadas - nenhuma com encaminhamento`,
+    affectedEntities: suspiciousRules.slice(0, 20).map((item: Record<string, unknown>) => ({
+      name: String(item.MailboxOwner || item.Name || 'N/A'),
+      type: 'inbox_rule',
+      details: [
+        item.ForwardTo ? `ForwardTo: ${item.ForwardTo}` : null,
+        item.ForwardAsAttachmentTo ? `ForwardAsAttachment: ${item.ForwardAsAttachmentTo}` : null,
+        item.RedirectTo ? `RedirectTo: ${item.RedirectTo}` : null,
+      ].filter(Boolean).join(', '),
+    })),
+    rawData: { total: items.length, suspicious: suspiciousRules.length },
+  };
 }
 
 /**
@@ -4670,18 +4726,25 @@ serve(async (req: Request) => {
       } else if (stepResults && stepResults.length > 0) {
         rawData = {};
         for (const step of stepResults) {
-          if (step.status === 'success' && step.data) {
-            // The step.data might be wrapped as { [step_id]: { data: ..., success: true } }
-            // or directly as { data: ..., success: true }
-            const stepData = step.data as Record<string, unknown>;
-            
-            // Check if data is wrapped with step_id key (e.g., { "exo_dkim_config": { ... } })
-            if (stepData && typeof stepData === 'object' && !Array.isArray(stepData) && step.step_id in stepData && typeof stepData[step.step_id] === 'object') {
-              // Unwrap: use the inner object
-              rawData[step.step_id] = stepData[step.step_id];
+          if (step.status === 'success') {
+            if (step.data) {
+              // The step.data might be wrapped as { [step_id]: { data: ..., success: true } }
+              // or directly as { data: ..., success: true }
+              const stepData = step.data as Record<string, unknown>;
+              
+              // Check if data is wrapped with step_id key (e.g., { "exo_dkim_config": { ... } })
+              if (stepData && typeof stepData === 'object' && !Array.isArray(stepData) && step.step_id in stepData && typeof stepData[step.step_id] === 'object') {
+                // Unwrap: use the inner object
+                rawData[step.step_id] = stepData[step.step_id];
+              } else {
+                // Already in correct format
+                rawData[step.step_id] = stepData;
+              }
             } else {
-              // Already in correct format
-              rawData[step.step_id] = stepData;
+              // Step succeeded but returned null/empty data (e.g., no connectors configured)
+              // Treat as empty array so evaluators can produce a 'pass' result
+              rawData[step.step_id] = { data: [] };
+              console.log(`Step ${step.step_id} succeeded with null data, treating as empty array`);
             }
           } else if (step.status === 'not_applicable' || step.status === 'failed') {
             // Propagate step status metadata so insight generator knows why data is missing
