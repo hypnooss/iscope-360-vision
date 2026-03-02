@@ -197,12 +197,30 @@ export default function M365PosturePage() {
     ...(agentInsights?.map(mapM365AgentInsight) || []),
   ];
 
+  // Compute actual counts from unified items (not from summary subtraction)
+  const passCount = allUnifiedItems.filter(i => i.status === 'pass').length;
+  const failCount = allUnifiedItems.filter(i => i.status === 'fail').length;
+  const warnCount = allUnifiedItems.filter(i => i.status === 'warning').length;
+
   const groupedItems = allUnifiedItems.reduce<Record<string, UnifiedComplianceItem[]>>((acc, item) => {
     const cat = item.category;
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(item);
     return acc;
   }, {});
+
+  // Sort categories by severity: critical fails first, then total fails, then alphabetically
+  const sortedCategories = (Object.keys(groupedItems) as M365RiskCategory[]).sort((a, b) => {
+    const aItems = groupedItems[a];
+    const bItems = groupedItems[b];
+    const aCrit = aItems.filter(i => i.status === 'fail' && i.severity === 'critical').length;
+    const bCrit = bItems.filter(i => i.status === 'fail' && i.severity === 'critical').length;
+    if (aCrit !== bCrit) return bCrit - aCrit;
+    const aFail = aItems.filter(i => i.status === 'fail' || i.status === 'warning').length;
+    const bFail = bItems.filter(i => i.status === 'fail' || i.status === 'warning').length;
+    if (aFail !== bFail) return bFail - aFail;
+    return (CATEGORY_LABELS[a] || a).localeCompare(CATEGORY_LABELS[b] || b);
+  });
 
   const isAnalysisRunning = !!activeAnalysisId;
   const analysisStatus = analysisRecord?.status ?? 'pending';
@@ -345,9 +363,10 @@ export default function M365PosturePage() {
               skipGaugeAnimation={hasLoadedOnce.current}
               miniStats={
                 <>
-                  <MiniStat value={data?.summary?.total ?? 0} label="Total" variant="primary" />
-                  <MiniStat value={(data?.summary?.total ?? 0) - (data?.summary?.critical ?? 0) - (data?.summary?.high ?? 0) - (data?.summary?.medium ?? 0) - (data?.summary?.low ?? 0)} label="Aprovadas" variant="success" />
-                  <MiniStat value={(data?.summary?.critical ?? 0) + (data?.summary?.high ?? 0) + (data?.summary?.medium ?? 0) + (data?.summary?.low ?? 0)} label="Falhas" variant="destructive" />
+                  <MiniStat value={allUnifiedItems.length} label="Total" variant="primary" />
+                  <MiniStat value={passCount} label="Aprovadas" variant="success" />
+                  <MiniStat value={failCount} label="Falhas" variant="destructive" />
+                  {warnCount > 0 && <MiniStat value={warnCount} label="Avisos" variant="primary" />}
                 </>
               }
               detailRows={
@@ -371,7 +390,7 @@ export default function M365PosturePage() {
             {Object.keys(groupedItems).length > 0 && (
               <div className="space-y-2">
                 <h2 className="text-lg font-semibold text-foreground mb-4">Verificações por Categoria</h2>
-                {(Object.keys(groupedItems) as M365RiskCategory[]).map((category, index) => (
+                {sortedCategories.map((category, index) => (
                   <M365CategorySection
                     key={category}
                     category={category}
