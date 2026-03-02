@@ -137,6 +137,13 @@ export default function M365PosturePage() {
     }
   }, [activeAnalysis, activeAnalysisId]);
 
+  // Reset analysis state when tenant changes
+  useEffect(() => {
+    setActiveAnalysisId(null);
+    setAnalysisStartedAt(null);
+    setElapsed(0);
+  }, [selectedTenantId]);
+
   // Handle polling result
   useEffect(() => {
     if (!analysisRecord || !activeAnalysisId) return;
