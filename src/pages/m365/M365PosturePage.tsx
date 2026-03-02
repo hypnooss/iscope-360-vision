@@ -162,14 +162,21 @@ export default function M365PosturePage() {
     }
   }, [analysisRecord, activeAnalysisId, queryClient, selectedTenantId]);
 
-  // Elapsed timer
+  // Elapsed timer + 10-minute safety timeout
   useEffect(() => {
     if (!analysisStartedAt) { setElapsed(0); return; }
     const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - analysisStartedAt) / 1000));
+      const secs = Math.floor((Date.now() - analysisStartedAt) / 1000);
+      setElapsed(secs);
+      if (secs > 600) {
+        setActiveAnalysisId(null);
+        setAnalysisStartedAt(null);
+        toast({ title: 'Timeout', description: 'A análise não respondeu em 10 minutos. Verifique o status manualmente.', variant: 'destructive' });
+        queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
+      }
     }, 1000);
     return () => clearInterval(interval);
-  }, [analysisStartedAt]);
+  }, [analysisStartedAt, queryClient, selectedTenantId]);
 
   // Auth and module access check
   useEffect(() => {
