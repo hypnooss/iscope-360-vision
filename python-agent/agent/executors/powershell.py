@@ -297,12 +297,12 @@ class PowerShellExecutor(BaseExecutor):
         t.start()
         return q
 
-    def _read_until_marker(self, read_queue: queue.Queue, marker: str, timeout: int) -> Optional[str]:
+    def _read_until_marker(self, read_queue: queue.Queue, marker: str, timeout: int):
         """
         Read lines from the reader queue until a marker line is found, with timeout.
-        Returns accumulated output (excluding the marker), or None on timeout/EOF.
-        Uses queue.get(timeout=remaining) so timeouts are always honoured,
-        even if the subprocess produces no output at all.
+        Returns a tuple (found: bool, output: str).
+        - found=True, output=accumulated lines when marker is found
+        - found=False, output=accumulated lines on timeout/EOF (for diagnostics)
         """
         lines = []
         deadline = time.time() + timeout
@@ -310,17 +310,17 @@ class PowerShellExecutor(BaseExecutor):
         while True:
             remaining = deadline - time.time()
             if remaining <= 0:
-                return None  # Timeout
+                return (False, "\n".join(lines))
             try:
                 line = read_queue.get(timeout=remaining)
             except queue.Empty:
-                return None  # Timeout
+                return (False, "\n".join(lines))
             if line is None:
                 # EOF - process died
-                return "\n".join(lines) if lines else None
+                return (False, "\n".join(lines))
             line_stripped = line.strip()
             if line_stripped == marker:
-                return "\n".join(lines)
+                return (True, "\n".join(lines))
             lines.append(line_stripped)
     
     def _drain_and_sync(self, proc, read_queue: queue.Queue, timeout: int = 30):
@@ -333,7 +333,7 @@ class PowerShellExecutor(BaseExecutor):
             sync_cmd = f'Write-Output "{self.SYNC_MARKER}"\n'
             proc.stdin.write(sync_cmd)
             proc.stdin.flush()
-            self._read_until_marker(read_queue, self.SYNC_MARKER, timeout=timeout)
+            found, _ = self._read_until_marker(read_queue, self.SYNC_MARKER, timeout=timeout)
             self.logger.debug("Post-timeout sync completed successfully")
         except (BrokenPipeError, OSError) as e:
             self.logger.warning(f"Sync after timeout failed (pipe broken): {e}")
@@ -447,10 +447,12 @@ class PowerShellExecutor(BaseExecutor):
             
             # Wait for session ready (connection timeout: 120s)
             self.logger.info("Waiting for PowerShell session to connect...")
-            ready_output = self._read_until_marker(read_queue, self.SESSION_READY_MARKER, timeout=120)
+            found, conn_output = self._read_until_marker(read_queue, self.SESSION_READY_MARKER, timeout=120)
             
-            if ready_output is None:
+            if not found:
                 error = "PowerShell session failed to connect within 120s"
+                if conn_output:
+                    self.logger.error(f"PowerShell output during connection:\n{conn_output[:2000]}")
                 try:
                     proc.kill()
                     proc.communicate(timeout=5)
@@ -512,9 +514,9 @@ class PowerShellExecutor(BaseExecutor):
                     break
                 
                 # Read until CMD_START marker
-                pre_output = self._read_until_marker(read_queue, self.CMD_START_MARKER, timeout=cmd_timeout)
+                start_found, pre_output = self._read_until_marker(read_queue, self.CMD_START_MARKER, timeout=cmd_timeout)
                 
-                if pre_output is None:
+                if not start_found:
                     # Timeout waiting for command to start producing output
                     duration = int((time.time() - cmd_start) * 1000)
                     error = f"Command timed out after {cmd_timeout}s"
@@ -541,11 +543,11 @@ class PowerShellExecutor(BaseExecutor):
                 
                 # CMD_START found, now read the JSON payload until CMD_END
                 remaining_timeout = max(30, cmd_timeout - int(time.time() - cmd_start))
-                json_output = self._read_until_marker(read_queue, self.CMD_END_MARKER, timeout=remaining_timeout)
+                end_found, json_output = self._read_until_marker(read_queue, self.CMD_END_MARKER, timeout=remaining_timeout)
                 
                 duration = int((time.time() - cmd_start) * 1000)
                 
-                if json_output is None:
+                if not end_found:
                     error = f"Command output timed out after producing start marker"
                     self.logger.warning(f"Command {cmd_name}: {error}")
                     sr = {'step_id': step_id, 'status': 'failed', 'error': error, 'duration_ms': duration}
