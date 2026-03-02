@@ -2,10 +2,12 @@ import { useEffect, useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useModules } from '@/contexts/ModuleContext';
 import { usePreview } from '@/contexts/PreviewContext';
 import { usePreviewGuard } from '@/hooks/usePreviewGuard';
 import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -13,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CommandCentralLayout, MiniStat, DetailRow } from '@/components/CommandCentral';
 import { 
   RefreshCw, 
@@ -22,6 +25,7 @@ import {
   Play,
   Settings,
   Loader2,
+  Building2,
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { TenantSelector } from '@/components/m365/posture';
@@ -36,6 +40,7 @@ import { UnifiedComplianceItem } from '@/types/unifiedCompliance';
 
 export default function M365PosturePage() {
   const { user, loading: authLoading } = useAuth();
+  const { effectiveRole } = useEffectiveAuth();
   const { hasModuleAccess } = useModules();
   const { isPreviewMode } = usePreview();
   const { isBlocked, showBlockedMessage } = usePreviewGuard();
@@ -44,8 +49,26 @@ export default function M365PosturePage() {
   const [activeAnalysisId, setActiveAnalysisId] = useState<string | null>(null);
   const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  
-  const { tenants, selectedTenantId, selectedTenant, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
+
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+
+  // ── Workspace selector ──
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['clients-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('clients').select('id, name').order('name');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: isSuperRole && !isPreviewMode,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
+
+  const { tenants, selectedTenantId, selectedTenant, selectTenant, loading: tenantsLoading } = useM365TenantSelector(
+    isSuperRole ? selectedWorkspaceId : undefined
+  );
 
   // Detect in-progress analysis on mount
   const { data: activeAnalysis } = useQuery({
@@ -195,6 +218,19 @@ export default function M365PosturePage() {
             <p className="text-muted-foreground">Análise consolidada do ambiente Microsoft 365</p>
           </div>
           <div className="flex items-center gap-3">
+            {isSuperRole && allWorkspaces && (
+              <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
+                <SelectTrigger className="w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces.map(w => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <TenantSelector
               tenants={tenants}
               selectedId={selectedTenantId}
