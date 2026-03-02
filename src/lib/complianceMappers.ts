@@ -67,23 +67,20 @@ export function mapM365Insight(insight: M365Insight): UnifiedComplianceItem {
   const evidence: EvidenceItem[] = [];
   const previewNames = (insight as any)._entitiesPreview as string[] | undefined;
   
+  // Always include base count evidence so the "Evidências" tab is visible
+  evidence.push({
+    label: 'Itens afetados',
+    value: `${insight.affectedCount ?? 0} item(ns)`,
+    type: 'text',
+  });
+
   if (insight.affectedEntities && insight.affectedEntities.length > 0) {
-    evidence.push({
-      label: 'Itens afetados',
-      value: `${insight.affectedCount} item(ns)`,
-      type: 'text',
-    });
     evidence.push({
       label: 'Entidades afetadas',
       value: insight.affectedEntities.map(e => e.displayName || e.userPrincipalName || e.id).join('\n'),
       type: 'list',
     });
   } else if (previewNames && previewNames.length > 0) {
-    evidence.push({
-      label: 'Itens afetados',
-      value: `${insight.affectedCount} item(ns)`,
-      type: 'text',
-    });
     const remaining = insight.affectedCount - previewNames.length;
     const preview = remaining > 0 
       ? [...previewNames, `e mais ${remaining}...`].join('\n')
@@ -135,23 +132,21 @@ export function mapM365AgentInsight(insight: M365AgentInsight): UnifiedComplianc
   const evidence: EvidenceItem[] = [];
   const previewNames = (insight as any)._entitiesPreview as string[] | undefined;
   
+  // Always include base count evidence so the "Evidências" tab is visible
+  const entityCount = insight.affectedEntities?.length ?? 0;
+  evidence.push({
+    label: 'Itens afetados',
+    value: `${entityCount} item(ns)`,
+    type: 'text',
+  });
+
   if (insight.affectedEntities && insight.affectedEntities.length > 0) {
-    evidence.push({
-      label: 'Itens afetados',
-      value: `${insight.affectedEntities.length} item(ns)`,
-      type: 'text',
-    });
     evidence.push({
       label: 'Entidades afetadas',
       value: insight.affectedEntities.map(e => e.name).join('\n'),
       type: 'list',
     });
   } else if (previewNames && previewNames.length > 0) {
-    evidence.push({
-      label: 'Itens afetados',
-      value: `${previewNames.length}+ item(ns)`,
-      type: 'text',
-    });
     evidence.push({
       label: 'Entidades afetadas (prévia)',
       value: previewNames.join('\n'),
