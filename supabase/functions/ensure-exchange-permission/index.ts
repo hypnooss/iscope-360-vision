@@ -56,6 +56,7 @@ const REQUIRED_PERMISSIONS = [
   { resourceAppId: GRAPH_RESOURCE_ID, permissionId: TEAM_MEMBER_READ_ALL_ID, name: "TeamMember.Read.All" },
   { resourceAppId: GRAPH_RESOURCE_ID, permissionId: SHAREPOINT_TENANT_SETTINGS_READ_ALL_ID, name: "SharePointTenantSettings.Read.All" },
   { resourceAppId: GRAPH_RESOURCE_ID, permissionId: "6e472fd1-ad78-48da-a0f0-97ab2c6b769e", name: "IdentityRiskEvent.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: "332a536c-c7ef-4017-ab91-336970924f0d", name: "Sites.Read.All" },
 ];
 
 function fromHex(hex: string): Uint8Array {
