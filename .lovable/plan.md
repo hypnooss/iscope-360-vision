@@ -1,22 +1,32 @@
 
 
-## Fix Applied: Missing EXO-018, EXO-019, EXO-022 Rules
+## Add Workspace Selector to M365 Compliance Page
 
-### Root Causes Found
+### Problem
+The M365 Compliance page (`M365PosturePage.tsx`) is missing the Workspace selector that exists in Firewall and External Domain Compliance pages. Super roles (`super_admin`, `super_suporte`) need to filter tenants by workspace.
 
-1. **EXO-018/019 (Inbound/Outbound Connectors)**: Step data was `null` in `task_step_results` (tenant has no connectors). The rawData reconstruction code skipped null data even for successful steps (`if (step.status === 'success' && step.data)`), so these rules were never evaluated.
+### Solution
 
-2. **EXO-022 (Suspicious Inbox Rules)**: Used `evaluate: { type: 'check_suspicious_inbox_rules' }` in evaluation_logic, which was not handled by `evaluateAgentRule()` (only supported `array_empty`, `all_match`, `none_match`).
+**`src/pages/m365/M365PosturePage.tsx`:**
 
-### Fixes Applied
+1. Import `useEffectiveAuth`, `useWorkspaceSelector`, and `Select` components
+2. Add workspace query (same `clients-list` pattern as Firewall Compliance)
+3. Add `useWorkspaceSelector` hook with localStorage persistence
+4. Filter the tenant list by `selectedWorkspaceId` — pass it to `useM365TenantSelector`
+5. Render the workspace `<Select>` dropdown before the TenantSelector in the header (only for super roles)
 
-1. **`agent-task-result/index.ts` - rawData reconstruction**: When `step.status === 'success'` but `step.data` is null, now treats it as `{ data: [] }` (empty array) so evaluators can produce a correct 'pass' result.
+**`src/hooks/useM365TenantSelector.ts`:**
 
-2. **`agent-task-result/index.ts` - evaluateSuspiciousInboxRules()**: Added new evaluator for EXO-022 that filters inbox rules for enabled rules with `ForwardTo`, `ForwardAsAttachmentTo`, or `RedirectTo` set, producing affected entities with mailbox owner details.
+6. Add optional `workspaceId` parameter to filter tenants by `client_id` (same column used in the existing `workspaceIds` preview logic)
+7. When `workspaceId` changes, re-fetch tenants and auto-select the first one
 
-### Expected Result
+### Header layout (super role view)
+```
+[Workspace ▼] [Tenant ▼] [Executar Análise] [⚙]
+```
 
-Next M365 posture analysis should produce 3 additional cards in "Email & Exchange":
-- EXO-018: Pass/Fail based on inbound connectors with TreatMessagesAsInternal
-- EXO-019: Pass/Fail based on outbound connectors TLS settings
-- EXO-022: Pass/Warn/Fail based on suspicious forwarding rules
+### Persistence behavior
+- Workspace: saved in `localStorage` via `useWorkspaceSelector` (key: `iscope_selected_workspace`)
+- Tenant: saved in URL via `?tenant=` param (existing behavior from `useM365TenantSelector`)
+- When workspace changes → tenant list re-filters → auto-selects first tenant of new workspace
+
