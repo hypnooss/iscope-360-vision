@@ -1,25 +1,27 @@
 
 
-## Fix: Prevent auto-refresh and gauge redraw on M365 Compliance
+## Fix: M365 Compliance still shows loading spinner on navigation
 
 ### Root Cause
-`useM365SecurityPosture` uses raw `useState` + `useEffect` to fetch data. Every time the page mounts (navigating back), the effect fires, sets `isLoading=true` (clearing the UI), re-fetches from scratch, and the gauge redraws with animation. The Firewall and Domain pages use `useQuery` with `staleTime` — cached data is shown instantly without refetching.
+`useM365TenantSelector` uses `useState` + `useEffect` to fetch tenants. Every mount calls `loadTenants()` which sets `loading=true`, triggering the full-page spinner on line 184 of `M365PosturePage.tsx`. This is the same anti-pattern that was just fixed in the posture hook but remains in the tenant selector.
 
 ### Solution
 
-**`src/hooks/useM365SecurityPosture.ts`:**
-- Replace the `useState(data)` + `useEffect(refetch)` pattern with `useQuery` for the posture data fetch
-- Use `staleTime: 1000 * 60 * 5` (5 min) so navigating back doesn't trigger a refetch
-- Keep `triggerAnalysis` as-is (imperative action)
-- Expose `refetch` from the query for explicit refresh after analysis completes
-- The `queryKey` includes `tenantRecordId` so switching tenants still loads the right data
+**`src/hooks/useM365TenantSelector.ts`:**
+- Replace `useState(tenants)` + `useEffect(loadTenants)` with `useQuery`
+- Use `staleTime: 1000 * 60 * 5` (5 min) so navigating back uses cached tenants
+- Include `workspaceId` in the `queryKey` so switching workspaces still re-fetches
+- Derive `loading` from `isLoading` of the query (only true on first fetch, not on cache hit)
 
-**`src/pages/m365/M365PosturePage.tsx`:**
-- After analysis completes (polling detects `completed`), call `queryClient.invalidateQueries` on the posture query key (same pattern as Firewall/Domain pages)
-- Pass `skipGaugeAnimation={true}` to `CommandCentralLayout` when data is already cached (not first load)
+### Key change
+```typescript
+const { data: tenants = [], isLoading: loading } = useQuery({
+  queryKey: ['m365-tenants', workspaceId, user?.id],
+  queryFn: async () => { /* existing fetch logic */ },
+  enabled: !!user,
+  staleTime: 1000 * 60 * 5,
+});
+```
 
-### Result
-- Navigating away and back: instant render from cache, no loading spinner, no gauge animation
-- After analysis completes: data refreshes once via query invalidation
-- Switching tenants: fetches new tenant data normally
+Everything else (URL param persistence, auto-select first tenant, `selectTenant`) stays the same.
 
