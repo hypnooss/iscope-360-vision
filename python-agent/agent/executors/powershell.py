@@ -46,7 +46,7 @@ class PowerShellExecutor(BaseExecutor):
     CMD_END_MARKER = "---ISCOPE_CMD_END---"
     SESSION_READY_MARKER = "---ISCOPE_SESSION_READY---"
     SYNC_MARKER = "---ISCOPE_SYNC---"
-    ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07')
+    ANSI_ESCAPE_RE = re.compile(r'\x1b\[[\x20-\x3f]*[0-9;]*[\x20-\x7e]|\x1b\].*?\x07')
     
     # Consecutive timeout threshold before killing session
     MAX_CONSECUTIVE_TIMEOUTS = 3
@@ -269,20 +269,23 @@ class PowerShellExecutor(BaseExecutor):
         return "\n".join(lines) + "\n"
     
     def _build_interactive_command(self, cmd_name: str, cmd_text: str) -> str:
-        """Build a single command wrapped with delimiters for interactive parsing."""
+        """Build a single command wrapped with delimiters for interactive parsing.
+        
+        CMD_START is emitted BEFORE execution so the agent can distinguish
+        'command not received' from 'cmdlet hanging'. CMD_END is outside
+        try/catch so it always fires regardless of success/error.
+        """
         return (
+            f'[Console]::WriteLine("{self.CMD_START_MARKER}")\n'
+            f"[Console]::Out.Flush()\n"
             f"try {{\n"
             f"    $__data = ({cmd_text} | ConvertTo-Json -Depth 10 -Compress)\n"
-            f'    [Console]::WriteLine("{self.CMD_START_MARKER}")\n'
             f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$true; 'data'=$__data }} | ConvertTo-Json -Compress)\n"
-            f'    [Console]::WriteLine("{self.CMD_END_MARKER}")\n'
-            f"    [Console]::Out.Flush()\n"
             f"}} catch {{\n"
-            f'    [Console]::WriteLine("{self.CMD_START_MARKER}")\n'
             f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$false; 'error'=$_.Exception.Message }} | ConvertTo-Json -Compress)\n"
-            f'    [Console]::WriteLine("{self.CMD_END_MARKER}")\n'
-            f"    [Console]::Out.Flush()\n"
             f"}}\n"
+            f'[Console]::WriteLine("{self.CMD_END_MARKER}")\n'
+            f"[Console]::Out.Flush()\n"
         )
     
     def _sanitize_line(self, line: str) -> str:
