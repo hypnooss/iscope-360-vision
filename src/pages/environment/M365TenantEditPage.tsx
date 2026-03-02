@@ -218,8 +218,11 @@ export default function M365TenantEditPage() {
       const totalFailed = failedRequired + failedRecommended;
 
       if (totalFailed === 0) {
-        toast.success('Todas as permissões já estão concedidas');
+        // All permissions granted in pre-check — but still run validate-m365-connection
+        // to sync ALL permissions (including additional ones) in the database
+        toast.info('Permissões pré-validadas. Sincronizando status completo...');
         setRevalidating(false);
+        startPermissionPolling();
         return;
       }
 
