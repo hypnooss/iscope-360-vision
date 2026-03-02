@@ -187,6 +187,7 @@ export function useLatestM365AnalyzerSnapshot(tenantRecordId?: string) {
     queryFn: async () => {
       if (!tenantRecordId) return null;
 
+      // Query 1: summaries + metrics from last 24 snapshots (no insights for performance)
       const { data, error } = await supabase
         .from('m365_analyzer_snapshots' as any)
         .select('id, tenant_record_id, client_id, agent_task_id, status, period_start, period_end, score, summary, metrics, created_at')
@@ -200,7 +201,20 @@ export function useLatestM365AnalyzerSnapshot(tenantRecordId?: string) {
       if (rows.length === 0) return null;
 
       const snapshots = rows.map((r) => parseSnapshot(r as Record<string, unknown>));
-      return aggregateSnapshots(snapshots);
+      const aggregated = aggregateSnapshots(snapshots);
+      if (!aggregated) return null;
+
+      // Query 2: load insights only from the latest snapshot
+      const { data: latestInsightsData } = await supabase
+        .from('m365_analyzer_snapshots' as any)
+        .select('insights')
+        .eq('id', rows[0].id)
+        .single() as any;
+
+      const rawInsights = Array.isArray(latestInsightsData?.insights) ? latestInsightsData.insights : [];
+      aggregated.insights = deduplicateInsights(rawInsights as M365AnalyzerInsight[]);
+
+      return aggregated;
     },
     enabled: !!tenantRecordId,
     staleTime: 1000 * 30,
