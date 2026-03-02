@@ -1,32 +1,27 @@
 
 
-## Add Workspace Selector to M365 Compliance Page
+## Fix TenantSelector: show domain only, always as dropdown
 
 ### Problem
-The M365 Compliance page (`M365PosturePage.tsx`) is missing the Workspace selector that exists in Firewall and External Domain Compliance pages. Super roles (`super_admin`, `super_suporte`) need to filter tenants by workspace.
+1. The `TenantSelector` shows `displayName (domain)` which is too long (e.g., "BRASILUX IND. E COM. DE IMP. E EXP. LTDA (TASCHIBRA.mail.onmicrosoft.com)")
+2. When there's only 1 tenant, it renders as static text instead of a dropdown selector
 
-### Solution
+### Changes
 
-**`src/pages/m365/M365PosturePage.tsx`:**
+**`src/components/m365/posture/TenantSelector.tsx`:**
 
-1. Import `useEffectiveAuth`, `useWorkspaceSelector`, and `Select` components
-2. Add workspace query (same `clients-list` pattern as Firewall Compliance)
-3. Add `useWorkspaceSelector` hook with localStorage persistence
-4. Filter the tenant list by `selectedWorkspaceId` — pass it to `useM365TenantSelector`
-5. Render the workspace `<Select>` dropdown before the TenantSelector in the header (only for super roles)
+- Remove the `tenants.length === 1` special case — always render the dropdown
+- In the trigger button, show only `selectedTenant?.domain` instead of `displayName`
+- In dropdown items, show `domain` as primary text and `displayName` as secondary smaller text
+- Use the same `Select` component pattern or keep the DropdownMenu but with domain-only display
 
-**`src/hooks/useM365TenantSelector.ts`:**
-
-6. Add optional `workspaceId` parameter to filter tenants by `client_id` (same column used in the existing `workspaceIds` preview logic)
-7. When `workspaceId` changes, re-fetch tenants and auto-select the first one
-
-### Header layout (super role view)
+### Result
 ```
-[Workspace ▼] [Tenant ▼] [Executar Análise] [⚙]
+[TASCHIBRA.mail.onmicrosoft.com ▼]
 ```
-
-### Persistence behavior
-- Workspace: saved in `localStorage` via `useWorkspaceSelector` (key: `iscope_selected_workspace`)
-- Tenant: saved in URL via `?tenant=` param (existing behavior from `useM365TenantSelector`)
-- When workspace changes → tenant list re-filters → auto-selects first tenant of new workspace
+Dropdown items show:
+```
+TASCHIBRA.mail.onmicrosoft.com
+  BRASILUX IND. E COM. DE IMP. E EXP. LTDA
+```
 
