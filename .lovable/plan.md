@@ -1,42 +1,16 @@
 
 
-## Bug: PIM-002 "Ativações de Role Recentes" showing only "User" for all entities
+## Rename button and update redirect
 
-**Root cause:** In `supabase/functions/m365-check-pim/index.ts` line 151, the entity mapping uses only `a.principal?.displayName`, which returns "User" for all entries. The PIM beta endpoint's `$expand=principal` returns a minimal principal object. We need to also use `userPrincipalName` and include the role name for context.
+### Change in `src/pages/m365/OAuthCallbackPage.tsx`
 
-### Change in `supabase/functions/m365-check-pim/index.ts`
+1. **Line 82**: Change redirect from `/environment` to `/environment/m365/${tenantId}/edit` (using `tenantId` from searchParams, already parsed at line 24)
+2. **Line 148**: Rename button label from `'Voltar para Conexões'` to `'Voltar para Ambiente'`
 
-**Line 149-153** — Improve entity mapping to show more useful information:
-
-```typescript
-affectedEntities: recentActivations.slice(0, 15).map((a: any) => ({
-  id: a.id,
-  displayName: a.principal?.displayName && a.principal.displayName !== 'User'
-    ? a.principal.displayName
-    : a.principal?.userPrincipalName || a.principal?.displayName || 'Usuário',
-  userPrincipalName: a.principal?.userPrincipalName || '',
-  details: {
-    roleName: a.roleDefinition?.displayName || '',
-    startDateTime: a.startDateTime,
-    endDateTime: a.endDateTime,
-  }
-})),
-```
-
-Also update the Graph API query (line 126) to expand `roleDefinition` alongside `principal`:
-
-```
-$expand=principal,roleDefinition
-```
-
-### Change in RPC `get_posture_insights_lite`
-
-The RPC extracts `e->>'displayName'` for the preview — this is correct and will now show the improved displayName. No RPC change needed.
+Need to store `tenantId` in state so it's available in `handleClose`. It's already extracted as `const tenantId = searchParams.get('tenant_id')` inside useEffect — we can read it directly from `searchParams` in `handleClose` instead.
 
 ### Files changed
 | File | Change |
 |------|--------|
-| `m365-check-pim/index.ts` | Improve entity displayName fallback; expand roleDefinition; include UPN |
-
-Requires edge function redeployment.
+| `OAuthCallbackPage.tsx` | Update `handleClose` redirect to `/environment/m365/{tenant_id}/edit`; rename button text |
 
