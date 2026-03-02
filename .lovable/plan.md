@@ -1,29 +1,39 @@
 
 
-## Diagnóstico: Por que "Revalidar Permissões" não resolve `Sites.Read.All`
+## Diagnóstico: SPO-002 e SPO-004 ainda "não disponíveis"
 
-O fluxo de "Revalidar Permissões" funciona em 3 passos:
-1. **`ensure-exchange-permission`** — Atualiza o manifesto do App Registration no Azure, adicionando permissões faltantes
-2. **Admin Consent popup** — O admin do tenant concede todas as permissões do manifesto
-3. **Revalidação** — Testa cada permissão via API
+### Causa Raiz
 
-O problema: **`Sites.Read.All` (Microsoft Graph) não está na lista `REQUIRED_PERMISSIONS`** do `ensure-exchange-permission/index.ts`. Portanto, nunca é adicionada ao manifesto, e o Admin Consent nunca a concede.
+Ambas as regras dependem do step `sharepoint_external_sharing` que chama `/admin/sharepoint/settings` (beta). Este endpoint retorna **403: "Caller does not have required permissions"**.
 
-A lista atual tem `Sites.FullControl.All` (recurso SharePoint), mas falta `Sites.Read.All` (recurso Microsoft Graph — ID `332a536c-c7ef-4017-ab91-336970924f0d`).
+O motivo: o GUID registrado para `SharePointTenantSettings.Read.All` no código é **`83d4163d-a2d8-4e3b-b3a5-5d4b1a5e5f6e`** — um valor fabricado/incorreto. O Azure nunca registrou essa permissão no manifesto porque o GUID não existe. Por isso, mesmo após revalidar permissões, ela nunca aparece no token.
 
-### Correção
+### Solução: Eliminar dependência do `/admin/sharepoint/settings`
 
-Adicionar `Sites.Read.All` à lista `REQUIRED_PERMISSIONS` em `ensure-exchange-permission/index.ts`:
+Em vez de corrigir o GUID (que exigiria permissão SharePoint Admin de alto privilégio), a melhor abordagem é **reescrever as regras SPO-002 e SPO-004 para usar endpoints que já funcionam** com `Sites.Read.All` (que já está no token). É exatamente o que o `m365-check-sharepoint` já faz com sucesso.
 
-```typescript
-{ resourceAppId: GRAPH_RESOURCE_ID, permissionId: "332a536c-c7ef-4017-ab91-336970924f0d", name: "Sites.Read.All" },
-```
+### Alterações
 
-### Arquivo a modificar
+**1. Blueprint do SharePoint (migration SQL):**
+- Remover o step `sharepoint_external_sharing` 
+- Adicionar dois novos steps:
+  - `sharepoint_drive_permissions` → `/sites/root` + iteração em drives para verificar links anônimos
+  - `sharepoint_onedrive_permissions` → `/users?$top=20` + iteração em drives de usuários
+
+**2. `m365-security-posture/index.ts`:**
+- Reescrever `check_sharepoint_anonymous_links` para fazer a coleta inline (como faz o `m365-check-sharepoint`) usando chamadas Graph API diretas com o token disponível
+- Reescrever `check_onedrive_sharing` da mesma forma
+- Atualizar as regras SPO-002 e SPO-004 no DB para usar `source_key: "sharepoint_sites"` (que já funciona) como trigger, com a lógica real fazendo chamadas adicionais
+
+**3. Alternativa mais limpa — Coleta inline no evaluator:**
+- Como SPO-002 e SPO-004 requerem múltiplas chamadas encadeadas (root site → drives → permissions), o modelo de "1 step = 1 endpoint" não funciona bem
+- Solução: criar um tipo de avaliação especial (`check_sharepoint_anonymous_links_live` e `check_onedrive_sharing_live`) que recebe o `accessToken` e faz as chamadas diretamente no evaluator, usando a lógica já provada do `m365-check-sharepoint`
+
+### Arquivos a modificar
 
 | Arquivo | Alteração |
 |---|---|
-| `supabase/functions/ensure-exchange-permission/index.ts` | Adicionar `Sites.Read.All` (Graph) à lista REQUIRED_PERMISSIONS |
-
-Após o deploy, basta clicar em **Revalidar Permissões** novamente — o manifesto será atualizado, o popup de Admin Consent concederá a permissão, e `Sites.Read.All` passará a funcionar.
+| `supabase/functions/m365-security-posture/index.ts` | Adicionar lógica de coleta inline para SPO-002 e SPO-004 usando `Sites.Read.All`; passar `accessToken` ao evaluator para esses casos especiais |
+| Migration SQL | Atualizar `evaluation_logic` de SPO-002 e SPO-004 para usar o novo tipo de avaliação com `source_key: "sharepoint_sites"` |
+| `supabase/functions/ensure-exchange-permission/index.ts` | Corrigir ou remover o GUID falso de `SharePointTenantSettings.Read.All`; remover o step `sharepoint_external_sharing` do blueprint |
 
