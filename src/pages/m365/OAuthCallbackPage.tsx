@@ -76,8 +76,11 @@ export default function OAuthCallbackPage() {
   }, [searchParams]);
 
   const handleClose = () => {
+    const tenantId = searchParams.get('tenant_id');
     if (window.opener) {
       window.close();
+    } else if (tenantId) {
+      window.location.href = `/environment/m365/${tenantId}/edit`;
     } else {
       window.location.href = '/environment';
     }
@@ -148,7 +151,7 @@ export default function OAuthCallbackPage() {
             )}
             
             <Button onClick={handleClose} className="w-full">
-              {window.opener ? 'Fechar Janela' : 'Voltar para Conexões'}
+              {window.opener ? 'Fechar Janela' : 'Voltar para Ambiente'}
             </Button>
           </div>
         </CardContent>
