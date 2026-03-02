@@ -1,34 +1,62 @@
 
 
-## Pente Fino — M365 Compliance Blueprint: Auditoria Completa
+## Correção: Insights do M365 Analyzer não carregando (0 incidentes)
 
-### ✅ Implementado
+### Problema
 
-**Fase 1 — Correções imediatas:**
-- ✅ Step `sharepoint_external_sharing` removido do blueprint SharePoint
-- ✅ Step `teams_settings` marcado como `optional: true` no blueprint Teams
-- ✅ Regra AUT-006 (Bloqueio de Autenticação Legada) adicionada ao banco
-- ✅ Regra EXO-022 (Inbox Rules Suspeitas) criada com evaluator `check_suspicious_inbox_rules`
-- ✅ GUIDs corrigidos: `SecurityAlert.Read.All` (472e4a4d→correto) e `SecurityIncident.Read.All` (45cc0394→correto)
-- ✅ Regras EXO-002~005 (placeholders inativos) removidas
+A query em `useLatestM365AnalyzerSnapshot` omite a coluna `insights` do `.select()`:
 
-**Fase 2 — Novas regras (9 regras adicionadas):**
-- ✅ AUT-008: Política de Expiração de Senha (`check_password_expiration`)
-- ✅ AUT-009: Self-Service Password Reset (`check_sspr_enabled`)
-- ✅ AUT-010: CA com Sign-In Risk (`check_ca_signin_risk`)
-- ✅ AUT-011: CA com User Risk (`check_ca_user_risk`)
-- ✅ ADM-007: Contas de Emergência Break Glass (`check_break_glass_accounts`)
-- ✅ APP-008: Credenciais de Longa Duração (`count_long_lived_credentials`)
-- ✅ IDT-007: Usuários Sem Licença (`count_unlicensed_users`)
-- ✅ Step `authorization_policy` adicionado ao blueprint Entra ID
+```
+.select('id, tenant_record_id, client_id, agent_task_id, status, period_start, period_end, score, summary, metrics, created_at')
+```
 
-**Fase 3 — Qualidade e robustez:**
-- ✅ Paginação `@odata.nextLink` implementada no `executeGraphApiStep` (até 5 páginas)
-- ✅ `check_teams_private_channels` real (itera teams e conta canais privados via Graph API)
+Resultado: `insights` chega como `undefined`, parseado como `[]`, e o dashboard mostra 0 incidentes apesar de existirem 233 reais no banco.
 
-### Pendente (requer Agent PowerShell)
-- EXO-021: Shared Mailbox com Login Direto (precisa de step no blueprint de Agent)
+### Solução
 
-### Pendente (UX - Fase futura)
-- Banner de categoria não licenciada (Intune/MIP) na UI
-- Severidade original mantida em items "pass" (requer mudança no `createInsight`)
+Estratégia em duas partes para manter a performance:
+
+**1. Carregar insights apenas do snapshot mais recente**
+
+A query atual busca 24 snapshots para agregar summaries/metrics. Carregar `insights` de todos os 24 seria pesado e redundante. A solução:
+- Manter a query principal (24 snapshots) SEM `insights` para agregar summaries
+- Fazer uma segunda query apenas para o snapshot mais recente, buscando apenas `id, insights`
+- Usar os insights dessa segunda query no resultado final
+
+**2. Melhorar a deduplicação de insights**
+
+O `deduplicateInsights` atual usa `category::name` como chave. Regras como "Regra de Inbox Suspeita" para cada usuário individual teriam o mesmo `name` mas `description` diferente, sendo colapsadas incorretamente. A correção:
+- Incluir também o `id` ou `description` na chave de deduplicação quando existirem múltiplas entidades afetadas
+
+### Arquivo a modificar
+
+| Arquivo | Alteracao |
+|---|---|
+| `src/hooks/useM365AnalyzerData.ts` | Adicionar segunda query para insights do snapshot mais recente; ajustar deduplicacao |
+
+### Detalhes Tecnicos
+
+Na funcao `useLatestM365AnalyzerSnapshot`:
+
+```typescript
+// Query 1: summaries + metrics de 24 snapshots (sem insights)
+const { data: rows } = await supabase
+  .from('m365_analyzer_snapshots')
+  .select('id, tenant_record_id, ..., summary, metrics, created_at')
+  .eq('tenant_record_id', tenantRecordId)
+  .eq('status', 'completed')
+  .order('created_at', { ascending: false })
+  .limit(24);
+
+// Query 2: insights apenas do mais recente
+const { data: latestWithInsights } = await supabase
+  .from('m365_analyzer_snapshots')
+  .select('id, insights')
+  .eq('id', rows[0].id)
+  .single();
+
+// Merge no resultado final
+aggregated.insights = latestWithInsights?.insights ?? [];
+```
+
+Para a deduplicacao, mudar a chave para `category::name::id` (onde `id` e o ID unico do insight gerado pelo backend).
