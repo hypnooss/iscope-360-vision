@@ -10,7 +10,7 @@ export interface TenantOption {
   domain: string;
 }
 
-export function useM365TenantSelector() {
+export function useM365TenantSelector(workspaceId?: string | null) {
   const { user } = useAuth();
   const { isPreviewMode, previewTarget } = usePreview();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -41,7 +41,10 @@ export function useM365TenantSelector() {
         .select('id, display_name, tenant_domain, client_id')
         .in('connection_status', ['connected', 'partial']);
 
-      if (workspaceIds && workspaceIds.length > 0) {
+      // Filter by explicit workspaceId first, then by preview workspaces
+      if (workspaceId) {
+        query = query.eq('client_id', workspaceId);
+      } else if (workspaceIds && workspaceIds.length > 0) {
         query = query.in('client_id', workspaceIds);
       }
 
@@ -62,7 +65,7 @@ export function useM365TenantSelector() {
     } finally {
       setLoading(false);
     }
-  }, [user, isPreviewMode, previewTarget]);
+  }, [user, isPreviewMode, previewTarget, workspaceId]);
 
   useEffect(() => {
     loadTenants();
