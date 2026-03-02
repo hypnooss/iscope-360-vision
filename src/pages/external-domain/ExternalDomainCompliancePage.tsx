@@ -541,7 +541,7 @@ export default function ExternalDomainCompliancePage() {
               </SelectTrigger>
               <SelectContent>
                 {domains.map(d => (
-                  <SelectItem key={d.id} value={d.id}>{d.name} ({d.domain})</SelectItem>
+                  <SelectItem key={d.id} value={d.id}>{d.name}{d.domain && d.domain !== d.name ? ` (${d.domain})` : ''}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
