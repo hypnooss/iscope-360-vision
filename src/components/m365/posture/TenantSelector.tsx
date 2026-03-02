@@ -40,24 +40,6 @@ export function TenantSelector({
     );
   }
 
-  if (tenants.length === 1) {
-    return (
-      <div className="flex items-center gap-2">
-        <Building2 className="w-4 h-4 text-muted-foreground" />
-        <div>
-          <span className="font-medium text-foreground">
-            {selectedTenant?.displayName || 'Tenant'}
-          </span>
-          {selectedTenant?.domain && (
-            <span className="text-sm text-muted-foreground ml-2">
-              ({selectedTenant.domain})
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled || loading}>
@@ -71,20 +53,13 @@ export function TenantSelector({
           ) : (
             <Building2 className="w-4 h-4" />
           )}
-          <div className="flex flex-col items-start">
-            <span className="font-medium">
-              {selectedTenant?.displayName || 'Selecionar Tenant'}
-            </span>
-            {selectedTenant?.domain && (
-              <span className="text-xs text-muted-foreground">
-                {selectedTenant.domain}
-              </span>
-            )}
-          </div>
+          <span className="font-medium">
+            {selectedTenant?.domain || 'Selecionar Tenant'}
+          </span>
           <ChevronDown className="w-4 h-4 ml-2" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[280px]">
+      <DropdownMenuContent align="start" className="w-[320px]">
         {tenants.map((tenant) => (
           <DropdownMenuItem
             key={tenant.id}
@@ -95,10 +70,10 @@ export function TenantSelector({
             )}
           >
             <div className="flex flex-col">
-              <span className="font-medium">{tenant.displayName}</span>
-              {tenant.domain && (
+              <span className="font-medium">{tenant.domain}</span>
+              {tenant.displayName && (
                 <span className="text-xs text-muted-foreground">
-                  {tenant.domain}
+                  {tenant.displayName}
                 </span>
               )}
             </div>
