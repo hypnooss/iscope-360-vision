@@ -250,6 +250,30 @@ export default function FirewallCompliancePage() {
     refetchInterval: 5000,
   });
 
+  // Detect in-progress task on mount
+  useQuery({
+    queryKey: ['fw-active-task', selectedFirewallId],
+    queryFn: async () => {
+      if (!selectedFirewallId) return null;
+      const { data } = await supabase
+        .from('agent_tasks')
+        .select('id, created_at, status')
+        .eq('target_id', selectedFirewallId)
+        .eq('target_type', 'firewall')
+        .in('status', ['pending', 'running'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data && !activeTaskId) {
+        setActiveTaskId(data.id);
+        setTaskStartedAt(new Date(data.created_at));
+        setIsRefreshing(true);
+      }
+      return data;
+    },
+    enabled: !!selectedFirewallId && !activeTaskId,
+  });
+
   // Handle task completion
   useEffect(() => {
     if (!taskStatus || !activeTaskId) return;
@@ -268,6 +292,29 @@ export default function FirewallCompliancePage() {
       setIsRefreshing(false);
     }
   }, [taskStatus?.status]);
+
+  // 10-minute safety timeout
+  useEffect(() => {
+    if (!taskStartedAt || !activeTaskId) return;
+    const interval = setInterval(() => {
+      const secs = Math.floor((Date.now() - taskStartedAt.getTime()) / 1000);
+      if (secs > 600) {
+        setActiveTaskId(null);
+        setTaskStartedAt(null);
+        setIsRefreshing(false);
+        toast.error('A análise não respondeu em 10 minutos. Verifique o status manualmente.');
+        queryClient.invalidateQueries({ queryKey: ['fw-compliance-snapshots', selectedFirewallId] });
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [taskStartedAt, activeTaskId, queryClient, selectedFirewallId]);
+
+  // Reset task state when firewall changes
+  useEffect(() => {
+    setActiveTaskId(null);
+    setTaskStartedAt(null);
+    setIsRefreshing(false);
+  }, [selectedFirewallId]);
 
   const isTaskRunning = !!activeTaskId && (!taskStatus || taskStatus.status === 'pending' || taskStatus.status === 'running');
 

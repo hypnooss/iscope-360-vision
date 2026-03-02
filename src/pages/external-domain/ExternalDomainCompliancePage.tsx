@@ -419,6 +419,30 @@ export default function ExternalDomainCompliancePage() {
     refetchInterval: 5000,
   });
 
+  // Detect in-progress task on mount
+  useQuery({
+    queryKey: ['domain-active-task', selectedDomainId],
+    queryFn: async () => {
+      if (!selectedDomainId) return null;
+      const { data } = await supabase
+        .from('agent_tasks')
+        .select('id, created_at, status')
+        .eq('target_id', selectedDomainId)
+        .eq('target_type', 'external_domain')
+        .in('status', ['pending', 'running'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data && !activeTaskId) {
+        setActiveTaskId(data.id);
+        setTaskStartedAt(new Date(data.created_at));
+        setIsRefreshing(true);
+      }
+      return data;
+    },
+    enabled: !!selectedDomainId && !activeTaskId,
+  });
+
   useEffect(() => {
     if (!taskStatus || !activeTaskId) return;
     const s = taskStatus.status;
@@ -436,6 +460,29 @@ export default function ExternalDomainCompliancePage() {
       setIsRefreshing(false);
     }
   }, [taskStatus?.status]);
+
+  // 10-minute safety timeout
+  useEffect(() => {
+    if (!taskStartedAt || !activeTaskId) return;
+    const interval = setInterval(() => {
+      const secs = Math.floor((Date.now() - taskStartedAt.getTime()) / 1000);
+      if (secs > 600) {
+        setActiveTaskId(null);
+        setTaskStartedAt(null);
+        setIsRefreshing(false);
+        toast.error('A análise não respondeu em 10 minutos. Verifique o status manualmente.');
+        queryClient.invalidateQueries({ queryKey: ['domain-compliance-snapshots', selectedDomainId] });
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [taskStartedAt, activeTaskId, queryClient, selectedDomainId]);
+
+  // Reset task state when domain changes
+  useEffect(() => {
+    setActiveTaskId(null);
+    setTaskStartedAt(null);
+    setIsRefreshing(false);
+  }, [selectedDomainId]);
 
   const isTaskRunning = !!activeTaskId && (!taskStatus || taskStatus.status === 'pending' || taskStatus.status === 'running');
 
