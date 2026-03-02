@@ -1,73 +1,37 @@
 
 
-## Diagnóstico: `-Command -` com stdin pipe causa deadlock nos cmdlets Exchange
+## Problem
 
-O problema está 100% confirmado:
+All three compliance pages (M365, Firewall, Domain) share the same bug: **the progress bar only disappears if the user triggered the analysis in the current session**. If the user navigates away and returns, or if the page was already open when the task finished, the progress bar gets stuck because:
 
-1. Manualmente com `pwsh -NonInteractive` interativo → `Get-AcceptedDomain` retorna instantaneamente
-2. No agent com `pwsh -NonInteractive -Command -` (stdin pipe) → `CMD_START` chega, cmdlet trava por 120s
+1. **M365 Posture**: Detects active analysis on mount (queries `m365_posture_history` for `pending`/`partial` status), but the polling only checks `m365_posture_history.status` — if the `agent-task-result` edge function already updated it to `completed`, the mount query returns nothing, the `activeAnalysisId` is never set, and polling never starts. **However**, if the record is still `partial` at mount time, it restores correctly. The real issue is the **missing frontend timeout** (memory says 10 min, but code has none) and the fact that `partial` + `agent_status=completed` may not be detected fast enough.
 
-Os cmdlets Exchange usam **implicit remoting** (proxy functions que fazem chamadas WinRM remotas). No modo `-Command -`, o PowerShell mantém stdin aberto como pipe, e esses cmdlets remotos podem tentar ler de stdin internamente, causando deadlock.
+2. **Firewall & Domain Compliance**: These pages have **no mount-time detection at all**. The `activeTaskId` is only set when the user clicks "Refresh" in that session. If the user triggers analysis, navigates away, and returns — the progress bar won't show, but conversely, if they stay on the page and the network hiccups, the polling may miss the terminal status.
 
-## Solução: Trocar `-Command -` por `-File` com script temporário
+**Root cause for the screenshot**: The M365 page restored an active analysis on mount (`partial` status), started polling, but the polling check at line 153 doesn't match the actual terminal state. The `agent_status` field might not be updating, or the record is stuck in `partial` without the agent_status being set to a terminal value.
 
-Em vez de enviar comandos via stdin pipe, gerar um arquivo `.ps1` temporário com todo o preamble + comandos e executar com `pwsh -File script.ps1`. A leitura progressiva do stdout com marcadores permanece idêntica.
+## Plan
 
-### Mudanças em `python-agent/agent/executors/powershell.py`
+### 1. M365PosturePage — Add frontend safety timeout + robust termination
 
-**1. Novo método `_build_script_file`**
+- Add a **10-minute frontend timeout**: if `elapsed > 600`, force-clear the progress bar and show a warning toast
+- In the polling effect, also handle the case where the `m365_posture_history` record simply no longer exists or has been updated outside the polling window
 
-Gera um arquivo `.ps1` temporário contendo:
-- Preamble (import + connect + SESSION_READY marker)
-- Todos os comandos com CMD_START/CMD_END markers
-- Disconnect no final
+### 2. Firewall & Domain Compliance Pages — Add mount-time active task detection
 
-**2. Modificar `run_interactive`**
+For both `FirewallCompliancePage` and `ExternalDomainCompliancePage`:
 
-Trocar:
-```python
-proc = subprocess.Popen(
-    [pwsh, "-NoProfile", "-NonInteractive", "-Command", "-"],
-    stdin=subprocess.PIPE, ...
-)
-proc.stdin.write(preamble)
-# then write commands one by one via stdin
-```
+- Add a query on mount that checks `agent_tasks` for any `pending`/`running` task matching the selected firewall/domain, similar to M365's mount detection
+- If found, restore `activeTaskId` and `taskStartedAt` so polling kicks in automatically
+- Add **10-minute frontend timeout** as safety net
 
-Por:
-```python
-script_path = self._build_script_file(preamble_lines, cmd_list, module)
-proc = subprocess.Popen(
-    [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
-    stdin=subprocess.DEVNULL,  # Nenhum stdin! Elimina deadlock
-    stdout=subprocess.PIPE,
-    stderr=subprocess.STDOUT, ...
-)
-# Read output progressively (mesma lógica de markers)
-```
+### 3. All three pages — Ensure polling stops on terminal states
 
-**3. Leitura progressiva inalterada**
+The existing polling logic already handles `completed`/`failed`/`timeout` correctly for Firewall and Domain. For M365, the logic at line 153 is correct but may need the frontend timeout as backup.
 
-A lógica de `_read_until_marker` para SESSION_READY, CMD_START, CMD_END continua idêntica. O timeout por comando também funciona igual — se um cmdlet travar, matamos o processo.
+### Files to modify
 
-**4. Simplificações**
-
-- Não precisa mais de `_drain_and_sync` (sem stdin para sincronizar)
-- Não precisa mais de `_close_interactive_session` com stdin write (processo termina naturalmente ao final do script)
-- Se houver timeout fatal (3 consecutivos), mata o processo com `proc.kill()` como já faz
-
-**5. Cleanup**
-
-Apagar o arquivo `.ps1` temporário no `finally` block.
-
-### Por que isso resolve
-
-- `stdin=subprocess.DEVNULL` → cmdlets Exchange não conseguem ler de stdin → sem deadlock
-- Execução com `-File` é o mesmo modo que o usuário testou manualmente
-- Zero mudança na lógica de parsing/markers/timeouts — só muda a fonte dos comandos
-
-### Trade-off
-
-- Todos os comandos são escritos no script antecipadamente (não podemos adicionar comandos dinamicamente mid-session)
-- Isso não é problema porque `run_interactive` já recebe todos os steps no início
+- `src/pages/m365/M365PosturePage.tsx` — add 10-min timeout effect
+- `src/pages/firewall/FirewallCompliancePage.tsx` — add mount-time task detection + 10-min timeout
+- `src/pages/external-domain/ExternalDomainCompliancePage.tsx` — add mount-time task detection + 10-min timeout
 
