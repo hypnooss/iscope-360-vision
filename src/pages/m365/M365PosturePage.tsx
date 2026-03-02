@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
+import { toast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
@@ -148,7 +149,13 @@ export default function M365PosturePage() {
   useEffect(() => {
     if (!analysisRecord || !activeAnalysisId) return;
     const status = analysisRecord.status;
-    if (status === 'completed' || status === 'failed') {
+    const agentSt = (analysisRecord as any).agent_status ?? '';
+    const isFinished = status === 'completed' || status === 'failed' || status === 'cancelled'
+      || (status === 'partial' && ['failed', 'timeout', 'completed'].includes(agentSt));
+    if (isFinished) {
+      if (status === 'cancelled') {
+        toast({ title: 'Análise cancelada', description: 'A análise foi cancelada pelo usuário.' });
+      }
       setActiveAnalysisId(null);
       setAnalysisStartedAt(null);
       queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
