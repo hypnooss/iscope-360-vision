@@ -1,42 +1,68 @@
 
 
-## Diagnóstico — DEF-001, DEF-002, DEF-005 com status N/A
+## Diagnóstico — Permissões falsamente marcadas como "granted"
 
 ### Causa Raiz
 
-Dois problemas distintos:
+O fix anterior adicionou `isMissingRoles` apenas no `isSecurityLicenseIssue`, mas o problema é que **`isKnownLicenseError`** (linha 797-803) tem a condição `lowerCode === 'forbidden'` que é avaliada **antes** no `if`:
 
-**DEF-001 (Alertas) e DEF-002 (Incidentes):** O App Registration tem `SecurityEvents.Read.All` no manifest, mas os endpoints `/security/alerts_v2` e `/security/incidents` requerem as permissões mais novas `SecurityAlert.Read.All` e `SecurityIncident.Read.All`. Essas permissões estão no manifest (`ensure-exchange-permission`) mas **não foram consentidas** pelo Admin — o token não as possui.
+```
+if (isKnownLicenseError || isSecurityLicenseIssue || isAdminLicenseIssue)
+```
 
-A validação marca falsamente como `granted` porque a lógica de tolerância na linha 805 trata todo 403 em endpoints `/security/` como "problema de licenciamento" (exceto se contiver "insufficient privileges"). O erro real diz "Missing application roles", que é uma falta de permissão, não de licença.
+O error code retornado pelo Azure para `SecurityAlert.Read.All` é `"Forbidden"` — que casa com `lowerCode === 'forbidden'`, marcando como `granted` antes de qualquer outra verificação. O `isMissingRoles` no `isSecurityLicenseIssue` nunca chega a ser avaliado porque o short-circuit do `||` já resolveu na primeira condição.
 
-**DEF-005 (Labels):** Erro 400 — o serviço MIP (Microsoft Information Protection) está desabilitado neste tenant. Isso é legítimo como N/A.
+Da mesma forma, `isAdminLicenseIssue` não exclui `isMissingRoles`, o que pode afetar endpoints de SharePoint/beta.
+
+### Dados Confirmados (posture analysis mais recente)
+
+```
+security_alerts_v2: 403, code="Forbidden", message="Missing application roles. API required: SecurityAlert.Read.All..."
+security_incidents: 403, code="Forbidden", message="Missing application roles. API required: SecurityIncident.Read.All..."
+```
+
+Ambos exibidos como "granted" na tela de permissões. O token confirma que essas permissões **não existem** — a lista de application roles no token não inclui `SecurityAlert.Read.All` nem `SecurityIncident.Read.All`.
 
 ### Solução
 
-1. **Corrigir lógica de tolerância em `validate-m365-connection`**: Adicionar verificação para "missing application roles" e "missing role" como indicadores de permissão faltante (não licenciamento). Quando o 403 contiver essas frases, NÃO tratar como `granted`.
+Mover a verificação de `isMissingRoles` para **antes** de toda a lógica de tolerância. Se a mensagem contém "missing application roles" ou "missing role", é **sempre** um problema de permissão, nunca de licenciamento. Nenhuma das três condições deve marcá-lo como granted.
 
-2. **Após o fix**, o usuário precisa **Revalidar Permissões** do tenant para que:
-   - `SecurityAlert.Read.All` e `SecurityIncident.Read.All` apareçam como `pending`
-   - O popup de Admin Consent seja disparado
-   - As permissões sejam efetivamente concedidas
+### Alteração em `validate-m365-connection/index.ts`
 
-### Alteração técnica
-
-No `validate-m365-connection/index.ts`, na lógica de tolerância para 403 em security endpoints (linha ~805):
+Na lógica de 403 (linhas ~794-814), reestruturar:
 
 ```typescript
-// ANTES:
-const isSecurityLicenseIssue = isSecurityEndpoint && !lowerMsg.includes('insufficient privileges');
+} else if (response.status === 403) {
+  // FIRST: Check if this is clearly a missing permission (not a license issue)
+  const isMissingRoles = lowerMsg.includes('missing application roles') || lowerMsg.includes('missing role');
+  
+  if (!isMissingRoles) {
+    // Only apply tolerance if NOT a missing permission error
+    const isKnownLicenseError = (
+      lowerCode.includes('nonpremiumtenant') ||
+      lowerMsg.includes('license') ||
+      lowerMsg.includes('premium') ||
+      lowerCode === 'forbidden' ||
+      lowerCode === 'unknownerror'
+    );
+    const isSecurityLicenseIssue = isSecurityEndpoint && !lowerMsg.includes('insufficient privileges');
+    const isAdminLicenseIssue = (isAdminSharepoint || isBetaEndpoint) && !lowerMsg.includes('insufficient privileges');
 
-// DEPOIS:
-const isMissingRoles = lowerMsg.includes('missing application roles') || lowerMsg.includes('missing role');
-const isSecurityLicenseIssue = isSecurityEndpoint && !lowerMsg.includes('insufficient privileges') && !isMissingRoles;
+    if (isKnownLicenseError || isSecurityLicenseIssue || isAdminLicenseIssue) {
+      granted = true;
+      console.log(`Permission ${perm.name}: 403 license/service issue - treating as granted`);
+    }
+  } else {
+    console.log(`Permission ${perm.name}: 403 missing application roles - NOT treating as granted`);
+  }
+}
 ```
 
 ### Arquivo a modificar
 
 | Arquivo | Alteração |
 |---|---|
-| `supabase/functions/validate-m365-connection/index.ts` | Corrigir tolerância de 403 para detectar "missing application roles" |
+| `supabase/functions/validate-m365-connection/index.ts` | Reestruturar lógica de 403 para que `isMissingRoles` bloqueie TODA tolerância |
+
+Após o deploy, o usuário deve **Revalidar Permissões** do tenant BRASILUX. Desta vez, `SecurityAlert.Read.All` e `SecurityIncident.Read.All` aparecerão como `pending`, e o popup de Admin Consent será disparado para consentir essas permissões.
 
