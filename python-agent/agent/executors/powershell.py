@@ -6,6 +6,7 @@ Supports both batch (run) and interactive (run_interactive) execution modes.
 
 import json
 import os
+import queue
 import subprocess
 import shutil
 import tempfile
@@ -275,43 +276,56 @@ class PowerShellExecutor(BaseExecutor):
             f"}}\n"
         )
     
-    def _read_until_marker(self, stdout, marker: str, timeout: int) -> Optional[str]:
+    def _start_reader_thread(self, stdout) -> queue.Queue:
         """
-        Read lines from stdout until a marker line is found, with timeout.
-        Returns accumulated output (excluding the marker), or None on timeout.
+        Spawn a daemon thread that reads stdout.readline() in a loop and
+        puts each line into a Queue. When EOF is reached, puts None as sentinel.
+        This allows the main thread to use queue.get(timeout=...) which
+        properly respects timeouts even when readline() would block forever.
+        """
+        q: queue.Queue = queue.Queue()
+
+        def _reader():
+            try:
+                for line in iter(stdout.readline, ''):
+                    q.put(line)
+            except Exception:
+                pass
+            q.put(None)  # EOF sentinel
+
+        t = threading.Thread(target=_reader, daemon=True)
+        t.start()
+        return q
+
+    def _read_until_marker(self, read_queue: queue.Queue, marker: str, timeout: int) -> Optional[str]:
+        """
+        Read lines from the reader queue until a marker line is found, with timeout.
+        Returns accumulated output (excluding the marker), or None on timeout/EOF.
+        Uses queue.get(timeout=remaining) so timeouts are always honoured,
+        even if the subprocess produces no output at all.
         """
         lines = []
-        timed_out = threading.Event()
-        
-        def _timeout_handler():
-            timed_out.set()
-        
-        timer = threading.Timer(timeout, _timeout_handler)
-        timer.daemon = True
-        timer.start()
-        
-        try:
-            while not timed_out.is_set():
-                line = stdout.readline()
-                if not line:
-                    # EOF - process died
-                    break
-                line_stripped = line.strip()
-                if line_stripped == marker:
-                    return "\n".join(lines)
-                lines.append(line_stripped)
-        finally:
-            timer.cancel()
-        
-        if timed_out.is_set():
-            return None  # Timeout
-        
-        # EOF reached without marker
-        return "\n".join(lines) if lines else None
+        deadline = time.time() + timeout
+
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return None  # Timeout
+            try:
+                line = read_queue.get(timeout=remaining)
+            except queue.Empty:
+                return None  # Timeout
+            if line is None:
+                # EOF - process died
+                return "\n".join(lines) if lines else None
+            line_stripped = line.strip()
+            if line_stripped == marker:
+                return "\n".join(lines)
+            lines.append(line_stripped)
     
-    def _drain_and_sync(self, proc, timeout: int = 30):
+    def _drain_and_sync(self, proc, read_queue: queue.Queue, timeout: int = 30):
         """
-        After a command timeout, send a sync marker and drain stdout until it appears.
+        After a command timeout, send a sync marker and drain the read queue until it appears.
         This discards any residual output from the timed-out command, ensuring
         the next command starts with a clean stdout stream.
         """
@@ -319,7 +333,7 @@ class PowerShellExecutor(BaseExecutor):
             sync_cmd = f'Write-Output "{self.SYNC_MARKER}"\n'
             proc.stdin.write(sync_cmd)
             proc.stdin.flush()
-            self._read_until_marker(proc.stdout, self.SYNC_MARKER, timeout=timeout)
+            self._read_until_marker(read_queue, self.SYNC_MARKER, timeout=timeout)
             self.logger.debug("Post-timeout sync completed successfully")
         except (BrokenPipeError, OSError) as e:
             self.logger.warning(f"Sync after timeout failed (pipe broken): {e}")
@@ -415,6 +429,7 @@ class PowerShellExecutor(BaseExecutor):
             return self._fail_all_steps(steps, error, report_callback)
         
         step_results = []
+        read_queue = self._start_reader_thread(proc.stdout)
         
         try:
             # Send preamble (import + connect)
@@ -432,7 +447,7 @@ class PowerShellExecutor(BaseExecutor):
             
             # Wait for session ready (connection timeout: 120s)
             self.logger.info("Waiting for PowerShell session to connect...")
-            ready_output = self._read_until_marker(proc.stdout, self.SESSION_READY_MARKER, timeout=120)
+            ready_output = self._read_until_marker(read_queue, self.SESSION_READY_MARKER, timeout=120)
             
             if ready_output is None:
                 # Connection timed out or process died
@@ -501,7 +516,7 @@ class PowerShellExecutor(BaseExecutor):
                     break
                 
                 # Read until CMD_START marker
-                pre_output = self._read_until_marker(proc.stdout, self.CMD_START_MARKER, timeout=cmd_timeout)
+                pre_output = self._read_until_marker(read_queue, self.CMD_START_MARKER, timeout=cmd_timeout)
                 
                 if pre_output is None:
                     # Timeout waiting for command to start producing output
@@ -525,12 +540,12 @@ class PowerShellExecutor(BaseExecutor):
                             report_callback(rem['step_id'], 'failed', None, sr2['error'], 0)
                         break
                     # Sync stdout before next command to discard residual output
-                    self._drain_and_sync(proc)
+                    self._drain_and_sync(proc, read_queue)
                     continue
                 
                 # CMD_START found, now read the JSON payload until CMD_END
                 remaining_timeout = max(30, cmd_timeout - int(time.time() - cmd_start))
-                json_output = self._read_until_marker(proc.stdout, self.CMD_END_MARKER, timeout=remaining_timeout)
+                json_output = self._read_until_marker(read_queue, self.CMD_END_MARKER, timeout=remaining_timeout)
                 
                 duration = int((time.time() - cmd_start) * 1000)
                 
@@ -551,7 +566,7 @@ class PowerShellExecutor(BaseExecutor):
                             report_callback(rem['step_id'], 'failed', None, sr2['error'], 0)
                         break
                     # Sync stdout before next command to discard residual output
-                    self._drain_and_sync(proc)
+                    self._drain_and_sync(proc, read_queue)
                     continue
                 
                 # Reset consecutive timeout counter on success
