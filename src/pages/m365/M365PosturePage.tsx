@@ -32,6 +32,7 @@ import { TenantSelector } from '@/components/m365/posture';
 import { M365CategorySection } from '@/components/m365/posture/M365CategorySection';
 import { useM365SecurityPosture, M365_POSTURE_QUERY_KEY } from '@/hooks/useM365SecurityPosture';
 import { mapM365Insight, mapM365AgentInsight } from '@/lib/complianceMappers';
+import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
 import { 
   M365RiskCategory, 
   CATEGORY_LABELS,
@@ -200,7 +201,6 @@ export default function M365PosturePage() {
   // Compute actual counts from unified items (not from summary subtraction)
   const passCount = allUnifiedItems.filter(i => i.status === 'pass').length;
   const failCount = allUnifiedItems.filter(i => i.status === 'fail').length;
-  const warnCount = allUnifiedItems.filter(i => i.status === 'warning').length;
 
   const groupedItems = allUnifiedItems.reduce<Record<string, UnifiedComplianceItem[]>>((acc, item) => {
     const cat = item.category;
@@ -209,17 +209,12 @@ export default function M365PosturePage() {
     return acc;
   }, {});
 
-  // Sort categories by severity: critical fails first, then total fails, then alphabetically
+  // Sort categories by template display_order
+  const { data: categoryConfigs } = useCategoryConfigs('5d1a7095-2d7b-4541-873d-4b03c3d6122f');
   const sortedCategories = (Object.keys(groupedItems) as M365RiskCategory[]).sort((a, b) => {
-    const aItems = groupedItems[a];
-    const bItems = groupedItems[b];
-    const aCrit = aItems.filter(i => i.status === 'fail' && i.severity === 'critical').length;
-    const bCrit = bItems.filter(i => i.status === 'fail' && i.severity === 'critical').length;
-    if (aCrit !== bCrit) return bCrit - aCrit;
-    const aFail = aItems.filter(i => i.status === 'fail' || i.status === 'warning').length;
-    const bFail = bItems.filter(i => i.status === 'fail' || i.status === 'warning').length;
-    if (aFail !== bFail) return bFail - aFail;
-    return (CATEGORY_LABELS[a] || a).localeCompare(CATEGORY_LABELS[b] || b);
+    const aOrder = categoryConfigs?.find(c => c.name === a)?.display_order ?? 999;
+    const bOrder = categoryConfigs?.find(c => c.name === b)?.display_order ?? 999;
+    return aOrder - bOrder;
   });
 
   const isAnalysisRunning = !!activeAnalysisId;
@@ -366,7 +361,6 @@ export default function M365PosturePage() {
                   <MiniStat value={allUnifiedItems.length} label="Total" variant="primary" />
                   <MiniStat value={passCount} label="Aprovadas" variant="success" />
                   <MiniStat value={failCount} label="Falhas" variant="destructive" />
-                  {warnCount > 0 && <MiniStat value={warnCount} label="Avisos" variant="primary" />}
                 </>
               }
               detailRows={
