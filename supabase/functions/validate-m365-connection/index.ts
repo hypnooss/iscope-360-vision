@@ -792,25 +792,27 @@ serve(async (req) => {
             granted = true;
             console.log(`Permission ${perm.name}: ${response.status} app-only not supported - treating as granted`);
           } else if (response.status === 403) {
-            // Expanded 403 tolerance:
-            // 1. Known license error codes/messages
-            const isKnownLicenseError = (
-              lowerCode.includes('nonpremiumtenant') ||
-              lowerMsg.includes('license') ||
-              lowerMsg.includes('premium') ||
-              lowerCode === 'forbidden' ||
-              lowerCode === 'unknownerror'
-            );
-            // 2. Security/Defender endpoints: 403 usually means no Defender license, not missing consent
-            // But "missing application roles" or "missing role" means permission not consented — do NOT treat as granted
+            // FIRST: Check if this is clearly a missing permission (not a license issue)
             const isMissingRoles = lowerMsg.includes('missing application roles') || lowerMsg.includes('missing role');
-            const isSecurityLicenseIssue = isSecurityEndpoint && !lowerMsg.includes('insufficient privileges') && !isMissingRoles;
-            // 3. Admin/SharePoint or beta endpoints: 403 often means service not provisioned
-            const isAdminLicenseIssue = (isAdminSharepoint || isBetaEndpoint) && !lowerMsg.includes('insufficient privileges');
+            
+            if (!isMissingRoles) {
+              // Only apply tolerance if NOT a missing permission error
+              const isKnownLicenseError = (
+                lowerCode.includes('nonpremiumtenant') ||
+                lowerMsg.includes('license') ||
+                lowerMsg.includes('premium') ||
+                lowerCode === 'forbidden' ||
+                lowerCode === 'unknownerror'
+              );
+              const isSecurityLicenseIssue = isSecurityEndpoint && !lowerMsg.includes('insufficient privileges');
+              const isAdminLicenseIssue = (isAdminSharepoint || isBetaEndpoint) && !lowerMsg.includes('insufficient privileges');
 
-            if (isKnownLicenseError || isSecurityLicenseIssue || isAdminLicenseIssue) {
-              granted = true;
-              console.log(`Permission ${perm.name}: 403 license/service issue - treating as granted`);
+              if (isKnownLicenseError || isSecurityLicenseIssue || isAdminLicenseIssue) {
+                granted = true;
+                console.log(`Permission ${perm.name}: 403 license/service issue - treating as granted`);
+              }
+            } else {
+              console.log(`Permission ${perm.name}: 403 missing application roles - NOT treating as granted`);
             }
           } else if (response.status === 404 && isBetaEndpoint) {
             // Beta endpoints may return 404 if the feature isn't available in the tenant
