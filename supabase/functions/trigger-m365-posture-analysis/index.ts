@@ -260,12 +260,16 @@ Deno.serve(async (req) => {
           total: allInsights.length,
         };
 
+        // If agent task exists, save as 'partial' so frontend waits for agent completion
+        const graphStatus = agentTaskId ? 'partial' : 'completed';
+        console.log(`[trigger-m365-posture-analysis] Saving Graph API results with status: ${graphStatus} (agentTaskId: ${agentTaskId || 'none'})`);
+
         // Update history record with results
         await supabaseAdmin
           .from('m365_posture_history')
           .update({
-            status: 'completed',
-            completed_at: new Date().toISOString(),
+            status: graphStatus,
+            completed_at: graphStatus === 'completed' ? new Date().toISOString() : undefined,
             score: result.score,
             classification: result.classification,
             summary: recalculatedSummary,

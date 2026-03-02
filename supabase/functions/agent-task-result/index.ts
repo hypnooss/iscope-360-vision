@@ -4868,9 +4868,12 @@ serve(async (req: Request) => {
             : (existingRecord?.score ?? 100);
 
           // Update m365_posture_history with agent results + recalculated summary
+          // Mark as 'completed' now that both Graph API and Agent data are available
           const { error: updateError } = await supabase
             .from('m365_posture_history')
             .update({
+              status: 'completed',
+              completed_at: new Date().toISOString(),
               agent_insights: agentInsights,
               agent_status: body.status === 'completed' ? 'completed' : 'partial',
               summary: recalculatedSummary,
