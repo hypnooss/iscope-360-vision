@@ -1,68 +1,108 @@
 
 
-## Diagnóstico — Permissões falsamente marcadas como "granted"
+## Pente Fino — M365 Compliance: Auditoria Completa
 
-### Causa Raiz
+### Status Atual: 60 regras, apenas ~30 funcionando
 
-O fix anterior adicionou `isMissingRoles` apenas no `isSecurityLicenseIssue`, mas o problema é que **`isKnownLicenseError`** (linha 797-803) tem a condição `lowerCode === 'forbidden'` que é avaliada **antes** no `if`:
+De 60 regras no relatório, **~30 retornam `not_found`**. Analisando a última análise do tenant BRASILUX, identifiquei **4 categorias de problemas**:
 
-```
-if (isKnownLicenseError || isSecurityLicenseIssue || isAdminLicenseIssue)
-```
+---
 
-O error code retornado pelo Azure para `SecurityAlert.Read.All` é `"Forbidden"` — que casa com `lowerCode === 'forbidden'`, marcando como `granted` antes de qualquer outra verificação. O `isMissingRoles` no `isSecurityLicenseIssue` nunca chega a ser avaliado porque o short-circuit do `||` já resolveu na primeira condição.
+### A. Bugs nos Endpoints do Blueprint (corrigíveis imediatamente)
 
-Da mesma forma, `isAdminLicenseIssue` não exclui `isMissingRoles`, o que pode afetar endpoints de SharePoint/beta.
+| Step | Erro | Causa | Correção |
+|---|---|---|---|
+| `teams_list` | 400: "Only one property can be expanded" | `$expand=owners,members` — Graph v1.0 não aceita dois expands | Remover `members` do expand, coletar separadamente ou usar apenas `owners` |
+| `sharepoint_sites` | 400: "Could not find property 'sharingCapability'" | `sharingCapability` não existe em `microsoft.graph.site` | Remover esse campo do `$select` |
+| `pim_role_assignments` / `pim_role_active_assignments` | 400: CultureNotFoundException | Bug no Graph que requer header `Accept-Language` | Adicionar `Accept-Language: en-US` no config do step |
+| `teams_settings` | 412: "Not supported in application-only context" | `/teamwork/teamsAppSettings` requer contexto delegado | Mover para coleta via Agent PowerShell ou marcar como limitação conhecida |
 
-### Dados Confirmados (posture analysis mais recente)
+**Impacto:** Corrigir esses 4 bugs desbloquearia **TMS-001 a TMS-004** (4 regras), **SPO-001 a SPO-004** (4 regras) e **PIM-001 a PIM-004** (4 regras) = **12 regras**.
 
-```
-security_alerts_v2: 403, code="Forbidden", message="Missing application roles. API required: SecurityAlert.Read.All..."
-security_incidents: 403, code="Forbidden", message="Missing application roles. API required: SecurityIncident.Read.All..."
-```
+---
 
-Ambos exibidos como "granted" na tela de permissões. O token confirma que essas permissões **não existem** — a lista de application roles no token não inclui `SecurityAlert.Read.All` nem `SecurityIncident.Read.All`.
+### B. Permissões Não Consentidas (requer nova análise)
 
-### Solução
+| Step | Erro | Permissão Faltante |
+|---|---|---|
+| `security_alerts_v2` | 403: Missing application roles | `SecurityAlert.Read.All` |
+| `security_incidents` | 403: Missing application roles | `SecurityIncident.Read.All` |
 
-Mover a verificação de `isMissingRoles` para **antes** de toda a lógica de tolerância. Se a mensagem contém "missing application roles" ou "missing role", é **sempre** um problema de permissão, nunca de licenciamento. Nenhuma das três condições deve marcá-lo como granted.
+As permissões estão marcadas como `granted` na tabela de permissões (bug do validate que corrigimos), mas o **token da análise de postura** ainda não as possui. O token é obtido no momento da análise, e se o Azure AD ainda não propagou o consent, falha.
 
-### Alteração em `validate-m365-connection/index.ts`
+**Correção:** O `m365-security-posture` precisa usar o mesmo mecanismo de retry que implementamos no `validate-m365-connection` — ou simplesmente **rodar uma nova análise agora** que o consent deve ter propagado.
 
-Na lógica de 403 (linhas ~794-814), reestruturar:
+**Impacto:** **DEF-001** e **DEF-002** (2 regras).
 
-```typescript
-} else if (response.status === 403) {
-  // FIRST: Check if this is clearly a missing permission (not a license issue)
-  const isMissingRoles = lowerMsg.includes('missing application roles') || lowerMsg.includes('missing role');
-  
-  if (!isMissingRoles) {
-    // Only apply tolerance if NOT a missing permission error
-    const isKnownLicenseError = (
-      lowerCode.includes('nonpremiumtenant') ||
-      lowerMsg.includes('license') ||
-      lowerMsg.includes('premium') ||
-      lowerCode === 'forbidden' ||
-      lowerCode === 'unknownerror'
-    );
-    const isSecurityLicenseIssue = isSecurityEndpoint && !lowerMsg.includes('insufficient privileges');
-    const isAdminLicenseIssue = (isAdminSharepoint || isBetaEndpoint) && !lowerMsg.includes('insufficient privileges');
+---
 
-    if (isKnownLicenseError || isSecurityLicenseIssue || isAdminLicenseIssue) {
-      granted = true;
-      console.log(`Permission ${perm.name}: 403 license/service issue - treating as granted`);
-    }
-  } else {
-    console.log(`Permission ${perm.name}: 403 missing application roles - NOT treating as granted`);
-  }
-}
-```
+### C. Limitações Legítimas de Licenciamento (N/A correto)
 
-### Arquivo a modificar
+| Categoria | Erro | Motivo |
+|---|---|---|
+| INT-001 a INT-006 (Intune) | 400: "Request not applicable to target tenant" | Tenant BRASILUX **não tem licença Intune** |
+| DEF-005 (Labels MIP) | 400: MIP service disabled | Tenant **não tem Microsoft Information Protection** |
+
+Esses itens aparecem corretamente como N/A. **Porém**, a experiência do usuário é ruim — o relatório mostra 6 itens de Intune "cinza" que poluem a visualização.
+
+**Sugestão:** Detectar no início da análise se o tenant tem Intune/MIP e **ocultar automaticamente** as categorias inteiras que não se aplicam, ou mostrar um banner "Categoria não disponível — requer licença X" em vez de N/A em cada item individual.
+
+---
+
+### D. Bugs de Interpolação nas Descrições
+
+Vários insights mostram `{count}`, `{{confirmed}}`, `{{atRisk}}` não resolvidos:
+- AUT-004: `"{27} usuário(s) de risco: {{confirmed}} confirmado(s), {{atRisk}} em risco"`
+- IDT-001: `"{346} usuário(s) sem MFA"`
+
+O interpolador usa `{count}` mas os templates usam `{{confirmed}}` — sintaxe inconsistente.
+
+---
+
+### E. Oportunidades de Enriquecimento
+
+Dados disponíveis via Graph API/PowerShell que **não estão** no relatório atual:
+
+| Nova Regra | Endpoint | Categoria | Valor |
+|---|---|---|---|
+| Política de Expiração de Senha | `/domains` (passwordValidityPeriodInDays) | auth_access | Crítico — verifica se senhas expiram |
+| Self-Service Password Reset | `/policies/authorizationPolicy` | auth_access | Se SSPR está habilitado |
+| Contas de Acesso de Emergência | `/directoryRoles` (Global Admin sem MFA forced) | admin_privileges | Best practice Microsoft |
+| Sign-In Risk Policy | `/identity/conditionalAccess/policies` (filtrar por signInRiskLevels) | auth_access | Verifica se há CA baseada em risco |
+| User Risk Policy | `/identity/conditionalAccess/policies` (filtrar por userRiskLevels) | auth_access | Idem |
+| Mailbox com Delegação | PowerShell: `Get-EXOMailboxPermission` | email_exchange | Detecta acessos delegados suspeitos |
+| DMARC/SPF dos Domínios | DNS lookup nos domínios do tenant | email_exchange | Proteção contra spoofing |
+| Shared Mailbox com Login Direto | PowerShell: `Get-EXOMailbox -RecipientTypeDetails SharedMailbox` | email_exchange | Shared mailboxes não devem ter senha |
+| Regras de Inbox Suspeitas | PowerShell: `Get-InboxRule` com forward/redirect | email_exchange | Exfiltração de dados |
+| External Forwarding Global Policy | Exchange: `Get-TransportConfig` (SmtpClientAuthenticationDisabled) | email_exchange | Já existe parcialmente |
+
+---
+
+### Plano de Implementação (priorizado)
+
+**Fase 1 — Corrigir o que está quebrado (blueprint bugs):**
 
 | Arquivo | Alteração |
 |---|---|
-| `supabase/functions/validate-m365-connection/index.ts` | Reestruturar lógica de 403 para que `isMissingRoles` bloqueie TODA tolerância |
+| Blueprint `M365 - SharePoint & OneDrive` (DB) | Remover `sharingCapability` do $select no step `sharepoint_sites` |
+| Blueprint `M365 - Teams` (DB) | Dividir `teams_list` em dois steps: um com `$expand=owners`, outro com `$expand=members` |
+| Blueprint `M365 - PIM & Governance` (DB) | Adicionar `Accept-Language: en-US` nos headers dos steps PIM |
+| `m365-security-posture/index.ts` | Corrigir interpolação: substituir `{{var}}` por `{var}` nos templates ou atualizar o interpolador |
 
-Após o deploy, o usuário deve **Revalidar Permissões** do tenant BRASILUX. Desta vez, `SecurityAlert.Read.All` e `SecurityIncident.Read.All` aparecerão como `pending`, e o popup de Admin Consent será disparado para consentir essas permissões.
+**Fase 2 — Melhorar UX para itens N/A:**
+
+| Arquivo | Alteração |
+|---|---|
+| `m365-security-posture/index.ts` | Detectar ausência de Intune/MIP no início e marcar categoria inteira como "não licenciada" em vez de N/A por item |
+| UI (M365PosturePage / ComplianceCard) | Exibir banner informativo por categoria não licenciada |
+
+**Fase 3 — Enriquecimento com novas regras:**
+
+Adicionar as regras da tabela E acima ao `compliance_rules` e os steps correspondentes aos blueprints.
+
+---
+
+### Recomendação Imediata
+
+Começar pela **Fase 1** — corrigir os 4 bugs de blueprint que desbloqueiam 12+ regras. Isso transformaria o relatório de "60% quebrado" para "~85% funcional", deixando apenas as limitações legítimas de licenciamento.
 
