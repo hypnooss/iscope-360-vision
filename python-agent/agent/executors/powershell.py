@@ -417,7 +417,7 @@ class PowerShellExecutor(BaseExecutor):
                 [pwsh, "-NoProfile", "-NonInteractive", "-Command", "-"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 cwd=cwd,
                 env=env,
@@ -450,16 +450,12 @@ class PowerShellExecutor(BaseExecutor):
             ready_output = self._read_until_marker(read_queue, self.SESSION_READY_MARKER, timeout=120)
             
             if ready_output is None:
-                # Connection timed out or process died
                 error = "PowerShell session failed to connect within 120s"
-                stderr_output = ""
                 try:
                     proc.kill()
-                    _, stderr_output = proc.communicate(timeout=5)
+                    proc.communicate(timeout=5)
                 except Exception:
                     pass
-                if stderr_output:
-                    error += f": {stderr_output.strip()[:500]}"
                 self.logger.error(error)
                 return self._fail_all_steps(steps, error, report_callback)
             
