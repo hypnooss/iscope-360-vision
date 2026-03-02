@@ -481,7 +481,7 @@ Deno.serve(async (req) => {
       { permission: 'IdentityRiskEvent.Read.All', endpoint: 'https://graph.microsoft.com/beta/identityProtection/riskDetections?$top=1' },
     ];
 
-    // Test other permissions (generic endpoint tests)
+    // Test other permissions (generic endpoint tests) with unified tolerance logic
     for (const test of permissionTests) {
       try {
         const testResponse = await fetch(test.endpoint, {
@@ -491,25 +491,72 @@ Deno.serve(async (req) => {
         const isRequired = REQUIRED_PERMISSIONS.includes(test.permission);
         const isOptional = OPTIONAL_PERMISSIONS.includes(test.permission);
         
+        let permGranted = testResponse.ok;
         let errorDetail: string | undefined;
+        
         if (!testResponse.ok) {
+          let errCode = '';
+          let errMsg = '';
           try {
             const errorBody = await testResponse.json();
-            errorDetail = errorBody?.error?.code || errorBody?.error?.message || `HTTP ${testResponse.status}`;
+            errCode = errorBody?.error?.code || '';
+            errMsg = errorBody?.error?.message || '';
+            errorDetail = errCode || errMsg || `HTTP ${testResponse.status}`;
           } catch {
             errorDetail = `HTTP ${testResponse.status}`;
           }
-          console.log(`Permission test for ${test.permission}: FAILED - ${errorDetail}`);
+          
+          const lowerMsg = errMsg.toLowerCase();
+          const lowerCode = errCode.toLowerCase();
+          const isSecurityEndpoint = test.endpoint.includes('/security/');
+          const isBetaEndpoint = test.endpoint.includes('/beta/');
+          
+          // Unified tolerance: treat license/service/context errors as "granted"
+          if (testResponse.status === 400 && (
+            lowerMsg.includes('not applicable to target tenant') ||
+            lowerMsg.includes('service principal for resource') ||
+            (lowerMsg.includes('service principal') && lowerMsg.includes('disabled'))
+          )) {
+            permGranted = true;
+            console.log(`Permission test for ${test.permission}: 400 license/service issue - treating as granted`);
+          } else if (testResponse.status === 412 || (testResponse.status === 400 && lowerMsg.includes('not supported'))) {
+            permGranted = true;
+            console.log(`Permission test for ${test.permission}: ${testResponse.status} app-only not supported - treating as granted`);
+          } else if (testResponse.status === 403) {
+            const isMissingRoles = lowerMsg.includes('missing application roles') || lowerMsg.includes('missing role');
+            if (!isMissingRoles) {
+              const isKnownLicenseError = (
+                lowerCode.includes('nonpremiumtenant') ||
+                lowerMsg.includes('license') ||
+                lowerMsg.includes('premium') ||
+                lowerCode === 'forbidden' ||
+                lowerCode === 'unknownerror'
+              );
+              const isSecurityLicenseIssue = isSecurityEndpoint && !lowerMsg.includes('insufficient privileges');
+              if (isKnownLicenseError || isSecurityLicenseIssue) {
+                permGranted = true;
+                console.log(`Permission test for ${test.permission}: 403 license/service issue - treating as granted`);
+              }
+            }
+            if (!permGranted) {
+              console.log(`Permission test for ${test.permission}: FAILED - ${errorDetail}`);
+            }
+          } else if (testResponse.status === 404 && isBetaEndpoint) {
+            permGranted = true;
+            console.log(`Permission test for ${test.permission}: 404 on beta endpoint - treating as granted`);
+          } else {
+            console.log(`Permission test for ${test.permission}: FAILED - ${errorDetail}`);
+          }
         } else {
           console.log(`Permission test for ${test.permission}: OK`);
         }
         
         permissionResults.push({
           name: test.permission,
-          granted: testResponse.ok,
+          granted: permGranted,
           required: isRequired,
           optional: isOptional,
-          error: errorDetail,
+          error: permGranted ? undefined : errorDetail,
         });
       } catch (err) {
         console.error(`Permission test failed for ${test.permission}:`, err);

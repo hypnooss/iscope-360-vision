@@ -50,6 +50,7 @@ export default function M365TenantEditPage() {
   const [deleting, setDeleting] = useState(false);
   const [revalidating, setRevalidating] = useState(false);
   const [waitingForConsent, setWaitingForConsent] = useState(false);
+  const [pollingStatus, setPollingStatus] = useState<{ active: boolean; attempt: number; maxAttempts: number } | null>(null);
   // Fetch tenant data
   const { data: tenant, isLoading: tenantLoading } = useQuery({
     queryKey: ['m365-tenant-edit', id],
@@ -132,6 +133,56 @@ export default function M365TenantEditPage() {
     }
   };
 
+  // Background polling for permission propagation
+  const startPermissionPolling = useCallback(async () => {
+    const MAX_ATTEMPTS = 9;
+    const INTERVAL_MS = 20000; // 20 seconds
+    
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      setPollingStatus({ active: true, attempt, maxAttempts: MAX_ATTEMPTS });
+      
+      try {
+        const { data, error } = await supabase.functions.invoke('validate-m365-connection', {
+          body: { tenant_record_id: id },
+        });
+        if (error) throw error;
+        
+        queryClient.invalidateQueries({ queryKey: ['m365-tenant-permissions', id] });
+        queryClient.invalidateQueries({ queryKey: ['m365-tenant-edit', id] });
+        
+        // Check if all permissions are granted
+        if (data?.all_permissions_granted) {
+          setPollingStatus(null);
+          toast.success('Todas as permissões foram validadas com sucesso!');
+          return;
+        }
+        
+        // If this is the last attempt, stop
+        if (attempt === MAX_ATTEMPTS) {
+          setPollingStatus(null);
+          const missing = data?.missing_permissions?.length || 0;
+          toast.warning(
+            `${missing} permissão(ões) ainda pendente(s). O Azure AD pode levar até 5 minutos para propagar. Tente "Testar" novamente em alguns minutos.`,
+            { duration: 8000 }
+          );
+          return;
+        }
+        
+        // Wait before next attempt
+        await new Promise(resolve => setTimeout(resolve, INTERVAL_MS));
+      } catch (err: any) {
+        console.error(`Polling attempt ${attempt} failed:`, err);
+        if (attempt === MAX_ATTEMPTS) {
+          setPollingStatus(null);
+          toast.error('Erro ao verificar permissões. Tente novamente.');
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, INTERVAL_MS));
+      }
+    }
+    setPollingStatus(null);
+  }, [id, queryClient]);
+
   // Listen for OAuth popup postMessage (for re-consent flow)
   useEffect(() => {
     if (!waitingForConsent) return;
@@ -140,34 +191,16 @@ export default function M365TenantEditPage() {
       if (event.data?.type !== 'm365-oauth-callback') return;
       
       setWaitingForConsent(false);
+      setRevalidating(false);
       
-      // Re-validate permissions after consent using validate-m365-connection
-      // which updates m365_tenant_permissions table (not just global config)
-      (async () => {
-        setRevalidating(true);
-        try {
-          const { data, error } = await supabase.functions.invoke('validate-m365-connection', {
-            body: { tenant_record_id: id },
-          });
-          if (error) throw error;
-          if (data?.success) {
-            toast.success('Permissões revalidadas com sucesso');
-          } else {
-            toast.error('Erro ao revalidar: ' + (data?.error || 'Erro desconhecido'));
-          }
-          queryClient.invalidateQueries({ queryKey: ['m365-tenant-permissions', id] });
-          queryClient.invalidateQueries({ queryKey: ['m365-tenant-edit', id] });
-        } catch (err: any) {
-          toast.error('Erro ao revalidar: ' + (err.message || 'Erro desconhecido'));
-        } finally {
-          setRevalidating(false);
-        }
-      })();
+      // Start background polling for permission propagation
+      toast.info('Consentimento recebido. Verificando permissões...');
+      startPermissionPolling();
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [waitingForConsent, id, queryClient]);
+  }, [waitingForConsent, startPermissionPolling]);
 
   const handleRevalidatePermissions = async () => {
     setRevalidating(true);
@@ -436,9 +469,13 @@ export default function M365TenantEditPage() {
                 {testing ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
                 Testar
               </Button>
-              <Button variant="outline" size="sm" onClick={handleRevalidatePermissions} disabled={revalidating || waitingForConsent || tenant.connection_status === 'disconnected'}>
-                {(revalidating || waitingForConsent) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
-                {waitingForConsent ? 'Aguardando consentimento...' : 'Revalidar Permissões'}
+              <Button variant="outline" size="sm" onClick={handleRevalidatePermissions} disabled={revalidating || waitingForConsent || !!pollingStatus?.active || tenant.connection_status === 'disconnected'}>
+                {(revalidating || waitingForConsent || pollingStatus?.active) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
+                {pollingStatus?.active
+                  ? `Propagando... (${pollingStatus.attempt}/${pollingStatus.maxAttempts})`
+                  : waitingForConsent
+                    ? 'Aguardando consentimento...'
+                    : 'Revalidar Permissões'}
               </Button>
               <Button
                 variant="outline" size="sm"
