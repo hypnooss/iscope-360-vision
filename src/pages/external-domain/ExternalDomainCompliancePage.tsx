@@ -109,7 +109,9 @@ const getIconForCategory = (name: string): string => {
 
 const calculatePassRate = (checks: { status: string }[]): number => {
   if (!checks?.length) return 0;
-  return Math.round((checks.filter(c => c.status === 'pass').length / checks.length) * 100);
+  const applicable = checks.filter(c => c.status !== 'not_found');
+  if (applicable.length === 0) return -1;
+  return Math.round((applicable.filter(c => c.status === 'pass').length / applicable.length) * 100);
 };
 
 const deriveDnsSummaryFromCategories = (categories: ComplianceCategory[]): ComplianceReport['dnsSummary'] | undefined => {

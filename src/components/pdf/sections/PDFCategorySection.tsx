@@ -127,9 +127,10 @@ export const PDFCategorySection: React.FC<PDFCategorySectionProps> = ({
 }) => {
   const passedChecks = checks.filter((c) => c.status === 'pass');
   const failedChecks = checks.filter((c) => c.status === 'fail' || c.status === 'warning');
+  const applicableChecks = checks.filter((c) => (c.status as string) !== 'not_found');
   const passedCount = passedChecks.length;
-  const totalCount = checks.length;
-  const passRate = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
+  const totalCount = applicableChecks.length;
+  const passRate = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : -1;
   
   const rateColor = getScoreColor(passRate);
 

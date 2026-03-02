@@ -1821,24 +1821,27 @@ Deno.serve(async (req) => {
 
     const categoryBreakdown = categories.map(cat => {
       const catInsights = allInsights.filter(i => i.category === cat);
-      const failCount = catInsights.filter(i => i.status === 'fail').length;
-      const totalPenalty = catInsights.reduce((sum, i) => sum + (i.status === 'fail' ? i.scoreImpacto : 0), 0);
-      const criticalCount = catInsights.filter(i => i.status === 'fail' && i.severity === 'critical').length;
-      const highCount = catInsights.filter(i => i.status === 'fail' && i.severity === 'high').length;
+      // Filter out not_found items from scoring
+      const applicableInsights = catInsights.filter(i => (i as any).status !== 'not_found');
+      const failCount = applicableInsights.filter(i => i.status === 'fail').length;
+      const totalPenalty = applicableInsights.reduce((sum, i) => sum + (i.status === 'fail' ? i.scoreImpacto : 0), 0);
+      const criticalCount = applicableInsights.filter(i => i.status === 'fail' && i.severity === 'critical').length;
+      const highCount = applicableInsights.filter(i => i.status === 'fail' && i.severity === 'high').length;
 
       return {
         category: cat,
         label: categoryLabels[cat] || cat,
         count: catInsights.length,
         failCount,
-        score: Math.max(0, 100 - totalPenalty * 3),
+        score: applicableInsights.length > 0 ? Math.max(0, 100 - totalPenalty * 3) : -1,
         criticalCount,
         highCount,
       };
     }).filter(cat => cat.count > 0);
 
-    // 12. Calculate overall score
-    const totalPenalty = allInsights.reduce((sum, i) => sum + (i.status === 'fail' ? i.scoreImpacto : 0), 0);
+    // 12. Calculate overall score (exclude not_found items)
+    const applicableInsights = allInsights.filter(i => (i as any).status !== 'not_found');
+    const totalPenalty = applicableInsights.reduce((sum, i) => sum + (i.status === 'fail' ? i.scoreImpacto : 0), 0);
     const score = Math.max(0, Math.min(100, 100 - totalPenalty));
     const classification = score >= 90 ? 'excellent' : score >= 70 ? 'good' : score >= 50 ? 'attention' : 'critical';
 
