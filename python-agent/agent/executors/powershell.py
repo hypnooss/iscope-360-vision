@@ -227,11 +227,9 @@ class PowerShellExecutor(BaseExecutor):
             organization = f"{tenant_id}"
         
         lines = [
-            # Force stdout auto-flush (critical for pipe communication on Linux)
+            # Diagnostic echo to verify pipe works before anything else
+            '[Console]::WriteLine("---ISCOPE_PIPE_TEST---")',
             "[Console]::Out.Flush()",
-            "$sw = [System.IO.StreamWriter]::new([Console]::OpenStandardOutput())",
-            "$sw.AutoFlush = $true",
-            "[Console]::SetOut($sw)",
             "",
             "$ErrorActionPreference = 'Continue'",
             "$ProgressPreference = 'SilentlyContinue'",
@@ -262,7 +260,7 @@ class PowerShellExecutor(BaseExecutor):
         
         lines.extend([
             "",
-            f'Write-Output "{self.SESSION_READY_MARKER}"',
+            f'[Console]::WriteLine("{self.SESSION_READY_MARKER}")',
             "[Console]::Out.Flush()",
         ])
         
@@ -273,14 +271,14 @@ class PowerShellExecutor(BaseExecutor):
         return (
             f"try {{\n"
             f"    $__data = ({cmd_text} | ConvertTo-Json -Depth 10 -Compress)\n"
-            f'    Write-Output "{self.CMD_START_MARKER}"\n'
+            f'    [Console]::WriteLine("{self.CMD_START_MARKER}")\n'
             f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$true; 'data'=$__data }} | ConvertTo-Json -Compress)\n"
-            f'    Write-Output "{self.CMD_END_MARKER}"\n'
+            f'    [Console]::WriteLine("{self.CMD_END_MARKER}")\n'
             f"    [Console]::Out.Flush()\n"
             f"}} catch {{\n"
-            f'    Write-Output "{self.CMD_START_MARKER}"\n'
+            f'    [Console]::WriteLine("{self.CMD_START_MARKER}")\n'
             f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$false; 'error'=$_.Exception.Message }} | ConvertTo-Json -Compress)\n"
-            f'    Write-Output "{self.CMD_END_MARKER}"\n'
+            f'    [Console]::WriteLine("{self.CMD_END_MARKER}")\n'
             f"    [Console]::Out.Flush()\n"
             f"}}\n"
         )
@@ -297,9 +295,10 @@ class PowerShellExecutor(BaseExecutor):
         def _reader():
             try:
                 for line in iter(stdout.readline, ''):
+                    self.logger.debug(f"[PS stdout] {line.rstrip()}")
                     q.put(line)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Reader thread error: {e}")
             q.put(None)  # EOF sentinel
 
         t = threading.Thread(target=_reader, daemon=True)
@@ -339,7 +338,7 @@ class PowerShellExecutor(BaseExecutor):
         the next command starts with a clean stdout stream.
         """
         try:
-            sync_cmd = f'Write-Output "{self.SYNC_MARKER}"\n[Console]::Out.Flush()\n'
+            sync_cmd = f'[Console]::WriteLine("{self.SYNC_MARKER}")\n[Console]::Out.Flush()\n'
             proc.stdin.write(sync_cmd)
             proc.stdin.flush()
             found, _ = self._read_until_marker(read_queue, self.SYNC_MARKER, timeout=timeout)
