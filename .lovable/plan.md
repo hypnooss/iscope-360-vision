@@ -1,46 +1,36 @@
 
 
-## Diagnóstico — "Detecções de Risco" com status incorreto
+## Diagnóstico — IdentityRiskEvent.Read.All continua pendente após Admin Consent
 
 ### Causa Raiz
 
-O endpoint `/identityProtection/riskDetections` requer a permissão **`IdentityRiskEvent.Read.All`**, que **não está registrada** no sistema. A app só possui `IdentityRiskyUser.Read.All` (que cobre `/identityProtection/riskyUsers` — regra AUT-004, um endpoint diferente).
+Os logs confirmam que:
+1. `ensure-exchange-permission` adicionou `IdentityRiskEvent.Read.All` ao manifesto às 02:48:56 ✅
+2. Admin Consent foi completado com sucesso (oauth-callback executou às 02:52:27) ✅
+3. Mas o token obtido via `client_credentials` retorna 403: *"required scopes are missing in the token"*
 
-O erro real é `403: required scopes are missing in the token`, mas a `not_found_description` exibe "requer Azure AD P2", o que é enganoso — o problema é permissão, não licenciamento.
+Isso é um **problema de propagação do Azure AD**. Quando uma nova permissão é adicionada ao manifesto e o Admin Consent é concedido imediatamente depois, o token emitido pelo Azure pode levar até 5 minutos para refletir o novo scope. Todos os três pontos de verificação (oauth-callback, validate-m365-permissions, validate-m365-connection) falham porque pegam o token "velho".
 
-Dados do banco confirmam:
-```
-risk_detections: 403: "You cannot perform the requested operation, required scopes are missing in the token."
-```
+### Solução — Retry com novo token para permissões com "scopes missing"
 
-### Solução
+Adicionar lógica de retry no `validate-m365-connection` para permissões que falham com a mensagem específica *"required scopes are missing in the token"*:
 
-Adicionar a permissão `IdentityRiskEvent.Read.All` em todos os pontos do sistema de permissões M365:
+1. Na primeira passada, se uma permissão retorna 403 com "scopes are missing", marcar para retry
+2. Após processar todas as permissões, se houver permissões marcadas para retry:
+   - Aguardar 15 segundos
+   - Obter um **novo** token (nova chamada client_credentials)
+   - Retestar apenas as permissões que falharam
+3. Se ainda falhar no retry, marcar como `pending` normalmente
 
-1. **`ensure-exchange-permission/index.ts`** — Adicionar o permission ID do Graph API para `IdentityRiskEvent.Read.All` na lista de permissões a provisionar no manifesto Azure
-2. **`validate-m365-connection/index.ts`** — Adicionar na lista de permissões a validar, com endpoint de teste `/beta/identityProtection/riskDetections?$top=1`
-3. **`validate-m365-permissions/index.ts`** — Adicionar na lista e no switch de validação
-4. **`m365-oauth-callback/index.ts`** — Adicionar na lista de permissões e no quick-check
-5. **`src/lib/m365PermissionDescriptions.ts`** — Adicionar descrição para exibição na UI
-
-Adicionalmente, corrigir a `not_found_description` da regra AUT-003 para uma mensagem mais precisa (migração SQL):
-- De: "Dados de detecção de risco não disponíveis (requer Azure AD P2)."
-- Para: "Dados de detecção de risco não disponíveis. Verifique se a permissão IdentityRiskEvent.Read.All foi concedida."
-
-### Detalhe Técnico — Permission ID
-
-O `IdentityRiskEvent.Read.All` tem o Application Permission ID: `6e472fd1-ad78-48da-a0f0-97ab2c6b769e` no Microsoft Graph.
+Isso resolve o problema de propagação transparentemente, sem que o usuário precise revalidar manualmente várias vezes.
 
 ### Arquivos a modificar
 
 | Arquivo | Alteração |
 |---|---|
-| `supabase/functions/ensure-exchange-permission/index.ts` | Adicionar entry para `IdentityRiskEvent.Read.All` |
-| `supabase/functions/validate-m365-connection/index.ts` | Adicionar na lista + lógica de teste |
-| `supabase/functions/validate-m365-permissions/index.ts` | Adicionar na lista + case no switch |
-| `supabase/functions/m365-oauth-callback/index.ts` | Adicionar na lista + quick-check |
-| `src/lib/m365PermissionDescriptions.ts` | Adicionar descrição |
-| Migração SQL | Corrigir `not_found_description` de AUT-003 |
+| `supabase/functions/validate-m365-connection/index.ts` | Adicionar lógica de retry com novo token para permissões com "scopes missing" |
 
-Após essas alterações, o tenant precisará **revalidar permissões** (botão na tela Ambiente > Tenant) para que o Admin Consent seja disparado com o novo escopo.
+### Detalhe de implementação
+
+O retry será implementado no loop principal de verificação de permissões (linhas ~389-640). Quando o bloco `IdentityRiskEvent.Read.All` (ou qualquer permissão) detecta o erro "scopes are missing", a permissão é adicionada a uma lista de retry. Após o loop, se a lista não estiver vazia, o sistema aguarda 15s, obtém novo token, e retesta.
 
