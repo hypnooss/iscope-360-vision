@@ -200,15 +200,37 @@ function interpolate(template: string, vars: Record<string, string | number>): s
   return result;
 }
 
+// ========== GRAPH API HELPER FOR INLINE EVALUATION ==========
+
+async function graphFetchSafe(accessToken: string, endpoint: string, options: { beta?: boolean } = {}): Promise<{ data: any; error: string | null }> {
+  try {
+    const baseUrl = options.beta ? 'https://graph.microsoft.com/beta' : 'https://graph.microsoft.com/v1.0';
+    const res = await fetch(`${baseUrl}${endpoint}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (!res.ok) return { data: null, error: `${res.status} ${res.statusText}` };
+    return { data: await res.json(), error: null };
+  } catch (e) {
+    return { data: null, error: String(e) };
+  }
+}
+
 // ========== RULE EVALUATOR ==========
 
-function evaluateRule(
+async function evaluateRule(
   rule: ComplianceRule,
   stepResults: Map<string, StepResult>,
-  now: string
-): M365Insight | null {
+  now: string,
+  accessToken?: string
+): Promise<M365Insight | null> {
   const evalLogic = rule.evaluation_logic as any;
   if (!evalLogic?.source_key) return null;
+  
+  // Handle inline evaluation types that don't need a step result
+  const inlineTypes = ['check_sharepoint_anonymous_links_live', 'check_onedrive_sharing_live'];
+  if (accessToken && inlineTypes.includes(evalLogic.evaluate?.type)) {
+    return evaluateInlineRule(rule, evalLogic, accessToken, now);
+  }
   
   const stepResult = stepResults.get(evalLogic.source_key);
   if (!stepResult) return null;
@@ -930,7 +952,9 @@ function evaluateRule(
         break;
       }
 
-      case 'check_sharepoint_anonymous_links': {
+      case 'check_sharepoint_anonymous_links':
+      case 'check_sharepoint_anonymous_links_live': {
+        // Legacy fallback for old source_key; live version handled by evaluateInlineRule
         const settings = data as any;
         const allowAnon = settings?.sharingCapability === 'ExternalUserAndGuestSharing';
         affectedCount = allowAnon ? 1 : 0;
@@ -950,7 +974,9 @@ function evaluateRule(
         break;
       }
 
-      case 'check_onedrive_sharing': {
+      case 'check_onedrive_sharing':
+      case 'check_onedrive_sharing_live': {
+        // Legacy fallback; live version handled by evaluateInlineRule
         const settings = data as any;
         const permissive = settings?.oneDriveSharingCapability === 'ExternalUserAndGuestSharing';
         affectedCount = permissive ? 1 : 0;
@@ -1014,6 +1040,96 @@ function evaluateRule(
   }
   
   return createInsight(rule, status, affectedCount, affectedEntities, description, now, stepResult.stepId);
+}
+
+// ========== INLINE EVALUATION (Graph API calls inside evaluator) ==========
+
+async function evaluateInlineRule(
+  rule: ComplianceRule,
+  evalLogic: any,
+  accessToken: string,
+  now: string
+): Promise<M365Insight | null> {
+  const evaluate = evalLogic.evaluate;
+  
+  try {
+    switch (evaluate.type) {
+      case 'check_sharepoint_anonymous_links_live': {
+        // Get root site → drives → check permissions for anonymous links
+        const { data: rootSite, error: rootErr } = await graphFetchSafe(accessToken, '/sites/root');
+        if (rootErr || !rootSite) {
+          return createNotFoundInsight(rule, rule.not_found_description || 'Não foi possível acessar o site raiz do SharePoint', now, '/sites/root');
+        }
+        
+        const { data: drivesData } = await graphFetchSafe(accessToken, `/sites/${rootSite.id}/drives?$top=10`);
+        let anonymousLinksCount = 0;
+        const sitesWithAnonLinks: Array<{ id: string; displayName: string; details?: Record<string, unknown> }> = [];
+        
+        if (drivesData) {
+          const drives = drivesData.value || [];
+          for (const drive of drives.slice(0, 5)) {
+            try {
+              const { data: permsData } = await graphFetchSafe(accessToken, `/drives/${drive.id}/root/permissions`);
+              if (permsData) {
+                const anonPerms = (permsData.value || []).filter((p: any) => p.link && p.link.scope === 'anonymous');
+                if (anonPerms.length > 0) {
+                  anonymousLinksCount += anonPerms.length;
+                  sitesWithAnonLinks.push({ id: drive.id, displayName: drive.name, details: { anonymousLinks: anonPerms.length } });
+                }
+              }
+            } catch { /* continue */ }
+          }
+        }
+        
+        const status = anonymousLinksCount > (evaluate.threshold || 10) ? 'fail' : 'pass';
+        const description = status === 'fail'
+          ? (rule.fail_description || '').replace('{{count}}', String(anonymousLinksCount)).replace('{count}', String(anonymousLinksCount))
+          : (rule.pass_description || '').replace('{{count}}', String(anonymousLinksCount)).replace('{count}', String(anonymousLinksCount));
+        
+        return createInsight(rule, status, anonymousLinksCount, sitesWithAnonLinks, description, now, '/drives/{id}/root/permissions');
+      }
+      
+      case 'check_onedrive_sharing_live': {
+        // Get users → check OneDrive permissions for wide sharing
+        const { data: usersData, error: usersErr } = await graphFetchSafe(accessToken, '/users?$select=id,displayName,userPrincipalName&$top=20');
+        if (usersErr || !usersData) {
+          return createNotFoundInsight(rule, rule.not_found_description || 'Não foi possível listar usuários', now, '/users');
+        }
+        
+        const users = usersData.value || [];
+        let wideShareCount = 0;
+        const wideShareUsers: Array<{ id: string; displayName: string; details?: Record<string, unknown> }> = [];
+        
+        for (const user of users.slice(0, 10)) {
+          try {
+            const { data: driveData } = await graphFetchSafe(accessToken, `/users/${user.id}/drive/root/permissions`);
+            if (driveData) {
+              const widePerms = (driveData.value || []).filter((p: any) =>
+                p.link && (p.link.scope === 'organization' || p.link.scope === 'anonymous')
+              );
+              if (widePerms.length > 3) {
+                wideShareCount++;
+                wideShareUsers.push({ id: user.id, displayName: user.displayName || user.userPrincipalName, details: { sharedItems: widePerms.length } });
+              }
+            }
+          } catch { /* user might not have OneDrive */ }
+        }
+        
+        const status = wideShareCount > (evaluate.threshold || 5) ? 'fail' : 'pass';
+        const description = status === 'fail'
+          ? (rule.fail_description || '').replace('{{count}}', String(wideShareCount)).replace('{count}', String(wideShareCount))
+          : (rule.pass_description || '').replace('{{count}}', String(wideShareCount)).replace('{count}', String(wideShareCount));
+        
+        return createInsight(rule, status, wideShareCount, wideShareUsers, description, now, '/users/{id}/drive/root/permissions');
+      }
+      
+      default:
+        return null;
+    }
+  } catch (e) {
+    console.error(`[evaluateInlineRule] Error evaluating ${rule.code}:`, e);
+    return createNotFoundInsight(rule, rule.not_found_description || 'Erro na avaliação inline', now, '');
+  }
 }
 
 function createInsight(
@@ -1454,8 +1570,9 @@ Deno.serve(async (req) => {
     const allInsights: M365Insight[] = [];
     const allErrors: string[] = [];
 
-    for (const rule of rules || []) {
-      const insight = evaluateRule(rule, stepResults, nowIso);
+    const rulePromises = (rules || []).map(rule => evaluateRule(rule, stepResults, nowIso, access_token));
+    const ruleResults = await Promise.all(rulePromises);
+    for (const insight of ruleResults) {
       if (insight) {
         allInsights.push(insight);
       }
