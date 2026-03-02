@@ -280,9 +280,11 @@ class PowerShellExecutor(BaseExecutor):
             f"[Console]::Out.Flush()\n"
             f"try {{\n"
             f"    $__data = ({cmd_text} | ConvertTo-Json -Depth 10 -Compress)\n"
-            f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$true; 'data'=$__data }} | ConvertTo-Json -Compress)\n"
+            f"    $__json = (@{{ 'name'='{cmd_name}'; 'success'=$true; 'data'=$__data }} | ConvertTo-Json -Compress)\n"
+            f"    [Console]::WriteLine($__json)\n"
             f"}} catch {{\n"
-            f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$false; 'error'=$_.Exception.Message }} | ConvertTo-Json -Compress)\n"
+            f"    $__json = (@{{ 'name'='{cmd_name}'; 'success'=$false; 'error'=$_.Exception.Message }} | ConvertTo-Json -Compress)\n"
+            f"    [Console]::WriteLine($__json)\n"
             f"}}\n"
             f'[Console]::WriteLine("{self.CMD_END_MARKER}")\n'
             f"[Console]::Out.Flush()\n"
