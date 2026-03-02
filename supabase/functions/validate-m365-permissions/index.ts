@@ -40,6 +40,7 @@ const RECOMMENDED_PERMISSIONS = [
   'SecurityIncident.Read.All',
   'AttackSimulation.Read.All',
   'InformationProtectionPolicy.Read.All',
+  'IdentityRiskEvent.Read.All',
   // Teams
   'TeamSettings.Read.All',
   'Channel.ReadBasic.All',
@@ -232,6 +233,9 @@ async function testPermission(accessToken: string, permission: string, appObject
         break;
       case 'IdentityRiskyUser.Read.All':
         url = 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1';
+        break;
+      case 'IdentityRiskEvent.Read.All':
+        url = 'https://graph.microsoft.com/beta/identityProtection/riskDetections?$top=1';
         break;
       case 'Application.ReadWrite.All': {
         // Auto-discover the app's object ID in the CLIENT tenant via appId
