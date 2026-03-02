@@ -2,48 +2,52 @@
 
 ## Problema
 
-O fluxo atual do M365 Compliance é:
-
-1. `trigger-m365-posture-analysis` dispara Graph API + cria agent task em paralelo
-2. Graph API termina em ~30s → status muda para `completed`
-3. Frontend detecta `completed` e exibe os resultados (incompletos — sem dados do Agent)
-4. Agent termina minutos depois → `agent-task-result` faz merge silencioso dos insights do PowerShell
-
-O Domain Compliance funciona diferente: só gera o relatório quando o agent completa (`agent-task-result`), garantindo que todos os dados estejam presentes.
+A página M365 Compliance (`M365PosturePage.tsx`) não exibe a barra de progresso durante a análise. O `triggerAnalysis` no hook `useM365SecurityPosture` faz polling internamente (while loop de 60 tentativas), mas o único feedback visual é o spinner no botão "Analisando...". Nas páginas de Firewall e External Domain Compliance, existe uma barra de progresso visível com tempo decorrido e status do agent.
 
 ## Solução
 
-Quando o tenant tem agent vinculado, o Graph API não deve marcar como `completed` — deve usar `partial`. O `agent-task-result` é quem marca `completed` após fazer o merge.
+Adicionar o mesmo padrão de barra de progresso que existe no Firewall Compliance:
 
 ### Alterações
 
-**1. `supabase/functions/trigger-m365-posture-analysis/index.ts`**
+**1. `src/hooks/useM365SecurityPosture.ts`**
 
-Na função `runAnalysis()` (linha ~263-277), ao salvar os resultados do Graph API:
-- Se `agentTaskId` existe → salvar com `status: 'partial'` (em vez de `completed`)
-- Se não tem agent → manter `status: 'completed'`
+Expor o estado do polling para o componente:
+- Adicionar `analysisId` e `analysisStatus` ao estado do hook
+- Ao invés do while-loop interno, retornar o `analysisId` e deixar o componente fazer polling via `useQuery` (igual ao Firewall)
+- Manter `isLoading` como true enquanto a análise roda
 
-Passar `agentTaskId` para dentro do closure `runAnalysis` (já está acessível via escopo).
+**2. `src/pages/m365/M365PosturePage.tsx`**
 
-**2. `supabase/functions/agent-task-result/index.ts`**
+- Adicionar estado `activeAnalysisId` e `analysisStartedAt`
+- Adicionar `useQuery` com polling de 5s na tabela `m365_posture_history` (status) quando `activeAnalysisId` existe
+- Renderizar barra de progresso idêntica à do Firewall entre o header e o "Última coleta"
+- Ao detectar `completed` ou `failed`, limpar o `activeAnalysisId` e chamar `refetch()`
 
-No bloco M365 Tenant (linha ~4870-4879), ao atualizar `m365_posture_history`:
-- Adicionar `status: 'completed'` no update (além de `agent_status`, `summary`, `score`)
-- Assim o frontend só vê `completed` quando TODOS os dados estão disponíveis
+### Componente da barra de progresso (mesmo padrão do Firewall)
 
-**3. `src/hooks/useM365SecurityPosture.ts`**
-
-No polling (linha ~134-148):
-- Alterar condição de parada: além de `completed` e `failed`, também parar em `partial` **apenas se não houver agent** (mas isso já é tratado pelo backend agora)
-- Na prática, basta manter o polling como está — ele já espera por `completed`
-
-### Fluxo resultante
-
-```text
-COM Agent:
-  trigger → Graph API termina → status='partial' → Agent termina → agent-task-result marca 'completed' → frontend exibe
-
-SEM Agent:
-  trigger → Graph API termina → status='completed' → frontend exibe
+```tsx
+{isAnalysisRunning && (
+  <div className="rounded-lg border bg-card p-4 space-y-3">
+    <div className="flex items-center gap-3">
+      <Loader2 className="w-5 h-5 animate-spin text-primary" />
+      <div>
+        <p className="text-sm font-medium">Análise em andamento...</p>
+        <p className="text-xs text-muted-foreground">
+          {analysisStatus === 'partial' ? 'Graph API concluída, aguardando Agent' : 'Processando...'}
+          {analysisStartedAt && ` · ${elapsed}s`}
+        </p>
+      </div>
+    </div>
+    <Progress value={analysisStatus === 'partial' ? 60 : 30} className="h-2" />
+  </div>
+)}
 ```
+
+### Fluxo
+
+1. Usuário clica "Executar Análise"
+2. `triggerAnalysis()` retorna `analysisId` → salva no estado
+3. Polling de 5s mostra barra de progresso com status (`pending` → `partial` → `completed`)
+4. Ao completar, limpa estado e exibe resultado
 
