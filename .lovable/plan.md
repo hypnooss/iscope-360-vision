@@ -1,75 +1,95 @@
 
 
-## Diagnóstico: O timeout agora funciona, mas a conexão falha genuinamente
+## Problema Real: stdout do PowerShell é block-buffered em pipes no Linux
 
-A boa notícia: o fix da queue + stderr=STDOUT **está funcionando** — o timeout de 120s dispara corretamente (18:40:11 → 18:42:11 = exatamente 120s). Antes, ficava preso indefinidamente.
-
-O problema agora é que o `Connect-ExchangeOnline` (ou o `Import-Module`) está falhando/travando, e **não temos visibilidade** do que o PowerShell está dizendo porque o output capturado durante a conexão é descartado quando o timeout ocorre.
+O .NET (que roda o pwsh) usa **block buffering** no `Console.Out` quando o stdout não é um TTY. Isso significa:
 
 ```text
-_read_until_marker() → timeout → retorna None
-                                    ↑
-                            As linhas lidas ficam perdidas
-                            dentro da variável local `lines`
+Python envia preamble via stdin
+  → PowerShell executa Import-Module (OK)
+  → PowerShell executa Connect-ExchangeOnline (~30-60s, OK)
+  → PowerShell executa Write-Output "---ISCOPE_SESSION_READY---"
+     → Output fica no buffer interno do .NET (~4KB) ← NÃO É FLUSHED
+  → Reader thread: nada chega ao pipe
+  → 120s depois: timeout com zero output capturado
 ```
 
-## Correção: Capturar e logar o output da fase de conexão
+O `Write-Output` envia texto para o pipeline do PowerShell, que eventualmente vai para stdout, mas o `StreamWriter` subjacente só faz flush quando o buffer enche (4KB) ou o processo termina. Como o marker tem ~30 bytes, nunca enche.
 
-**Arquivo**: `python-agent/agent/executors/powershell.py`
+## Correção: `python-agent/agent/executors/powershell.py`
 
-### 1. Alterar `_read_until_marker` para retornar output mesmo em timeout
+### 1. Adicionar auto-flush no início do preamble (`_build_interactive_preamble`, linhas 229-262)
 
-Em vez de retornar `None` no timeout, retornar uma tupla `(found: bool, output: str)`:
+Inserir no início do script (antes de qualquer Write-Output):
 
 ```python
-def _read_until_marker(self, read_queue, marker, timeout):
-    lines = []
-    deadline = time.time() + timeout
-    while True:
-        remaining = deadline - time.time()
-        if remaining <= 0:
-            return (False, "\n".join(lines))  # Timeout, mas retorna o que leu
-        try:
-            line = read_queue.get(timeout=remaining)
-        except queue.Empty:
-            return (False, "\n".join(lines))  # Timeout
-        if line is None:
-            return (False, "\n".join(lines))  # EOF
-        stripped = line.strip()
-        if stripped == marker:
-            return (True, "\n".join(lines))   # Found marker
-        lines.append(stripped)
+lines = [
+    # Force stdout auto-flush (critical for pipe communication on Linux)
+    "[Console]::Out.Flush()",
+    "$sw = [System.IO.StreamWriter]::new([Console]::OpenStandardOutput())",
+    "$sw.AutoFlush = $true",
+    "[Console]::SetOut($sw)",
+    "",
+    "$ErrorActionPreference = 'Continue'",
+    # ... resto do preamble existente
+]
 ```
 
-### 2. Atualizar todos os chamadores de `_read_until_marker`
+Isso faz com que cada `Write-Output` seja imediatamente flushed para o pipe.
 
-**Conexão (linha 450)**: Logar o output capturado para diagnóstico
+### 2. Adicionar flush explícito após o SESSION_READY_MARKER (linhas 257-260)
+
+Adicionar `[Console]::Out.Flush()` como safety net após o marker:
 
 ```python
-found, output = self._read_until_marker(read_queue, self.SESSION_READY_MARKER, timeout=120)
-if not found:
-    error = "PowerShell session failed to connect within 120s"
-    if output:
-        self.logger.error(f"PowerShell output during connection:\n{output[:2000]}")
-    ...
+lines.extend([
+    "",
+    f'Write-Output "{self.SESSION_READY_MARKER}"',
+    "[Console]::Out.Flush()",
+])
 ```
 
-**Execução de comandos**: Ajustar para a tupla — `_read_until_marker` retorna `(found, output)` em vez de `str | None`.
+### 3. Adicionar flush nos command wrappers (`_build_interactive_command`, linhas 264-277)
 
-**`_drain_and_sync`**: Ajustar chamada para usar tupla.
+Após cada `CMD_END_MARKER`:
 
-### 3. Impacto
+```python
+def _build_interactive_command(self, cmd_name: str, cmd_text: str) -> str:
+    return (
+        f"try {{\n"
+        f"    $__data = ({cmd_text} | ConvertTo-Json -Depth 10 -Compress)\n"
+        f'    Write-Output "{self.CMD_START_MARKER}"\n'
+        f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$true; 'data'=$__data }} | ConvertTo-Json -Compress)\n"
+        f'    Write-Output "{self.CMD_END_MARKER}"\n'
+        f"    [Console]::Out.Flush()\n"
+        f"}} catch {{\n"
+        f'    Write-Output "{self.CMD_START_MARKER}"\n'
+        f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$false; 'error'=$_.Exception.Message }} | ConvertTo-Json -Compress)\n"
+        f'    Write-Output "{self.CMD_END_MARKER}"\n'
+        f"    [Console]::Out.Flush()\n"
+        f"}}\n"
+    )
+```
 
-- Zero mudança no fluxo — apenas expõe o que o PowerShell está dizendo durante a conexão
-- Na próxima execução que falhar, o log vai mostrar exatamente o erro (módulo não encontrado, certificado inválido, network timeout, etc.)
-- Permite diagnóstico remoto sem precisar conectar no servidor
+### 4. Adicionar flush no sync marker (`_drain_and_sync`, linha 333)
 
-### Resumo das mudanças
+```python
+sync_cmd = f'Write-Output "{self.SYNC_MARKER}"\n[Console]::Out.Flush()\n'
+```
+
+## Resumo
 
 | Local | Mudança |
 |-------|---------|
-| `_read_until_marker` | Retorna `(bool, str)` em vez de `Optional[str]` |
-| Conexão (linha 450) | Loga output capturado em caso de falha |
-| Execução de comandos | Ajusta para tupla |
-| `_drain_and_sync` | Ajusta para tupla |
+| Preamble (início) | `[Console]::SetOut()` com AutoFlush=true |
+| Preamble (SESSION_READY) | `[Console]::Out.Flush()` após marker |
+| `_build_interactive_command` | `[Console]::Out.Flush()` após CMD_END |
+| `_drain_and_sync` | `[Console]::Out.Flush()` após SYNC_MARKER |
+
+## Impacto
+
+- Resolve o problema de zero output em pipes no Linux
+- Cada marker é imediatamente visível para a reader thread
+- O `Connect-ExchangeOnline` agora pode levar os 30-60s normais sem triggering timeout
+- Sem efeito colateral — o auto-flush apenas desativa o buffering desnecessário
 
