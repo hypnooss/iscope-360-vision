@@ -188,6 +188,18 @@ async function executeGraphApiStep(
   }
 }
 
+// ========== TEMPLATE INTERPOLATION ==========
+
+/** Replace both {{var}} and {var} patterns in description templates */
+function interpolate(template: string, vars: Record<string, string | number>): string {
+  let result = template;
+  for (const [key, value] of Object.entries(vars)) {
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(value));
+    result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value));
+  }
+  return result;
+}
+
 // ========== RULE EVALUATOR ==========
 
 function evaluateRule(
@@ -245,9 +257,7 @@ function evaluateRule(
           displayName: u.userDisplayName || u.userPrincipalName,
         }));
         status = affectedCount > (evaluate.threshold || 0) ? 'fail' : 'pass';
-        description = status === 'fail'
-          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
-          : (rule.pass_description || '').replace('{count}', String(users.length));
+        description = interpolate(status === 'fail' ? rule.fail_description || '' : rule.pass_description || '', { count: status === 'fail' ? affectedCount : users.length });
         break;
       }
       
@@ -266,9 +276,7 @@ function evaluateRule(
           details: { lastSignIn: u.signInActivity?.lastSignInDateTime || 'Nunca' }
         }));
         status = affectedCount > 5 ? 'fail' : 'pass';
-        description = status === 'fail'
-          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
-          : rule.pass_description || 'Todos os usuários ativos têm atividade recente.';
+        description = interpolate(status === 'fail' ? rule.fail_description || '' : rule.pass_description || 'Todos os usuários ativos têm atividade recente.', { count: affectedCount });
         break;
       }
       
@@ -293,9 +301,7 @@ function evaluateRule(
           displayName: `${p.displayName} (${p.state})`,
           details: { state: p.state, mfa: p.grantControls?.builtInControls?.includes('mfa') }
         }));
-        description = status === 'pass'
-          ? (rule.pass_description || '').replace('{count}', String(enabledPolicies.length))
-          : (rule.fail_description || '').replace('{count}', String(enabledPolicies.length));
+        description = interpolate(status === 'pass' ? rule.pass_description || '' : rule.fail_description || '', { count: enabledPolicies.length });
         break;
       }
       
@@ -322,11 +328,7 @@ function evaluateRule(
           displayName: l.displayName,
           details: { trusted: l.isTrusted }
         }));
-        description = status === 'pass'
-          ? (rule.pass_description || '')
-            .replace('{count}', String(locations.length))
-            .replace('{trusted_count}', String(trustedLocations.length))
-          : rule.fail_description || '';
+        description = interpolate(status === 'pass' ? rule.pass_description || '' : rule.fail_description || '', { count: locations.length, trusted: trustedLocations.length, trusted_count: trustedLocations.length });
         break;
       }
       
@@ -353,12 +355,7 @@ function evaluateRule(
         }));
         status = highRisk.length > (evaluate.high_threshold || 0) || 
                  mediumRisk.length > (evaluate.medium_threshold || 5) ? 'fail' : 'pass';
-        description = status === 'fail'
-          ? (rule.fail_description || '')
-            .replace('{count}', String(detections.length))
-            .replace('{high_count}', String(highRisk.length))
-            .replace('{medium_count}', String(mediumRisk.length))
-          : rule.pass_description || '';
+        description = interpolate(status === 'fail' ? rule.fail_description || '' : rule.pass_description || '', { count: detections.length, highRisk: highRisk.length, mediumRisk: mediumRisk.length, high_count: highRisk.length, medium_count: mediumRisk.length });
         break;
       }
       
@@ -374,12 +371,7 @@ function evaluateRule(
         }));
         status = confirmed.length > (evaluate.confirmed_threshold || 0) || 
                  atRisk.length > (evaluate.at_risk_threshold || 5) ? 'fail' : 'pass';
-        description = status === 'fail'
-          ? (rule.fail_description || '')
-            .replace('{count}', String(riskyUsers.length))
-            .replace('{confirmed_count}', String(confirmed.length))
-            .replace('{at_risk_count}', String(atRisk.length))
-          : rule.pass_description || '';
+        description = interpolate(status === 'fail' ? rule.fail_description || '' : rule.pass_description || '', { count: riskyUsers.length, confirmed: confirmed.length, atRisk: atRisk.length, confirmed_count: confirmed.length, at_risk_count: atRisk.length });
         break;
       }
       
@@ -387,7 +379,7 @@ function evaluateRule(
         const count = typeof data === 'number' ? data : ((data as any)?.value?.length || 0);
         affectedCount = count;
         status = 'pass';
-        description = (rule.pass_description || '').replace('{count}', String(count));
+        description = interpolate(rule.pass_description || '', { count });
         break;
       }
       
@@ -1074,7 +1066,10 @@ function createInsight(
     severity: status === 'fail' ? severityMap[rule.severity] || 'medium' : 'info',
     titulo: rule.name,
     criteria: rule.description || '',
-    descricaoExecutiva: description || rule.description || '',
+    descricaoExecutiva: (description || rule.description || '')
+      .replace(/\{(\d+)\}/g, '$1')  // Clean stray {27} → 27 from partial interpolation
+      .replace(/\{\{[^}]+\}\}/g, '') // Remove any unresolved {{var}} placeholders
+      .replace(/\s{2,}/g, ' ').trim(),
     riscoTecnico: rule.technical_risk || '',
     impactoNegocio: rule.business_impact || '',
     scoreImpacto: status === 'fail' ? rule.weight : 0,
