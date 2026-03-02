@@ -1,46 +1,73 @@
 
 
-## Diagnóstico Final
+## Diagnóstico: `-Command -` com stdin pipe causa deadlock nos cmdlets Exchange
 
-O teste manual comprova: **Exchange funciona perfeitamente, resposta instantânea.** O problema é exclusivamente no agent.
+O problema está 100% confirmado:
 
-### Causa Raiz: `Write-Output` é buffered no modo `-Command -`
+1. Manualmente com `pwsh -NonInteractive` interativo → `Get-AcceptedDomain` retorna instantaneamente
+2. No agent com `pwsh -NonInteractive -Command -` (stdin pipe) → `CMD_START` chega, cmdlet trava por 120s
 
-No modo `pwsh -NonInteractive -Command -`, o PowerShell usa dois caminhos de output diferentes:
+Os cmdlets Exchange usam **implicit remoting** (proxy functions que fazem chamadas WinRM remotas). No modo `-Command -`, o PowerShell mantém stdin aberto como pipe, e esses cmdlets remotos podem tentar ler de stdin internamente, causando deadlock.
 
-- **`[Console]::WriteLine()`** → escreve diretamente no file descriptor stdout → **chega no pipe imediatamente** (é assim que os markers `SESSION_READY` e `PIPE_TEST` funcionam)
-- **`Write-Output`** → escreve no PowerShell Output Stream → **fica buffered internamente pelo .NET runtime** → só é flushed quando o pipeline fecha ou acumula buffer suficiente
+## Solução: Trocar `-Command -` por `-File` com script temporário
 
-O `_build_interactive_command` atual usa `Write-Output` para o JSON:
-```
-Write-Output (@{ 'name'='...'; 'success'=$true; 'data'=$__data } | ConvertTo-Json -Compress)
-```
+Em vez de enviar comandos via stdin pipe, gerar um arquivo `.ps1` temporário com todo o preamble + comandos e executar com `pwsh -File script.ps1`. A leitura progressiva do stdout com marcadores permanece idêntica.
 
-Esse `Write-Output` **nunca chega ao pipe** porque o .NET stdout StreamWriter não faz flush automático no modo pipeline. O `[Console]::Out.Flush()` depois do `CMD_END` só faz flush do stream do Console, não do stream do `Write-Output`.
+### Mudanças em `python-agent/agent/executors/powershell.py`
 
-### Solução
+**1. Novo método `_build_script_file`**
 
-Trocar **todos os `Write-Output`** por **`[Console]::WriteLine()`** dentro do `_build_interactive_command`. Isso garante que tanto os markers quanto os dados JSON usem o mesmo caminho de output direto (unbuffered).
+Gera um arquivo `.ps1` temporário contendo:
+- Preamble (import + connect + SESSION_READY marker)
+- Todos os comandos com CMD_START/CMD_END markers
+- Disconnect no final
 
-### Mudança no `_build_interactive_command`
+**2. Modificar `run_interactive`**
 
+Trocar:
 ```python
-def _build_interactive_command(self, cmd_name, cmd_text):
-    return (
-        f'[Console]::WriteLine("{self.CMD_START_MARKER}")\n'
-        f"[Console]::Out.Flush()\n"
-        f"try {{\n"
-        f"    $__data = ({cmd_text} | ConvertTo-Json -Depth 10 -Compress)\n"
-        f"    $__json = (@{{ 'name'='{cmd_name}'; 'success'=$true; 'data'=$__data }} | ConvertTo-Json -Compress)\n"
-        f"    [Console]::WriteLine($__json)\n"
-        f"}} catch {{\n"
-        f"    $__json = (@{{ 'name'='{cmd_name}'; 'success'=$false; 'error'=$_.Exception.Message }} | ConvertTo-Json -Compress)\n"
-        f"    [Console]::WriteLine($__json)\n"
-        f"}}\n"
-        f'[Console]::WriteLine("{self.CMD_END_MARKER}")\n'
-        f"[Console]::Out.Flush()\n"
-    )
+proc = subprocess.Popen(
+    [pwsh, "-NoProfile", "-NonInteractive", "-Command", "-"],
+    stdin=subprocess.PIPE, ...
+)
+proc.stdin.write(preamble)
+# then write commands one by one via stdin
 ```
 
-Isso é **1 linha de mudança** no arquivo `python-agent/agent/executors/powershell.py`.
+Por:
+```python
+script_path = self._build_script_file(preamble_lines, cmd_list, module)
+proc = subprocess.Popen(
+    [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+    stdin=subprocess.DEVNULL,  # Nenhum stdin! Elimina deadlock
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT, ...
+)
+# Read output progressively (mesma lógica de markers)
+```
+
+**3. Leitura progressiva inalterada**
+
+A lógica de `_read_until_marker` para SESSION_READY, CMD_START, CMD_END continua idêntica. O timeout por comando também funciona igual — se um cmdlet travar, matamos o processo.
+
+**4. Simplificações**
+
+- Não precisa mais de `_drain_and_sync` (sem stdin para sincronizar)
+- Não precisa mais de `_close_interactive_session` com stdin write (processo termina naturalmente ao final do script)
+- Se houver timeout fatal (3 consecutivos), mata o processo com `proc.kill()` como já faz
+
+**5. Cleanup**
+
+Apagar o arquivo `.ps1` temporário no `finally` block.
+
+### Por que isso resolve
+
+- `stdin=subprocess.DEVNULL` → cmdlets Exchange não conseguem ler de stdin → sem deadlock
+- Execução com `-File` é o mesmo modo que o usuário testou manualmente
+- Zero mudança na lógica de parsing/markers/timeouts — só muda a fonte dos comandos
+
+### Trade-off
+
+- Todos os comandos são escritos no script antecipadamente (não podemos adicionar comandos dinamicamente mid-session)
+- Isso não é problema porque `run_interactive` já recebe todos os steps no início
 
