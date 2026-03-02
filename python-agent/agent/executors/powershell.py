@@ -7,6 +7,7 @@ Supports both batch (run) and interactive (run_interactive) execution modes.
 import json
 import os
 import queue
+import re
 import subprocess
 import shutil
 import tempfile
@@ -45,6 +46,7 @@ class PowerShellExecutor(BaseExecutor):
     CMD_END_MARKER = "---ISCOPE_CMD_END---"
     SESSION_READY_MARKER = "---ISCOPE_SESSION_READY---"
     SYNC_MARKER = "---ISCOPE_SYNC---"
+    ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07')
     
     # Consecutive timeout threshold before killing session
     MAX_CONSECUTIVE_TIMEOUTS = 3
@@ -283,6 +285,13 @@ class PowerShellExecutor(BaseExecutor):
             f"}}\n"
         )
     
+    def _sanitize_line(self, line: str) -> str:
+        """Remove BOM, ANSI escapes, null bytes and other invisible chars."""
+        line = line.replace('\ufeff', '')   # UTF-8 BOM
+        line = line.replace('\x00', '')     # Null bytes
+        line = self.ANSI_ESCAPE_RE.sub('', line)  # ANSI escape sequences
+        return line.strip()
+
     def _start_reader_thread(self, stdout) -> queue.Queue:
         """
         Spawn a daemon thread that reads stdout.readline() in a loop and
@@ -295,7 +304,7 @@ class PowerShellExecutor(BaseExecutor):
         def _reader():
             try:
                 for line in iter(stdout.readline, ''):
-                    self.logger.debug(f"[PS stdout] {line.rstrip()}")
+                    self.logger.debug(f"[PS stdout raw] {repr(line)}")
                     q.put(line)
             except Exception as e:
                 self.logger.warning(f"Reader thread error: {e}")
@@ -326,10 +335,10 @@ class PowerShellExecutor(BaseExecutor):
             if line is None:
                 # EOF - process died
                 return (False, "\n".join(lines))
-            line_stripped = line.strip()
-            if line_stripped == marker:
+            line_clean = self._sanitize_line(line)
+            if line_clean == marker:
                 return (True, "\n".join(lines))
-            lines.append(line_stripped)
+            lines.append(line_clean)
     
     def _drain_and_sync(self, proc, read_queue: queue.Queue, timeout: int = 30):
         """
