@@ -51,20 +51,16 @@ export function useEntraIdApplicationInsights({
     setErrorCode(null);
 
     try {
-      const { data, error: queryError } = await supabase
-        .from('m365_posture_history')
-        .select('insights, completed_at, status')
-        .eq('tenant_record_id', tenantRecordId)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // Use RPC to get insights without full affectedEntities
+      const { data: liteData, error: rpcError } = await supabase.rpc('get_posture_insights_lite', {
+        p_tenant_record_id: tenantRecordId,
+      });
 
-      if (queryError) {
-        throw new Error(queryError.message);
+      if (rpcError) {
+        throw new Error(rpcError.message);
       }
 
-      if (!data) {
+      if (!liteData) {
         setInsights([]);
         setSummary(defaultSummary);
         setAnalyzedAt(null);
@@ -72,6 +68,8 @@ export function useEntraIdApplicationInsights({
         setErrorCode('NO_ANALYSIS');
         return;
       }
+
+      const data = liteData as any;
 
       // Filter insights related to Applications
       const allInsights = (data.insights as any[]) || [];

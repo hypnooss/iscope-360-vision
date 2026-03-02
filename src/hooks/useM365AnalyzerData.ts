@@ -189,7 +189,7 @@ export function useLatestM365AnalyzerSnapshot(tenantRecordId?: string) {
 
       const { data, error } = await supabase
         .from('m365_analyzer_snapshots' as any)
-        .select('*')
+        .select('id, tenant_record_id, client_id, agent_task_id, status, period_start, period_end, score, summary, metrics, created_at')
         .eq('tenant_record_id', tenantRecordId)
         .eq('status', 'completed')
         .order('created_at', { ascending: false })
