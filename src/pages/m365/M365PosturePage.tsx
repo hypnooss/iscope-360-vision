@@ -47,6 +47,24 @@ export default function M365PosturePage() {
   
   const { tenants, selectedTenantId, selectedTenant, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
 
+  // Detect in-progress analysis on mount
+  const { data: activeAnalysis } = useQuery({
+    queryKey: ['m365-active-analysis', selectedTenantId],
+    queryFn: async () => {
+      if (!selectedTenantId) return null;
+      const { data } = await supabase
+        .from('m365_posture_history')
+        .select('id, status, created_at')
+        .eq('tenant_record_id', selectedTenantId)
+        .in('status', ['pending', 'partial'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!selectedTenantId && !activeAnalysisId,
+  });
+
   const { 
     data, 
     isLoading, 
@@ -77,6 +95,14 @@ export default function M365PosturePage() {
     enabled: !!activeAnalysisId,
     refetchInterval: 5000,
   });
+
+  // Restore active analysis state on mount
+  useEffect(() => {
+    if (activeAnalysis && !activeAnalysisId) {
+      setActiveAnalysisId(activeAnalysis.id);
+      setAnalysisStartedAt(new Date(activeAnalysis.created_at).getTime());
+    }
+  }, [activeAnalysis, activeAnalysisId]);
 
   // Handle polling result
   useEffect(() => {
