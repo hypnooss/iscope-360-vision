@@ -822,7 +822,7 @@ async function evaluateRule(
         const current = latest.currentScore || 0;
         const max = latest.maxScore || 1;
         const pct = Math.round((current / max) * 100);
-        affectedCount = current;
+        affectedCount = Math.round(current);
         status = pct >= (evaluate.min_percentage || 60) ? 'pass' : 'fail';
         description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '')
           .replace('{{current}}', String(current)).replace('{{max}}', String(max)).replace('{{percentage}}', String(pct));
