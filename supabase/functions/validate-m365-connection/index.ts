@@ -30,6 +30,7 @@ const REQUIRED_PERMISSIONS = [
   'Organization.Read.All',
   'Policy.Read.All',
   'IdentityRiskyUser.Read.All', // Required for Identity Protection risky users
+  'IdentityRiskEvent.Read.All', // Required for Identity Protection risk detections
   // Exchange Online
   'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
   'MailboxSettings.Read',
@@ -476,6 +477,30 @@ serve(async (req) => {
             }
           }
           console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
+         } else if (permission === 'IdentityRiskEvent.Read.All') {
+          const response = await fetch('https://graph.microsoft.com/beta/identityProtection/riskDetections?$top=1', {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          if (response.ok) {
+            granted = true;
+          } else {
+            const errBody = await response.json().catch(() => ({}));
+            const errCode = errBody?.error?.code || '';
+            const errMsg = errBody?.error?.message || '';
+            console.log(`Permission ${permission}: ${response.status} - code: ${errCode} - msg: ${errMsg}`);
+            if (response.status === 403 && (
+              errCode.includes('NonPremiumTenant') ||
+              errCode.includes('NotSupported') ||
+              errMsg.toLowerCase().includes('license') ||
+              errMsg.toLowerCase().includes('premium')
+            )) {
+              granted = true;
+              console.log(`Permission ${permission}: 403 but license issue - treating as granted`);
+            } else {
+              granted = false;
+            }
+          }
+          console.log(`Permission ${permission}: granted: ${granted}`);
         } else if (permission === 'MailboxSettings.Read') {
           // Fetch up to 5 users to find one with an active mailbox
           const usersResp = await fetch('https://graph.microsoft.com/v1.0/users?$top=5&$select=id', {

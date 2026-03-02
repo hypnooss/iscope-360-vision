@@ -21,6 +21,7 @@ const REQUIRED_PERMISSIONS = [
   'Policy.Read.All',
   'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
   'IdentityRiskyUser.Read.All', // Required for Identity Protection risky users
+  'IdentityRiskEvent.Read.All', // Required for Identity Protection risk detections
   // Exchange Online
   'MailboxSettings.Read',
   'Mail.Read',
@@ -477,6 +478,7 @@ Deno.serve(async (req) => {
       { permission: 'Policy.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/policies/authenticationMethodsPolicy' },
       { permission: 'Reports.Read.All', endpoint: 'https://graph.microsoft.com/beta/reports/authenticationMethods/userRegistrationDetails?$top=1' },
       { permission: 'IdentityRiskyUser.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1' },
+      { permission: 'IdentityRiskEvent.Read.All', endpoint: 'https://graph.microsoft.com/beta/identityProtection/riskDetections?$top=1' },
     ];
 
     // Test other permissions (generic endpoint tests)
