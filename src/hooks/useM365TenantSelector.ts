@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePreview } from '@/contexts/PreviewContext';
@@ -18,8 +18,15 @@ export function useM365TenantSelector() {
   const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Stable ref for setSearchParams to avoid re-render loops
+  const setSearchParamsRef = useRef(setSearchParams);
+  useEffect(() => {
+    setSearchParamsRef.current = setSearchParams;
+  }, [setSearchParams]);
+
   const paramTenantId = searchParams.get('tenant');
 
+  // Stable loadTenants - no volatile deps
   const loadTenants = useCallback(async () => {
     if (!user) return;
 
@@ -52,19 +59,25 @@ export function useM365TenantSelector() {
       }));
 
       setTenants(options);
-
-      // Auto-select first tenant if no param in URL
-      if (!paramTenantId && options.length > 0) {
-        setSearchParams({ tenant: options[0].id }, { replace: true });
-      }
     } finally {
       setLoading(false);
     }
-  }, [user, isPreviewMode, previewTarget, paramTenantId, setSearchParams]);
+  }, [user, isPreviewMode, previewTarget]);
 
   useEffect(() => {
     loadTenants();
   }, [loadTenants]);
+
+  // Auto-select first tenant when tenants load and no tenant in URL
+  useEffect(() => {
+    if (tenants.length > 0 && !paramTenantId) {
+      setSearchParamsRef.current(prev => {
+        const next = new URLSearchParams(prev);
+        next.set('tenant', tenants[0].id);
+        return next;
+      }, { replace: true });
+    }
+  }, [tenants, paramTenantId]);
 
   const selectedTenantId = paramTenantId && tenants.some(t => t.id === paramTenantId)
     ? paramTenantId
@@ -73,8 +86,12 @@ export function useM365TenantSelector() {
   const selectedTenant = tenants.find(t => t.id === selectedTenantId) || null;
 
   const selectTenant = useCallback((id: string) => {
-    setSearchParams({ tenant: id });
-  }, [setSearchParams]);
+    setSearchParamsRef.current(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('tenant', id);
+      return next;
+    });
+  }, []);
 
   return {
     tenants,
