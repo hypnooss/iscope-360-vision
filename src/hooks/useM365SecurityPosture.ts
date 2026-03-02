@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   M365PostureResponse, 
@@ -17,9 +18,8 @@ interface UseM365SecurityPostureOptions {
 interface UseM365SecurityPostureReturn {
   data: M365PostureResponse | null;
   isLoading: boolean;
-  setIsLoading: (v: boolean) => void;
   error: string | null;
-  refetch: () => Promise<void>;
+  refetch: () => void;
   triggerAnalysis: () => Promise<{ success: boolean; analysisId?: string }>;
   getInsightsByCategory: (category: M365RiskCategory) => M365Insight[];
   getFailedInsights: () => M365Insight[];
@@ -29,83 +29,65 @@ interface UseM365SecurityPostureReturn {
   isAgentPending: boolean;
 }
 
+export const M365_POSTURE_QUERY_KEY = 'm365-security-posture';
+
+async function fetchPostureData(
+  tenantRecordId: string,
+  dateFrom?: string,
+  dateTo?: string,
+): Promise<M365PostureResponse | null> {
+  const { data: liteData, error: rpcError } = await supabase.rpc('get_posture_insights_lite', {
+    p_tenant_record_id: tenantRecordId,
+  });
+
+  if (rpcError) throw new Error(rpcError.message);
+  if (!liteData) return null;
+
+  const historyRecord = liteData as any;
+
+  return {
+    success: true,
+    score: historyRecord.score ?? 0,
+    classification: historyRecord.classification as any ?? 'critical',
+    summary: historyRecord.summary ?? { critical: 0, high: 0, medium: 0, low: 0, total: 0 },
+    categoryBreakdown: historyRecord.category_breakdown ?? [],
+    insights: historyRecord.insights ?? [],
+    agentInsights: historyRecord.agent_insights ?? [],
+    agentStatus: historyRecord.agent_status as M365PostureResponse['agentStatus'],
+    tenant: { id: tenantRecordId, domain: '', displayName: '' },
+    analyzedAt: historyRecord.completed_at ?? historyRecord.created_at ?? new Date().toISOString(),
+    analyzedPeriod: { from: dateFrom ?? '', to: dateTo ?? '' },
+    errors: historyRecord.errors?.errors ?? [],
+    _historyId: historyRecord.id,
+  };
+}
+
 export function useM365SecurityPosture({
   tenantRecordId,
   dateFrom,
   dateTo,
 }: UseM365SecurityPostureOptions): UseM365SecurityPostureReturn {
-  const [data, setData] = useState<M365PostureResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  // Fetch latest analysis from history (no API call)
-  const refetch = useCallback(async () => {
-    if (!tenantRecordId) {
-      setError('Tenant não selecionado');
-      return;
-    }
+  const {
+    data: queryData,
+    isLoading,
+    error: queryError,
+    refetch,
+  } = useQuery({
+    queryKey: [M365_POSTURE_QUERY_KEY, tenantRecordId],
+    queryFn: () => fetchPostureData(tenantRecordId, dateFrom, dateTo),
+    enabled: !!tenantRecordId,
+    staleTime: 1000 * 60 * 5,
+  });
 
-    setIsLoading(true);
-    setError(null);
+  const data = queryData ?? null;
+  const error = queryError ? (queryError instanceof Error ? queryError.message : 'Erro ao buscar postura de segurança') : (!data && !isLoading && tenantRecordId ? 'Nenhuma análise encontrada. Clique em "Executar Análise" para iniciar.' : null);
 
-    try {
-      // Use RPC to get insights without full affectedEntities (70-90% payload reduction)
-      const { data: liteData, error: rpcError } = await supabase.rpc('get_posture_insights_lite', {
-        p_tenant_record_id: tenantRecordId,
-      });
-
-      if (rpcError) {
-        throw new Error(rpcError.message);
-      }
-
-      if (!liteData) {
-        setData(null);
-        setError('Nenhuma análise encontrada. Clique em "Atualizar" para executar.');
-        return;
-      }
-
-      const historyRecord = liteData as any;
-
-      // Transform to M365PostureResponse format
-      const response: M365PostureResponse = {
-        success: true,
-        score: historyRecord.score ?? 0,
-        classification: historyRecord.classification as any ?? 'critical',
-        summary: historyRecord.summary ?? { critical: 0, high: 0, medium: 0, low: 0, total: 0 },
-        categoryBreakdown: historyRecord.category_breakdown ?? [],
-        insights: historyRecord.insights ?? [],
-        agentInsights: historyRecord.agent_insights ?? [],
-        agentStatus: historyRecord.agent_status as M365PostureResponse['agentStatus'],
-        tenant: {
-          id: tenantRecordId,
-          domain: '',
-          displayName: '',
-        },
-        analyzedAt: historyRecord.completed_at ?? historyRecord.created_at ?? new Date().toISOString(),
-        analyzedPeriod: { from: dateFrom ?? '', to: dateTo ?? '' },
-        errors: historyRecord.errors?.errors ?? [],
-        _historyId: historyRecord.id,
-      };
-
-      setData(response);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao buscar postura de segurança';
-      setError(message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [tenantRecordId, dateFrom, dateTo]);
-
-  // Trigger a new analysis (calls edge function) — returns analysisId for external polling
+  // Trigger a new analysis (calls edge function)
   const triggerAnalysis = useCallback(async (): Promise<{ success: boolean; analysisId?: string }> => {
-    if (!tenantRecordId) {
-      setError('Tenant não selecionado');
-      return { success: false };
-    }
-
-    setIsLoading(true);
-    setError(null);
+    if (!tenantRecordId) return { success: false };
 
     try {
       const { data: triggerData, error: triggerError } = await supabase.functions.invoke(
@@ -113,60 +95,33 @@ export function useM365SecurityPosture({
         { body: { tenant_record_id: tenantRecordId } }
       );
 
-      if (triggerError) {
-        throw new Error(triggerError.message || 'Erro ao disparar análise');
-      }
+      if (triggerError) throw new Error(triggerError.message || 'Erro ao disparar análise');
+      if (!triggerData.success) throw new Error(triggerData.error || 'Erro desconhecido');
 
-      if (!triggerData.success) {
-        throw new Error(triggerData.error || 'Erro desconhecido');
-      }
-
-      const analysisId = triggerData.analysis_id;
-      console.log('[useM365SecurityPosture] Analysis triggered:', analysisId);
-
-      // Return immediately — polling is handled by the page component
-      return { success: true, analysisId };
+      console.log('[useM365SecurityPosture] Analysis triggered:', triggerData.analysis_id);
+      return { success: true, analysisId: triggerData.analysis_id };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao analisar postura de segurança';
-      setError(message);
-      setIsLoading(false);
-      toast({
-        title: 'Erro na análise',
-        description: message,
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro na análise', description: message, variant: 'destructive' });
       return { success: false };
     }
   }, [tenantRecordId, toast]);
 
-  // Auto-fetch when tenant changes
-  useEffect(() => {
-    if (tenantRecordId) {
-      refetch();
-    }
-  }, [tenantRecordId, refetch]);
-
   const getInsightsByCategory = useCallback(
     (category: M365RiskCategory): M365Insight[] => {
-      if (!data?.insights) return [];
-      return data.insights.filter((insight) => insight.category === category);
+      return data?.insights?.filter((i) => i.category === category) ?? [];
     },
     [data]
   );
 
   const getFailedInsights = useCallback((): M365Insight[] => {
-    if (!data?.insights) return [];
-    return data.insights.filter((insight) => insight.status === 'fail');
+    return data?.insights?.filter((i) => i.status === 'fail') ?? [];
   }, [data]);
 
   const getCriticalInsights = useCallback((): M365Insight[] => {
-    if (!data?.insights) return [];
-    return data.insights.filter(
-      (insight) => insight.status === 'fail' && insight.severity === 'critical'
-    );
+    return data?.insights?.filter((i) => i.status === 'fail' && i.severity === 'critical') ?? [];
   }, [data]);
 
-  // Derived agent state
   const agentInsights = data?.agentInsights ?? [];
   const agentStatus = data?.agentStatus ?? null;
   const isAgentPending = agentStatus === 'pending' || agentStatus === 'running';
@@ -174,9 +129,8 @@ export function useM365SecurityPosture({
   return {
     data,
     isLoading,
-    setIsLoading,
     error,
-    refetch,
+    refetch: () => refetch(),
     triggerAnalysis,
     getInsightsByCategory,
     getFailedInsights,

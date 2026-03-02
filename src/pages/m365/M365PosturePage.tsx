@@ -1,6 +1,6 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useModules } from '@/contexts/ModuleContext';
@@ -30,7 +30,7 @@ import {
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { TenantSelector } from '@/components/m365/posture';
 import { M365CategorySection } from '@/components/m365/posture/M365CategorySection';
-import { useM365SecurityPosture } from '@/hooks/useM365SecurityPosture';
+import { useM365SecurityPosture, M365_POSTURE_QUERY_KEY } from '@/hooks/useM365SecurityPosture';
 import { mapM365Insight, mapM365AgentInsight } from '@/lib/complianceMappers';
 import { 
   M365RiskCategory, 
@@ -45,10 +45,12 @@ export default function M365PosturePage() {
   const { isPreviewMode } = usePreview();
   const { isBlocked, showBlockedMessage } = usePreviewGuard();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [activeAnalysisId, setActiveAnalysisId] = useState<string | null>(null);
   const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const hasLoadedOnce = useRef(false);
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
 
@@ -94,13 +96,19 @@ export default function M365PosturePage() {
     error, 
     refetch,
     triggerAnalysis,
-    setIsLoading: setHookLoading,
     agentInsights,
     agentStatus,
     isAgentPending,
   } = useM365SecurityPosture({ 
     tenantRecordId: selectedTenantId || '' 
   });
+
+  // Track if data has been loaded at least once (to skip gauge animation on cached renders)
+  useEffect(() => {
+    if (data && !hasLoadedOnce.current) {
+      hasLoadedOnce.current = true;
+    }
+  }, [data]);
 
   // Poll for analysis status when activeAnalysisId is set
   const { data: analysisRecord } = useQuery({
@@ -134,10 +142,9 @@ export default function M365PosturePage() {
     if (status === 'completed' || status === 'failed') {
       setActiveAnalysisId(null);
       setAnalysisStartedAt(null);
-      setHookLoading(false);
-      refetch();
+      queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
     }
-  }, [analysisRecord, activeAnalysisId, refetch, setHookLoading]);
+  }, [analysisRecord, activeAnalysisId, queryClient, selectedTenantId]);
 
   // Elapsed timer
   useEffect(() => {
@@ -335,6 +342,7 @@ export default function M365PosturePage() {
             <CommandCentralLayout
               title={selectedTenant?.displayName || 'Microsoft 365'}
               score={data?.score ?? 0}
+              skipGaugeAnimation={hasLoadedOnce.current}
               miniStats={
                 <>
                   <MiniStat value={data?.summary?.total ?? 0} label="Total" variant="primary" />
