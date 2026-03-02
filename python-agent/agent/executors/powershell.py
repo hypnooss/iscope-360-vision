@@ -227,6 +227,12 @@ class PowerShellExecutor(BaseExecutor):
             organization = f"{tenant_id}"
         
         lines = [
+            # Force stdout auto-flush (critical for pipe communication on Linux)
+            "[Console]::Out.Flush()",
+            "$sw = [System.IO.StreamWriter]::new([Console]::OpenStandardOutput())",
+            "$sw.AutoFlush = $true",
+            "[Console]::SetOut($sw)",
+            "",
             "$ErrorActionPreference = 'Continue'",
             "$ProgressPreference = 'SilentlyContinue'",
             "$env:HOME = '/var/lib/iscope-agent'",
@@ -257,6 +263,7 @@ class PowerShellExecutor(BaseExecutor):
         lines.extend([
             "",
             f'Write-Output "{self.SESSION_READY_MARKER}"',
+            "[Console]::Out.Flush()",
         ])
         
         return "\n".join(lines) + "\n"
@@ -269,10 +276,12 @@ class PowerShellExecutor(BaseExecutor):
             f'    Write-Output "{self.CMD_START_MARKER}"\n'
             f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$true; 'data'=$__data }} | ConvertTo-Json -Compress)\n"
             f'    Write-Output "{self.CMD_END_MARKER}"\n'
+            f"    [Console]::Out.Flush()\n"
             f"}} catch {{\n"
             f'    Write-Output "{self.CMD_START_MARKER}"\n'
             f"    Write-Output (@{{ 'name'='{cmd_name}'; 'success'=$false; 'error'=$_.Exception.Message }} | ConvertTo-Json -Compress)\n"
             f'    Write-Output "{self.CMD_END_MARKER}"\n'
+            f"    [Console]::Out.Flush()\n"
             f"}}\n"
         )
     
@@ -330,7 +339,7 @@ class PowerShellExecutor(BaseExecutor):
         the next command starts with a clean stdout stream.
         """
         try:
-            sync_cmd = f'Write-Output "{self.SYNC_MARKER}"\n'
+            sync_cmd = f'Write-Output "{self.SYNC_MARKER}"\n[Console]::Out.Flush()\n'
             proc.stdin.write(sync_cmd)
             proc.stdin.flush()
             found, _ = self._read_until_marker(read_queue, self.SYNC_MARKER, timeout=timeout)
