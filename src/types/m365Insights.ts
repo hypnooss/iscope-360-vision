@@ -449,6 +449,9 @@ export interface M365PostureResponse {
   
   /** Errors during collection (partial failures) */
   errors?: string[];
+  
+  /** ID do registro m365_posture_history (para carregar affectedEntities sob demanda) */
+  _historyId?: string;
 }
 
 // ============================================================

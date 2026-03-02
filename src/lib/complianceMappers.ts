@@ -63,8 +63,10 @@ export function mapComplianceCheck(check: ComplianceCheck): UnifiedComplianceIte
  * Mapeia M365Insight (Postura M365 - Graph API) para UnifiedComplianceItem
  */
 export function mapM365Insight(insight: M365Insight): UnifiedComplianceItem {
-  // Build evidence from affectedEntities (same pattern as Exchange/Security mappers)
+  // Build evidence from affectedEntities or _entitiesPreview (lite mode)
   const evidence: EvidenceItem[] = [];
+  const previewNames = (insight as any)._entitiesPreview as string[] | undefined;
+  
   if (insight.affectedEntities && insight.affectedEntities.length > 0) {
     evidence.push({
       label: 'Itens afetados',
@@ -74,6 +76,21 @@ export function mapM365Insight(insight: M365Insight): UnifiedComplianceItem {
     evidence.push({
       label: 'Entidades afetadas',
       value: insight.affectedEntities.map(e => e.displayName || e.userPrincipalName || e.id).join('\n'),
+      type: 'list',
+    });
+  } else if (previewNames && previewNames.length > 0) {
+    evidence.push({
+      label: 'Itens afetados',
+      value: `${insight.affectedCount} item(ns)`,
+      type: 'text',
+    });
+    const remaining = insight.affectedCount - previewNames.length;
+    const preview = remaining > 0 
+      ? [...previewNames, `e mais ${remaining}...`].join('\n')
+      : previewNames.join('\n');
+    evidence.push({
+      label: 'Entidades afetadas (prévia)',
+      value: preview,
       type: 'list',
     });
   }
@@ -114,8 +131,10 @@ export function mapM365Insight(insight: M365Insight): UnifiedComplianceItem {
  * Mapeia M365AgentInsight (Postura M365 - Agent/PowerShell) para UnifiedComplianceItem
  */
 export function mapM365AgentInsight(insight: M365AgentInsight): UnifiedComplianceItem {
-  // Build evidence from affectedEntities (same pattern as other mappers)
+  // Build evidence from affectedEntities or _entitiesPreview (lite mode)
   const evidence: EvidenceItem[] = [];
+  const previewNames = (insight as any)._entitiesPreview as string[] | undefined;
+  
   if (insight.affectedEntities && insight.affectedEntities.length > 0) {
     evidence.push({
       label: 'Itens afetados',
@@ -125,6 +144,17 @@ export function mapM365AgentInsight(insight: M365AgentInsight): UnifiedComplianc
     evidence.push({
       label: 'Entidades afetadas',
       value: insight.affectedEntities.map(e => e.name).join('\n'),
+      type: 'list',
+    });
+  } else if (previewNames && previewNames.length > 0) {
+    evidence.push({
+      label: 'Itens afetados',
+      value: `${previewNames.length}+ item(ns)`,
+      type: 'text',
+    });
+    evidence.push({
+      label: 'Entidades afetadas (prévia)',
+      value: previewNames.join('\n'),
       type: 'list',
     });
   }

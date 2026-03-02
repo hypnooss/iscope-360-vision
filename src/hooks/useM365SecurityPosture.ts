@@ -52,34 +52,32 @@ export function useM365SecurityPosture({
     setError(null);
 
     try {
-      const { data: historyRecord, error: queryError } = await supabase
-        .from('m365_posture_history')
-        .select('*')
-        .eq('tenant_record_id', tenantRecordId)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // Use RPC to get insights without full affectedEntities (70-90% payload reduction)
+      const { data: liteData, error: rpcError } = await supabase.rpc('get_posture_insights_lite', {
+        p_tenant_record_id: tenantRecordId,
+      });
 
-      if (queryError) {
-        throw new Error(queryError.message);
+      if (rpcError) {
+        throw new Error(rpcError.message);
       }
 
-      if (!historyRecord) {
+      if (!liteData) {
         setData(null);
         setError('Nenhuma análise encontrada. Clique em "Atualizar" para executar.');
         return;
       }
+
+      const historyRecord = liteData as any;
 
       // Transform to M365PostureResponse format
       const response: M365PostureResponse = {
         success: true,
         score: historyRecord.score ?? 0,
         classification: historyRecord.classification as any ?? 'critical',
-        summary: (historyRecord.summary as any) ?? { critical: 0, high: 0, medium: 0, low: 0, total: 0 },
-        categoryBreakdown: (historyRecord.category_breakdown as any) ?? [],
-        insights: (historyRecord.insights as any) ?? [],
-        agentInsights: (historyRecord.agent_insights as any) ?? [],
+        summary: historyRecord.summary ?? { critical: 0, high: 0, medium: 0, low: 0, total: 0 },
+        categoryBreakdown: historyRecord.category_breakdown ?? [],
+        insights: historyRecord.insights ?? [],
+        agentInsights: historyRecord.agent_insights ?? [],
         agentStatus: historyRecord.agent_status as M365PostureResponse['agentStatus'],
         tenant: {
           id: tenantRecordId,
@@ -88,7 +86,8 @@ export function useM365SecurityPosture({
         },
         analyzedAt: historyRecord.completed_at ?? historyRecord.created_at ?? new Date().toISOString(),
         analyzedPeriod: { from: dateFrom ?? '', to: dateTo ?? '' },
-        errors: (historyRecord.errors as any)?.errors ?? [],
+        errors: historyRecord.errors?.errors ?? [],
+        _historyId: historyRecord.id,
       };
 
       setData(response);

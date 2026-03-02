@@ -84,19 +84,16 @@ export function useEntraIdInsights({
     setErrorCode(null);
 
     try {
-      const { data: records, error: queryError } = await supabase
-        .from('m365_posture_history')
-        .select('insights, agent_insights, completed_at, status')
-        .eq('tenant_record_id', tenantRecordId)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false })
-        .limit(5);
+      // Use RPC to get insights without full affectedEntities
+      const { data: liteData, error: rpcError } = await supabase.rpc('get_posture_insights_lite', {
+        p_tenant_record_id: tenantRecordId,
+      });
 
-      if (queryError) {
-        throw new Error(queryError.message);
+      if (rpcError) {
+        throw new Error(rpcError.message);
       }
 
-      if (!records || records.length === 0) {
+      if (!liteData) {
         setInsights([]);
         setSummary(defaultSummary);
         setAnalyzedAt(null);
@@ -105,28 +102,11 @@ export function useEntraIdInsights({
         return;
       }
 
-      // Find the most recent record that contains Entra ID insights
-      let data = records[0]; // fallback to most recent
-      for (const record of records) {
-        const combined = [
-          ...((record.insights as any[]) || []),
-          ...((record.agent_insights as any[]) || []),
-        ];
-        const hasEntraId = combined.some((i: any) =>
-          i.product === 'entra_id' ||
-          ENTRA_ID_CATEGORIES.includes(i.category) ||
-          i.id?.startsWith('IDT-') || i.id?.startsWith('AUT-') ||
-          i.id?.startsWith('ADM-') || i.id?.startsWith('APP-')
-        );
-        if (hasEntraId) {
-          data = record;
-          break;
-        }
-      }
+      const record = liteData as any;
 
       const allInsights = [
-        ...((data.insights as any[]) || []),
-        ...((data.agent_insights as any[]) || []),
+        ...((record.insights as any[]) || []),
+        ...((record.agent_insights as any[]) || []),
       ];
 
       // Filter insights by product OR category for Entra ID
@@ -153,13 +133,12 @@ export function useEntraIdInsights({
             status: mapStatusToUnified(insight.status),
             details: insight.details || insight.descricaoExecutiva || '',
             recommendation: insight.recommendation || insight.remediacao?.passosDetalhados?.join(' ') || '',
-            affectedEntities: (insight.affectedEntities || []).map((e: any) => ({
-              name: e.displayName || e.name || e.id || '',
-              type: e.details?.userType || e.type || '',
-              details: e.details ? JSON.stringify(e.details) : undefined,
+            affectedEntities: (insight._entitiesPreview || []).map((name: string) => ({
+              name: name || '',
+              type: '',
             })),
             rawData: insight.rawData || {},
-            detectedAt: data.completed_at || new Date().toISOString(),
+            detectedAt: record.completed_at || new Date().toISOString(),
             criteria: insight.criteria || '',
             passDescription: insight.passDescription || '',
             failDescription: insight.failDescription || '',
@@ -181,7 +160,7 @@ export function useEntraIdInsights({
 
       setInsights(entraIdInsights);
       setSummary(calculatedSummary);
-      setAnalyzedAt(data.completed_at);
+      setAnalyzedAt(record.completed_at);
     } catch (err) {
       console.error('Error fetching Entra ID insights from history:', err);
       setError(err instanceof Error ? err.message : 'Erro ao buscar insights');

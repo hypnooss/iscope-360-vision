@@ -2899,9 +2899,17 @@ export type Database = {
           score: number
         }[]
       }
+      get_insight_affected_entities: {
+        Args: { p_history_id: string; p_insight_code: string }
+        Returns: Json
+      }
       get_module_permission: {
         Args: { _module_name: string; _user_id: string }
         Returns: Database["public"]["Enums"]["module_permission"]
+      }
+      get_posture_insights_lite: {
+        Args: { p_tenant_record_id: string }
+        Returns: Json
       }
       get_user_modules: {
         Args: { _user_id: string }
