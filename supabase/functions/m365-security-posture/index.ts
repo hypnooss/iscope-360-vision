@@ -163,6 +163,28 @@ async function executeGraphApiStep(
     let data: unknown;
     if (contentType.includes('application/json')) {
       data = await res.json();
+      
+      // Pagination: follow @odata.nextLink for paginated results (max 5 pages)
+      if ((data as any)?.['@odata.nextLink'] && Array.isArray((data as any)?.value)) {
+        let nextLink = (data as any)['@odata.nextLink'];
+        const allValues = [...(data as any).value];
+        let pageCount = 0;
+        const maxPages = 4; // already have page 1
+        
+        while (nextLink && pageCount < maxPages) {
+          try {
+            const pageRes = await fetch(nextLink, { headers: { Authorization: `Bearer ${accessToken}` } });
+            if (!pageRes.ok) break;
+            const pageData = await pageRes.json();
+            if (pageData.value) allValues.push(...pageData.value);
+            nextLink = pageData['@odata.nextLink'];
+            pageCount++;
+          } catch { break; }
+        }
+        
+        (data as any).value = allValues;
+        delete (data as any)['@odata.nextLink'];
+      }
     } else {
       const text = await res.text();
       data = parseInt(text, 10) || text;
@@ -1023,10 +1045,194 @@ async function evaluateRule(
       }
 
       case 'check_teams_private_channels': {
-        const teams = (data as any)?.value || [];
-        affectedCount = teams.length;
-        status = 'pass';
-        description = (rule.pass_description || '').replace('{{count}}', '0').replace('{{teams}}', String(teams.length));
+        // Real implementation: iterate teams and count private channels
+        if (accessToken) {
+          let totalPrivate = 0;
+          const teamsWithPrivate: Array<{ id: string; displayName: string; details?: Record<string, unknown> }> = [];
+          const teams = (data as any)?.value || [];
+          for (const team of teams.slice(0, 15)) {
+            try {
+              const { data: channelsData } = await graphFetchSafe(accessToken, `/teams/${team.id}/channels?$filter=membershipType eq 'private'`);
+              const privateCount = channelsData?.value?.length || 0;
+              if (privateCount > 0) {
+                totalPrivate += privateCount;
+                teamsWithPrivate.push({ id: team.id, displayName: team.displayName || 'Team', details: { privateChannels: privateCount } });
+              }
+            } catch { /* skip */ }
+          }
+          affectedCount = totalPrivate;
+          affectedEntities = teamsWithPrivate;
+          status = totalPrivate > (evaluate.threshold || 20) ? 'fail' : 'pass';
+          description = (status === 'fail' ? rule.fail_description || '' : rule.pass_description || '')
+            .replace('{{count}}', String(totalPrivate)).replace('{{teams}}', String(teams.length));
+        } else {
+          // Fallback without token
+          const teams = (data as any)?.value || [];
+          affectedCount = teams.length;
+          status = 'pass';
+          description = (rule.pass_description || '').replace('{{count}}', '0').replace('{{teams}}', String(teams.length));
+        }
+        break;
+      }
+
+      case 'check_suspicious_inbox_rules': {
+        // EXO-022: Detect inbox rules with ForwardTo/RedirectTo to external addresses
+        const rules = Array.isArray(data) ? data : (data as any)?.value || [];
+        const suspicious = rules.filter((r: any) => {
+          const forwardTo = r.ForwardTo || r.forwardTo || '';
+          const redirectTo = r.RedirectTo || r.redirectTo || '';
+          const forwardAsAttach = r.ForwardAsAttachmentTo || r.forwardAsAttachmentTo || '';
+          return (forwardTo && forwardTo.length > 0) || (redirectTo && redirectTo.length > 0) || (forwardAsAttach && forwardAsAttach.length > 0);
+        });
+        affectedCount = suspicious.length;
+        affectedEntities = suspicious.slice(0, 20).map((r: any) => ({
+          id: r.RuleIdentity || r.Identity || r.id || '',
+          displayName: `${r.MailboxOwner || r.mailboxOwner || 'Unknown'}: ${r.Name || r.name || 'Rule'}`,
+          details: { 
+            forwardTo: r.ForwardTo || r.forwardTo || '', 
+            redirectTo: r.RedirectTo || r.redirectTo || '',
+            enabled: r.Enabled ?? r.enabled ?? true
+          }
+        }));
+        status = affectedCount > 0 ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : rule.pass_description || '';
+        break;
+      }
+
+      case 'check_password_expiration': {
+        // AUT-008: Check domain password expiration policy
+        const domains = (data as any)?.value || [];
+        const infiniteExpiry = domains.filter((d: any) => {
+          const validity = d.passwordValidityPeriodInDays;
+          return !validity || validity >= 2147483647;
+        });
+        affectedCount = infiniteExpiry.length;
+        affectedEntities = infiniteExpiry.slice(0, 20).map((d: any) => ({
+          id: d.id,
+          displayName: d.id || 'Domain',
+          details: { passwordValidityPeriodInDays: d.passwordValidityPeriodInDays || 'Not set' }
+        }));
+        status = affectedCount > 0 ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : rule.pass_description || '';
+        break;
+      }
+
+      case 'check_sspr_enabled': {
+        // AUT-009: Check if SSPR is enabled
+        const policy = data as any;
+        const sspr = policy?.allowedToUseSSPR ?? policy?.defaultUserRolePermissions?.allowedToUseSSPR;
+        status = sspr === true ? 'pass' : 'fail';
+        affectedCount = status === 'fail' ? 1 : 0;
+        description = status === 'pass' ? rule.pass_description || '' : rule.fail_description || '';
+        break;
+      }
+
+      case 'check_ca_signin_risk': {
+        // AUT-010: Check if any CA policy evaluates sign-in risk
+        const policies = (data as any)?.value || [];
+        const enabledPolicies = policies.filter((p: any) => p.state === 'enabled');
+        const hasSignInRisk = enabledPolicies.some((p: any) => {
+          const riskLevels = p.conditions?.signInRiskLevels || [];
+          return riskLevels.length > 0;
+        });
+        status = hasSignInRisk ? 'pass' : 'fail';
+        affectedCount = hasSignInRisk ? 0 : 1;
+        affectedEntities = enabledPolicies.filter((p: any) => (p.conditions?.signInRiskLevels || []).length > 0)
+          .slice(0, 10).map((p: any) => ({ id: p.id, displayName: p.displayName, details: { riskLevels: p.conditions?.signInRiskLevels } }));
+        description = status === 'pass' ? rule.pass_description || '' : rule.fail_description || '';
+        break;
+      }
+
+      case 'check_ca_user_risk': {
+        // AUT-011: Check if any CA policy evaluates user risk
+        const policies = (data as any)?.value || [];
+        const enabledPolicies = policies.filter((p: any) => p.state === 'enabled');
+        const hasUserRisk = enabledPolicies.some((p: any) => {
+          const riskLevels = p.conditions?.userRiskLevels || [];
+          return riskLevels.length > 0;
+        });
+        status = hasUserRisk ? 'pass' : 'fail';
+        affectedCount = hasUserRisk ? 0 : 1;
+        affectedEntities = enabledPolicies.filter((p: any) => (p.conditions?.userRiskLevels || []).length > 0)
+          .slice(0, 10).map((p: any) => ({ id: p.id, displayName: p.displayName, details: { riskLevels: p.conditions?.userRiskLevels } }));
+        description = status === 'pass' ? rule.pass_description || '' : rule.fail_description || '';
+        break;
+      }
+
+      case 'check_break_glass_accounts': {
+        // ADM-007: Check for break-glass accounts among Global Admins
+        const roles = (data as any)?.value || [];
+        const gaRole = roles.find((r: any) => r.displayName === 'Global Administrator');
+        const gaMembers = gaRole?.members || [];
+        // Cross-reference with MFA data
+        const mfaUsers = (secondaryResult?.data as any)?.value || [];
+        const mfaUserMap = new Map<string, any>();
+        for (const u of mfaUsers) { mfaUserMap.set(u.id, u); }
+        // Break glass candidates: GA members without MFA and cloud-only
+        const breakGlass = gaMembers.filter((m: any) => {
+          const mfaData = mfaUserMap.get(m.id);
+          const methods = mfaData?.methodsRegistered || [];
+          const hasMfa = methods.includes('microsoftAuthenticatorPush') || methods.includes('softwareOneTimePasscode') || methods.includes('phoneAuthentication');
+          return !hasMfa && m.userType !== 'Guest';
+        });
+        affectedCount = breakGlass.length;
+        affectedEntities = breakGlass.slice(0, 10).map((m: any) => ({
+          id: m.id, displayName: m.displayName || m.userPrincipalName,
+          details: { note: 'Global Admin sem MFA (possível break glass)' }
+        }));
+        // Pass if there are break glass accounts, fail if none exist
+        status = breakGlass.length >= 1 ? 'pass' : 'fail';
+        description = status === 'pass'
+          ? (rule.pass_description || '').replace('{count}', String(breakGlass.length))
+          : rule.fail_description || '';
+        break;
+      }
+
+      case 'count_long_lived_credentials': {
+        // APP-008: Count apps with credentials lasting > max_days
+        const apps = (data as any)?.value || [];
+        const maxDays = evaluate.max_days || 730;
+        const maxMs = maxDays * 24 * 60 * 60 * 1000;
+        const longLived = apps.filter((app: any) => {
+          const allCreds = [...(app.passwordCredentials || []), ...(app.keyCredentials || [])];
+          return allCreds.some((c: any) => {
+            const start = new Date(c.startDateTime || c.customKeyIdentifier || Date.now());
+            const end = new Date(c.endDateTime);
+            return (end.getTime() - start.getTime()) > maxMs;
+          });
+        });
+        affectedCount = longLived.length;
+        affectedEntities = longLived.slice(0, 20).map((app: any) => ({
+          id: app.id, displayName: app.displayName,
+          details: { credentialCount: [...(app.passwordCredentials || []), ...(app.keyCredentials || [])].length }
+        }));
+        status = affectedCount > (evaluate.threshold || 5) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : rule.pass_description || '';
+        break;
+      }
+
+      case 'count_unlicensed_users': {
+        // IDT-007: Count enabled users without licenses
+        const users = (data as any)?.value || [];
+        const unlicensed = users.filter((u: any) => {
+          const licenses = u.assignedLicenses || [];
+          return licenses.length === 0 && u.accountEnabled !== false;
+        });
+        affectedCount = unlicensed.length;
+        affectedEntities = unlicensed.slice(0, 20).map((u: any) => ({
+          id: u.id, displayName: u.displayName || u.userPrincipalName,
+          details: { lastSignIn: u.signInActivity?.lastSignInDateTime || 'Nunca' }
+        }));
+        status = affectedCount > (evaluate.threshold || 10) ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : rule.pass_description || '';
         break;
       }
 
