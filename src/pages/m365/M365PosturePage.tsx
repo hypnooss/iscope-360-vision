@@ -68,6 +68,7 @@ export default function M365PosturePage() {
   });
 
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
+  const { data: categoryConfigs } = useCategoryConfigs('5d1a7095-2d7b-4541-873d-4b03c3d6122f');
 
   const { tenants, selectedTenantId, selectedTenant, selectTenant, loading: tenantsLoading } = useM365TenantSelector(
     isSuperRole ? selectedWorkspaceId : undefined
@@ -210,7 +211,6 @@ export default function M365PosturePage() {
   }, {});
 
   // Sort categories by template display_order
-  const { data: categoryConfigs } = useCategoryConfigs('5d1a7095-2d7b-4541-873d-4b03c3d6122f');
   const sortedCategories = (Object.keys(groupedItems) as M365RiskCategory[]).sort((a, b) => {
     const aOrder = categoryConfigs?.find(c => c.name === a)?.display_order ?? 999;
     const bOrder = categoryConfigs?.find(c => c.name === b)?.display_order ?? 999;
