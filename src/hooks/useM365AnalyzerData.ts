@@ -144,7 +144,7 @@ function parseSnapshot(row: Record<string, unknown>): M365AnalyzerSnapshot {
 function deduplicateInsights(insights: M365AnalyzerInsight[]): M365AnalyzerInsight[] {
   const seen = new Set<string>();
   return insights.filter(ins => {
-    const key = `${ins.category}::${ins.name}`;
+    const key = ins.id ? ins.id : `${ins.category}::${ins.name}::${ins.description ?? ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
