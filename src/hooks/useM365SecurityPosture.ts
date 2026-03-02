@@ -17,17 +17,15 @@ interface UseM365SecurityPostureOptions {
 interface UseM365SecurityPostureReturn {
   data: M365PostureResponse | null;
   isLoading: boolean;
+  setIsLoading: (v: boolean) => void;
   error: string | null;
   refetch: () => Promise<void>;
   triggerAnalysis: () => Promise<{ success: boolean; analysisId?: string }>;
   getInsightsByCategory: (category: M365RiskCategory) => M365Insight[];
   getFailedInsights: () => M365Insight[];
   getCriticalInsights: () => M365Insight[];
-  /** Agent-collected insights (Exchange, SharePoint via PowerShell) */
   agentInsights: M365AgentInsight[];
-  /** Agent task status */
   agentStatus: string | null;
-  /** Check if agent data is still loading */
   isAgentPending: boolean;
 }
 
@@ -99,7 +97,7 @@ export function useM365SecurityPosture({
     }
   }, [tenantRecordId, dateFrom, dateTo]);
 
-  // Trigger a new analysis (calls edge function)
+  // Trigger a new analysis (calls edge function) — returns analysisId for external polling
   const triggerAnalysis = useCallback(async (): Promise<{ success: boolean; analysisId?: string }> => {
     if (!tenantRecordId) {
       setError('Tenant não selecionado');
@@ -126,57 +124,20 @@ export function useM365SecurityPosture({
       const analysisId = triggerData.analysis_id;
       console.log('[useM365SecurityPosture] Analysis triggered:', analysisId);
 
-      // Poll for results
-      let attempts = 0;
-      const maxAttempts = 60;
-      const pollInterval = 1000;
-
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-        
-        const { data: historyRecord, error: historyError } = await supabase
-          .from('m365_posture_history')
-          .select('status')
-          .eq('id', analysisId)
-          .single();
-
-        if (historyError) {
-          console.error('[useM365SecurityPosture] Error fetching history:', historyError);
-          break;
-        }
-
-        if (historyRecord.status === 'completed' || historyRecord.status === 'failed') {
-          break;
-        }
-        attempts++;
-      }
-
-      // Refetch to get latest data
-      await refetch();
-
-      // Notify about agent status
-      if (triggerData.has_agent) {
-        toast({
-          title: 'Coleta via Agent em andamento',
-          description: 'Dados do Exchange e SharePoint serão atualizados quando o agent completar.',
-          variant: 'default',
-        });
-      }
-
+      // Return immediately — polling is handled by the page component
       return { success: true, analysisId };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao analisar postura de segurança';
       setError(message);
+      setIsLoading(false);
       toast({
         title: 'Erro na análise',
         description: message,
         variant: 'destructive',
       });
       return { success: false };
-    } finally {
-      setIsLoading(false);
     }
-  }, [tenantRecordId, refetch, toast]);
+  }, [tenantRecordId, toast]);
 
   // Auto-fetch when tenant changes
   useEffect(() => {
@@ -213,6 +174,7 @@ export function useM365SecurityPosture({
   return {
     data,
     isLoading,
+    setIsLoading,
     error,
     refetch,
     triggerAnalysis,

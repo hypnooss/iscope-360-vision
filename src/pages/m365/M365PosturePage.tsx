@@ -1,15 +1,18 @@
 import { useEffect, useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { usePreview } from '@/contexts/PreviewContext';
 import { usePreviewGuard } from '@/hooks/usePreviewGuard';
 import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
+import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { CommandCentralLayout, MiniStat, DetailRow } from '@/components/CommandCentral';
 import { 
   RefreshCw, 
@@ -18,6 +21,7 @@ import {
   Clock,
   Play,
   Settings,
+  Loader2,
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { TenantSelector } from '@/components/m365/posture';
@@ -37,6 +41,9 @@ export default function M365PosturePage() {
   const { isBlocked, showBlockedMessage } = usePreviewGuard();
   const navigate = useNavigate();
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [activeAnalysisId, setActiveAnalysisId] = useState<string | null>(null);
+  const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   
   const { tenants, selectedTenantId, selectedTenant, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
 
@@ -46,12 +53,51 @@ export default function M365PosturePage() {
     error, 
     refetch,
     triggerAnalysis,
+    setIsLoading: setHookLoading,
     agentInsights,
     agentStatus,
     isAgentPending,
   } = useM365SecurityPosture({ 
     tenantRecordId: selectedTenantId || '' 
   });
+
+  // Poll for analysis status when activeAnalysisId is set
+  const { data: analysisRecord } = useQuery({
+    queryKey: ['m365-posture-status', activeAnalysisId],
+    queryFn: async () => {
+      if (!activeAnalysisId) return null;
+      const { data, error } = await supabase
+        .from('m365_posture_history')
+        .select('status, agent_status')
+        .eq('id', activeAnalysisId)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!activeAnalysisId,
+    refetchInterval: 5000,
+  });
+
+  // Handle polling result
+  useEffect(() => {
+    if (!analysisRecord || !activeAnalysisId) return;
+    const status = analysisRecord.status;
+    if (status === 'completed' || status === 'failed') {
+      setActiveAnalysisId(null);
+      setAnalysisStartedAt(null);
+      setHookLoading(false);
+      refetch();
+    }
+  }, [analysisRecord, activeAnalysisId, refetch, setHookLoading]);
+
+  // Elapsed timer
+  useEffect(() => {
+    if (!analysisStartedAt) { setElapsed(0); return; }
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - analysisStartedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [analysisStartedAt]);
 
   // Auth and module access check
   useEffect(() => {
@@ -66,16 +112,17 @@ export default function M365PosturePage() {
     }
   }, [user, authLoading, hasModuleAccess, navigate]);
 
-  // Fetch latest analysis from history when tenant changes (no auto-trigger)
-  // Analysis is now triggered only by user clicking "Atualizar" button
-
-  // Handle refresh with Preview Mode guard - now triggers full analysis
+  // Handle refresh with Preview Mode guard - triggers full analysis
   const handleRefresh = useCallback(async () => {
     if (isBlocked) {
       showBlockedMessage();
       return;
     }
-    await triggerAnalysis();
+    const result = await triggerAnalysis();
+    if (result.success && result.analysisId) {
+      setActiveAnalysisId(result.analysisId);
+      setAnalysisStartedAt(Date.now());
+    }
   }, [isBlocked, showBlockedMessage, triggerAnalysis]);
 
   if (authLoading || tenantsLoading) {
@@ -101,6 +148,10 @@ export default function M365PosturePage() {
     return acc;
   }, {});
 
+  const isAnalysisRunning = !!activeAnalysisId;
+  const analysisStatus = analysisRecord?.status ?? 'pending';
+  const progressValue = analysisStatus === 'partial' ? 60 : 30;
+
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
@@ -125,9 +176,9 @@ export default function M365PosturePage() {
               loading={isLoading}
               disabled={isBlocked}
             />
-            <Button onClick={handleRefresh} disabled={isLoading || !selectedTenantId}>
+            <Button onClick={handleRefresh} disabled={isLoading || isAnalysisRunning || !selectedTenantId}>
               {isBlocked && <Lock className="w-4 h-4 mr-2" />}
-              {isLoading
+              {isLoading || isAnalysisRunning
                 ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
                 : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
             </Button>
@@ -142,6 +193,25 @@ export default function M365PosturePage() {
             </Button>
           </div>
         </div>
+
+        {/* Progress Bar */}
+        {isAnalysisRunning && (
+          <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <div>
+                <p className="text-sm font-medium">Análise em andamento...</p>
+                <p className="text-xs text-muted-foreground">
+                  {analysisStatus === 'partial' 
+                    ? 'Graph API concluída, aguardando Agent PowerShell...' 
+                    : 'Coletando dados via Graph API...'}
+                  {elapsed > 0 && ` · ${elapsed}s`}
+                </p>
+              </div>
+            </div>
+            <Progress value={progressValue} className="h-2" />
+          </div>
+        )}
 
         {/* Last collection info */}
         {data?.analyzedAt && (
@@ -244,7 +314,7 @@ export default function M365PosturePage() {
             )}
 
             {/* Empty State */}
-            {!isLoading && !error && allUnifiedItems.length === 0 && (
+            {!isLoading && !isAnalysisRunning && !error && allUnifiedItems.length === 0 && (
               <Card className="glass-card">
                 <CardContent className="p-12 text-center">
                   <AlertTriangle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -252,7 +322,7 @@ export default function M365PosturePage() {
                     Nenhum insight disponível
                   </h3>
                   <p className="text-muted-foreground mb-4">
-                    Clique em "Atualizar" para executar a análise de segurança.
+                    Clique em "Executar Análise" para iniciar a análise de segurança.
                   </p>
                   <Button onClick={handleRefresh} disabled={isBlocked}>
                     {isBlocked && <Lock className="w-4 h-4 mr-2" />}
