@@ -1,40 +1,50 @@
 
 
-## Diagnóstico das 4 permissões falhando
+## Otimizacao de Payloads Supabase - Reducao de `affectedEntities`
 
-### Análise do fluxo completo
+### Problema
 
-O fluxo funciona assim:
-1. UI (`M365TenantEditPage`) chama `validate-m365-connection`
-2. A Edge Function testa cada permissão com um endpoint Graph API
-3. Resultados são gravados em `m365_tenant_permissions` com status `granted` ou `pending`
-4. A UI lê `m365_tenant_permissions` e exibe verde (granted), amber (pending/sem registro) ou vermelho (denied)
+Multiplos hooks fazem queries com `.select('*')` ou `.select('insights, ...')` na tabela `m365_posture_history`, carregando o campo `insights` completo que contem arrays de `affectedEntities` com centenas de objetos por insight. Isso gera payloads de varios MB por request.
 
-### Permissões falhando (24/28 = 4 falhando)
+**Queries problematicas identificadas:**
 
-Os logs mostram: `SecurityAlert.Read.All`, `SecurityIncident.Read.All`, `InformationProtectionPolicy.Read.All`, `SharePointTenantSettings.Read.All`
+| Hook | Query | Problema |
+|------|-------|----------|
+| `useM365SecurityPosture.ts:57` | `.select('*')` | Carrega TUDO incluindo insights completos |
+| `useM365AnalyzerData.ts:192` | `.select('*')` com `limit(24)` | 24 snapshots completos |
+| `useEntraIdInsights.ts:89` | `.select('insights, agent_insights, ...')` com `limit(5)` | 5 registros com insights completos |
+| `useEntraIdSecurityInsights.ts:56` | `.select('insights, ...')` | Insights completos |
+| `useEntraIdApplicationInsights.ts:56` | `.select('insights, ...')` | Insights completos |
 
-### Problemas identificados no código
+### Solucao
 
-**1. URLs erradas (2 permissões)**
-- `InformationProtectionPolicy.Read.All` usa `/v1.0/informationProtection/policy/labels` na `validate-m365-connection`, mas esse endpoint **não existe em v1.0** -- o correto é `/beta/informationProtection/policy/labels` (como já está em `validate-m365-permissions`)
-- `SharePointTenantSettings.Read.All` usa `/v1.0/admin/sharepoint/settings`, mas esse endpoint só existe em `/beta` (como já está em `validate-m365-permissions`)
+**Estrategia em 2 camadas:**
 
-**2. Falta de logging detalhado**
-O bloco de permissões adicionais **não loga o status HTTP, error code e mensagem** quando falha. Só loga "not granted", impossibilitando diagnóstico. Precisamos logar o status HTTP + error code + mensagem.
+1. **Criar uma database function** (`get_posture_insights_lite`) que retorna os insights com `affectedEntities` truncado (apenas `affectedCount` + primeiros 3 nomes). Isso evita mudar a estrutura de dados armazenada, apenas otimiza a leitura.
 
-**3. Tolerância incompleta para SecurityAlert/SecurityIncident**
-Tenants sem licença Microsoft Defender retornam 403 com error code `"Forbidden"` ou `"UnknownError"` (não `"NonPremiumTenant"`). A tolerância atual só cobre `NonPremiumTenant`, `license` e `premium`. Devemos expandir para cobrir 403 em endpoints de segurança quando o Defender não está licenciado.
+2. **Ajustar os selects nos hooks** para pedir apenas as colunas necessarias, substituindo `select('*')` por colunas explicitas sem o campo `insights` quando nao for necessario (ex: dashboard, executions list).
 
-### Correções
+3. **Carregar affectedEntities sob demanda** — quando o usuario clica em "Ver Entidades Afetadas", fazer uma query pontual buscando apenas o insight especifico.
 
-**`supabase/functions/validate-m365-connection/index.ts`** -- 3 alterações:
+### Arquivos a modificar
 
-1. Corrigir URL de `InformationProtectionPolicy.Read.All` para usar `/beta`
-2. Corrigir URL de `SharePointTenantSettings.Read.All` para usar `/beta`
-3. Adicionar log detalhado do erro (status + code + message) quando a permissão falha
-4. Expandir tolerância de 403 para cobrir endpoints de segurança/defender sem licença (tratar qualquer 403 em endpoints `security/*` ou `admin/sharepoint` que não seja explicitamente "Insufficient privileges to complete the operation" como granted)
+- `src/hooks/useM365SecurityPosture.ts` — substituir `select('*')` por colunas explicitas; usar RPC para insights lite
+- `src/hooks/useM365AnalyzerData.ts` — substituir `select('*')` por colunas sem `insights`
+- `src/hooks/useEntraIdInsights.ts` — usar RPC lite em vez de carregar insights crus
+- `src/hooks/useEntraIdSecurityInsights.ts` — idem
+- `src/hooks/useEntraIdApplicationInsights.ts` — idem
 
-### Arquivos a editar
-1. `supabase/functions/validate-m365-connection/index.ts`
+### Migracao SQL
+
+Criar function `get_posture_insights_lite(p_tenant_record_id uuid)` que:
+- Busca o ultimo registro completed de `m365_posture_history`
+- Retorna insights com `affectedEntities` limitado a count + 3 primeiros nomes
+- Retorna `agent_insights` com tratamento similar
+
+Criar function `get_insight_affected_entities(p_history_id uuid, p_insight_id text)` que:
+- Busca um insight especifico e retorna as `affectedEntities` completas (para drill-down)
+
+### Impacto esperado
+
+Reducao de payload estimada em 70-90% nas queries de postura, dependendo do numero de entidades afetadas por tenant.
 
