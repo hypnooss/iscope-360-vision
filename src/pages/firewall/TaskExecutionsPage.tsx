@@ -115,9 +115,11 @@ const typeConfig: Record<string, { label: string; color: string; icon: React.Rea
   },
 };
 
+export default function TaskExecutionsPage() {
   const { isPreviewMode, previewTarget } = usePreview();
   const { effectiveRole } = useEffectiveAuth();
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+  const queryClient = useQueryClient();
 
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [timeFilter, setTimeFilter] = useState<string>('1h');
