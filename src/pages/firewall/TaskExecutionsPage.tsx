@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { usePreview } from '@/contexts/PreviewContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -56,6 +58,7 @@ import {
   Search,
   Shield,
   Gauge,
+  Building2,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -111,7 +114,23 @@ const typeConfig: Record<string, { label: string; color: string }> = {
 
 export default function TaskExecutionsPage() {
   const { isPreviewMode, previewTarget } = usePreview();
+  const { effectiveRole } = useEffectiveAuth();
   const queryClient = useQueryClient();
+
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['clients-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('clients').select('id, name').order('name');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: isSuperRole && !isPreviewMode,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
 
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [timeFilter, setTimeFilter] = useState<string>('1h');
@@ -141,7 +160,7 @@ export default function TaskExecutionsPage() {
 
   // Fetch tasks
   const { data: tasks = [], isLoading, refetch } = useQuery({
-    queryKey: ['agent-tasks', statusFilter, timeFilter, isPreviewMode, previewTarget?.workspaces],
+    queryKey: ['agent-tasks', statusFilter, timeFilter, isPreviewMode, previewTarget?.workspaces, isSuperRole, selectedWorkspaceId],
     queryFn: async () => {
       const startTime = getTimeFilterDate();
       
@@ -156,7 +175,9 @@ export default function TaskExecutionsPage() {
         .select('id')
         .limit(1000);
       
-      if (workspaceIds && workspaceIds.length > 0) {
+      if (isSuperRole && selectedWorkspaceId) {
+        firewallsQuery = firewallsQuery.eq('client_id', selectedWorkspaceId);
+      } else if (workspaceIds && workspaceIds.length > 0) {
         firewallsQuery = firewallsQuery.in('client_id', workspaceIds);
       }
 
@@ -343,6 +364,19 @@ export default function TaskExecutionsPage() {
             </p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            {isSuperRole && !isPreviewMode && allWorkspaces && allWorkspaces.length > 0 && (
+              <Select value={selectedWorkspaceId ?? ''} onValueChange={setSelectedWorkspaceId}>
+                <SelectTrigger className="w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces.map(ws => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Button onClick={() => refetch()} variant="outline" size="sm">
               <RefreshCw className={cn("w-4 h-4 mr-2", hasActiveTasks && "animate-spin")} />
               {hasActiveTasks ? 'Atualizando...' : 'Atualizar'}
