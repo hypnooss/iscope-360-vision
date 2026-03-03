@@ -105,7 +105,7 @@ const typeConfig: Record<string, { label: string; color: string }> = {
     color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
   },
   m365_powershell: {
-    label: 'M365 Compliance (Agent)',
+    label: 'M365 Compliance',
     color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
   },
   m365_analyzer: {
