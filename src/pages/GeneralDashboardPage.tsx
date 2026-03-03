@@ -29,7 +29,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 
-// ─── Icon map: resolves DB string → Lucide component ─────────────────────────
+// ─── Icon map: resolves DB string → Lucide component ────────────────────────
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Shield, Cloud, Layers, Globe, Server, Network, Bot,
