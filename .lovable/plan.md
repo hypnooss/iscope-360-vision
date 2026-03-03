@@ -1,21 +1,22 @@
 
 
-## Fix: M365 schedule not displayed on Environment page
+## Add M365 Compliance to Schedules page
 
-The schedule **is being saved** correctly to `m365_analyzer_schedules` (confirmed in the database). The problem is that `EnvironmentPage.tsx` does not query this table.
+**File**: `src/pages/admin/SchedulesPage.tsx`
 
-### What's missing
+### Changes needed
 
-In `EnvironmentPage.tsx`:
-1. **No query for `m365_analyzer_schedules`** — lines 93-94 only fetch `analysis_schedules` (firewalls) and `external_domain_schedules` (domains). There is no equivalent query for M365.
-2. **No schedule mapping for M365 tenants** — the M365 tenant mapping (lines 147-159) does not set `scheduleFrequency`, `scheduleHour`, `scheduleDayOfWeek`, or `scheduleDayOfMonth`.
+1. **Type**: Add `'m365_compliance'` to the `targetType` union on `UnifiedSchedule` (line 47)
 
-### Fix
+2. **Data fetch**: Add a new `useQuery` block to fetch `m365_analyzer_schedules` with a join to `m365_tenant_configs` → `clients`, similar to the existing firewall/domain queries. Map each row to a `UnifiedSchedule` with `targetType: 'm365_compliance'`.
 
-1. Add a query for `m365_analyzer_schedules` selecting `tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month` where `is_active = true`
-2. Add it to the `Promise.all` call
-3. Build a `m365ScheduleMap` keyed by `tenant_record_id`
-4. In the M365 tenant mapping block, populate the 4 schedule fields from `m365ScheduleMap`
+3. **Merge**: Include the new M365 schedules in the `schedules` memo (line 244-252) and in `isLoading` (line 242). Add its `refetch` to `handleRefresh`.
 
-This is a single-file change (~10 lines added) in `src/pages/EnvironmentPage.tsx`.
+4. **Filter dropdown**: Add `<SelectItem value="m365_compliance">M365 Compliance</SelectItem>` after line 504.
+
+5. **Badge renderer**: Add a case for `m365_compliance` in `renderTypeBadge` (line 356) — blue/indigo badge with `Database` icon and label "M365 Compliance", consistent with the design standard (no decorative icons beyond the small lucide icon).
+
+6. **Task status**: Add `'m365_compliance'` to the `target_type` filter in the `latestTasks` query (line 266) so last execution status is shown.
+
+Single-file change, ~40 lines added.
 
