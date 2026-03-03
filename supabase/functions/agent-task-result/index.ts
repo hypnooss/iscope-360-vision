@@ -2286,12 +2286,12 @@ function formatInterfaceSecurityEvidence(
       const name = String(iface.name || '');
       const allowaccess = String(iface.allowaccess || '').toLowerCase();
       
-      // Check if it's a WAN or SD-WAN interface
+      // Check if it's a WAN or SD-WAN interface (by role only, not name)
       const isWan = role === 'wan' || role === 'sd-wan' || 
                     role.includes('wan') || 
-                    name.toLowerCase().includes('wan') ||
-                    name.toLowerCase().includes('sdwan') ||
-                    name.toLowerCase() === 'virtual-wan-link';
+                    name.toLowerCase() === 'virtual-wan-link' ||
+                    name.toLowerCase() === 'sd-wan' ||
+                    name.toLowerCase() === 'sdwan';
       
       if (!isWan) continue;
       
