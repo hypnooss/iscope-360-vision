@@ -322,18 +322,22 @@ class PowerShellExecutor(BaseExecutor):
         t.start()
         return q
 
-    def _read_until_marker(self, read_queue: queue.Queue, marker: str, timeout: int):
+    def _read_until_marker(self, read_queue: queue.Queue, marker: str, timeout: int, max_timeout: int = 600):
         """
-        Read lines from the reader queue until a marker line is found, with timeout.
+        Read lines from the reader queue until a marker line is found, with activity-based timeout.
+        The per-line deadline resets on every received line (process is alive),
+        but an absolute cap (max_timeout) prevents infinite waits.
         Returns a tuple (found: bool, output: str).
         - found=True, output=accumulated lines when marker is found
         - found=False, output=accumulated lines on timeout/EOF (for diagnostics)
         """
         lines = []
-        deadline = time.time() + timeout
+        start = time.time()
+        abs_deadline = start + max_timeout   # Hard cap (default 10 min)
+        deadline = start + timeout           # Dynamic per-activity deadline
 
         while True:
-            remaining = deadline - time.time()
+            remaining = min(deadline, abs_deadline) - time.time()
             if remaining <= 0:
                 return (False, "\n".join(lines))
             try:
@@ -347,6 +351,8 @@ class PowerShellExecutor(BaseExecutor):
             if marker in line_clean or line_clean == marker:
                 return (True, "\n".join(lines))
             lines.append(line_clean)
+            # Reset deadline on activity (output received = process is alive)
+            deadline = time.time() + timeout
     
     def _build_script_file(
         self,
