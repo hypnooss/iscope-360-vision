@@ -92,6 +92,7 @@ export default function EnvironmentPage() {
       let clientsQuery = supabase.from('clients').select('id, name');
       let fwScheduleQuery = supabase.from('analysis_schedules').select('firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month').eq('is_active', true);
       let edScheduleQuery = supabase.from('external_domain_schedules').select('domain_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month').eq('is_active', true);
+      const m365ScheduleQuery = supabase.from('m365_analyzer_schedules').select('tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month').eq('is_active', true);
 
       if (workspaceFilter && workspaceFilter.length > 0) {
         fwQuery = fwQuery.in('client_id', workspaceFilter);
@@ -100,8 +101,8 @@ export default function EnvironmentPage() {
         clientsQuery = clientsQuery.in('id', workspaceFilter);
       }
 
-      const [fwRes, edRes, m365Res, clientsRes, fwScheduleRes, edScheduleRes] = await Promise.all([
-        fwQuery, edQuery, m365Query, clientsQuery, fwScheduleQuery, edScheduleQuery,
+      const [fwRes, edRes, m365Res, clientsRes, fwScheduleRes, edScheduleRes, m365ScheduleRes] = await Promise.all([
+        fwQuery, edQuery, m365Query, clientsQuery, fwScheduleQuery, edScheduleQuery, m365ScheduleQuery,
       ]);
 
       if (fwRes.error) throw fwRes.error;
@@ -112,6 +113,7 @@ export default function EnvironmentPage() {
       const clientMap = new Map((clientsRes.data || []).map(c => [c.id, c.name]));
       const fwScheduleMap = new Map((fwScheduleRes.data || []).map((s: any) => [s.firewall_id, s]));
       const edScheduleMap = new Map((edScheduleRes.data || []).map((s: any) => [s.domain_id, s]));
+      const m365ScheduleMap = new Map((m365ScheduleRes.data || []).map((s: any) => [s.tenant_record_id, s]));
 
       const unified: UnifiedAsset[] = [
         ...(fwRes.data || []).map((fw: any) => ({
@@ -156,6 +158,10 @@ export default function EnvironmentPage() {
             status: t.connection_status,
             agentName: tenantAgent?.agents?.name || null,
             navigationUrl: `/environment/m365/${t.id}/edit`,
+            scheduleFrequency: m365ScheduleMap.get(t.id)?.frequency ?? null,
+            scheduleHour: m365ScheduleMap.get(t.id)?.scheduled_hour ?? 0,
+            scheduleDayOfWeek: m365ScheduleMap.get(t.id)?.scheduled_day_of_week ?? 1,
+            scheduleDayOfMonth: m365ScheduleMap.get(t.id)?.scheduled_day_of_month ?? 1,
           };
         }),
       ];
