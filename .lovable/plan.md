@@ -1,46 +1,29 @@
 
 
-## Plano: Timeout com extensão por atividade
+## Plano: Botão de Cancelar em Tarefas Pendentes nas Telas de Execução
 
-### Problema
-O `_read_until_marker` em `powershell.py` usa um deadline fixo. Se um cmdlet produz output contínuo (como centenas de warnings do `Get-InboxRule`), esse output consome o timeout sem resetá-lo, causando falso timeout mesmo com o processo ativo.
+### Situação Atual
 
-### Solução
-Modificar `_read_until_marker` para **resetar o deadline a cada linha recebida**, com um cap máximo absoluto.
+| Página | Agent Tasks | Outros tipos pendentes |
+|--------|------------|----------------------|
+| Firewall | ✅ Cancela, mas **sem diálogo de confirmação** | N/A |
+| Domínio Externo | ✅ Com confirmação | ❌ Análises API (`external_domain_analysis_history`) pendentes não têm botão |
+| M365 | ✅ Com confirmação | ❌ Análises Posture (`m365_posture_history`) pendentes não têm botão |
 
-### Mudança em `python-agent/agent/executors/powershell.py`
+### Alterações
 
-**Método `_read_until_marker` (linhas 325-349):**
+**1. `src/pages/firewall/TaskExecutionsPage.tsx`**
+- Adicionar `AlertDialog` de confirmação antes de cancelar (igual ao padrão das outras páginas)
+- Adicionar estados `cancelOpen` e `taskToCancel`
+- Importar `AlertDialog` components
 
-Adicionar parâmetro `max_timeout` (padrão 600s = 10 min) como limite absoluto. A cada linha recebida da queue, resetar o deadline para `now + timeout`, desde que não ultrapasse o limite absoluto.
+**2. `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`**
+- Adicionar mutation para cancelar análises API pendentes (`external_domain_analysis_history` → `status = 'cancelled'`)
+- Exibir botão de cancelar para itens `source === 'analysis'` com status `pending`
 
-```python
-def _read_until_marker(self, read_queue, marker, timeout, max_timeout=600):
-    lines = []
-    start = time.time()
-    abs_deadline = start + max_timeout  # Cap absoluto de 10 min
-    deadline = start + timeout          # Deadline dinâmico
+**3. `src/pages/m365/M365ExecutionsPage.tsx`**
+- Adicionar mutation para cancelar análises Posture pendentes (`m365_posture_history` → `status = 'cancelled'`)
+- Exibir botão de cancelar para itens `source === 'posture'` com status `pending`
 
-    while True:
-        remaining = min(deadline, abs_deadline) - time.time()
-        if remaining <= 0:
-            return (False, "\n".join(lines))
-        try:
-            line = read_queue.get(timeout=remaining)
-        except queue.Empty:
-            return (False, "\n".join(lines))
-        if line is None:
-            return (False, "\n".join(lines))
-        line_clean = self._sanitize_line(line)
-        if marker in line_clean or line_clean == marker:
-            return (True, "\n".join(lines))
-        lines.append(line_clean)
-        # Reset deadline on activity (output received = process is alive)
-        deadline = time.time() + timeout
-```
-
-Isso resolve o `exo_inbox_rules`: enquanto warnings estão fluindo, o timeout se renova. Só expira se houver **silêncio real** por `timeout` segundos (120s por padrão). O cap absoluto de 10 min previne loops infinitos.
-
-### Arquivo modificado
-- `python-agent/agent/executors/powershell.py` — método `_read_until_marker`
+Em todos os casos, o cancelamento atualiza o `status` para `cancelled` e define `completed_at = now()`.
 
