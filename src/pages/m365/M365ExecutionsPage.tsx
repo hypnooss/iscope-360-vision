@@ -23,7 +23,7 @@ interface PostureHistory {
   id: string;
   tenant_record_id: string;
   client_id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'partial' | 'cancelled';
   score: number | null;
   classification: string | null;
   summary: any;
@@ -124,6 +124,8 @@ export default function M365ExecutionsPage() {
   const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
+  const [postureCancelOpen, setPostureCancelOpen] = useState(false);
+  const [postureToCancel, setPostureToCancel] = useState<PostureHistory | null>(null);
 
   const { isPreviewMode, previewTarget } = usePreview();
   const queryClient = useQueryClient();
@@ -380,6 +382,34 @@ export default function M365ExecutionsPage() {
     setCancelOpen(true);
   };
 
+  const cancelPostureMutation = useMutation({
+    mutationFn: async (postureId: string) => {
+      const { error } = await supabase
+        .from('m365_posture_history')
+        .update({
+          status: 'cancelled',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', postureId)
+        .in('status', ['pending', 'running', 'partial']);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      toast.success('Análise cancelada com sucesso');
+      await queryClient.invalidateQueries({ queryKey: ['m365-posture-history'] });
+      setPostureCancelOpen(false);
+      setPostureToCancel(null);
+    },
+    onError: (e: any) => {
+      toast.error('Erro ao cancelar análise', { description: e?.message });
+    },
+  });
+
+  const requestPostureCancel = (posture: PostureHistory) => {
+    setPostureToCancel(posture);
+    setPostureCancelOpen(true);
+  };
+
   const handleRefresh = () => {
     refetchPosture();
     refetchTasks();
@@ -565,6 +595,17 @@ export default function M365ExecutionsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
+                            {item.source === 'posture' && ['pending', 'running', 'partial'].includes(item.status) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => requestPostureCancel(item.original as PostureHistory)}
+                                disabled={cancelPostureMutation.isPending}
+                                title="Cancelar análise"
+                              >
+                                <Ban className="w-4 h-4 text-destructive" />
+                              </Button>
+                            )}
                             {item.source === 'agent_task' && ['pending', 'running'].includes(item.status) && (
                               <Button
                                 variant="ghost"
@@ -801,6 +842,33 @@ export default function M365ExecutionsPage() {
                 disabled={!taskToCancel || cancelMutation.isPending}
               >
                 {cancelMutation.isPending ? 'Encerrando...' : 'Encerrar'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Cancel Posture Analysis Confirmation */}
+        <AlertDialog open={postureCancelOpen} onOpenChange={setPostureCancelOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cancelar análise de postura?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Isso marcará a análise de postura como <span className="font-medium">cancelada</span>.
+                Se houver tarefas do agent associadas, elas não serão afetadas por esta ação.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setPostureToCancel(null)}>
+                Voltar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (!postureToCancel) return;
+                  cancelPostureMutation.mutate(postureToCancel.id);
+                }}
+                disabled={!postureToCancel || cancelPostureMutation.isPending}
+              >
+                {cancelPostureMutation.isPending ? 'Cancelando...' : 'Cancelar'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

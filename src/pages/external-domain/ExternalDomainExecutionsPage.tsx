@@ -153,6 +153,8 @@ export default function ExternalDomainExecutionsPage() {
   const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
   const [snapshotCancelOpen, setSnapshotCancelOpen] = useState(false);
   const [snapshotToCancel, setSnapshotToCancel] = useState<AttackSurfaceSnapshotRow | null>(null);
+  const [analysisCancelOpen, setAnalysisCancelOpen] = useState(false);
+  const [analysisToCancel, setAnalysisToCancel] = useState<AnalysisHistory | null>(null);
   const { isPreviewMode, previewTarget } = usePreview();
   const queryClient = useQueryClient();
 
@@ -490,6 +492,35 @@ export default function ExternalDomainExecutionsPage() {
     setSnapshotCancelOpen(true);
   };
 
+  const cancelAnalysisMutation = useMutation({
+    mutationFn: async (analysisId: string) => {
+      const { error } = await supabase
+        .from('external_domain_analysis_history')
+        .update({
+          status: 'cancelled',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', analysisId)
+        .in('status', ['pending', 'running']);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      toast.success('Análise cancelada com sucesso');
+      await queryClient.invalidateQueries({ queryKey: ['external-domain-analysis-history'] });
+      setAnalysisCancelOpen(false);
+      setAnalysisToCancel(null);
+    },
+    onError: (e: any) => {
+      console.error('Failed to cancel analysis:', e);
+      toast.error('Erro ao cancelar análise', { description: e?.message });
+    },
+  });
+
+  const requestAnalysisCancel = (analysis: AnalysisHistory) => {
+    setAnalysisToCancel(analysis);
+    setAnalysisCancelOpen(true);
+  };
+
   const openDetails = async (item: UnifiedExecution) => {
     if (item.source === 'analysis') {
       setSelectedAnalysis(item.original as AnalysisHistory);
@@ -712,6 +743,16 @@ export default function ExternalDomainExecutionsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
+                            {item.source === 'analysis' && ['pending', 'running'].includes(item.status) &&
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => requestAnalysisCancel(item.original as AnalysisHistory)}
+                            disabled={cancelAnalysisMutation.isPending}
+                            title="Cancelar análise">
+                                <Ban className="w-4 h-4 text-destructive" />
+                              </Button>
+                          }
                             {item.source === 'agent_task' && ['pending', 'running'].includes(item.status) &&
                           <Button
                             variant="ghost"
@@ -1090,6 +1131,33 @@ export default function ExternalDomainExecutionsPage() {
                 }}
                 disabled={!snapshotToCancel || cancelSnapshotMutation.isPending}>
                 {cancelSnapshotMutation.isPending ? 'Cancelando...' : 'Cancelar Scan'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Cancel Analysis Confirmation */}
+        <AlertDialog open={analysisCancelOpen} onOpenChange={setAnalysisCancelOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cancelar análise?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Isso marcará a análise API como <span className="font-medium">cancelada</span>.
+                A execução será registrada como encerrada.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setAnalysisToCancel(null)}>
+                Voltar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (!analysisToCancel) return;
+                  cancelAnalysisMutation.mutate(analysisToCancel.id);
+                }}
+                disabled={!analysisToCancel || cancelAnalysisMutation.isPending}
+              >
+                {cancelAnalysisMutation.isPending ? 'Cancelando...' : 'Cancelar'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
