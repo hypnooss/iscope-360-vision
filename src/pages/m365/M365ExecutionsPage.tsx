@@ -59,7 +59,7 @@ interface UnifiedExecution {
   source: 'posture' | 'agent_task';
   tenantId: string;
   agentId: string | null;
-  type: 'posture_analysis' | 'm365_powershell' | 'm365_graph_api';
+  type: 'posture_analysis' | 'm365_powershell' | 'm365_graph_api' | 'm365_analyzer';
   status: string;
   duration: string;
   createdAt: string;
@@ -105,6 +105,10 @@ const typeConfig: Record<string, { label: string; color: string }> = {
     color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
   },
   m365_powershell: {
+    label: 'M365 Compliance (Agent)',
+    color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
+  },
+  m365_analyzer: {
     label: 'M365 Analyzer',
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
   },
@@ -288,7 +292,7 @@ export default function M365ExecutionsPage() {
       source: 'agent_task' as const,
       tenantId: task.target_id,
       agentId: task.agent_id,
-      type: (task.task_type === 'm365_graph_api' ? 'm365_graph_api' : 'm365_powershell') as UnifiedExecution['type'],
+      type: (['m365_graph_api', 'm365_powershell', 'm365_analyzer'].includes(task.task_type) ? task.task_type : 'm365_powershell') as UnifiedExecution['type'],
       status: task.status,
       duration: getDuration(task),
       createdAt: task.created_at,
