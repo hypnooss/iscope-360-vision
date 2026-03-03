@@ -66,6 +66,7 @@ import {
   ClipboardList,
   Bug,
   Radar,
+  BookOpen,
   LucideIcon,
 } from 'lucide-react';
 import logoIscope from '@/assets/logo-iscope.png';
@@ -217,7 +218,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       // Environment/Licensing page: close all modules and admin
       setExpandedModules({});
       setAdminMenuOpen(false);
-    } else if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates' || path === '/schedules' || path === '/cves' || path === '/super-agents') {
+    } else if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates' || path === '/schedules' || path === '/cves' || path === '/super-agents' || path === '/docs') {
       // Admin routes: expand admin menu, close all modules
       setAdminMenuOpen(true);
       setExpandedModules({});
@@ -456,7 +457,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   // Helper for admin section
   const AdminButton = () => {
-    const isAdminRoute = location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections' || location.pathname === '/templates' || location.pathname === '/schedules' || location.pathname === '/cves' || location.pathname === '/super-agents';
+    const isAdminRoute = location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections' || location.pathname === '/templates' || location.pathname === '/schedules' || location.pathname === '/cves' || location.pathname === '/super-agents' || location.pathname === '/docs';
     
     if (!sidebarOpen) {
       return (
@@ -484,6 +485,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 { href: '/schedules', icon: Clock, label: 'Agendamentos' },
                 { href: '/settings', icon: Settings, label: 'Configurações' },
                 { href: '/cves', icon: Bug, label: 'CVEs' },
+                { href: '/docs', icon: BookOpen, label: 'Documentação' },
                 { href: '/super-agents', icon: Cpu, label: 'Super Agents' },
                 { href: '/templates', icon: ClipboardList, label: 'Templates' },
                 { href: '/workspaces', icon: Building, label: 'Workspaces' },
@@ -589,6 +591,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Bug className="w-4 h-4" />
             CVEs
+          </Link>
+          <Link
+            to="/docs"
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              location.pathname === '/docs'
+                ? 'bg-warning/20 text-warning font-medium'
+                : 'text-warning/80 hover:bg-warning/10'
+            )}
+          >
+            <BookOpen className="w-4 h-4" />
+            Documentação
           </Link>
           <Link
             to="/super-agents"
