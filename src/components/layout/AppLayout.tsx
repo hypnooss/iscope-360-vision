@@ -217,7 +217,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       // Environment/Licensing page: close all modules and admin
       setExpandedModules({});
       setAdminMenuOpen(false);
-    } else if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates' || path === '/schedules' || path === '/cves' || path === '/super-agents') {
+    } else if (path === '/workspaces' || path === '/administrators' || path === '/settings' || path === '/collections' || path === '/templates' || path === '/schedules' || path === '/cves' || path === '/super-agents' || path === '/docs') {
       // Admin routes: expand admin menu, close all modules
       setAdminMenuOpen(true);
       setExpandedModules({});
