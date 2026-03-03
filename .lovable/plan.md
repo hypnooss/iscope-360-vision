@@ -1,18 +1,15 @@
 
 
-## Fix: M365 schedules not appearing on Administração > Agendamentos
+## Bump Agent version to 1.3.6
 
-**Root cause**: The query in `SchedulesPage.tsx` references `m365_tenants.tenant_name`, but the actual column is `display_name`. The Supabase join silently fails, returning no rows.
+A single-line change to release the new version with the PowerShell executor improvements.
 
-### Change
+**File**: `python-agent/agent/version.py`
 
-**File**: `src/pages/admin/SchedulesPage.tsx`, line 249 and 255
+**Change**: Update `__version__` from `"1.3.5"` to `"1.3.6"`
 
-1. In the `.select()` string (line 249), change `tenant_name` to `display_name`:
-   - From: `m365_tenants(id, tenant_name, client_id, clients(id, name))`
-   - To: `m365_tenants(id, display_name, client_id, clients(id, name))`
-
-2. In the mapping (line 255), change `s.m365_tenants?.tenant_name` to `s.m365_tenants?.display_name`
-
-Two-word fix, single file.
+After the version bump, you will need to:
+1. Build the new `.tar.gz` package
+2. Upload `iscope-agent-latest.tar.gz` to the `agent-releases` bucket (overwriting the previous one)
+3. Agents with auto-update enabled will pick up the new version on the next heartbeat cycle
 
