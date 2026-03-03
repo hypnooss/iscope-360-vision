@@ -1,28 +1,27 @@
 
 
-## Diagnóstico: `exo_inbox_rules` causando timeout em cascata
+## Diagnóstico
 
-### Problema identificado
+O problema **não** é que duas tasks são criadas ao clicar "Executar Análise". É um **bug de label** na tela de Execuções (`M365ExecutionsPage.tsx`).
 
-A task `287c7a6f` falhou com **16 de 23 steps em erro**. O `exo_inbox_rules` recebeu o `CMD_START` mas nunca produziu o `CMD_END` — timeout. Isso matou a sessão PowerShell e todos os comandos seguintes falharam em cascata ("Session killed after consecutive timeouts").
+### O que acontece
 
-**Causa raiz**: O cmdlet `Get-InboxRule` emite centenas de linhas WARNING para regras corrompidas (visível nos logs). Essas mensagens poluem o stream de saída e atrasam/impedem a chegada do JSON final antes do timeout de 300s. O agente fica processando linhas de WARNING indefinidamente sem encontrar o marcador `CMD_END`.
+1. Ao clicar "Executar Análise" no M365 Compliance, são criados:
+   - 1 registro em `m365_posture_history` (aparece como "M365 Compliance" — correto)
+   - 1 `agent_task` com `task_type: 'm365_powershell'` (coleta PowerShell para o Compliance)
 
-### Solução
+2. Na tela de Execuções, **ambos** aparecem porque a página lista tanto `m365_posture_history` quanto `agent_tasks`.
 
-Adicionar `-WarningAction SilentlyContinue` ao `Get-InboxRule` no blueprint. Isso suprime as mensagens WARNING do stream de saída, mas **mantém a propriedade `InError` no objeto retornado** — ou seja, o evaluator EXO-023 continua funcionando normalmente.
+3. O `typeConfig` mapeia `m365_powershell` → label **"M365 Analyzer"** (errado). Deveria ser **"M365 Compliance (Agent)"** ou similar.
 
-### Alteração
+4. Além disso, a linha 291 mapeia **qualquer** `task_type` que não seja `m365_graph_api` para `m365_powershell`, incluindo tasks reais do tipo `m365_analyzer`. Isso perde a distinção.
 
-**1. Migration SQL** — UPDATE no `device_blueprints` para alterar o comando `exo_inbox_rules`:
+### Correções
 
-```powershell
-# De:
-Get-InboxRule -Mailbox $mbx -ErrorAction SilentlyContinue | Select-Object ...
+**Arquivo: `src/pages/m365/M365ExecutionsPage.tsx`**
 
-# Para:
-Get-InboxRule -Mailbox $mbx -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Select-Object ...
-```
-
-Apenas 1 arquivo SQL de migração. Nenhuma alteração em código frontend ou edge functions.
+1. **Adicionar `m365_analyzer` ao `typeConfig`** com label e cor distintos
+2. **Renomear o label de `m365_powershell`** de "M365 Analyzer" para "M365 Compliance (Agent)"
+3. **Corrigir o mapeamento na linha 291** para preservar o `task_type` original (`m365_powershell`, `m365_analyzer`, `m365_graph_api`) em vez de colapsar tudo para `m365_powershell`
+4. **Atualizar o tipo `UnifiedExecution.type`** para incluir `m365_analyzer`
 
