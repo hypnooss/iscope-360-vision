@@ -97,6 +97,11 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
     color: 'bg-gray-500/20 text-gray-500 border-gray-500/30',
     icon: <XCircle className="w-3 h-3" />,
   },
+  partial: {
+    label: 'Parcial',
+    color: 'bg-cyan-500/20 text-cyan-500 border-cyan-500/30',
+    icon: <Loader2 className="w-3 h-3 animate-spin" />,
+  },
 };
 
 const typeConfig: Record<string, { label: string; color: string }> = {
@@ -223,7 +228,7 @@ export default function M365ExecutionsPage() {
     },
     refetchInterval: (query) => {
       const data = query.state.data as PostureHistory[] | undefined;
-      const hasActive = data?.some(e => e.status === 'running' || e.status === 'pending');
+      const hasActive = data?.some(e => e.status === 'running' || e.status === 'pending' || e.status === 'partial');
       return hasActive ? 10000 : false;
     },
   });
@@ -304,7 +309,7 @@ export default function M365ExecutionsPage() {
     );
   }, [executions, agentTasks]);
 
-  const hasActive = unifiedExecutions.some(e => e.status === 'running' || e.status === 'pending');
+  const hasActive = unifiedExecutions.some(e => e.status === 'running' || e.status === 'pending' || e.status === 'partial');
 
   const stats = useMemo(() => ({
     total: unifiedExecutions.length,
