@@ -2,9 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { usePreview } from '@/contexts/PreviewContext';
-import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
-import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
-import { useDomainSelector } from '@/hooks/useDomainSelector';
+
 import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -17,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Activity, Clock, CheckCircle2, XCircle, AlertTriangle, Timer, Loader2, RefreshCw, Eye, Ban, Search, Globe, Cloud, Terminal, Radar, Building2 } from 'lucide-react';
+import { Activity, Clock, CheckCircle2, XCircle, AlertTriangle, Timer, Loader2, RefreshCw, Eye, Ban, Search, Globe, Cloud, Terminal, Radar } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -159,24 +157,7 @@ export default function ExternalDomainExecutionsPage() {
   const [analysisCancelOpen, setAnalysisCancelOpen] = useState(false);
   const [analysisToCancel, setAnalysisToCancel] = useState<AnalysisHistory | null>(null);
   const { isPreviewMode, previewTarget } = usePreview();
-  const { effectiveRole } = useEffectiveAuth();
   const queryClient = useQueryClient();
-
-  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
-
-  // Workspace selector (super_admin only)
-  const { data: allWorkspaces } = useQuery({
-    queryKey: ['clients-list'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('clients').select('id, name').order('name');
-      if (error) throw error;
-      return data ?? [];
-    },
-    enabled: isSuperRole && !isPreviewMode,
-    staleTime: 1000 * 60 * 5,
-  });
-
-  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
 
   const getTimeFilterDate = () => {
     const now = new Date();
@@ -194,28 +175,15 @@ export default function ExternalDomainExecutionsPage() {
   previewTarget.workspaces.map((w) => w.id) :
   null;
 
-  // Lookup: domains (filtered by workspace if super)
+  // Lookup: domains
   const { data: domains = [] } = useQuery({
-    queryKey: ['external-domains-lookup', selectedWorkspaceId, isSuperRole],
+    queryKey: ['external-domains-lookup'],
     queryFn: async () => {
-      let query = supabase.from('external_domains').select('id, domain, name, client_id');
-      if (isSuperRole && selectedWorkspaceId) {
-        query = query.eq('client_id', selectedWorkspaceId);
-      }
-      const { data, error } = await query;
+      const { data, error } = await supabase.from('external_domains').select('id, domain, name, client_id');
       if (error) throw error;
       return data || [];
     }
   });
-
-  const domainSelectorItems = useMemo(() =>
-    domains.map(d => ({ id: d.id, name: d.name || d.domain })),
-    [domains]
-  );
-
-  const { selectedDomainId, setSelectedDomainId } = useDomainSelector(
-    domainSelectorItems.length > 0 ? domainSelectorItems : undefined
-  );
 
   // Lookup: agents
   const { data: agents = [] } = useQuery({
@@ -445,9 +413,6 @@ export default function ExternalDomainExecutionsPage() {
   };
 
   const filteredExecutions = unifiedExecutions.filter((item) => {
-    // Filter by selected domain
-    if (selectedDomainId && item.domainId && item.domainId !== selectedDomainId) return false;
-
     if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
     const domain = domains.find((d) => d.id === item.domainId);
@@ -617,26 +582,6 @@ export default function ExternalDomainExecutionsPage() {
             <p className="text-muted-foreground">Monitore as análises via API e via Agent</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            {isSuperRole && !isPreviewMode && (
-              <Select value={selectedWorkspaceId ?? ''} onValueChange={(v) => { setSelectedWorkspaceId(v); setSelectedDomainId(''); }}>
-                <SelectTrigger className="w-[200px]">
-                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
-                  <SelectValue placeholder="Workspace" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allWorkspaces?.map(ws => <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            )}
-            <Select value={selectedDomainId || 'all'} onValueChange={(v) => setSelectedDomainId(v === 'all' ? '' : v)}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Todos os domínios" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os domínios</SelectItem>
-                {domainSelectorItems.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
             <Button onClick={handleRefresh} variant="outline" size="sm">
               <RefreshCw className={cn("w-4 h-4 mr-2", hasActive && "animate-spin")} />
               {hasActive ? 'Atualizando...' : 'Atualizar'}

@@ -2,9 +2,6 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { usePreview } from '@/contexts/PreviewContext';
-import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
-import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
-import { useFirewallSelector } from '@/hooks/useFirewallSelector';
 import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -57,7 +54,6 @@ import {
   Ban,
   Play,
   Search,
-  Building2,
   Shield,
   Gauge,
 } from 'lucide-react';
@@ -117,8 +113,6 @@ const typeConfig: Record<string, { label: string; color: string; icon: React.Rea
 
 export default function TaskExecutionsPage() {
   const { isPreviewMode, previewTarget } = usePreview();
-  const { effectiveRole } = useEffectiveAuth();
-  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
   const queryClient = useQueryClient();
 
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -129,20 +123,6 @@ export default function TaskExecutionsPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
-
-  // Workspace selector (super_admin only)
-  const { data: allWorkspaces } = useQuery({
-    queryKey: ['clients-list'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('clients').select('id, name').order('name');
-      if (error) throw error;
-      return data ?? [];
-    },
-    enabled: isSuperRole && !isPreviewMode,
-    staleTime: 1000 * 60 * 5,
-  });
-
-  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
 
   // Calculate time filter
   const getTimeFilterDate = () => {
@@ -161,25 +141,9 @@ export default function TaskExecutionsPage() {
     }
   };
 
-  // Fetch firewalls filtered by workspace (for selector + filtering)
-  const { data: selectorFirewalls = [] } = useQuery({
-    queryKey: ['firewalls-selector', selectedWorkspaceId, isSuperRole],
-    queryFn: async () => {
-      let query = supabase.from('firewalls').select('id, name, client_id').order('name');
-      if (isSuperRole && selectedWorkspaceId) {
-        query = query.eq('client_id', selectedWorkspaceId);
-      }
-      const { data } = await query;
-      return (data ?? []) as { id: string; name: string; client_id: string }[];
-    },
-    enabled: isSuperRole ? !!selectedWorkspaceId : true,
-  });
-
-  const { selectedFirewallId, setSelectedFirewallId } = useFirewallSelector(selectorFirewalls);
-
   // Fetch tasks
   const { data: tasks = [], isLoading, refetch } = useQuery({
-    queryKey: ['agent-tasks', statusFilter, timeFilter, isPreviewMode, previewTarget?.workspaces, selectedWorkspaceId, selectedFirewallId],
+    queryKey: ['agent-tasks', statusFilter, timeFilter, isPreviewMode, previewTarget?.workspaces],
     queryFn: async () => {
       const startTime = getTimeFilterDate();
       
@@ -188,30 +152,7 @@ export default function TaskExecutionsPage() {
         ? previewTarget.workspaces.map(w => w.id)
         : null;
 
-      // If a specific firewall is selected, use only that
-      if (selectedFirewallId) {
-        let query = supabase
-          .from('agent_tasks')
-          .select(`
-            id, agent_id, task_type, target_id, target_type, status, priority,
-            error_message, execution_time_ms, created_at, started_at, completed_at, expires_at, timeout_at
-          `)
-          .eq('target_type', 'firewall')
-          .eq('target_id', selectedFirewallId)
-          .gte('created_at', startTime.toISOString())
-          .order('created_at', { ascending: false })
-          .limit(100);
-
-        if (statusFilter !== 'all') {
-          query = query.eq('status', statusFilter as AgentTask['status']);
-        }
-
-        const { data, error } = await query;
-        if (error) throw error;
-        return data as AgentTask[];
-      }
-
-      // Otherwise, get all firewalls the user can access
+      // Get all firewalls the user can access
       let firewallsQuery = supabase
         .from('firewalls')
         .select('id')
@@ -219,8 +160,6 @@ export default function TaskExecutionsPage() {
       
       if (workspaceIds && workspaceIds.length > 0) {
         firewallsQuery = firewallsQuery.in('client_id', workspaceIds);
-      } else if (isSuperRole && selectedWorkspaceId) {
-        firewallsQuery = firewallsQuery.eq('client_id', selectedWorkspaceId);
       }
 
       const { data: firewallRows, error: firewallsError } = await firewallsQuery;
@@ -406,26 +345,6 @@ export default function TaskExecutionsPage() {
             </p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            {isSuperRole && !isPreviewMode && (
-              <Select value={selectedWorkspaceId ?? ''} onValueChange={(v) => { setSelectedWorkspaceId(v); setSelectedFirewallId(''); }}>
-                <SelectTrigger className="w-[200px]">
-                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
-                  <SelectValue placeholder="Workspace" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allWorkspaces?.map(ws => <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            )}
-            <Select value={selectedFirewallId || 'all'} onValueChange={(v) => setSelectedFirewallId(v === 'all' ? '' : v)}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Todos os firewalls" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os firewalls</SelectItem>
-                {selectorFirewalls.map(fw => <SelectItem key={fw.id} value={fw.id}>{fw.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
             <Button onClick={() => refetch()} variant="outline" size="sm">
               <RefreshCw className={cn("w-4 h-4 mr-2", hasActiveTasks && "animate-spin")} />
               {hasActiveTasks ? 'Atualizando...' : 'Atualizar'}

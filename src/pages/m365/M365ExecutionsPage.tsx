@@ -2,10 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { usePreview } from '@/contexts/PreviewContext';
-import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
-import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
-import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
-import { TenantSelector } from '@/components/m365/posture/TenantSelector';
+
 import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -18,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Activity, Clock, CheckCircle2, XCircle, Loader2, RefreshCw, Eye, Search, Cloud, Terminal, Timer, Ban, Building2 } from 'lucide-react';
+import { Activity, Clock, CheckCircle2, XCircle, Loader2, RefreshCw, Eye, Search, Cloud, Terminal, Timer, Ban } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -132,29 +129,7 @@ export default function M365ExecutionsPage() {
   const [postureToCancel, setPostureToCancel] = useState<PostureHistory | null>(null);
 
   const { isPreviewMode, previewTarget } = usePreview();
-  const { effectiveRole } = useEffectiveAuth();
   const queryClient = useQueryClient();
-
-  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
-
-  // Workspace selector (super_admin only)
-  const { data: allWorkspaces } = useQuery({
-    queryKey: ['clients-list'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('clients').select('id, name').order('name');
-      if (error) throw error;
-      return data ?? [];
-    },
-    enabled: isSuperRole && !isPreviewMode,
-    staleTime: 1000 * 60 * 5,
-  });
-
-  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
-
-  // Tenant selector
-  const { tenants: tenantOptions, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector(
-    isSuperRole ? selectedWorkspaceId : undefined
-  );
 
   const getTimeFilterDate = () => {
     const now = new Date();
@@ -340,9 +315,6 @@ export default function M365ExecutionsPage() {
   };
 
   const filteredExecutions = unifiedExecutions.filter(item => {
-    // Filter by selected tenant
-    if (selectedTenantId && item.tenantId !== selectedTenantId) return false;
-
     if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
     const tenant = tenants.find(t => t.id === item.tenantId);
@@ -460,23 +432,6 @@ export default function M365ExecutionsPage() {
             <p className="text-muted-foreground">Monitore as análises de postura e tarefas do agente M365</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            {isSuperRole && !isPreviewMode && (
-              <Select value={selectedWorkspaceId ?? ''} onValueChange={setSelectedWorkspaceId}>
-                <SelectTrigger className="w-[200px]">
-                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
-                  <SelectValue placeholder="Workspace" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allWorkspaces?.map(ws => <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            )}
-            <TenantSelector
-              tenants={tenantOptions}
-              selectedId={selectedTenantId}
-              onSelect={selectTenant}
-              loading={tenantsLoading}
-            />
             <Button onClick={handleRefresh} variant="outline" size="sm">
               <RefreshCw className={cn("w-4 h-4 mr-2", hasActive && "animate-spin")} />
               {hasActive ? 'Atualizando...' : 'Atualizar'}
