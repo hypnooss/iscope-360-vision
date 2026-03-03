@@ -246,13 +246,13 @@ export default function SchedulesPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('m365_analyzer_schedules')
-        .select('id, tenant_record_id, frequency, is_active, next_run_at, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, m365_tenants(id, tenant_name, client_id, clients(id, name))')
+        .select('id, tenant_record_id, frequency, is_active, next_run_at, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, m365_tenants(id, display_name, client_id, clients(id, name))')
         .order('next_run_at', { ascending: true, nullsFirst: false });
       if (error) throw error;
       return ((data || []) as any[]).map((s): UnifiedSchedule => ({
         id: s.id,
         targetId: s.tenant_record_id,
-        targetName: s.m365_tenants?.tenant_name || '—',
+        targetName: s.m365_tenants?.display_name || '—',
         targetType: 'm365_compliance',
         frequency: s.frequency,
         isActive: s.is_active,
