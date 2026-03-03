@@ -124,7 +124,7 @@ const statusConfig: Record<string, {label: string;color: string;icon: React.Reac
 
 const typeConfig: Record<string, {label: string;color: string;icon: React.ReactNode;}> = {
   api: {
-    label: 'API',
+    label: 'Domain Compliance',
     color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
     icon: <Cloud className="w-3 h-3" />
   },
@@ -134,7 +134,7 @@ const typeConfig: Record<string, {label: string;color: string;icon: React.ReactN
     icon: <Terminal className="w-3 h-3" />
   },
   attack_surface: {
-    label: 'Surface Scanner',
+    label: 'Surface Analyzer',
     color: 'bg-cyan-500/20 text-cyan-500 border-cyan-500/30',
     icon: <Radar className="w-3 h-3" />
   }

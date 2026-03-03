@@ -102,17 +102,17 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 
 const typeConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   posture_analysis: {
-    label: 'API',
+    label: 'M365 Compliance',
     color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
     icon: <Cloud className="w-3 h-3" />,
   },
   m365_powershell: {
-    label: 'Agent',
+    label: 'M365 Analyzer',
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
     icon: <Terminal className="w-3 h-3" />,
   },
   m365_graph_api: {
-    label: 'Agent',
+    label: 'M365 Analyzer',
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
     icon: <Terminal className="w-3 h-3" />,
   },
