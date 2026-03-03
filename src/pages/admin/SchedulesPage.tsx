@@ -358,7 +358,7 @@ export default function SchedulesPage() {
       return (
         <Badge variant="outline" className="bg-orange-500/15 text-orange-400 border-orange-500/30 gap-1">
           <Shield className="w-3 h-3" />
-          Firewall
+          Firewall Compliance
         </Badge>
       );
     }
@@ -381,7 +381,7 @@ export default function SchedulesPage() {
     return (
       <Badge variant="outline" className="bg-cyan-500/15 text-cyan-400 border-cyan-500/30 gap-1">
         <Globe className="w-3 h-3" />
-        Domínio Externo
+        Domain Compliance
       </Badge>
     );
   };
@@ -500,8 +500,8 @@ export default function SchedulesPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os tipos</SelectItem>
-              <SelectItem value="firewall">Firewall</SelectItem>
-              <SelectItem value="external_domain">Domínio Externo</SelectItem>
+              <SelectItem value="firewall">Firewall Compliance</SelectItem>
+              <SelectItem value="external_domain">Domain Compliance</SelectItem>
               <SelectItem value="attack_surface">Surface Analyzer</SelectItem>
               <SelectItem value="firewall_analyzer">Firewall Analyzer</SelectItem>
             </SelectContent>

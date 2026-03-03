@@ -104,7 +104,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 
 const typeConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   fortigate_analysis: {
-    label: 'Firewall',
+    label: 'Firewall Compliance',
     color: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
     icon: <Shield className="w-3 h-3" />,
   },
