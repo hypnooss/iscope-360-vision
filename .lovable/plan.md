@@ -1,36 +1,33 @@
 
 
-## Plano: Coluna "Tipo" com badges + Seletor no topo das páginas de Execuções
+## Plano: Renomear badges de tipo nas Execuções e Agendamentos
 
-### Contexto
-- **Domínio Externo** e **M365** já possuem coluna "Tipo" com badges coloridas usando `typeConfig` — estão OK
-- **Firewall** tem coluna "Tipo" mas renderiza `task.task_type` como texto monospace sem badge estilizada
-- Nenhuma das 3 páginas de Execuções tem seletor de workspace/firewall/domain/tenant no topo
+### Alterações de labels
 
-### Alterações
+| Página | Chave | Label atual | Novo label |
+|--------|-------|-------------|------------|
+| **Firewall Execuções** | `fortigate_analysis` | Firewall | Firewall Compliance |
+| **Firewall Execuções** | `fortigate_analyzer` | Firewall Analyzer | Firewall Analyzer (sem mudança) |
+| **Domínio Externo Execuções** | `api` | API | Domain Compliance |
+| **Domínio Externo Execuções** | `attack_surface` | Surface Scanner | Surface Analyzer |
+| **Domínio Externo Execuções** | `agent` | Agent | Agent (sem mudança) |
+| **M365 Execuções** | `posture_analysis` | API | M365 Compliance |
+| **M365 Execuções** | `m365_powershell` | Agent | M365 Analyzer |
+| **M365 Execuções** | `m365_graph_api` | Agent | M365 Analyzer |
+| **Agendamentos** | `firewall` | Firewall | Firewall Compliance |
+| **Agendamentos** | `external_domain` | Domínio Externo | Domain Compliance |
+| **Agendamentos** | `attack_surface` | Surface Analyzer | Surface Analyzer (sem mudança) |
+| **Agendamentos** | `firewall_analyzer` | Firewall Analyzer | Firewall Analyzer (sem mudança) |
+| **Agendamentos** (filtro Select) | `firewall` | Firewall | Firewall Compliance |
+| **Agendamentos** (filtro Select) | `external_domain` | Domínio Externo | Domain Compliance |
 
-**1. `src/pages/firewall/TaskExecutionsPage.tsx`**
-- Adicionar `typeConfig` com badges estilizadas para `fortigate_analysis`, `fortigate_analyzer` e fallback, usando o mesmo padrão visual do SchedulesPage (ícone + label colorido)
-- Substituir o `<Badge variant="outline" className="font-mono text-xs">{task.task_type}</Badge>` pelo badge estilizado
-- Adicionar seletor de Workspace (para super_admin) e Firewall no topo, ao lado do botão "Atualizar", usando `useWorkspaceSelector` + `useFirewallSelector` + `Select`
-- Filtrar as tasks pelo firewall selecionado (quando selecionado)
+### Arquivos a editar
 
-**2. `src/pages/external-domain/ExternalDomainExecutionsPage.tsx`**
-- Adicionar seletor de Workspace (para super_admin) e Domínio no topo usando `useWorkspaceSelector` + `useDomainSelector` + `Select`
-- Filtrar execuções pelo domínio selecionado (quando selecionado)
+1. **`src/pages/firewall/TaskExecutionsPage.tsx`** — Linha 107: `label: 'Firewall'` → `'Firewall Compliance'`
+2. **`src/pages/external-domain/ExternalDomainExecutionsPage.tsx`** — Linha 127: `'API'` → `'Domain Compliance'`, linha 137: `'Surface Scanner'` → `'Surface Analyzer'`
+3. **`src/pages/m365/M365ExecutionsPage.tsx`** — Linha 105: `'API'` → `'M365 Compliance'`, linhas 110/115: `'Agent'` → `'M365 Analyzer'`
+4. **`src/pages/admin/SchedulesPage.tsx`** — `renderTypeBadge`: `'Firewall'` → `'Firewall Compliance'`, `'Domínio Externo'` → `'Domain Compliance'`; filtro Select: mesmas mudanças
 
-**3. `src/pages/m365/M365ExecutionsPage.tsx`**
-- Adicionar `TenantSelector` no topo (lado direito) usando `useM365TenantSelector` + `useWorkspaceSelector`
-- Filtrar execuções pelo tenant selecionado (quando selecionado)
-
-### Badges de Tipo — Padrão Visual (Firewall)
-
-| task_type | Label | Cor |
-|-----------|-------|-----|
-| `fortigate_analysis` | Firewall | orange |
-| `fortigate_analyzer` | Firewall Analyzer | rose/red |
-| fallback | task_type raw | muted |
-
-### Seletores — Posição
-No header de cada página, à direita, entre o título e o botão "Atualizar", seguindo o mesmo layout das páginas de Compliance.
+### Escopo
+Apenas renomeação de labels de texto. Cores, ícones e lógica de filtragem permanecem iguais.
 
