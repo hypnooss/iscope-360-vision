@@ -44,7 +44,7 @@ interface UnifiedSchedule {
   id: string;
   targetId: string;
   targetName: string;
-  targetType: 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer';
+  targetType: 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer' | 'm365_compliance';
   frequency: string;
   isActive: boolean;
   nextRunAt: string | null;
@@ -239,17 +239,45 @@ export default function SchedulesPage() {
     },
   });
 
-  const isLoading = loadingFw || loadingDom || loadingAs || loadingAn;
+  // ── Fetch M365 compliance schedules ──
+  const { data: m365Schedules, isLoading: loadingM365, refetch: refetchM365 } = useQuery({
+    queryKey: ['admin-schedules-m365'],
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('m365_analyzer_schedules')
+        .select('id, tenant_record_id, frequency, is_active, next_run_at, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, m365_tenants(id, tenant_name, client_id, clients(id, name))')
+        .order('next_run_at', { ascending: true, nullsFirst: false });
+      if (error) throw error;
+      return ((data || []) as any[]).map((s): UnifiedSchedule => ({
+        id: s.id,
+        targetId: s.tenant_record_id,
+        targetName: s.m365_tenants?.tenant_name || '—',
+        targetType: 'm365_compliance',
+        frequency: s.frequency,
+        isActive: s.is_active,
+        nextRunAt: s.next_run_at,
+        scheduledHour: s.scheduled_hour,
+        scheduledDayOfWeek: s.scheduled_day_of_week,
+        scheduledDayOfMonth: s.scheduled_day_of_month,
+        clientId: s.m365_tenants?.clients?.id || '',
+        clientName: s.m365_tenants?.clients?.name || '—',
+        lastScore: null,
+      }));
+    },
+  });
+
+  const isLoading = loadingFw || loadingDom || loadingAs || loadingAn || loadingM365;
 
   const schedules = useMemo(() => {
-    const all = [...(firewallSchedules || []), ...(domainSchedules || []), ...(attackSurfaceSchedules || []), ...(analyzerSchedules || [])];
+    const all = [...(firewallSchedules || []), ...(domainSchedules || []), ...(attackSurfaceSchedules || []), ...(analyzerSchedules || []), ...(m365Schedules || [])];
     return all.sort((a, b) => {
       if (!a.nextRunAt && !b.nextRunAt) return 0;
       if (!a.nextRunAt) return 1;
       if (!b.nextRunAt) return -1;
       return new Date(a.nextRunAt).getTime() - new Date(b.nextRunAt).getTime();
     });
-  }, [firewallSchedules, domainSchedules, attackSurfaceSchedules, analyzerSchedules]);
+  }, [firewallSchedules, domainSchedules, attackSurfaceSchedules, analyzerSchedules, m365Schedules]);
 
   // ── Fetch latest task per target ──
   const targetIds = useMemo(() => schedules.map(s => s.targetId), [schedules]);
@@ -263,7 +291,7 @@ export default function SchedulesPage() {
         .from('agent_tasks')
         .select('target_id, status, completed_at')
         .in('target_id', targetIds)
-        .in('target_type', ['firewall', 'external_domain'])
+        .in('target_type', ['firewall', 'external_domain', 'm365_compliance'])
         .order('completed_at', { ascending: false });
       if (error) throw error;
       const map = new Map<string, TaskRow>();
@@ -353,7 +381,7 @@ export default function SchedulesPage() {
     );
   };
 
-  const renderTypeBadge = (type: 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer') => {
+  const renderTypeBadge = (type: UnifiedSchedule['targetType']) => {
     if (type === 'firewall') {
       return (
         <Badge variant="outline" className="bg-orange-500/15 text-orange-400 border-orange-500/30 gap-1">
@@ -378,6 +406,14 @@ export default function SchedulesPage() {
         </Badge>
       );
     }
+    if (type === 'm365_compliance') {
+      return (
+        <Badge variant="outline" className="bg-indigo-500/15 text-indigo-400 border-indigo-500/30 gap-1">
+          <Database className="w-3 h-3" />
+          M365 Compliance
+        </Badge>
+      );
+    }
     return (
       <Badge variant="outline" className="bg-cyan-500/15 text-cyan-400 border-cyan-500/30 gap-1">
         <Globe className="w-3 h-3" />
@@ -391,6 +427,7 @@ export default function SchedulesPage() {
     refetchDom();
     refetchAs();
     refetchAn();
+    refetchM365();
   };
 
   return (
@@ -504,6 +541,7 @@ export default function SchedulesPage() {
               <SelectItem value="external_domain">Domain Compliance</SelectItem>
               <SelectItem value="attack_surface">Surface Analyzer</SelectItem>
               <SelectItem value="firewall_analyzer">Firewall Analyzer</SelectItem>
+              <SelectItem value="m365_compliance">M365 Compliance</SelectItem>
             </SelectContent>
           </Select>
           <Select value={filterWorkspace} onValueChange={setFilterWorkspace}>
