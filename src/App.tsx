@@ -27,6 +27,7 @@ const SchedulesPage = lazy(() => import("./pages/admin/SchedulesPage"));
 const CVEsCachePage = lazy(() => import("./pages/admin/CVEsCachePage"));
 const CVESourcesPage = lazy(() => import("./pages/admin/CVESourcesPage"));
 const SuperAgentsPage = lazy(() => import("./pages/admin/SuperAgentsPage"));
+const TechnicalDocsPage = lazy(() => import("./pages/admin/TechnicalDocsPage"));
 
 // Firewall Module Pages - lazy loaded
 const FirewallDashboardPage = lazy(() => import("./pages/firewall/FirewallDashboardPage"));
