@@ -1,28 +1,24 @@
 
 
-## Diagnóstico
+## Desativar steps de análise per-mailbox
 
-O status `partial` não existe no `statusConfig` da página de Execuções. Quando a Graph API finaliza e o tenant tem agente vinculado, a Edge Function `trigger-m365-posture-analysis` salva o registro com status **`partial`** (aguardando dados do PowerShell). Como `partial` não está mapeado, a linha 605 faz fallback para `statusConfig.pending`:
+O blueprint **"M365 - Exchange Online"** (`e276576e-0de0-4463-a0ee-940b970c4f69`) tem 5 steps que iteram caixa por caixa e causaram os 3 timeouts consecutivos:
 
-```
-const sConfig = statusConfig[item.status] || statusConfig.pending;
-```
+| Step | Categoria | Padrão | Timeout |
+|------|-----------|--------|---------|
+| `exo_inbox_rules` | Exchange - Mailbox | `Get-Mailbox -ResultSize 200 \| ForEach-Object { Get-InboxRule }` | 300s |
+| `exo_mailbox_audit` | Exchange - Audit | `Get-EXOMailbox -ResultSize 100` | 120s |
+| `exo_mailbox_forwarding` | Exchange - Mailbox | `Get-Mailbox -ResultSize 500 \| Where-Object` | 120s |
+| `exo_mailbox_quota` | Exchange - Mailbox | `Get-Mailbox -ResultSize 500` | 180s (optional) |
+| `exo_mailbox_statistics` | Exchange - Mailbox | `Get-EXOMailbox -ResultSize 500 \| Get-EXOMailboxStatistics` | 180s (optional) |
 
-Resultado: a row da Edge Function vai de "Executando" → "Pendente" em vez de mostrar um status adequado.
+### Plano
 
-## Correção
+Atualizar o `collection_steps` do blueprint via SQL, adicionando `"enabled": false` a cada um desses 5 steps. Isso mantém os steps documentados no blueprint (podem ser reativados depois) sem removê-los.
 
-**Arquivo: `src/pages/m365/M365ExecutionsPage.tsx`**
+Os 18 steps restantes (organizacionais: anti-phish, DKIM, connectors, transport rules, safe links, etc.) continuam ativos normalmente.
 
-Adicionar `partial` ao `statusConfig` com label **"Parcial"** e estilo visual distinto (ex: cor azul-clara/ciano com ícone de loading), indicando que a análise Graph API concluiu mas ainda aguarda dados do agente PowerShell.
+### Detalhes técnicos
 
-```typescript
-partial: {
-  label: 'Parcial',
-  color: 'bg-cyan-500/20 text-cyan-500 border-cyan-500/30',
-  icon: <Loader2 className="w-3 h-3 animate-spin" />,
-},
-```
-
-Incluir `partial` na lista de status ativos para manter o polling ativo (linha 226 e 307).
+Execução de um UPDATE SQL no campo JSONB `collection_steps` do blueprint, iterando os steps e adicionando a flag `enabled: false` nos 5 IDs listados acima. O código do Agente Python já precisa respeitar essa flag — caso contrário, será necessário um ajuste no `tasks.py` para filtrar steps com `enabled: false`.
 
