@@ -593,6 +593,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             CVEs
           </Link>
           <Link
+            to="/docs"
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+              location.pathname === '/docs'
+                ? 'bg-warning/20 text-warning font-medium'
+                : 'text-warning/80 hover:bg-warning/10'
+            )}
+          >
+            <BookOpen className="w-4 h-4" />
+            Documentação
+          </Link>
+          <Link
             to="/super-agents"
             onClick={() => setMobileMenuOpen(false)}
             className={cn(
