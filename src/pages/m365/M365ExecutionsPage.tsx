@@ -97,21 +97,18 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
   },
 };
 
-const typeConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+const typeConfig: Record<string, { label: string; color: string }> = {
   posture_analysis: {
     label: 'M365 Compliance',
     color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
-    icon: <Cloud className="w-3 h-3" />,
   },
   m365_powershell: {
     label: 'M365 Analyzer',
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
-    icon: <Terminal className="w-3 h-3" />,
   },
   m365_graph_api: {
     label: 'M365 Analyzer',
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
-    icon: <Terminal className="w-3 h-3" />,
   },
 };
 
@@ -580,7 +577,6 @@ export default function M365ExecutionsPage() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={cn('gap-1', tConfig.color)}>
-                            {tConfig.icon}
                             {tConfig.label}
                           </Badge>
                         </TableCell>
@@ -753,7 +749,6 @@ export default function M365ExecutionsPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">Tipo</p>
                       <Badge variant="outline" className={cn('gap-1', typeConfig[selectedTask.task_type]?.color)}>
-                        {typeConfig[selectedTask.task_type]?.icon}
                         {typeConfig[selectedTask.task_type]?.label || selectedTask.task_type}
                       </Badge>
                     </div>

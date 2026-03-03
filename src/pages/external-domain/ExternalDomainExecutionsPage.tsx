@@ -120,21 +120,18 @@ const statusConfig: Record<string, {label: string;color: string;icon: React.Reac
   }
 };
 
-const typeConfig: Record<string, {label: string;color: string;icon: React.ReactNode;}> = {
+const typeConfig: Record<string, {label: string;color: string;}> = {
   api: {
     label: 'Domain Compliance',
     color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
-    icon: <Cloud className="w-3 h-3" />
   },
   agent: {
     label: 'Agent',
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
-    icon: <Terminal className="w-3 h-3" />
   },
   attack_surface: {
     label: 'Surface Analyzer',
     color: 'bg-cyan-500/20 text-cyan-500 border-cyan-500/30',
-    icon: <Radar className="w-3 h-3" />
   }
 };
 
@@ -728,7 +725,6 @@ export default function ExternalDomainExecutionsPage() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={cn('gap-1', tConfig.color)}>
-                            {tConfig.icon}
                             {tConfig.label}
                           </Badge>
                         </TableCell>
@@ -814,7 +810,6 @@ export default function ExternalDomainExecutionsPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">Origem</p>
                       <Badge variant="outline" className={cn('gap-1', typeConfig.api.color)}>
-                        {typeConfig.api.icon}
                         Edge Function
                       </Badge>
                     </div>
@@ -860,7 +855,6 @@ export default function ExternalDomainExecutionsPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">Tipo</p>
                       <Badge variant="outline" className={cn('gap-1', typeConfig.attack_surface.color)}>
-                        {typeConfig.attack_surface.icon}
                         Attack Surface Scan
                       </Badge>
                     </div>
@@ -957,7 +951,6 @@ export default function ExternalDomainExecutionsPage() {
                   <div>
                     <p className="text-sm text-muted-foreground">Tipo</p>
                     <Badge variant="outline" className={cn('gap-1', typeConfig.agent.color)}>
-                      {typeConfig.agent.icon}
                       Agent
                     </Badge>
                   </div>
