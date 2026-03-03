@@ -485,6 +485,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 { href: '/schedules', icon: Clock, label: 'Agendamentos' },
                 { href: '/settings', icon: Settings, label: 'Configurações' },
                 { href: '/cves', icon: Bug, label: 'CVEs' },
+                { href: '/docs', icon: BookOpen, label: 'Documentação' },
                 { href: '/super-agents', icon: Cpu, label: 'Super Agents' },
                 { href: '/templates', icon: ClipboardList, label: 'Templates' },
                 { href: '/workspaces', icon: Building, label: 'Workspaces' },
