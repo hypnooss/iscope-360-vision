@@ -217,6 +217,9 @@ function evaluateAgentRule(
   if (evaluate?.type === 'check_suspicious_inbox_rules') {
     return evaluateSuspiciousInboxRules(rule, data);
   }
+  if (evaluate?.type === 'check_inbox_rules_in_error') {
+    return evaluateInboxRulesInError(rule, data);
+  }
 
   // === array_empty: pass when the data array is empty (no violations) ===
   if (passWhen === 'array_empty') {
@@ -375,6 +378,45 @@ function evaluateSuspiciousInboxRules(
       ].filter(Boolean).join(', '),
     })),
     rawData: { total: items.length, suspicious: suspiciousRules.length },
+  };
+}
+
+/**
+ * Evaluate EXO-023: Check for inbox rules with InError=True (corrupted rules)
+ */
+function evaluateInboxRulesInError(
+  rule: ComplianceRule,
+  data: unknown
+): { status: 'pass' | 'fail' | 'warn'; description: string; details?: string; affectedEntities?: Array<{ name: string; type: string; details?: string }>; rawData?: Record<string, unknown> } {
+  const items = Array.isArray(data) ? data : [];
+  
+  if (items.length === 0) {
+    return {
+      status: 'pass',
+      description: rule.pass_description || 'Nenhuma regra de inbox encontrada',
+      rawData: { total: 0, inError: 0 },
+    };
+  }
+
+  const errorRules = items.filter((item: Record<string, unknown>) => 
+    item.InError === true || item.inError === true
+  );
+
+  const hasErrors = errorRules.length > 0;
+  return {
+    status: hasErrors ? 'fail' : 'pass',
+    description: hasErrors
+      ? (rule.fail_description || `${errorRules.length} regra(s) de inbox com erros detectada(s)`).replace('{count}', String(errorRules.length))
+      : (rule.pass_description || 'Nenhuma regra de inbox com erros encontrada'),
+    details: hasErrors
+      ? `${errorRules.length} regra(s) com InError=True de ${items.length} total`
+      : `${items.length} regra(s) de inbox verificadas - nenhuma com erros`,
+    affectedEntities: errorRules.slice(0, 20).map((item: Record<string, unknown>) => ({
+      name: String(item.MailboxOwner || item.Name || 'N/A'),
+      type: 'inbox_rule',
+      details: `Regra: ${item.Name || 'N/A'} (InError=True)`,
+    })),
+    rawData: { total: items.length, inError: errorRules.length },
   };
 }
 
