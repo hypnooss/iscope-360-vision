@@ -1,15 +1,25 @@
 
+## Fix: Map `fortigate_compliance` to "Firewall Compliance" label
 
-## Bump Agent version to 1.3.6
+**File**: `src/pages/firewall/TaskExecutionsPage.tsx`, line 104-113
 
-A single-line change to release the new version with the PowerShell executor improvements.
+**Change**: Add `fortigate_compliance` entry to `typeConfig` (same style as `fortigate_analysis`), and optionally keep `fortigate_analysis` as an alias:
 
-**File**: `python-agent/agent/version.py`
+```typescript
+const typeConfig: Record<string, { label: string; color: string }> = {
+  fortigate_compliance: {
+    label: 'Firewall Compliance',
+    color: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
+  },
+  fortigate_analysis: {
+    label: 'Firewall Compliance',
+    color: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
+  },
+  fortigate_analyzer: {
+    label: 'Firewall Analyzer',
+    color: 'bg-rose-500/20 text-rose-500 border-rose-500/30',
+  },
+};
+```
 
-**Change**: Update `__version__` from `"1.3.5"` to `"1.3.6"`
-
-After the version bump, you will need to:
-1. Build the new `.tar.gz` package
-2. Upload `iscope-agent-latest.tar.gz` to the `agent-releases` bucket (overwriting the previous one)
-3. Agents with auto-update enabled will pick up the new version on the next heartbeat cycle
-
+Also update the detail sheet (line ~627) where `selectedTask.task_type` is shown raw — apply the same `typeConfig` lookup there for consistency.
