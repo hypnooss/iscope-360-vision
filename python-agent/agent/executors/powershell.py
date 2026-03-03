@@ -692,10 +692,24 @@ class PowerShellExecutor(BaseExecutor):
     
     def _parse_interactive_result(self, cmd_name: str, json_output: str):
         """Parse the JSON output from an interactive command. Returns (status, data, error)."""
+        text = json_output.strip()
         try:
-            result = json.loads(json_output.strip())
-        except json.JSONDecodeError as e:
-            return ('failed', None, f"Invalid JSON output: {e}")
+            result = json.loads(text)
+        except json.JSONDecodeError:
+            # Fallback: find first line that is valid JSON (handles PS WARNING lines before payload)
+            result = None
+            for line in text.splitlines():
+                line = line.strip()
+                if not line or not (line.startswith('{') or line.startswith('[')):
+                    continue
+                try:
+                    result = json.loads(line)
+                    self.logger.info(f"[{cmd_name}] Recovered JSON after skipping non-JSON lines")
+                    break
+                except json.JSONDecodeError:
+                    continue
+            if result is None:
+                return ('failed', None, f"Invalid JSON output: no parseable JSON found in {len(text)} chars")
         
         if not isinstance(result, dict):
             return ('success', result, None)
