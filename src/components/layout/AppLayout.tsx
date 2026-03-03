@@ -456,7 +456,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   // Helper for admin section
   const AdminButton = () => {
-    const isAdminRoute = location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections' || location.pathname === '/templates' || location.pathname === '/schedules' || location.pathname === '/cves' || location.pathname === '/super-agents';
+    const isAdminRoute = location.pathname === '/workspaces' || location.pathname === '/administrators' || location.pathname === '/settings' || location.pathname === '/collections' || location.pathname === '/templates' || location.pathname === '/schedules' || location.pathname === '/cves' || location.pathname === '/super-agents' || location.pathname === '/docs';
     
     if (!sidebarOpen) {
       return (

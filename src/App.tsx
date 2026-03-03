@@ -181,6 +181,7 @@ const App = () => (
                    <Route path="/cves" element={<CVEsCachePage />} />
                    <Route path="/cves/sources" element={<CVESourcesPage />} />
                    <Route path="/super-agents" element={<SuperAgentsPage />} />
+                   <Route path="/docs" element={<TechnicalDocsPage />} />
 
                   {/* Preview routes (temporary) */}
                   <Route path="/preview/domain-report" element={<DomainReportPreview />} />
