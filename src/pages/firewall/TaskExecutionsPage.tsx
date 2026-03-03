@@ -30,6 +30,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Activity,
@@ -95,6 +105,8 @@ export default function TaskExecutionsPage() {
   const [selectedTask, setSelectedTask] = useState<AgentTask | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
 
   // Calculate time filter
   const getTimeFilterDate = () => {
@@ -241,11 +253,18 @@ export default function TaskExecutionsPage() {
       queryClient.invalidateQueries({ queryKey: ['agent-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['analyzer-progress'] });
       queryClient.invalidateQueries({ queryKey: ['analyzer-latest'] });
+      setCancelOpen(false);
+      setTaskToCancel(null);
     },
     onError: () => {
       toast.error('Erro ao cancelar tarefa');
     },
   });
+
+  const requestCancel = (task: AgentTask) => {
+    setTaskToCancel(task);
+    setCancelOpen(true);
+  };
 
   // Calculate stats
   const stats = {
@@ -516,7 +535,7 @@ export default function TaskExecutionsPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => cancelMutation.mutate(task.id)}
+                                onClick={() => requestCancel(task)}
                                 disabled={cancelMutation.isPending}
                                 title="Cancelar tarefa"
                               >
@@ -664,6 +683,34 @@ export default function TaskExecutionsPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Cancel Confirmation Dialog */}
+        <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Encerrar execução?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Isso marcará a tarefa como <span className="font-medium">cancelada</span>.
+                Se o agent já estiver executando, ele pode ainda terminar o step atual,
+                mas a execução ficará registrada como encerrada.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setTaskToCancel(null)}>
+                Voltar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (!taskToCancel) return;
+                  cancelMutation.mutate(taskToCancel.id);
+                }}
+                disabled={!taskToCancel || cancelMutation.isPending}
+              >
+                {cancelMutation.isPending ? 'Encerrando...' : 'Encerrar'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
