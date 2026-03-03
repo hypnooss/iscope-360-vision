@@ -128,7 +128,7 @@ const typeConfig: Record<string, {label: string;color: string;}> = {
     color: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
   },
   agent: {
-    label: 'Agent',
+    label: 'Domain Compliance',
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
   },
   attack_surface: {
