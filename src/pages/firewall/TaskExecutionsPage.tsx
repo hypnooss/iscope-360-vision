@@ -98,16 +98,14 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
   cancelled: { label: 'Cancelada', color: 'bg-muted text-muted-foreground border-border', icon: <Ban className="w-3 h-3" /> },
 };
 
-const typeConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+const typeConfig: Record<string, { label: string; color: string }> = {
   fortigate_analysis: {
     label: 'Firewall Compliance',
     color: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
-    icon: <Shield className="w-3 h-3" />,
   },
   fortigate_analyzer: {
     label: 'Firewall Analyzer',
     color: 'bg-rose-500/20 text-rose-500 border-rose-500/30',
-    icon: <Gauge className="w-3 h-3" />,
   },
 };
 
@@ -508,7 +506,6 @@ export default function TaskExecutionsPage() {
                             if (tConfig) {
                               return (
                                 <Badge variant="outline" className={cn('gap-1', tConfig.color)}>
-                                  {tConfig.icon}
                                   {tConfig.label}
                                 </Badge>
                               );
