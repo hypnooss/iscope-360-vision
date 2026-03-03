@@ -102,6 +102,10 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 };
 
 const typeConfig: Record<string, { label: string; color: string }> = {
+  fortigate_compliance: {
+    label: 'Firewall Compliance',
+    color: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
+  },
   fortigate_analysis: {
     label: 'Firewall Compliance',
     color: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
@@ -623,8 +627,8 @@ export default function TaskExecutionsPage() {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Tipo</p>
-                    <Badge variant="outline" className="font-mono text-xs">
-                      {selectedTask.task_type}
+                    <Badge variant="outline" className={`font-mono text-xs ${typeConfig[selectedTask.task_type]?.color ?? ''}`}>
+                      {typeConfig[selectedTask.task_type]?.label ?? selectedTask.task_type}
                     </Badge>
                   </div>
                   <div>
