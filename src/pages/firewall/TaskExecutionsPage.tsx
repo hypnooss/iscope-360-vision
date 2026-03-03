@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { usePreview } from '@/contexts/PreviewContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
+import { useFirewallSelector } from '@/hooks/useFirewallSelector';
 import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -54,6 +57,9 @@ import {
   Ban,
   Play,
   Search,
+  Building2,
+  Shield,
+  Gauge,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -96,9 +102,23 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
   cancelled: { label: 'Cancelada', color: 'bg-muted text-muted-foreground border-border', icon: <Ban className="w-3 h-3" /> },
 };
 
-export default function TaskExecutionsPage() {
-  const queryClient = useQueryClient();
+const typeConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+  fortigate_analysis: {
+    label: 'Firewall',
+    color: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
+    icon: <Shield className="w-3 h-3" />,
+  },
+  fortigate_analyzer: {
+    label: 'Firewall Analyzer',
+    color: 'bg-rose-500/20 text-rose-500 border-rose-500/30',
+    icon: <Gauge className="w-3 h-3" />,
+  },
+};
+
   const { isPreviewMode, previewTarget } = usePreview();
+  const { effectiveRole } = useEffectiveAuth();
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [timeFilter, setTimeFilter] = useState<string>('1h');
   const [searchTerm, setSearchTerm] = useState('');
@@ -107,6 +127,20 @@ export default function TaskExecutionsPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
+
+  // Workspace selector (super_admin only)
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['clients-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('clients').select('id, name').order('name');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: isSuperRole && !isPreviewMode,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
 
   // Calculate time filter
   const getTimeFilterDate = () => {
@@ -125,9 +159,25 @@ export default function TaskExecutionsPage() {
     }
   };
 
+  // Fetch firewalls filtered by workspace (for selector + filtering)
+  const { data: selectorFirewalls = [] } = useQuery({
+    queryKey: ['firewalls-selector', selectedWorkspaceId, isSuperRole],
+    queryFn: async () => {
+      let query = supabase.from('firewalls').select('id, name, client_id').order('name');
+      if (isSuperRole && selectedWorkspaceId) {
+        query = query.eq('client_id', selectedWorkspaceId);
+      }
+      const { data } = await query;
+      return (data ?? []) as { id: string; name: string; client_id: string }[];
+    },
+    enabled: isSuperRole ? !!selectedWorkspaceId : true,
+  });
+
+  const { selectedFirewallId, setSelectedFirewallId } = useFirewallSelector(selectorFirewalls);
+
   // Fetch tasks
   const { data: tasks = [], isLoading, refetch } = useQuery({
-    queryKey: ['agent-tasks', statusFilter, timeFilter, isPreviewMode, previewTarget?.workspaces],
+    queryKey: ['agent-tasks', statusFilter, timeFilter, isPreviewMode, previewTarget?.workspaces, selectedWorkspaceId, selectedFirewallId],
     queryFn: async () => {
       const startTime = getTimeFilterDate();
       
@@ -136,44 +186,52 @@ export default function TaskExecutionsPage() {
         ? previewTarget.workspaces.map(w => w.id)
         : null;
 
-      // Importante: não confiar apenas em target_type.
-      // Existem tasks legadas (ex.: domínio externo) com target_type='firewall' por default.
-      // Aqui garantimos que só voltam tasks cujo target_id existe em firewalls acessíveis.
+      // If a specific firewall is selected, use only that
+      if (selectedFirewallId) {
+        let query = supabase
+          .from('agent_tasks')
+          .select(`
+            id, agent_id, task_type, target_id, target_type, status, priority,
+            error_message, execution_time_ms, created_at, started_at, completed_at, expires_at, timeout_at
+          `)
+          .eq('target_type', 'firewall')
+          .eq('target_id', selectedFirewallId)
+          .gte('created_at', startTime.toISOString())
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (statusFilter !== 'all') {
+          query = query.eq('status', statusFilter as AgentTask['status']);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        return data as AgentTask[];
+      }
+
+      // Otherwise, get all firewalls the user can access
       let firewallsQuery = supabase
         .from('firewalls')
         .select('id')
         .limit(1000);
       
-      // Filter by workspaces in preview mode
       if (workspaceIds && workspaceIds.length > 0) {
         firewallsQuery = firewallsQuery.in('client_id', workspaceIds);
+      } else if (isSuperRole && selectedWorkspaceId) {
+        firewallsQuery = firewallsQuery.eq('client_id', selectedWorkspaceId);
       }
 
       const { data: firewallRows, error: firewallsError } = await firewallsQuery;
-
       if (firewallsError) throw firewallsError;
       
       const firewallIds = (firewallRows ?? []).map((f) => f.id);
       if (firewallIds.length === 0) return [] as AgentTask[];
       
-      // Query otimizada: exclui campos pesados (result, step_results, payload)
       let query = supabase
         .from('agent_tasks')
         .select(`
-          id,
-          agent_id,
-          task_type,
-          target_id,
-          target_type,
-          status,
-          priority,
-          error_message,
-          execution_time_ms,
-          created_at,
-          started_at,
-          completed_at,
-          expires_at,
-          timeout_at
+          id, agent_id, task_type, target_id, target_type, status, priority,
+          error_message, execution_time_ms, created_at, started_at, completed_at, expires_at, timeout_at
         `)
         .eq('target_type', 'firewall')
         .in('target_id', firewallIds)
@@ -189,7 +247,6 @@ export default function TaskExecutionsPage() {
       if (error) throw error;
       return data as AgentTask[];
     },
-    // Auto-refresh quando há tarefas ativas
     refetchInterval: (query) => {
       const data = query.state.data as AgentTask[] | undefined;
       const hasActiveTasks = data?.some(
@@ -339,17 +396,39 @@ export default function TaskExecutionsPage() {
           ]}
         />
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">Execuções de Tarefas</h1>
             <p className="text-muted-foreground">
               Monitore e gerencie as tarefas enviadas aos agents
             </p>
           </div>
-          <Button onClick={() => refetch()} variant="outline" size="sm">
-            <RefreshCw className={cn("w-4 h-4 mr-2", hasActiveTasks && "animate-spin")} />
-            {hasActiveTasks ? 'Atualizando...' : 'Atualizar'}
-          </Button>
+          <div className="flex items-center gap-3 flex-wrap">
+            {isSuperRole && !isPreviewMode && (
+              <Select value={selectedWorkspaceId ?? ''} onValueChange={(v) => { setSelectedWorkspaceId(v); setSelectedFirewallId(''); }}>
+                <SelectTrigger className="w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces?.map(ws => <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+            <Select value={selectedFirewallId || 'all'} onValueChange={(v) => setSelectedFirewallId(v === 'all' ? '' : v)}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Todos os firewalls" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os firewalls</SelectItem>
+                {selectorFirewalls.map(fw => <SelectItem key={fw.id} value={fw.id}>{fw.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button onClick={() => refetch()} variant="outline" size="sm">
+              <RefreshCw className={cn("w-4 h-4 mr-2", hasActiveTasks && "animate-spin")} />
+              {hasActiveTasks ? 'Atualizando...' : 'Atualizar'}
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -503,9 +582,22 @@ export default function TaskExecutionsPage() {
                           {getAgentName(task.agent_id)}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="font-mono text-xs">
-                            {task.task_type}
-                          </Badge>
+                          {(() => {
+                            const tConfig = typeConfig[task.task_type];
+                            if (tConfig) {
+                              return (
+                                <Badge variant="outline" className={cn('gap-1', tConfig.color)}>
+                                  {tConfig.icon}
+                                  {tConfig.label}
+                                </Badge>
+                              );
+                            }
+                            return (
+                              <Badge variant="outline" className="font-mono text-xs">
+                                {task.task_type}
+                              </Badge>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell>
                           <Badge className={`${config.color} border`}>
