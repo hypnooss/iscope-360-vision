@@ -66,6 +66,7 @@ import {
   ClipboardList,
   Bug,
   Radar,
+  BookOpen,
   LucideIcon,
 } from 'lucide-react';
 import logoIscope from '@/assets/logo-iscope.png';
