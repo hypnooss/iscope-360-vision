@@ -298,7 +298,7 @@ serve(async (req: Request) => {
           tenant_domain: task.target?.tenant_domain,
           credentials: decryptedCreds,
         },
-        steps: task.blueprint?.steps || [],
+        steps: (task.blueprint?.steps || []).filter((s: Record<string, unknown>) => s.enabled !== false),
         payload: task.payload || undefined,
         priority: task.priority,
         expires_at: task.expires_at,
