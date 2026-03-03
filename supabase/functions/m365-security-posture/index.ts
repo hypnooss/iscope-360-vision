@@ -1101,6 +1101,26 @@ async function evaluateRule(
         break;
       }
 
+      case 'check_inbox_rules_in_error': {
+        // EXO-023: Detect inbox rules with InError=True (corrupted rules)
+        const allRules = Array.isArray(data) ? data : (data as any)?.value || [];
+        const errorRules = allRules.filter((r: any) => r.InError === true || r.inError === true);
+        affectedCount = errorRules.length;
+        affectedEntities = errorRules.slice(0, 20).map((r: any) => ({
+          id: r.RuleIdentity || r.Identity || r.id || '',
+          displayName: `${r.MailboxOwner || r.mailboxOwner || 'Unknown'}: ${r.Name || r.name || 'Rule'}`,
+          details: { 
+            enabled: r.Enabled ?? r.enabled ?? true,
+            inError: true
+          }
+        }));
+        status = affectedCount > 0 ? 'fail' : 'pass';
+        description = status === 'fail'
+          ? (rule.fail_description || '').replace('{count}', String(affectedCount))
+          : rule.pass_description || '';
+        break;
+      }
+
       case 'check_password_expiration': {
         // AUT-008: Check domain password expiration policy
         const domains = (data as any)?.value || [];
