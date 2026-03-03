@@ -580,16 +580,10 @@ class PowerShellExecutor(BaseExecutor):
                     report_callback(step_id, 'failed', None, 'Empty command', 0)
                     continue
                 
-                # Check if session is still alive
-                if proc.poll() is not None:
-                    error = "PowerShell session terminated unexpectedly"
-                    self.logger.error(f"{error} at command {cmd_name}")
-                    remaining = [c for c in cmd_list if c['step_id'] not in {r['step_id'] for r in step_results}]
-                    for rem in remaining:
-                        sr = {'step_id': rem['step_id'], 'status': 'failed', 'error': error, 'duration_ms': 0}
-                        step_results.append(sr)
-                        report_callback(rem['step_id'], 'failed', None, error, 0)
-                    break
+                # Note: we do NOT check proc.poll() here because with -File mode
+                # PowerShell may finish executing all commands before Python reads
+                # all results from the queue. The reader thread buffers everything,
+                # and _read_until_marker handles EOF gracefully.
                 
                 self.logger.info(f"Executing command: {cmd_name} (timeout={cmd_timeout}s)")
                 cmd_start = time.time()
