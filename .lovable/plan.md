@@ -1,45 +1,29 @@
 
 
-## Add Inline Tabs to Schedules Page: "Agendamentos" + "Execuções"
+## Fix `user.group` Parser for Multi-Block Bracket Format
 
-### Overview
+### Problem
 
-Add a `Tabs` component to `SchedulesPage` with two tabs:
-1. **Agendamentos** — existing schedules content (moved into a `TabsContent`)
-2. **Execuções** — new unified executions view showing `agent_tasks` across all target types
+`parseUserFormat` only handles the single-block pattern `identifier:N[field[val]...]` via regex. But `user.group` data often has **multiple concatenated top-level blocks**:
 
-### Changes
+- `id[14]member[SRVW19DC01 SRVW19DC02]match:2[server-name[...]group-name[...]]match:1[...]`  
+- `match:1[<Delete>server-name[SRVW19DC01]group-name[...]]match:2[...]`
 
-**File**: `src/pages/admin/SchedulesPage.tsx`
+The regex `^(\w+):(\d+)\[(.+)\]$` fails on these, so they fall through to the comma-split logic which produces garbage.
 
-1. **Wrap content in Tabs**: After the page title/breadcrumb, add `<Tabs defaultValue="schedules">` with `<TabsList>` containing two triggers: "Agendamentos" and "Execuções"
+### Solution
 
-2. **Move existing content** (stat cards, filters, table, CVE section) into `<TabsContent value="schedules">`
+**File**: `src/pages/firewall/AnalyzerConfigChangesPage.tsx` — rewrite `parseUserFormat`
 
-3. **New `<TabsContent value="executions">`** containing a unified executions panel:
+Replace the single nested-match regex with a **general depth-counting tokenizer** that works on any sequence of `token[value]` blocks at the top level:
 
-   - **Stats cards**: Same visual format as the schedules tab (Total, Pendentes, Executando, Concluídas, Falhas) — matching print 1 style
-   
-   - **Filters row** (same layout as schedules tab):
-     - Search input ("Buscar ativo...")
-     - Type selector: Todos os tipos / Firewall Compliance / Domain Compliance / Surface Analyzer / Firewall Analyzer / M365 Compliance
-     - Workspace selector (from clients table)
-     - Status selector: Todas / Pendente / Executando / Concluída / Falhou / Timeout / Cancelada
-   
-   - **Data query**: Fetch from `agent_tasks` table with:
-     - No `target_type` filter (all types)
-     - Join to `firewalls`, `external_domains`, `m365_tenants` for name resolution
-     - Filter by workspace via the target's `client_id`
-     - Default time window (last 24h) with time filter selector
-     - Order by `created_at` desc, limit 200
-   
-   - **Table columns**: Tipo | Ativo | Workspace | Status | Agente | Duração | Criado em
-     - Reuse `statusConfig` and `typeConfig` patterns from existing execution pages
-     - Type badges match the schedule tab's `renderTypeBadge` style
+1. Use a depth-counting loop over the entire string to split into top-level tokens at depth 0
+2. Each token like `field[value]` or `identifier:N[nested...]` gets parsed:
+   - If it's `word:N[inner...]` → push ID row, then recursively tokenize inner content for sub-fields
+   - If it's `field[value]` with no nested brackets → push as simple field/value row
+   - If it's `field[nested[...]]` → recursively tokenize inner content, prefix with field label
+3. Handle `<Delete>` tags inside values (strip tag, mark appropriately)
+4. Keep the existing comma-split fallback only if no brackets are found at all
 
-4. **Extract shared components** within the file:
-   - `renderTypeBadge` is already defined — reuse for both tabs
-   - `statusConfig` map for execution status badges
-
-The tabs will sit right below the page title, before the stat cards, so each tab has its own independent stat cards and filters.
+This approach handles all three screenshot cases uniformly — single `guest:35[...]`, multi-block `id[14]member[...]match:N[...]`, and `match:N[<Delete>...]`.
 
