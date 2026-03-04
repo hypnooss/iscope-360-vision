@@ -186,6 +186,17 @@ function parseListFormat(raw: string): ParsedChange[] {
   return [{ field: '', raw: tokens.join(' ') }];
 }
 
+/** firewall.addrgrp — strips [NNN]: prefixes and tokenizes member list */
+function parseAddrgrpFormat(raw: string | null): ParsedChange[] {
+  if (!raw?.trim()) return [];
+  // Strip numbered prefixes like [001]: or 001]:
+  const cleaned = raw.replace(/\[?\d+\]\s*:\s*/g, '').trim();
+  if (!cleaned) return [{ field: '', raw: raw }];
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  if (tokens.length <= 1) return [{ field: 'Membros', raw: cleaned }];
+  return [{ field: 'Membros', raw: tokens.join(' ') }];
+}
+
 /** Generic fallback — try key-value split, otherwise show cleaned text */
 function parseFallback(raw: string): ParsedChange[] {
   if (!raw.trim()) return [];
@@ -222,6 +233,11 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string): 
   // firewall.vip → nested brackets
   if (path === 'firewall.vip' || path === 'firewall.vip6') {
     return parseVipFormat(cfgattr);
+  }
+
+  // firewall.addrgrp → member list with [NNN]: prefix pattern
+  if (path === 'firewall.addrgrp' || path === 'firewall.addrgrp6') {
+    return parseAddrgrpFormat(cfgattr);
   }
 
   // firewall.policy, firewall.address, system.*, vpn.* → standard field[old->new]
