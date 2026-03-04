@@ -5,6 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const AGENT_OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
 interface TriggerRequest {
   firewall_id: string;
 }
@@ -14,10 +16,10 @@ interface TriggerResponse {
   task_id?: string;
   message: string;
   error?: string;
+  code?: string;
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -34,7 +36,6 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get request body
     const { firewall_id }: TriggerRequest = await req.json();
 
     if (!firewall_id) {
@@ -63,7 +64,6 @@ Deno.serve(async (req) => {
 
     console.log(`[trigger-firewall-analysis] Firewall found:`, firewall);
 
-    // Validate agent and device_type are configured
     if (!firewall.agent_id) {
       return new Response(
         JSON.stringify({ 
@@ -84,6 +84,30 @@ Deno.serve(async (req) => {
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Check if agent is online
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('id, name, last_seen')
+      .eq('id', firewall.agent_id)
+      .single();
+
+    if (agent) {
+      const lastSeen = agent.last_seen ? new Date(agent.last_seen).getTime() : 0;
+      const isOffline = (Date.now() - lastSeen) > AGENT_OFFLINE_THRESHOLD_MS;
+      if (isOffline) {
+        console.log(`[trigger-firewall-analysis] Agent ${agent.name} offline (last_seen: ${agent.last_seen}), skipping firewall ${firewall.name}`);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: `Agent ${agent.name} está offline (último contato: ${agent.last_seen || 'nunca'})`,
+            code: 'AGENT_OFFLINE',
+            message: 'O agent precisa estar online para executar a análise.'
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     // Auto-cleanup: Mark expired tasks as timeout before checking for duplicates

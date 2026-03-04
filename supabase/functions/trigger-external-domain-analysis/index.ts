@@ -5,6 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const AGENT_OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
 interface TriggerRequest {
   domain_id: string;
 }
@@ -15,6 +17,7 @@ interface TriggerResponse {
   analysis_id?: string;
   message: string;
   error?: string;
+  code?: string;
 }
 
 Deno.serve(async (req) => {
@@ -68,6 +71,30 @@ Deno.serve(async (req) => {
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Check if agent is online
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('id, name, last_seen')
+      .eq('id', domain.agent_id)
+      .single();
+
+    if (agent) {
+      const lastSeen = agent.last_seen ? new Date(agent.last_seen).getTime() : 0;
+      const isOffline = (Date.now() - lastSeen) > AGENT_OFFLINE_THRESHOLD_MS;
+      if (isOffline) {
+        console.log(`[trigger-external-domain-analysis] Agent ${agent.name} offline (last_seen: ${agent.last_seen}), skipping domain ${domain.domain}`);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: `Agent ${agent.name} está offline (último contato: ${agent.last_seen || 'nunca'})`,
+            code: 'AGENT_OFFLINE',
+            message: 'O agent precisa estar online para executar a análise.'
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     // Auto-cleanup: mark expired tasks as timeout
@@ -170,7 +197,6 @@ Deno.serve(async (req) => {
 
       if (analysisError || !analysisRecord) {
         console.error('[trigger-external-domain-analysis] Failed to create API analysis record:', analysisError);
-        // Non-fatal: agent task still exists
       } else {
         analysisId = analysisRecord.id;
         console.log(`[trigger-external-domain-analysis] API analysis record created: ${analysisId}`);
@@ -178,7 +204,6 @@ Deno.serve(async (req) => {
         // Run subdomain-enum in background
         const runApiAnalysis = async () => {
           try {
-            // Update status to running
             await supabase
               .from('external_domain_analysis_history')
               .update({ status: 'running', started_at: new Date().toISOString() })
@@ -216,8 +241,6 @@ Deno.serve(async (req) => {
             const result = await res.json();
             console.log(`[trigger-external-domain-analysis] subdomain-enum completed: ${result.total_found} subdomains, ${result.alive_count} alive`);
 
-            // Calculate a simple score based on subdomain findings
-            // Score reflects the subdomain enumeration coverage (not compliance)
             const subdomainScore = result.success ? Math.min(100, Math.round(
               (result.alive_count / Math.max(result.total_found, 1)) * 100
             )) : 0;
@@ -257,7 +280,6 @@ Deno.serve(async (req) => {
           }
         };
 
-        // Run API analysis in background (non-blocking)
         EdgeRuntime.waitUntil(runApiAnalysis());
       }
     } else {

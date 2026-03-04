@@ -5,6 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const AGENT_OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -52,6 +54,30 @@ Deno.serve(async (req) => {
         JSON.stringify({ success: false, error: 'Firewall sem agent configurado' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Check if agent is online
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('id, name, last_seen')
+      .eq('id', firewall.agent_id)
+      .single();
+
+    if (agent) {
+      const lastSeen = agent.last_seen ? new Date(agent.last_seen).getTime() : 0;
+      const isOffline = (Date.now() - lastSeen) > AGENT_OFFLINE_THRESHOLD_MS;
+      if (isOffline) {
+        console.log(`[trigger-firewall-analyzer] Agent ${agent.name} offline (last_seen: ${agent.last_seen}), skipping firewall ${firewall.name}`);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: `Agent ${agent.name} está offline (último contato: ${agent.last_seen || 'nunca'})`,
+            code: 'AGENT_OFFLINE',
+            message: 'O agent precisa estar online para executar a análise.'
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     // Auto-cleanup expired tasks and stale pending tasks (>30min without being picked up)

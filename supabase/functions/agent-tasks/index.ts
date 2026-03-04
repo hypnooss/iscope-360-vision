@@ -257,7 +257,7 @@ serve(async (req: Request) => {
 
     // Call optimized RPC that fetches tasks with JOINs and marks them as running in a single transaction
     const { data: tasksData, error: rpcError } = await supabase
-      .rpc('rpc_get_agent_tasks', { p_agent_id: agentId, p_limit: 10 });
+      .rpc('rpc_get_agent_tasks', { p_agent_id: agentId, p_limit: 4 });
 
     if (rpcError) {
       console.error('RPC error:', rpcError);

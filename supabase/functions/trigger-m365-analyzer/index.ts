@@ -5,6 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const AGENT_OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -66,6 +68,30 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Check if agent is online
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('id, name, last_seen')
+      .eq('id', agentId)
+      .single();
+
+    if (agent) {
+      const lastSeen = agent.last_seen ? new Date(agent.last_seen).getTime() : 0;
+      const isOffline = (Date.now() - lastSeen) > AGENT_OFFLINE_THRESHOLD_MS;
+      if (isOffline) {
+        console.log(`[trigger-m365-analyzer] Agent ${agent.name} offline (last_seen: ${agent.last_seen}), skipping tenant ${tenant.display_name}`);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: `Agent ${agent.name} está offline (último contato: ${agent.last_seen || 'nunca'})`,
+            code: 'AGENT_OFFLINE',
+            message: 'O agent precisa estar online para executar a análise.'
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     const now = new Date().toISOString();
     const staleThreshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
 
@@ -96,7 +122,6 @@ Deno.serve(async (req) => {
     if (orphanSnapshots && orphanSnapshots.length > 0) {
       for (const orphan of orphanSnapshots) {
         if (!orphan.agent_task_id) {
-          // No task linked — mark as failed
           await supabase.from('m365_analyzer_snapshots').update({ status: 'failed', metrics: { recovered_reason: 'no_agent_task_linked' } }).eq('id', orphan.id);
           console.log(`[trigger-m365-analyzer] Recovered orphan snapshot ${orphan.id} (no task)`);
           continue;
