@@ -279,18 +279,49 @@ function parseAddrgrpFormat(raw: string | null): ParsedChange[] {
   return [{ field: 'Membros', raw: tokens.join(' ') }];
 }
 
-/** user.group — contextual member list with action-based coloring */
-function parseUserGroupFormat(raw: string, action: string): ParsedChange[] {
-  if (!raw.trim()) return [];
-  // Strip numbered prefix "001 : " or "[001]: "
+/** Extract member list from user.group cfgattr */
+function extractUserGroupMembers(raw: string): string[] {
   const cleaned = raw.replace(/^\[?\d+\]\s*:\s*/, '').trim();
-  const members = cleaned.split(/\s+/).filter(Boolean);
-  if (members.length === 0) return [];
-  const normalizedAction = action?.toLowerCase() || '';
+  return cleaned.split(/\s+/).filter(Boolean);
+}
+
+/** Handle truncated names — prepend … to names starting with . or that look like fragments */
+function fixTruncatedName(name: string): string {
+  if (name.startsWith('.')) return `…${name}`;
+  // Single lowercase fragment without dots (likely a truncated tail like "eira", "ves")
+  if (name.length <= 4 && /^[a-z]+$/.test(name) && !name.includes('.')) return `…${name}`;
+  return name;
+}
+
+/** user.group — contextual member list with diff-based coloring */
+function parseUserGroupFormat(raw: string, action: string, previousMembers?: string[]): ParsedChange[] {
+  if (!raw.trim()) return [];
+  const currentMembers = extractUserGroupMembers(raw).map(fixTruncatedName);
+  if (currentMembers.length === 0) return [];
+
+  const normalizedAction = (action || '').toLowerCase();
+
+  // For Edit actions with a previous entry, compute diff
+  if (previousMembers && previousMembers.length > 0 && normalizedAction === 'edit') {
+    const prevFixed = previousMembers.map(fixTruncatedName);
+    const prevSet = new Set(prevFixed);
+    const currSet = new Set(currentMembers);
+    const added = currentMembers.filter(m => !prevSet.has(m));
+    const removed = prevFixed.filter(m => !currSet.has(m));
+    const unchanged = currentMembers.filter(m => prevSet.has(m));
+
+    const results: ParsedChange[] = [];
+    if (added.length > 0) results.push({ field: 'Membros adicionados', raw: added.join(' '), colorHint: 'Add' });
+    if (removed.length > 0) results.push({ field: 'Membros removidos', raw: removed.join(' '), colorHint: 'Delete' });
+    if (unchanged.length > 0) results.push({ field: 'Membros mantidos', raw: unchanged.join(' '), colorHint: 'neutral' });
+    return results.length > 0 ? results : [{ field: 'Membros (lista atual)', raw: currentMembers.join(' ') }];
+  }
+
+  // For Add/Delete actions, use action-based coloring
   const label = normalizedAction === 'add' ? 'Membros adicionados'
     : normalizedAction === 'delete' || normalizedAction === 'del' ? 'Membros removidos'
     : 'Membros (lista atual)';
-  return [{ field: label, raw: members.join(' '), colorHint: action }];
+  return [{ field: label, raw: currentMembers.join(' '), colorHint: action }];
 }
 
 /** router.access-list — recursively flatten nested brackets into key-value pairs */
@@ -375,7 +406,7 @@ function parseFallback(raw: string): ParsedChange[] {
 
 // ─── Dispatcher ─────────────────────────────────────────────────────
 
-function formatByPath(cfgpath: string, cfgattr: string | null, action: string): ParsedChange[] {
+function formatByPath(cfgpath: string, cfgattr: string | null, action: string, rows?: ConfigChangeRow[], currentRow?: ConfigChangeRow): ParsedChange[] {
   if (!cfgattr || !cfgattr.trim()) return [];
 
   const path = (cfgpath || '').toLowerCase();
@@ -386,9 +417,35 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string): 
     if (result.length > 0) return result;
   }
 
-  // user.group → contextual member list with action-based coloring
+  // user.group → contextual member list with diff-based coloring
   if (path === 'user.group') {
-    return parseUserGroupFormat(cfgattr, action);
+    // Detect guest:N[...] or match:N[...] sub-formats — route to nested bracket parser
+    if (/^(guest|match):\d+\[/.test(cfgattr.trim())) {
+      return parseRouterAccessListFormat(cfgattr);
+    }
+
+    // For Edit actions, find previous entry for same group to compute diff
+    let previousMembers: string[] | undefined;
+    if (rows && currentRow && (action || '').toLowerCase() === 'edit') {
+      const currentTime = new Date(currentRow.changed_at).getTime();
+      // Find the most recent older entry with same cfgpath + cfgobj
+      let bestMatch: ConfigChangeRow | null = null;
+      for (const row of rows) {
+        if (row.id === currentRow.id) continue;
+        if (row.cfgpath !== currentRow.cfgpath || row.cfgobj !== currentRow.cfgobj) continue;
+        const rowTime = new Date(row.changed_at).getTime();
+        if (rowTime < currentTime) {
+          if (!bestMatch || rowTime > new Date(bestMatch.changed_at).getTime()) {
+            bestMatch = row;
+          }
+        }
+      }
+      if (bestMatch?.cfgattr) {
+        previousMembers = extractUserGroupMembers(bestMatch.cfgattr);
+      }
+    }
+
+    return parseUserGroupFormat(cfgattr, action, previousMembers);
   }
 
   // user.* paths → try field[old->new] first, then user-specific
@@ -680,7 +737,7 @@ export default function AnalyzerConfigChangesPage() {
                   <TableBody>
                     {rows.map((d) => {
                       const isExpanded = expandedRows.has(d.id);
-                      const parsedChanges = isExpanded ? formatByPath(d.cfgpath, d.cfgattr, d.action) : [];
+                      const parsedChanges = isExpanded ? formatByPath(d.cfgpath, d.cfgattr, d.action, rows, d) : [];
                       return (
                         <Fragment key={d.id}>
                           <TableRow
