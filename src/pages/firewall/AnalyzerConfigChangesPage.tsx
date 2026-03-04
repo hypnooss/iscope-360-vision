@@ -137,69 +137,123 @@ function parseVipFormat(raw: string): ParsedChange[] {
   return results;
 }
 
+/** Split a string into top-level token[value] blocks using depth counting */
+function splitTopLevelBlocks(str: string): { label: string; inner: string }[] {
+  const blocks: { label: string; inner: string }[] = [];
+  let depth = 0;
+  let labelStart = 0;
+  let innerStart = -1;
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === '[') {
+      if (depth === 0) {
+        innerStart = i + 1;
+      }
+      depth++;
+    } else if (str[i] === ']') {
+      depth--;
+      if (depth === 0 && innerStart >= 0) {
+        const label = str.substring(labelStart, innerStart - 1).trim();
+        const inner = str.substring(innerStart, i);
+        blocks.push({ label, inner });
+        labelStart = i + 1;
+        innerStart = -1;
+      }
+    }
+  }
+  // Leftover text after last bracket
+  const leftover = str.substring(labelStart).trim();
+  if (leftover) {
+    blocks.push({ label: '', inner: leftover });
+  }
+  return blocks;
+}
+
 /** user.* paths — key-value pairs or nested bracket format */
 function parseUserFormat(raw: string): ParsedChange[] {
   if (!raw.trim()) return [];
   const results: ParsedChange[] = [];
 
-  // Detect nested bracket format: identifier:N[field[val]field[val]...]
-  const nestedMatch = raw.match(/^(\w+):(\d+)\[(.+)\]$/s);
-  if (nestedMatch) {
-    results.push({ field: 'ID', raw: `${nestedMatch[1]}:${nestedMatch[2]}` });
-    const inner = nestedMatch[3];
-    // Depth-counting tokenizer for inner field[value] pairs
-    let depth = 0;
-    let tokenStart = 0;
-    for (let i = 0; i < inner.length; i++) {
-      if (inner[i] === '[') depth++;
-      if (inner[i] === ']') {
-        depth--;
-        if (depth === 0) {
-          const token = inner.substring(tokenStart, i + 1);
-          const fm = token.match(/^([a-zA-Z0-9_-]+)\[(.+)\]$/s);
-          if (fm) {
-            const val = fm[2] === '*' ? '(protegido)' : fm[2];
-            results.push({ field: fm[1], raw: val });
-          } else if (token.trim()) {
-            results.push({ field: '', raw: token.trim() });
-          }
-          tokenStart = i + 1;
-        }
+  // If no brackets at all, use comma-split fallback
+  if (!raw.includes('[')) {
+    const pairs = raw.split(/,\s+/).filter(Boolean);
+    for (const pair of pairs) {
+      const colonIdx = pair.indexOf(':');
+      if (colonIdx > 0 && colonIdx < pair.length - 1) {
+        results.push({ field: pair.substring(0, colonIdx).trim(), raw: pair.substring(colonIdx + 1).trim() });
+      } else if (pair.trim()) {
+        results.push({ field: '', raw: pair.trim() });
       }
     }
     return results;
   }
 
-  // Check if it starts with an identifier like guest:N or member:N
-  const identifierMatch = raw.match(/^(\w+:\d+)\s+/);
-  if (identifierMatch) {
-    results.push({ field: 'ID', raw: identifierMatch[1] });
-    raw = raw.substring(identifierMatch[0].length);
-  }
+  // Split into top-level blocks
+  const blocks = splitTopLevelBlocks(raw);
+  if (blocks.length === 0) return [{ field: '', raw }];
 
-  // Handle password[*] before splitting
-  raw = raw.replace(/password\[\*\]/g, 'password: (protegido)');
-  // Remove trailing orphan brackets
-  raw = raw.replace(/[\[\]]+$/g, '').trim();
+  for (const block of blocks) {
+    const { label, inner } = block;
 
-  // Split by ", " to get key-value pairs
-  const pairs = raw.split(/,\s+/).filter(Boolean);
-  for (const pair of pairs) {
-    const colonIdx = pair.indexOf(':');
-    if (colonIdx > 0 && colonIdx < pair.length - 1) {
-      const key = pair.substring(0, colonIdx).trim();
-      const val = pair.substring(colonIdx + 1).trim();
-      results.push({ field: key, raw: val });
-    } else if (pair.trim()) {
-      // Try field[value] inside user context
-      const bracketMatch = pair.match(/^([a-zA-Z0-9_-]+)\[(.+)\]$/);
-      if (bracketMatch) {
-        results.push({ field: bracketMatch[1], raw: bracketMatch[2] === '*' ? '(protegido)' : bracketMatch[2] });
-      } else {
-        results.push({ field: '', raw: pair.trim() });
+    // Handle identifier:N pattern (e.g. guest:35, match:2)
+    const idMatch = label.match(/^(\w+):(\d+)$/);
+    if (idMatch) {
+      results.push({ field: idMatch[1], raw: idMatch[2] });
+      // Parse inner content recursively for sub-fields
+      const subBlocks = splitTopLevelBlocks(inner);
+      if (subBlocks.length > 0 && subBlocks.some(b => b.label)) {
+        for (const sub of subBlocks) {
+          if (sub.label) {
+            // Handle <Delete> tag
+            let val = sub.inner;
+            let fieldLabel = sub.label;
+            if (val.startsWith('<Delete>')) {
+              val = val.replace('<Delete>', '').trim();
+              fieldLabel = `⛔ ${sub.label}`;
+            }
+            results.push({ field: fieldLabel, raw: val === '*' ? '(protegido)' : val });
+          } else if (sub.inner.trim()) {
+            results.push({ field: '', raw: sub.inner.trim() });
+          }
+        }
+      } else if (inner.trim()) {
+        // No sub-blocks, just raw inner content (e.g. member list)
+        const cleaned = inner.replace(/<Delete>/g, '⛔ ').trim();
+        results.push({ field: '', raw: cleaned === '*' ? '(protegido)' : cleaned });
       }
+      continue;
+    }
+
+    // Simple field[value] block (e.g. id[14], member[...])
+    if (label) {
+      let val = inner;
+      let fieldLabel = label;
+      if (val.startsWith('<Delete>')) {
+        val = val.replace('<Delete>', '').trim();
+        fieldLabel = `⛔ ${label}`;
+      }
+      // Check if inner has sub-blocks
+      const subBlocks = splitTopLevelBlocks(val);
+      if (subBlocks.length > 0 && subBlocks.some(b => b.label)) {
+        results.push({ field: fieldLabel, raw: '' });
+        for (const sub of subBlocks) {
+          if (sub.label) {
+            results.push({ field: `  ${sub.label}`, raw: sub.inner === '*' ? '(protegido)' : sub.inner });
+          } else if (sub.inner.trim()) {
+            results.push({ field: '', raw: sub.inner.trim() });
+          }
+        }
+      } else {
+        results.push({ field: fieldLabel, raw: val === '*' ? '(protegido)' : val });
+      }
+      continue;
+    }
+
+    // Leftover text without brackets
+    if (inner.trim()) {
+      results.push({ field: '', raw: inner.trim() });
     }
   }
+
   return results;
 }
 
