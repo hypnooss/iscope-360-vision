@@ -40,69 +40,31 @@ interface ParsedChange {
   raw?: string;
 }
 
-/** Extract top-level field[content] tokens handling nested brackets via depth counting */
-function tokenizeAttributes(raw: string): Array<{ field: string; content: string; start: number; end: number }> {
-  const tokens: Array<{ field: string; content: string; start: number; end: number }> = [];
+// ─── Path-Specific Formatters ───────────────────────────────────────
+
+/** firewall.policy, firewall.address, etc. — field[old->new] pattern */
+function parseFieldBracketFormat(raw: string): ParsedChange[] {
+  const results: ParsedChange[] = [];
   let i = 0;
   while (i < raw.length) {
-    // Try to match a field name followed by '['
     const fieldMatch = raw.substring(i).match(/^([a-zA-Z0-9_.:/-]+)\[/);
-    if (fieldMatch) {
-      const field = fieldMatch[1];
-      const bracketStart = i + fieldMatch[0].length;
-      let depth = 1;
-      let j = bracketStart;
-      while (j < raw.length && depth > 0) {
-        if (raw[j] === '[') depth++;
-        else if (raw[j] === ']') depth--;
-        if (depth > 0) j++;
-      }
-      if (depth === 0) {
-        const content = raw.substring(bracketStart, j);
-        tokens.push({ field, content, start: i, end: j + 1 });
-        i = j + 1;
-      } else {
-        // Unbalanced — skip this field name
-        i += fieldMatch[0].length;
-      }
-    } else {
-      i++;
+    if (!fieldMatch) { i++; continue; }
+    const field = fieldMatch[1];
+    const bracketStart = i + fieldMatch[0].length;
+    let depth = 1, j = bracketStart;
+    while (j < raw.length && depth > 0) {
+      if (raw[j] === '[') depth++;
+      else if (raw[j] === ']') depth--;
+      if (depth > 0) j++;
     }
-  }
-  return tokens;
-}
+    if (depth !== 0) { i += fieldMatch[0].length; continue; }
+    const content = raw.substring(bracketStart, j);
+    i = j + 1;
 
-/** Parse FortiGate cfgattr format into human-readable changes */
-function parseConfigAttribute(raw: string | null): ParsedChange[] {
-  if (!raw || !raw.trim()) return [];
-
-  const tokens = tokenizeAttributes(raw);
-
-  // If no tokens found, return cleaned raw text
-  if (tokens.length === 0) {
-    const cleaned = raw.replace(/^\[|\]$/g, '').trim();
-    if (!cleaned) return [];
-    return [{ field: '', raw: cleaned }];
-  }
-
-  const results: ParsedChange[] = [];
-
-  // Capture any text before the first token
-  if (tokens[0].start > 0) {
-    const prefix = raw.substring(0, tokens[0].start).replace(/[\[\]]/g, '').trim();
-    if (prefix) results.push({ field: '', raw: prefix });
-  }
-
-  for (let t = 0; t < tokens.length; t++) {
-    const { field, content } = tokens[t];
-
-    // Handle password fields
     if (field.toLowerCase().includes('password') || content === '*') {
       results.push({ field, raw: '(protegido)' });
       continue;
     }
-
-    // Check for arrow pattern (old->new)
     const arrowIdx = content.indexOf('->');
     if (arrowIdx !== -1 && !content.substring(0, arrowIdx).includes('[')) {
       results.push({
@@ -111,46 +73,188 @@ function parseConfigAttribute(raw: string | null): ParsedChange[] {
         newVal: content.substring(arrowIdx + 2).trim() || '(vazio)',
       });
     } else if (content.startsWith('<Delete>')) {
-      // Deletion — try to extract sub-fields for readability
       const inner = content.replace('<Delete>', '').trim();
-      const subTokens = tokenizeAttributes(inner);
-      if (subTokens.length > 0) {
-        const subParts = subTokens.map(s => `${s.field}: ${s.content}`).join(', ');
+      results.push({ field, oldVal: inner || field, newVal: '(removido)' });
+    } else {
+      results.push({ field, raw: content });
+    }
+  }
+  return results;
+}
+
+/** firewall.vip — nested brackets with <Delete>, sub-fields */
+function parseVipFormat(raw: string): ParsedChange[] {
+  const results: ParsedChange[] = [];
+  let i = 0;
+  while (i < raw.length) {
+    const fieldMatch = raw.substring(i).match(/^([a-zA-Z0-9_.:/-]+)\[/);
+    if (!fieldMatch) { i++; continue; }
+    const field = fieldMatch[1];
+    const bracketStart = i + fieldMatch[0].length;
+    let depth = 1, j = bracketStart;
+    while (j < raw.length && depth > 0) {
+      if (raw[j] === '[') depth++;
+      else if (raw[j] === ']') depth--;
+      if (depth > 0) j++;
+    }
+    if (depth !== 0) { i += fieldMatch[0].length; continue; }
+    const content = raw.substring(bracketStart, j);
+    i = j + 1;
+
+    if (content.startsWith('<Delete>')) {
+      const inner = content.replace('<Delete>', '').trim();
+      // Try to extract sub key-value pairs from inner
+      const subResults = parseFieldBracketFormat(inner);
+      if (subResults.length > 0) {
+        const subParts = subResults.map(s => `${s.field}: ${s.oldVal || s.newVal || s.raw || ''}`).join(', ');
         results.push({ field, oldVal: subParts, newVal: '(removido)' });
       } else {
         results.push({ field, oldVal: inner || field, newVal: '(removido)' });
       }
     } else {
-      // No arrow — could be a set value or nested content
-      // Try to extract sub-fields
-      const subTokens = tokenizeAttributes(content);
-      if (subTokens.length > 0) {
-        const subParts = subTokens.map(s => `${s.field}: ${s.content}`).join(', ');
-        results.push({ field, raw: subParts });
+      const arrowIdx = content.indexOf('->');
+      if (arrowIdx !== -1 && !content.substring(0, arrowIdx).includes('[')) {
+        results.push({
+          field,
+          oldVal: content.substring(0, arrowIdx).trim() || '(vazio)',
+          newVal: content.substring(arrowIdx + 2).trim() || '(vazio)',
+        });
       } else {
-        results.push({ field, raw: content });
+        // Nested content — extract sub-fields
+        const subResults = parseFieldBracketFormat(content);
+        if (subResults.length > 0) {
+          const subParts = subResults.map(s => {
+            if (s.oldVal && s.newVal) return `${s.field}: ${s.oldVal} → ${s.newVal}`;
+            return `${s.field}: ${s.raw || ''}`;
+          }).join(', ');
+          results.push({ field, raw: subParts });
+        } else {
+          results.push({ field, raw: content });
+        }
       }
     }
+  }
+  return results;
+}
 
-    // Capture gap text between tokens
-    if (t < tokens.length - 1) {
-      const gap = raw.substring(tokens[t].end, tokens[t + 1].start).replace(/[\[\]]/g, '').trim();
-      if (gap) results.push({ field: '', raw: gap });
+/** user.* paths — key-value pairs: guest:N key: value, key: value */
+function parseUserFormat(raw: string): ParsedChange[] {
+  if (!raw.trim()) return [];
+  const results: ParsedChange[] = [];
+
+  // Check if it starts with an identifier like guest:N or member:N
+  const identifierMatch = raw.match(/^(\w+:\d+)\s+/);
+  if (identifierMatch) {
+    results.push({ field: 'ID', raw: identifierMatch[1] });
+    raw = raw.substring(identifierMatch[0].length);
+  }
+
+  // Handle password[*] before splitting
+  raw = raw.replace(/password\[\*\]/g, 'password: (protegido)');
+  // Remove trailing orphan brackets
+  raw = raw.replace(/[\[\]]+$/g, '').trim();
+
+  // Split by ", " to get key-value pairs
+  const pairs = raw.split(/,\s+/).filter(Boolean);
+  for (const pair of pairs) {
+    const colonIdx = pair.indexOf(':');
+    if (colonIdx > 0 && colonIdx < pair.length - 1) {
+      const key = pair.substring(0, colonIdx).trim();
+      const val = pair.substring(colonIdx + 1).trim();
+      results.push({ field: key, raw: val });
+    } else if (pair.trim()) {
+      // Try field[value] inside user context
+      const bracketMatch = pair.match(/^([a-zA-Z0-9_-]+)\[(.+)\]$/);
+      if (bracketMatch) {
+        results.push({ field: bracketMatch[1], raw: bracketMatch[2] === '*' ? '(protegido)' : bracketMatch[2] });
+      } else {
+        results.push({ field: '', raw: pair.trim() });
+      }
+    }
+  }
+  return results;
+}
+
+/** Lists of IDs/MACs — tokenize by space, show as chips */
+function parseListFormat(raw: string): ParsedChange[] {
+  // Clean orphan brackets
+  const cleaned = raw.replace(/[\[\]]/g, '').trim();
+  if (!cleaned) return [];
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  if (tokens.length <= 1) return [{ field: '', raw: cleaned }];
+  // Return as a single entry with all tokens joined — the renderer will handle chip display
+  return [{ field: '', raw: tokens.join(' ') }];
+}
+
+/** Generic fallback — try key-value split, otherwise show cleaned text */
+function parseFallback(raw: string): ParsedChange[] {
+  if (!raw.trim()) return [];
+  // Clean orphan brackets at edges
+  let cleaned = raw.replace(/^\[+|\]+$/g, '').trim();
+  if (!cleaned) return [];
+
+  // If contains ": " patterns, try to split as key-value
+  if (cleaned.includes(': ')) {
+    const pairs = cleaned.split(/,\s+/).filter(Boolean);
+    if (pairs.length > 1 && pairs.every(p => p.includes(':'))) {
+      return pairs.map(pair => {
+        const idx = pair.indexOf(':');
+        return { field: pair.substring(0, idx).trim(), raw: pair.substring(idx + 1).trim() };
+      });
     }
   }
 
-  // Capture trailing text
-  const lastEnd = tokens[tokens.length - 1].end;
-  if (lastEnd < raw.length) {
-    const suffix = raw.substring(lastEnd).replace(/[\[\]]/g, '').trim();
-    if (suffix) results.push({ field: '', raw: suffix });
+  return [{ field: '', raw: cleaned }];
+}
+
+// ─── Dispatcher ─────────────────────────────────────────────────────
+
+function formatByPath(cfgpath: string, cfgattr: string | null, action: string): ParsedChange[] {
+  if (!cfgattr || !cfgattr.trim()) return [];
+
+  const path = (cfgpath || '').toLowerCase();
+
+  // user.* paths → key-value format
+  if (path.startsWith('user.')) {
+    return parseUserFormat(cfgattr);
   }
 
-  // Filter out entries that are just punctuation/whitespace
-  return results.filter(r => {
-    const text = (r.field || '') + (r.oldVal || '') + (r.newVal || '') + (r.raw || '');
-    return text.replace(/[\[\]\s]/g, '').length > 0;
-  });
+  // firewall.vip → nested brackets
+  if (path === 'firewall.vip' || path === 'firewall.vip6') {
+    return parseVipFormat(cfgattr);
+  }
+
+  // firewall.policy, firewall.address, system.*, vpn.* → standard field[old->new]
+  if (
+    path.startsWith('firewall.') ||
+    path.startsWith('system.') ||
+    path.startsWith('vpn.') ||
+    path.startsWith('router.') ||
+    path.startsWith('log.') ||
+    path.startsWith('ips.') ||
+    path.startsWith('antivirus.') ||
+    path.startsWith('webfilter.') ||
+    path.startsWith('dlp.') ||
+    path.startsWith('wanopt.')
+  ) {
+    const result = parseFieldBracketFormat(cfgattr);
+    if (result.length > 0) return result;
+  }
+
+  // If it looks like it has field[...] patterns, try bracket parser
+  if (/[a-zA-Z0-9_]+\[/.test(cfgattr)) {
+    const result = parseFieldBracketFormat(cfgattr);
+    if (result.length > 0) return result;
+  }
+
+  // If it looks like a long list of tokens (MACs, IDs, etc.)
+  const spaceTokens = cfgattr.trim().split(/\s+/);
+  if (spaceTokens.length > 3 && !cfgattr.includes(':')) {
+    return parseListFormat(cfgattr);
+  }
+
+  // Fallback
+  return parseFallback(cfgattr);
 }
 
 const severityColors: Record<string, string> = {
@@ -381,7 +485,7 @@ export default function AnalyzerConfigChangesPage() {
                   <TableBody>
                     {rows.map((d) => {
                       const isExpanded = expandedRows.has(d.id);
-                      const parsedChanges = isExpanded ? parseConfigAttribute(d.cfgattr) : [];
+                      const parsedChanges = isExpanded ? formatByPath(d.cfgpath, d.cfgattr, d.action) : [];
                       return (
                         <Fragment key={d.id}>
                           <TableRow
