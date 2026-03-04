@@ -259,8 +259,12 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string): 
     if (result.length > 0) return result;
   }
 
-  // user.* paths → key-value or nested bracket format
+  // user.* paths → try field[old->new] first, then user-specific
   if (path.startsWith('user.')) {
+    if (/\w+\[.*->.*\]/.test(cfgattr)) {
+      const result = parseFieldBracketFormat(cfgattr);
+      if (result.length > 0) return result;
+    }
     return parseUserFormat(cfgattr);
   }
 
@@ -269,8 +273,12 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string): 
     return parseVipFormat(cfgattr);
   }
 
-  // firewall.addrgrp → member list with [NNN]: prefix pattern
+  // firewall.addrgrp → try field[old->new] first, then addrgrp-specific
   if (path === 'firewall.addrgrp' || path === 'firewall.addrgrp6') {
+    if (/\w+\[.*->.*\]/.test(cfgattr)) {
+      const result = parseFieldBracketFormat(cfgattr);
+      if (result.length > 0) return result;
+    }
     return parseAddrgrpFormat(cfgattr);
   }
 
