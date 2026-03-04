@@ -255,6 +255,9 @@ serve(async (req: Request) => {
       );
     }
 
+    // Cleanup stuck/timed-out tasks before fetching new ones
+    await supabase.rpc('cleanup_stuck_tasks');
+
     // Call optimized RPC that fetches tasks with JOINs and marks them as running in a single transaction
     const { data: tasksData, error: rpcError } = await supabase
       .rpc('rpc_get_agent_tasks', { p_agent_id: agentId, p_limit: 4 });

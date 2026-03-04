@@ -84,6 +84,12 @@ Deno.serve(async (req) => {
 
     console.log('[run-scheduled-analyses] Starting scheduled analysis check...');
 
+    // Cleanup stuck/timed-out tasks before dispatching new ones
+    const { error: cleanupError } = await supabase.rpc('cleanup_stuck_tasks');
+    if (cleanupError) {
+      console.error('[run-scheduled-analyses] cleanup_stuck_tasks error:', cleanupError);
+    }
+
     // ========================================================
     // Firewall Compliance Schedules
     // ========================================================
