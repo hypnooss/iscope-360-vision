@@ -1,48 +1,29 @@
 
 
-## Fix `user.local` and `firewall.addrgrp` Formatting
+## Fix `user.group` Parser for Multi-Block Bracket Format
 
-### Problems
+### Problem
 
-1. **`user.local`**: Content is `status[disable->enable]` — standard `field[old->new]` format. But it's routed to `parseUserFormat` which doesn't detect `->` arrows, so it shows raw text without color-coding.
+`parseUserFormat` only handles the single-block pattern `identifier:N[field[val]...]` via regex. But `user.group` data often has **multiple concatenated top-level blocks**:
 
-2. **`firewall.addrgrp`**: Content is `member[agn:43.152.36.182->agn:0.0.0.0]` — standard `field[old->new]` diff format. But `parseAddrgrpFormat` strips brackets and tokenizes, producing broken output like `member[agn:43.152.36.182->agn:0.0.0.0]` as a raw string.
+- `id[14]member[SRVW19DC01 SRVW19DC02]match:2[server-name[...]group-name[...]]match:1[...]`  
+- `match:1[<Delete>server-name[SRVW19DC01]group-name[...]]match:2[...]`
 
-### Root Cause
-
-Both specialized parsers intercept data that actually follows the standard `field[old->new]` pattern. The fix: try `parseFieldBracketFormat` first for both paths, only fall back to the specialized parser if it doesn't match.
+The regex `^(\w+):(\d+)\[(.+)\]$` fails on these, so they fall through to the comma-split logic which produces garbage.
 
 ### Solution
 
-**File**: `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+**File**: `src/pages/firewall/AnalyzerConfigChangesPage.tsx` — rewrite `parseUserFormat`
 
-1. **`user.local` / all `user.*`** (lines 262-265): Before calling `parseUserFormat`, check if cfgattr contains `field[...->...]` pattern. If yes, route to `parseFieldBracketFormat` first. Only fall back to `parseUserFormat` if bracket parse returns empty or doesn't match.
+Replace the single nested-match regex with a **general depth-counting tokenizer** that works on any sequence of `token[value]` blocks at the top level:
 
-2. **`firewall.addrgrp`** (lines 272-275): Same approach — try `parseFieldBracketFormat` first. Only fall back to `parseAddrgrpFormat` if it doesn't produce results or if the content has `[NNN]:` prefix pattern.
+1. Use a depth-counting loop over the entire string to split into top-level tokens at depth 0
+2. Each token like `field[value]` or `identifier:N[nested...]` gets parsed:
+   - If it's `word:N[inner...]` → push ID row, then recursively tokenize inner content for sub-fields
+   - If it's `field[value]` with no nested brackets → push as simple field/value row
+   - If it's `field[nested[...]]` → recursively tokenize inner content, prefix with field label
+3. Handle `<Delete>` tags inside values (strip tag, mark appropriately)
+4. Keep the existing comma-split fallback only if no brackets are found at all
 
-3. **Updated dispatcher logic** (around lines 256-275):
-```
-// user.adgrp → standard field[value]
-if (path === 'user.adgrp') { ... }
-
-// user.* → try field[old->new] first, then user-specific
-if (path.startsWith('user.')) {
-  if (/\w+\[.*->.*\]/.test(cfgattr)) {
-    const result = parseFieldBracketFormat(cfgattr);
-    if (result.length > 0) return result;
-  }
-  return parseUserFormat(cfgattr);
-}
-
-// firewall.addrgrp → try field[old->new] first, then addrgrp-specific
-if (path === 'firewall.addrgrp' || path === 'firewall.addrgrp6') {
-  if (/\w+\[.*->.*\]/.test(cfgattr)) {
-    const result = parseFieldBracketFormat(cfgattr);
-    if (result.length > 0) return result;
-  }
-  return parseAddrgrpFormat(cfgattr);
-}
-```
-
-This ensures that when the content is a standard diff (`field[old->new]`), it gets color-coded properly regardless of path, while still using specialized parsers for non-diff formats.
+This approach handles all three screenshot cases uniformly — single `guest:35[...]`, multi-block `id[14]member[...]match:N[...]`, and `match:N[<Delete>...]`.
 
