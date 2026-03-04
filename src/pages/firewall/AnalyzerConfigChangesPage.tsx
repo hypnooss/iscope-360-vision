@@ -279,7 +279,17 @@ function parseAddrgrpFormat(raw: string | null): ParsedChange[] {
   return [{ field: 'Membros', raw: tokens.join(' ') }];
 }
 
-/** Extract member list from user.group cfgattr */
+/** firewall.policy — numbered member list (destination addresses, services, etc.) */
+function parsePolicyMemberList(raw: string): ParsedChange[] {
+  if (!raw?.trim()) return [];
+  const cleaned = raw.replace(/\[?\d+\]\s*:\s*/g, '').trim();
+  if (!cleaned) return [{ field: '', raw }];
+  const tokens = cleaned.split(/\s+/).filter(Boolean).map(fixTruncatedName);
+  if (tokens.length === 0) return [{ field: '', raw }];
+  return [{ field: 'Objetos da Política', raw: tokens.join(' ') }];
+}
+
+
 function extractUserGroupMembers(raw: string): string[] {
   const cleaned = raw.replace(/^\[?\d+\]\s*:\s*/, '').trim();
   return cleaned.split(/\s+/).filter(Boolean);
@@ -460,6 +470,23 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string, r
   // firewall.vip → nested brackets
   if (path === 'firewall.vip' || path === 'firewall.vip6') {
     return parseVipFormat(cfgattr);
+  }
+
+  // firewall.policy → field diffs or numbered member list
+  if (path === 'firewall.policy') {
+    // Try field[old->new] first (e.g., action[deny->accept])
+    if (/\w+\[.*->.*\]/.test(cfgattr)) {
+      const result = parseFieldBracketFormat(cfgattr);
+      if (result.length > 0) return result;
+    }
+    // Numbered member list fallback (e.g., 005]: .net infosetetelecom.com.br ...)
+    if (/\d+\]\s*:/.test(cfgattr)) {
+      return parsePolicyMemberList(cfgattr);
+    }
+    // Standard bracket parse as last resort
+    const result = parseFieldBracketFormat(cfgattr);
+    if (result.length > 0) return result;
+    return [{ field: '', raw: cfgattr }];
   }
 
   // firewall.addrgrp → try field[old->new] first, then addrgrp-specific
