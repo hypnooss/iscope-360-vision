@@ -279,14 +279,41 @@ function parseAddrgrpFormat(raw: string | null): ParsedChange[] {
   return [{ field: 'Membros', raw: tokens.join(' ') }];
 }
 
-/** firewall.policy — numbered member list (destination addresses, services, etc.) */
-function parsePolicyMemberList(raw: string): ParsedChange[] {
-  if (!raw?.trim()) return [];
+/** Extract policy member tokens from numbered cfgattr */
+function extractPolicyMembers(raw: string): string[] {
   const cleaned = raw.replace(/\[?\d+\]\s*:\s*/g, '').trim();
-  if (!cleaned) return [{ field: '', raw }];
-  const tokens = cleaned.split(/\s+/).filter(Boolean).map(fixTruncatedName);
-  if (tokens.length === 0) return [{ field: '', raw }];
-  return [{ field: 'Objetos da Política', raw: tokens.join(' ') }];
+  return cleaned.split(/\s+/).filter(Boolean).map(fixTruncatedName);
+}
+
+/** firewall.policy — numbered member list with diff-based coloring */
+function parsePolicyMemberList(raw: string, action: string, previousMembers?: string[]): ParsedChange[] {
+  if (!raw?.trim()) return [];
+  const currentMembers = extractPolicyMembers(raw);
+  if (currentMembers.length === 0) return [{ field: '', raw }];
+
+  const normalizedAction = (action || '').toLowerCase();
+
+  // For Edit actions with a previous entry, compute diff
+  if (previousMembers && previousMembers.length > 0 && normalizedAction === 'edit') {
+    const prevFixed = previousMembers.map(fixTruncatedName);
+    const prevSet = new Set(prevFixed);
+    const currSet = new Set(currentMembers);
+    const added = currentMembers.filter(m => !prevSet.has(m));
+    const removed = prevFixed.filter(m => !currSet.has(m));
+    const unchanged = currentMembers.filter(m => prevSet.has(m));
+
+    const results: ParsedChange[] = [];
+    if (added.length > 0) results.push({ field: 'Objetos adicionados', raw: added.join(' '), colorHint: 'Add' });
+    if (removed.length > 0) results.push({ field: 'Objetos removidos', raw: removed.join(' '), colorHint: 'Delete' });
+    if (unchanged.length > 0) results.push({ field: 'Objetos mantidos', raw: unchanged.join(' '), colorHint: 'neutral' });
+    return results.length > 0 ? results : [{ field: 'Objetos da Política', raw: currentMembers.join(' ') }];
+  }
+
+  // For Add/Delete actions, use action-based coloring
+  const label = normalizedAction === 'add' ? 'Objetos adicionados'
+    : normalizedAction === 'delete' || normalizedAction === 'del' ? 'Objetos removidos'
+    : 'Objetos da Política';
+  return [{ field: label, raw: currentMembers.join(' '), colorHint: action }];
 }
 
 
@@ -472,16 +499,34 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string, r
     return parseVipFormat(cfgattr);
   }
 
-  // firewall.policy → field diffs or numbered member list
+  // firewall.policy → field diffs or numbered member list with diff
   if (path === 'firewall.policy') {
     // Try field[old->new] first (e.g., action[deny->accept])
     if (/\w+\[.*->.*\]/.test(cfgattr)) {
       const result = parseFieldBracketFormat(cfgattr);
       if (result.length > 0) return result;
     }
-    // Numbered member list fallback (e.g., 005]: .net infosetetelecom.com.br ...)
+    // Numbered member list with diff-based coloring
     if (/\d+\]\s*:/.test(cfgattr)) {
-      return parsePolicyMemberList(cfgattr);
+      let previousMembers: string[] | undefined;
+      if (rows && currentRow && (action || '').toLowerCase() === 'edit') {
+        const currentTime = new Date(currentRow.changed_at).getTime();
+        let bestMatch: ConfigChangeRow | null = null;
+        for (const row of rows) {
+          if (row.id === currentRow.id) continue;
+          if (row.cfgpath !== currentRow.cfgpath || row.cfgobj !== currentRow.cfgobj) continue;
+          const rowTime = new Date(row.changed_at).getTime();
+          if (rowTime < currentTime) {
+            if (!bestMatch || rowTime > new Date(bestMatch.changed_at).getTime()) {
+              bestMatch = row;
+            }
+          }
+        }
+        if (bestMatch?.cfgattr) {
+          previousMembers = extractPolicyMembers(bestMatch.cfgattr);
+        }
+      }
+      return parsePolicyMemberList(cfgattr, action, previousMembers);
     }
     // Standard bracket parse as last resort
     const result = parseFieldBracketFormat(cfgattr);
