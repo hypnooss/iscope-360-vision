@@ -1,59 +1,63 @@
 
 
-## Improve Config Change Visualization for `user.group` and `router.access-list`
+## Fix `user.group` Visualization: Diff-Based Coloring + Truncation Handling
 
-### Problem 1: `user.group` — No add/remove context for members
+### Problem Analysis
 
-The screenshot shows `cfgattr` like `001 : ny.magalhaes andreia.alvos ...` rendered as chips without any indication of whether members were added or removed. For `Edit` actions on `user.group`, the FortiOS log doesn't provide old→new diffs for the member list, but we can improve clarity by:
+After querying the actual database data, I found:
 
-- Adding a dedicated `user.group` handler in `formatByPath` (before the generic `user.*` catch-all)
-- Parsing the numbered prefix (e.g. `001`) as the group ID
-- Labeling the member list contextually based on action: "Membros adicionados" (Add), "Membros removidos" (Delete), "Membros (lista atual)" (Edit)
-- Rendering members as green chips (Add), red chips (Delete), or neutral chips (Edit) using distinct colors
+1. **"Eating letters"** — Not a code bug. The FortiOS source data is truncated at a fixed width, so some entries start mid-name (e.g., `[001]: eira paulo.silva...` where `eira` is the tail of `vieira` or `moreira`). However, we CAN improve by detecting names that start with `.` or lowercase fragments and flagging them as potentially truncated.
 
-### Problem 2: `router.access-list` — Nested brackets shown raw
+2. **No colors visible** — All entries in the screenshot are `Edit` actions, which by design render neutral gray chips. The `Add`/`Delete` coloring works but there are no Add/Delete entries for this group. To make colors meaningful for Edit actions, we need to **compare consecutive entries** for the same group and compute the member diff.
 
-The raw data `rule:3[prefix[wildcard[192.168.0.0 0.0.0.255]flags[4]]]` is parsed by `parseFieldBracketFormat` but nested brackets produce unreadable output like `prefix[wildcard[192.168.0.0 0.0.0.255]flags[4]]`.
+### Solution: Compare Consecutive `user.group` Edits
 
-Fix: Add a dedicated `router.access-list` handler that:
-- Extracts `rule:N` as the entry identifier
-- Recursively flattens nested brackets into readable key-value pairs: `prefix → 192.168.0.0`, `wildcard → 0.0.0.255`, `flags → 4`
-- Renders each extracted field as a clean row instead of raw bracket soup
+When expanding a `user.group` Edit row, find the **previous entry** for the same `cfgobj` (group name) and compute which members were added (green), removed (red), or unchanged (neutral).
 
-### File changed
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-| File | Change |
-|---|---|
-| `src/pages/firewall/AnalyzerConfigChangesPage.tsx` | Add `parseUserGroupFormat` and `parseRouterAccessListFormat` functions; update `formatByPath` dispatcher; update renderer to support colored chip variants |
+**1. Update `parseUserGroupFormat` to accept an optional previous member list:**
 
-### Details
-
-**New function `parseUserGroupFormat`** (~20 lines):
 ```typescript
-function parseUserGroupFormat(raw: string, action: string): ParsedChange[] {
-  // Strip numbered prefix "001 : " or "[001]: "
+function parseUserGroupFormat(raw: string, action: string, previousMembers?: string[]): ParsedChange[] {
   const cleaned = raw.replace(/^\[?\d+\]\s*:\s*/, '').trim();
-  const members = cleaned.split(/\s+/).filter(Boolean);
-  const label = action === 'Add' ? 'Membros adicionados'
-    : action === 'Delete' || action === 'Del' ? 'Membros removidos'
-    : 'Membros (lista atual)';
-  // colorHint will be used by the renderer
-  return [{ field: label, raw: members.join(' '), colorHint: action }];
+  const currentMembers = cleaned.split(/\s+/).filter(Boolean);
+  
+  if (previousMembers && action.toLowerCase() === 'edit') {
+    const prevSet = new Set(previousMembers);
+    const currSet = new Set(currentMembers);
+    const added = currentMembers.filter(m => !prevSet.has(m));
+    const removed = previousMembers.filter(m => !currSet.has(m));
+    const unchanged = currentMembers.filter(m => prevSet.has(m));
+    
+    const results: ParsedChange[] = [];
+    if (added.length > 0) results.push({ field: 'Membros adicionados', raw: added.join(' '), colorHint: 'Add' });
+    if (removed.length > 0) results.push({ field: 'Membros removidos', raw: removed.join(' '), colorHint: 'Delete' });
+    if (unchanged.length > 0) results.push({ field: 'Membros mantidos', raw: unchanged.join(' '), colorHint: 'neutral' });
+    return results.length > 0 ? results : [{ field: 'Membros (lista atual)', raw: currentMembers.join(' ') }];
+  }
+  // ... existing label logic for Add/Delete actions
 }
 ```
 
-**New function `parseRouterAccessListFormat`** (~30 lines):
-- Recursively flatten nested `field[content]` into leaf key-value pairs
-- e.g. `rule:3[prefix[wildcard[192.168.0.0 0.0.0.255]flags[4]]]` → entries: `rule → 3`, `prefix → 192.168.0.0`, `wildcard → 0.0.0.255`, `flags → 4`
+**2. When expanding a `user.group` row, query the previous entry:**
 
-**Updated `formatByPath` dispatcher** — Add two new cases before the generic `user.*` and `router.*` catches:
-```typescript
-if (path === 'user.group') return parseUserGroupFormat(cfgattr, action);
-if (path === 'router.access-list') return parseRouterAccessListFormat(cfgattr);
-```
+In the expand handler or in `formatByPath`, find the previous entry for the same `cfgobj` from `rows` (already loaded) or with a quick query. Since consecutive entries are typically on the same page, we can scan `rows` for the next older entry with the same `cfgpath` + `cfgobj`.
 
-**Updated renderer** — When `change.colorHint` exists, apply colored chip styling:
-- `Add` → green chips (`bg-emerald-500/20 text-emerald-400`)
-- `Delete`/`Del` → red chips (`bg-rose-500/20 text-rose-400 line-through`)
-- `Edit` → neutral chips (current `bg-muted`)
+**3. Handle `guest:N[...]` and `match:N[...]` sub-formats:**
+
+These should NOT go through member list parsing. Add a check: if cfgattr starts with `guest:` or `match:`, route to `parseFieldBracketFormat` or `parseRouterAccessListFormat` (nested bracket flattener) instead.
+
+**4. Handle truncated names gracefully:**
+
+Names starting with `.` (like `.silva`, `.ribeiro`) are clearly truncated. Prepend a `…` indicator: `…silva` to signal incompleteness.
+
+### Summary
+
+| Change | Detail |
+|---|---|
+| `parseUserGroupFormat` | Accept previous members, compute add/remove/unchanged diff with colored groups |
+| `formatByPath` user.group branch | Detect `guest:`/`match:` sub-formats, route differently |
+| Expand handler | Find previous same-group entry in loaded rows for diff comparison |
+| Truncation indicator | Prepend `…` to names starting with `.` |
 
