@@ -1,29 +1,59 @@
 
 
-## Fix `user.group` Parser for Multi-Block Bracket Format
+## Improve Config Change Visualization for `user.group` and `router.access-list`
 
-### Problem
+### Problem 1: `user.group` — No add/remove context for members
 
-`parseUserFormat` only handles the single-block pattern `identifier:N[field[val]...]` via regex. But `user.group` data often has **multiple concatenated top-level blocks**:
+The screenshot shows `cfgattr` like `001 : ny.magalhaes andreia.alvos ...` rendered as chips without any indication of whether members were added or removed. For `Edit` actions on `user.group`, the FortiOS log doesn't provide old→new diffs for the member list, but we can improve clarity by:
 
-- `id[14]member[SRVW19DC01 SRVW19DC02]match:2[server-name[...]group-name[...]]match:1[...]`  
-- `match:1[<Delete>server-name[SRVW19DC01]group-name[...]]match:2[...]`
+- Adding a dedicated `user.group` handler in `formatByPath` (before the generic `user.*` catch-all)
+- Parsing the numbered prefix (e.g. `001`) as the group ID
+- Labeling the member list contextually based on action: "Membros adicionados" (Add), "Membros removidos" (Delete), "Membros (lista atual)" (Edit)
+- Rendering members as green chips (Add), red chips (Delete), or neutral chips (Edit) using distinct colors
 
-The regex `^(\w+):(\d+)\[(.+)\]$` fails on these, so they fall through to the comma-split logic which produces garbage.
+### Problem 2: `router.access-list` — Nested brackets shown raw
 
-### Solution
+The raw data `rule:3[prefix[wildcard[192.168.0.0 0.0.0.255]flags[4]]]` is parsed by `parseFieldBracketFormat` but nested brackets produce unreadable output like `prefix[wildcard[192.168.0.0 0.0.0.255]flags[4]]`.
 
-**File**: `src/pages/firewall/AnalyzerConfigChangesPage.tsx` — rewrite `parseUserFormat`
+Fix: Add a dedicated `router.access-list` handler that:
+- Extracts `rule:N` as the entry identifier
+- Recursively flattens nested brackets into readable key-value pairs: `prefix → 192.168.0.0`, `wildcard → 0.0.0.255`, `flags → 4`
+- Renders each extracted field as a clean row instead of raw bracket soup
 
-Replace the single nested-match regex with a **general depth-counting tokenizer** that works on any sequence of `token[value]` blocks at the top level:
+### File changed
 
-1. Use a depth-counting loop over the entire string to split into top-level tokens at depth 0
-2. Each token like `field[value]` or `identifier:N[nested...]` gets parsed:
-   - If it's `word:N[inner...]` → push ID row, then recursively tokenize inner content for sub-fields
-   - If it's `field[value]` with no nested brackets → push as simple field/value row
-   - If it's `field[nested[...]]` → recursively tokenize inner content, prefix with field label
-3. Handle `<Delete>` tags inside values (strip tag, mark appropriately)
-4. Keep the existing comma-split fallback only if no brackets are found at all
+| File | Change |
+|---|---|
+| `src/pages/firewall/AnalyzerConfigChangesPage.tsx` | Add `parseUserGroupFormat` and `parseRouterAccessListFormat` functions; update `formatByPath` dispatcher; update renderer to support colored chip variants |
 
-This approach handles all three screenshot cases uniformly — single `guest:35[...]`, multi-block `id[14]member[...]match:N[...]`, and `match:N[<Delete>...]`.
+### Details
+
+**New function `parseUserGroupFormat`** (~20 lines):
+```typescript
+function parseUserGroupFormat(raw: string, action: string): ParsedChange[] {
+  // Strip numbered prefix "001 : " or "[001]: "
+  const cleaned = raw.replace(/^\[?\d+\]\s*:\s*/, '').trim();
+  const members = cleaned.split(/\s+/).filter(Boolean);
+  const label = action === 'Add' ? 'Membros adicionados'
+    : action === 'Delete' || action === 'Del' ? 'Membros removidos'
+    : 'Membros (lista atual)';
+  // colorHint will be used by the renderer
+  return [{ field: label, raw: members.join(' '), colorHint: action }];
+}
+```
+
+**New function `parseRouterAccessListFormat`** (~30 lines):
+- Recursively flatten nested `field[content]` into leaf key-value pairs
+- e.g. `rule:3[prefix[wildcard[192.168.0.0 0.0.0.255]flags[4]]]` → entries: `rule → 3`, `prefix → 192.168.0.0`, `wildcard → 0.0.0.255`, `flags → 4`
+
+**Updated `formatByPath` dispatcher** — Add two new cases before the generic `user.*` and `router.*` catches:
+```typescript
+if (path === 'user.group') return parseUserGroupFormat(cfgattr, action);
+if (path === 'router.access-list') return parseRouterAccessListFormat(cfgattr);
+```
+
+**Updated renderer** — When `change.colorHint` exists, apply colored chip styling:
+- `Add` → green chips (`bg-emerald-500/20 text-emerald-400`)
+- `Delete`/`Del` → red chips (`bg-rose-500/20 text-rose-400 line-through`)
+- `Edit` → neutral chips (current `bg-muted`)
 
