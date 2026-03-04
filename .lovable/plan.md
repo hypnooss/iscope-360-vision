@@ -1,33 +1,46 @@
 
 
-## Correções no Parser de Atributos de Configuração
+## Formatadores Específicos por cfgpath
 
-### Problemas Identificados
+### Problema
 
-1. **Colchetes soltos** (print 1): O regex `([a-zA-Z0-9_.:/-]+)\[([^\]]*)\]` não lida com estruturas aninhadas como `match:1[<Delete>server-name[SRVW19DC01]group-name[CN=...]]`. O colchete de fechamento mais externo fica como texto residual, gerando `]` soltos na UI.
+O parser genérico `parseConfigAttribute` tenta tratar todos os formatos de `cfgattr` com a mesma lógica de `field[content]`, mas o FortiGate gera formatos completamente diferentes dependendo do `cfgpath`:
 
-2. **Conteúdo indistinguível** (prints 2 e 3): Quando o cfgattr não segue o padrão `field[old->new]` (ex: `[001]: WT008064dc32d0...` ou `guest:14 password[*`), o parser joga tudo como `raw` sem formatação útil — fica um bloco cinza ilegível.
+- `firewall.policy` → `nat[disable->enable]status[enable->disable]` (field[old->new])
+- `user.group` → `guest:6 user-id: email, name: Nome, company: X, ...` (key-value livre)
+- `firewall.vip` → `match:1[<Delete>server-name[...]]` (nested com Delete)
+- Listas de MACs/IDs sem pattern
 
-3. **Ação ausente na row expandida**: O tipo de ação (Edit, Add, Delete) não aparece nos detalhes expandidos.
+O parser genérico produz resultados estranhos quando aplicado a formatos que não são `field[bracket]`.
 
 ### Solução
 
+Criar um sistema de **formatadores por cfgpath** com fallback genérico:
+
 **Arquivo**: `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-1. **Melhorar o parser `parseConfigAttribute`**:
-   - Usar um parser que lida com colchetes aninhados (contar profundidade de `[`/`]`) em vez de regex simples
-   - Filtrar resultados que são apenas `]` ou whitespace
-   - Para campos com `<Delete>` aninhado, extrair sub-campos recursivamente
-   - Para strings sem pattern reconhecido, mostrar como bloco formatado sem colchetes residuais
+1. **Criar `formatByPath(cfgpath, cfgattr, action)` dispatcher**:
+   - Recebe o path e despacha para o formatador adequado
+   - Fallback para o parser genérico atual quando não há formatador específico
 
-2. **Limpar colchetes órfãos**:
-   - Antes de exibir `raw`, fazer trim de `]` e `[` nas bordas
-   - Ignorar entries onde `field` e `raw` são apenas pontuação
+2. **Formatadores específicos**:
+   - **`user.*` paths** (user.group, user.local, etc.): Detectar pattern `guest:N key: value, key: value` e formatar como lista de campos key-value em layout limpo
+   - **`firewall.policy` / `firewall.address`**: Manter o parser atual de `field[old->new]` (funciona bem)
+   - **`firewall.vip`**: Parser com suporte a nested brackets e `<Delete>` (já existe, refinar)
+   - **Listas brutas** (MACs, IDs sem pattern): Tokenizar por espaço e mostrar em wrap com chips
 
-3. **Adicionar Ação na row expandida**:
-   - Exibir `d.action` como Badge logo após o Path nos detalhes expandidos (ex: `Ação: Edit`)
+3. **Formatador `user.*`** — parse específico:
+   - Separar por `, ` para obter pares `key: value`
+   - Se começa com `guest:N` ou `member:N`, extrair como identificador
+   - Renderizar como mini-tabela ou lista de definição (`dl/dt/dd`)
 
-4. **Melhor formatação de raw não-parseável**:
-   - Quando o campo é uma lista longa de IDs/MACs (print 2), quebrar em tokens separados por espaço e mostrar em layout wrap
-   - Para `password[*]`, mostrar como "password: (protegido)"
+4. **Manter a Badge de Ação** na row expandida (já implementado)
+
+5. **Fallback melhorado**: Para cfgattr que não casa com nenhum pattern, exibir o texto original formatado com quebras de linha em key-value quando possível (split por `, ` se contém `: `)
+
+### Resultado Esperado
+
+- `user.group` com `guest:6 user-id: email, name: Nome...` → Lista formatada: user-id: email, name: Nome, etc.
+- `firewall.policy` com `nat[disable->enable]` → Mantém visual atual (vermelho→verde)
+- Paths desconhecidos → Texto limpo sem colchetes soltos
 
