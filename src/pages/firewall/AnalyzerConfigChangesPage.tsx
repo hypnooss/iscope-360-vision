@@ -443,7 +443,7 @@ function parseFallback(raw: string): ParsedChange[] {
 
 // ─── Dispatcher ─────────────────────────────────────────────────────
 
-function formatByPath(cfgpath: string, cfgattr: string | null, action: string, rows?: ConfigChangeRow[], currentRow?: ConfigChangeRow): ParsedChange[] {
+function formatByPath(cfgpath: string, cfgattr: string | null, action: string, rows?: ConfigChangeRow[], currentRow?: ConfigChangeRow, previousEntriesMap?: Map<string, ConfigChangeRow>): ParsedChange[] {
   if (!cfgattr || !cfgattr.trim()) return [];
 
   const path = (cfgpath || '').toLowerCase();
@@ -452,6 +452,33 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string, r
   if (path === 'user.adgrp') {
     const result = parseFieldBracketFormat(cfgattr);
     if (result.length > 0) return result;
+  }
+
+  // Helper: find previous entry from local rows or DB-backed map
+  function findPreviousEntry(currentRow: ConfigChangeRow | undefined, rows: ConfigChangeRow[] | undefined): ConfigChangeRow | null {
+    if (!currentRow) return null;
+    const currentTime = new Date(currentRow.changed_at).getTime();
+    // Try local rows first
+    let bestMatch: ConfigChangeRow | null = null;
+    if (rows) {
+      for (const row of rows) {
+        if (row.id === currentRow.id) continue;
+        if (row.cfgpath !== currentRow.cfgpath || row.cfgobj !== currentRow.cfgobj) continue;
+        const rowTime = new Date(row.changed_at).getTime();
+        if (rowTime < currentTime) {
+          if (!bestMatch || rowTime > new Date(bestMatch.changed_at).getTime()) {
+            bestMatch = row;
+          }
+        }
+      }
+    }
+    // Fallback to pre-fetched DB map
+    if (!bestMatch && previousEntriesMap) {
+      const mapKey = `${currentRow.cfgpath}::${currentRow.cfgobj}::${currentRow.id}`;
+      const dbEntry = previousEntriesMap.get(mapKey);
+      if (dbEntry) bestMatch = dbEntry;
+    }
+    return bestMatch;
   }
 
   // user.group → contextual member list with diff-based coloring
@@ -463,20 +490,8 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string, r
 
     // For Edit actions, find previous entry for same group to compute diff
     let previousMembers: string[] | undefined;
-    if (rows && currentRow && (action || '').toLowerCase() === 'edit') {
-      const currentTime = new Date(currentRow.changed_at).getTime();
-      // Find the most recent older entry with same cfgpath + cfgobj
-      let bestMatch: ConfigChangeRow | null = null;
-      for (const row of rows) {
-        if (row.id === currentRow.id) continue;
-        if (row.cfgpath !== currentRow.cfgpath || row.cfgobj !== currentRow.cfgobj) continue;
-        const rowTime = new Date(row.changed_at).getTime();
-        if (rowTime < currentTime) {
-          if (!bestMatch || rowTime > new Date(bestMatch.changed_at).getTime()) {
-            bestMatch = row;
-          }
-        }
-      }
+    if (currentRow && (action || '').toLowerCase() === 'edit') {
+      const bestMatch = findPreviousEntry(currentRow, rows);
       if (bestMatch?.cfgattr) {
         previousMembers = extractUserGroupMembers(bestMatch.cfgattr);
       }
@@ -509,19 +524,8 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string, r
     // Numbered member list with diff-based coloring
     if (/\d+\]\s*:/.test(cfgattr)) {
       let previousMembers: string[] | undefined;
-      if (rows && currentRow && (action || '').toLowerCase() === 'edit') {
-        const currentTime = new Date(currentRow.changed_at).getTime();
-        let bestMatch: ConfigChangeRow | null = null;
-        for (const row of rows) {
-          if (row.id === currentRow.id) continue;
-          if (row.cfgpath !== currentRow.cfgpath || row.cfgobj !== currentRow.cfgobj) continue;
-          const rowTime = new Date(row.changed_at).getTime();
-          if (rowTime < currentTime) {
-            if (!bestMatch || rowTime > new Date(bestMatch.changed_at).getTime()) {
-              bestMatch = row;
-            }
-          }
-        }
+      if (currentRow && (action || '').toLowerCase() === 'edit') {
+        const bestMatch = findPreviousEntry(currentRow, rows);
         if (bestMatch?.cfgattr) {
           previousMembers = extractPolicyMembers(bestMatch.cfgattr);
         }
@@ -685,6 +689,54 @@ export default function AnalyzerConfigChangesPage() {
   const totalCount = queryResult?.total ?? 0;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
+  // Identify expanded Edit rows that need diff lookback (firewall.policy / user.group with member lists)
+  const diffLookupKeys = useMemo(() => {
+    const keys: { id: string; cfgpath: string; cfgobj: string; changed_at: string; firewall_id: string }[] = [];
+    for (const row of rows) {
+      if (!expandedRows.has(row.id)) continue;
+      if ((row.action || '').toLowerCase() !== 'edit') continue;
+      const needsDiff = (row.cfgpath === 'firewall.policy' && /\d+\]\s*:/.test(row.cfgattr || ''))
+        || (row.cfgpath === 'user.group' && !/^(guest|match):\d+\[/.test((row.cfgattr || '').trim()) && /\d+\]\s*:/.test(row.cfgattr || ''));
+      if (!needsDiff) continue;
+      // Check if a previous entry already exists in local rows
+      const hasLocalPrev = rows.some(r =>
+        r.id !== row.id && r.cfgpath === row.cfgpath && r.cfgobj === row.cfgobj
+        && new Date(r.changed_at).getTime() < new Date(row.changed_at).getTime()
+      );
+      if (!hasLocalPrev && selectedFirewall) {
+        keys.push({ id: row.id, cfgpath: row.cfgpath, cfgobj: row.cfgobj, changed_at: row.changed_at, firewall_id: selectedFirewall });
+      }
+    }
+    return keys;
+  }, [rows, expandedRows, selectedFirewall]);
+
+  // Pre-fetch previous entries from DB for rows that need diff but don't have local context
+  const { data: previousEntriesMap } = useQuery({
+    queryKey: ['config-change-prev-entries', diffLookupKeys.map(k => k.id)],
+    queryFn: async () => {
+      const map = new Map<string, ConfigChangeRow>();
+      // Batch: fetch one previous entry per unique (cfgpath, cfgobj, changed_at)
+      await Promise.all(diffLookupKeys.map(async (key) => {
+        const { data } = await supabase
+          .from('analyzer_config_changes' as any)
+          .select('id, user_name, action, cfgpath, cfgobj, cfgattr, msg, category, severity, changed_at')
+          .eq('firewall_id', key.firewall_id)
+          .eq('cfgpath', key.cfgpath)
+          .eq('cfgobj', key.cfgobj)
+          .lt('changed_at', key.changed_at)
+          .order('changed_at', { ascending: false })
+          .limit(1) as any;
+        if (data?.[0]) {
+          const mapKey = `${key.cfgpath}::${key.cfgobj}::${key.id}`;
+          map.set(mapKey, data[0] as ConfigChangeRow);
+        }
+      }));
+      return map;
+    },
+    enabled: diffLookupKeys.length > 0,
+    staleTime: 1000 * 60 * 5,
+  });
+
   const { data: categories = ['all'] } = useQuery({
     queryKey: ['analyzer-config-categories', selectedFirewall],
     queryFn: async () => {
@@ -809,7 +861,7 @@ export default function AnalyzerConfigChangesPage() {
                   <TableBody>
                     {rows.map((d) => {
                       const isExpanded = expandedRows.has(d.id);
-                      const parsedChanges = isExpanded ? formatByPath(d.cfgpath, d.cfgattr, d.action, rows, d) : [];
+                      const parsedChanges = isExpanded ? formatByPath(d.cfgpath, d.cfgattr, d.action, rows, d, previousEntriesMap) : [];
                       return (
                         <Fragment key={d.id}>
                           <TableRow
