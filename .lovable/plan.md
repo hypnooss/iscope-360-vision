@@ -1,29 +1,63 @@
 
 
-## Fix `user.group` Parser for Multi-Block Bracket Format
+## Root Cause: `cleanup_stuck_tasks` Is Never Called
 
-### Problem
+The DB function `cleanup_stuck_tasks()` exists and correctly marks timed-out tasks, but **nothing invokes it**. There's no `pg_cron` job, no edge function call — it's dead code. That's why the 4 Firewall Analyzer tasks in your screenshot have been "Executando" for 42+ minutes despite the 30-minute timeout.
 
-`parseUserFormat` only handles the single-block pattern `identifier:N[field[val]...]` via regex. But `user.group` data often has **multiple concatenated top-level blocks**:
+## Fix
 
-- `id[14]member[SRVW19DC01 SRVW19DC02]match:2[server-name[...]group-name[...]]match:1[...]`  
-- `match:1[<Delete>server-name[SRVW19DC01]group-name[...]]match:2[...]`
+### 1. Call `cleanup_stuck_tasks` at the start of `run-scheduled-analyses`
 
-The regex `^(\w+):(\d+)\[(.+)\]$` fails on these, so they fall through to the comma-split logic which produces garbage.
+Since `run-scheduled-analyses` already runs on a cron (every minute via Supabase cron), add a single RPC call at the top:
 
-### Solution
+```typescript
+// Right after creating supabase client, before fetching schedules:
+await supabase.rpc('cleanup_stuck_tasks');
+```
 
-**File**: `src/pages/firewall/AnalyzerConfigChangesPage.tsx` — rewrite `parseUserFormat`
+This ensures every minute, stuck tasks get cleaned up before new ones are dispatched.
 
-Replace the single nested-match regex with a **general depth-counting tokenizer** that works on any sequence of `token[value]` blocks at the top level:
+### 2. Also call it from `agent-tasks` (belt-and-suspenders)
 
-1. Use a depth-counting loop over the entire string to split into top-level tokens at depth 0
-2. Each token like `field[value]` or `identifier:N[nested...]` gets parsed:
-   - If it's `word:N[inner...]` → push ID row, then recursively tokenize inner content for sub-fields
-   - If it's `field[value]` with no nested brackets → push as simple field/value row
-   - If it's `field[nested[...]]` → recursively tokenize inner content, prefix with field label
-3. Handle `<Delete>` tags inside values (strip tag, mark appropriately)
-4. Keep the existing comma-split fallback only if no brackets are found at all
+When an agent polls for tasks, also run cleanup so the agent doesn't see stale tasks:
 
-This approach handles all three screenshot cases uniformly — single `guest:35[...]`, multi-block `id[14]member[...]match:N[...]`, and `match:N[<Delete>...]`.
+```typescript
+// At the start of the agent-tasks handler, after auth:
+await supabase.rpc('cleanup_stuck_tasks');
+```
+
+### 3. Update `cleanup_stuck_tasks` to use 30-min timeout (align with RPC change)
+
+The current function still references `'15 minutes'` in its error message and fallback logic. Update the migration:
+
+```sql
+CREATE OR REPLACE FUNCTION public.cleanup_stuck_tasks()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  UPDATE agent_tasks
+  SET 
+    status = 'timeout',
+    error_message = 'Task excedeu tempo máximo de execução (30 min)',
+    completed_at = NOW()
+  WHERE status = 'running'
+    AND (
+      timeout_at IS NOT NULL AND timeout_at < NOW()
+      OR
+      timeout_at IS NULL AND started_at < NOW() - INTERVAL '30 minutes'
+    );
+END;
+$$;
+```
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `supabase/functions/run-scheduled-analyses/index.ts` | Add `supabase.rpc('cleanup_stuck_tasks')` at start |
+| `supabase/functions/agent-tasks/index.ts` | Add `supabase.rpc('cleanup_stuck_tasks')` after auth |
+| New migration SQL | Update `cleanup_stuck_tasks` to 30-min message/fallback |
 
