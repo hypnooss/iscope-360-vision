@@ -137,10 +137,38 @@ function parseVipFormat(raw: string): ParsedChange[] {
   return results;
 }
 
-/** user.* paths — key-value pairs: guest:N key: value, key: value */
+/** user.* paths — key-value pairs or nested bracket format */
 function parseUserFormat(raw: string): ParsedChange[] {
   if (!raw.trim()) return [];
   const results: ParsedChange[] = [];
+
+  // Detect nested bracket format: identifier:N[field[val]field[val]...]
+  const nestedMatch = raw.match(/^(\w+):(\d+)\[(.+)\]$/s);
+  if (nestedMatch) {
+    results.push({ field: 'ID', raw: `${nestedMatch[1]}:${nestedMatch[2]}` });
+    const inner = nestedMatch[3];
+    // Depth-counting tokenizer for inner field[value] pairs
+    let depth = 0;
+    let tokenStart = 0;
+    for (let i = 0; i < inner.length; i++) {
+      if (inner[i] === '[') depth++;
+      if (inner[i] === ']') {
+        depth--;
+        if (depth === 0) {
+          const token = inner.substring(tokenStart, i + 1);
+          const fm = token.match(/^([a-zA-Z0-9_-]+)\[(.+)\]$/s);
+          if (fm) {
+            const val = fm[2] === '*' ? '(protegido)' : fm[2];
+            results.push({ field: fm[1], raw: val });
+          } else if (token.trim()) {
+            results.push({ field: '', raw: token.trim() });
+          }
+          tokenStart = i + 1;
+        }
+      }
+    }
+    return results;
+  }
 
   // Check if it starts with an identifier like guest:N or member:N
   const identifierMatch = raw.match(/^(\w+:\d+)\s+/);
@@ -225,7 +253,13 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string): 
 
   const path = (cfgpath || '').toLowerCase();
 
-  // user.* paths → key-value format
+  // user.adgrp → standard field[value] format
+  if (path === 'user.adgrp') {
+    const result = parseFieldBracketFormat(cfgattr);
+    if (result.length > 0) return result;
+  }
+
+  // user.* paths → key-value or nested bracket format
   if (path.startsWith('user.')) {
     return parseUserFormat(cfgattr);
   }
