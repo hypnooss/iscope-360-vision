@@ -1,34 +1,27 @@
 
 
-## Fix `firewall.policy` Edit Visualization
+## Problem
 
-### Problem
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-When `firewall.policy` has an Edit action, the `cfgattr` often contains a numbered member list like `005]: .net infosetetelecom.com.br Site Prefeitura SJB ...` (destination addresses). The current code tries `parseFieldBracketFormat` which fails to parse the `005]` prefix properly, resulting in a messy wall of gray chips with no context.
+## Solution
 
-### Solution
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-Add a specific handler for `firewall.policy` before the generic `firewall.*` catch-all in `formatByPath`:
-
-1. **If cfgattr contains `field[old->new]` diffs** (e.g., `action[deny->accept]`), use the existing `parseFieldBracketFormat` — these are proper field changes.
-
-2. **If cfgattr is a numbered member list** (matches `\d+\]:` pattern), strip the prefix and display as a labeled member list — reuse the `parseAddrgrpFormat` logic with a contextual label like "Objetos da Política".
-
-3. **Apply `fixTruncatedName`** to each token (handles `.net` fragments that are truncated source data).
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
 ### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-**New function `parsePolicyMemberList`** — strips numbered prefix, labels tokens as "Objetos da Política", applies truncation fix.
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-**Updated `formatByPath`** — Add `firewall.policy` case before the generic `firewall.*` block:
-```
-if (path === 'firewall.policy') {
-  // Try field[old->new] first
-  if (/\w+\[.*->.*\]/.test(cfgattr)) { ... parseFieldBracketFormat }
-  // Numbered member list fallback
-  if (/\d+\]\s*:/.test(cfgattr)) { ... parsePolicyMemberList }
-}
-```
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-This gives `firewall.policy` the same clean treatment as `firewall.addrgrp` and `user.group`.
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 
