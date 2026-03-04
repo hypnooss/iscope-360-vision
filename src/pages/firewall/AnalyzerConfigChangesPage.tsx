@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Building2, Search, Filter, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Building2, Search, Filter, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface FirewallOption { id: string; name: string; client_id: string; }
@@ -31,6 +31,69 @@ interface ConfigChangeRow {
   category: string;
   severity: string;
   changed_at: string;
+}
+
+interface ParsedChange {
+  field: string;
+  oldVal?: string;
+  newVal?: string;
+  raw?: string;
+}
+
+/** Parse FortiGate cfgattr format into human-readable changes */
+function parseConfigAttribute(raw: string | null): ParsedChange[] {
+  if (!raw || !raw.trim()) return [];
+
+  const results: ParsedChange[] = [];
+  // Match patterns like: fieldName[value] or fieldName[old->new]
+  // FortiGate concatenates multiple changes: status[disable->enable]nat[enable->disable]
+  const regex = /([a-zA-Z0-9_.:/-]+)\[([^\]]*)\]/g;
+  let match: RegExpExecArray | null;
+  let lastIndex = 0;
+
+  while ((match = regex.exec(raw)) !== null) {
+    // Capture any unmatched text before this match
+    const gap = raw.substring(lastIndex, match.index).trim();
+    if (gap) {
+      results.push({ field: '', raw: gap });
+    }
+    lastIndex = regex.lastIndex;
+
+    const field = match[1];
+    const value = match[2];
+
+    // Check for arrow pattern (old->new)
+    const arrowIdx = value.indexOf('->');
+    if (arrowIdx !== -1) {
+      results.push({
+        field,
+        oldVal: value.substring(0, arrowIdx).trim() || '(vazio)',
+        newVal: value.substring(arrowIdx + 2).trim() || '(vazio)',
+      });
+    } else if (value.startsWith('<Delete>')) {
+      // Deletion pattern
+      results.push({
+        field,
+        oldVal: value.replace('<Delete>', '').trim() || field,
+        newVal: '(removido)',
+      });
+    } else {
+      results.push({ field, raw: value });
+    }
+  }
+
+  // Any remaining text after the last match
+  const remainder = raw.substring(lastIndex).trim();
+  if (remainder) {
+    results.push({ field: '', raw: remainder });
+  }
+
+  // If nothing was parsed via regex, return raw text
+  if (results.length === 0) {
+    results.push({ field: '', raw });
+  }
+
+  return results;
 }
 
 const severityColors: Record<string, string> = {
@@ -52,8 +115,18 @@ export default function AnalyzerConfigChangesPage() {
   const [filterCategory, setFilterCategory] = useState('all');
   const [page, setPage] = useState(0);
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+
+  const toggleRow = useCallback((id: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const { data: allWorkspaces } = useQuery({
     queryKey: ['clients-list'],
@@ -88,7 +161,6 @@ export default function AnalyzerConfigChangesPage() {
     if (!authLoading && user && !hasModuleAccess('scope_firewall')) navigate('/modules');
   }, [user, authLoading, navigate, hasModuleAccess]);
 
-  // Reset page when filters change
   useEffect(() => { setPage(0); }, [selectedFirewall, searchUser, filterCategory, dateRange]);
 
   const dateFilterStart = useMemo(() => {
@@ -100,7 +172,6 @@ export default function AnalyzerConfigChangesPage() {
     return d.toISOString();
   }, [dateRange]);
 
-  // Query persistent table
   const { data: queryResult, isLoading, refetch } = useQuery({
     queryKey: ['analyzer-config-changes', selectedFirewall, searchUser, filterCategory, dateRange, page],
     queryFn: async () => {
@@ -113,15 +184,9 @@ export default function AnalyzerConfigChangesPage() {
         .order('changed_at', { ascending: false })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      if (dateFilterStart) {
-        query = query.gte('changed_at', dateFilterStart);
-      }
-      if (searchUser) {
-        query = query.ilike('user_name', `%${searchUser}%`);
-      }
-      if (filterCategory !== 'all') {
-        query = query.eq('category', filterCategory);
-      }
+      if (dateFilterStart) query = query.gte('changed_at', dateFilterStart);
+      if (searchUser) query = query.ilike('user_name', `%${searchUser}%`);
+      if (filterCategory !== 'all') query = query.eq('category', filterCategory);
 
       const { data, count, error } = await query as any;
       if (error) throw error;
@@ -135,7 +200,6 @@ export default function AnalyzerConfigChangesPage() {
   const totalCount = queryResult?.total ?? 0;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
-  // Get unique categories for filter
   const { data: categories = ['all'] } = useQuery({
     queryKey: ['analyzer-config-categories', selectedFirewall],
     queryFn: async () => {
@@ -248,43 +312,110 @@ export default function AnalyzerConfigChangesPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-8"></TableHead>
                       <TableHead>Data/Hora</TableHead>
                       <TableHead>Usuário</TableHead>
                       <TableHead>Ação</TableHead>
                       <TableHead>Categoria</TableHead>
-                      <TableHead>Path</TableHead>
                       <TableHead>Objeto</TableHead>
-                      <TableHead>Atributo</TableHead>
                       <TableHead>Severidade</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((d) => (
-                      <TableRow key={d.id}>
-                        <TableCell className="text-xs font-mono whitespace-nowrap">
-                          {d.changed_at ? new Date(d.changed_at).toLocaleString('pt-BR') : '—'}
-                        </TableCell>
-                        <TableCell className="font-medium">{d.user_name}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">{d.action || '—'}</Badge>
-                        </TableCell>
-                        <TableCell className="text-sm">{d.category || '—'}</TableCell>
-                        <TableCell className="text-xs font-mono max-w-[200px] truncate" title={d.cfgpath}>
-                          {d.cfgpath || '—'}
-                        </TableCell>
-                        <TableCell className="text-xs max-w-[150px] truncate" title={d.cfgobj}>
-                          {d.cfgobj || '—'}
-                        </TableCell>
-                        <TableCell className="text-xs max-w-[150px] truncate" title={d.cfgattr}>
-                          {d.cfgattr || '—'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={severityColors[d.severity] || ''}>
-                            {d.severity}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {rows.map((d) => {
+                      const isExpanded = expandedRows.has(d.id);
+                      const parsedChanges = isExpanded ? parseConfigAttribute(d.cfgattr) : [];
+                      return (
+                        <Fragment key={d.id}>
+                          <TableRow
+                            className="cursor-pointer"
+                            onClick={() => toggleRow(d.id)}
+                          >
+                            <TableCell className="px-2">
+                              {isExpanded
+                                ? <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                                : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                            </TableCell>
+                            <TableCell className="text-xs font-mono whitespace-nowrap">
+                              {d.changed_at ? new Date(d.changed_at).toLocaleString('pt-BR') : '—'}
+                            </TableCell>
+                            <TableCell className="font-medium">{d.user_name}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">{d.action || '—'}</Badge>
+                            </TableCell>
+                            <TableCell className="text-sm">{d.category || '—'}</TableCell>
+                            <TableCell className="text-sm max-w-[200px] truncate" title={d.cfgobj}>
+                              {d.cfgobj || '—'}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={severityColors[d.severity] || ''}>
+                                {d.severity}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+
+                          {/* Expanded detail row */}
+                          {isExpanded && (
+                            <TableRow className="bg-muted/30 hover:bg-muted/30">
+                              <TableCell colSpan={7} className="py-4 px-6">
+                                <div className="space-y-3">
+                                  {/* Path */}
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <span className="text-muted-foreground font-medium">Path:</span>
+                                    <code className="text-xs bg-muted px-2 py-0.5 rounded font-mono">
+                                      {d.cfgpath || '—'}
+                                    </code>
+                                  </div>
+
+                                  {/* Parsed changes */}
+                                  {parsedChanges.length > 0 && (
+                                    <div>
+                                      <span className="text-sm text-muted-foreground font-medium">Alterações:</span>
+                                      <div className="mt-2 space-y-2">
+                                        {parsedChanges.map((change, idx) => (
+                                          <div key={idx} className="flex items-start gap-2 text-sm rounded-md bg-muted/50 px-3 py-2">
+                                            {change.field && (
+                                              <code className="text-xs font-mono font-semibold text-foreground shrink-0">
+                                                {change.field}
+                                              </code>
+                                            )}
+                                            {change.oldVal && change.newVal ? (
+                                              <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="text-rose-400 line-through text-xs break-all">
+                                                  {change.oldVal}
+                                                </span>
+                                                <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                                                <span className="text-emerald-400 text-xs font-medium break-all">
+                                                  {change.newVal}
+                                                </span>
+                                              </div>
+                                            ) : change.raw ? (
+                                              <span className="text-xs text-muted-foreground break-all">
+                                                {change.raw}
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Original message */}
+                                  {d.msg && (
+                                    <div>
+                                      <span className="text-sm text-muted-foreground font-medium">Mensagem:</span>
+                                      <p className="text-xs font-mono text-muted-foreground mt-1 break-all">
+                                        {d.msg}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
