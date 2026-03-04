@@ -38,6 +38,7 @@ interface ParsedChange {
   oldVal?: string;
   newVal?: string;
   raw?: string;
+  colorHint?: string;
 }
 
 // ─── Path-Specific Formatters ───────────────────────────────────────
@@ -271,12 +272,84 @@ function parseListFormat(raw: string): ParsedChange[] {
 /** firewall.addrgrp — strips [NNN]: prefixes and tokenizes member list */
 function parseAddrgrpFormat(raw: string | null): ParsedChange[] {
   if (!raw?.trim()) return [];
-  // Strip numbered prefixes like [001]: or 001]:
   const cleaned = raw.replace(/\[?\d+\]\s*:\s*/g, '').trim();
   if (!cleaned) return [{ field: '', raw: raw }];
   const tokens = cleaned.split(/\s+/).filter(Boolean);
   if (tokens.length <= 1) return [{ field: 'Membros', raw: cleaned }];
   return [{ field: 'Membros', raw: tokens.join(' ') }];
+}
+
+/** user.group — contextual member list with action-based coloring */
+function parseUserGroupFormat(raw: string, action: string): ParsedChange[] {
+  if (!raw.trim()) return [];
+  // Strip numbered prefix "001 : " or "[001]: "
+  const cleaned = raw.replace(/^\[?\d+\]\s*:\s*/, '').trim();
+  const members = cleaned.split(/\s+/).filter(Boolean);
+  if (members.length === 0) return [];
+  const normalizedAction = action?.toLowerCase() || '';
+  const label = normalizedAction === 'add' ? 'Membros adicionados'
+    : normalizedAction === 'delete' || normalizedAction === 'del' ? 'Membros removidos'
+    : 'Membros (lista atual)';
+  return [{ field: label, raw: members.join(' '), colorHint: action }];
+}
+
+/** router.access-list — recursively flatten nested brackets into key-value pairs */
+function parseRouterAccessListFormat(raw: string): ParsedChange[] {
+  if (!raw.trim()) return [];
+  const results: ParsedChange[] = [];
+
+  // Recursively extract leaf key-value pairs from nested bracket structures
+  function flattenBrackets(str: string, parentKey?: string) {
+    // Try to find field[content] patterns
+    let i = 0;
+    let foundAny = false;
+    while (i < str.length) {
+      const fieldMatch = str.substring(i).match(/^([a-zA-Z0-9_.:/-]+)\[/);
+      if (!fieldMatch) { i++; continue; }
+      const field = fieldMatch[1];
+      const bracketStart = i + fieldMatch[0].length;
+      let depth = 1, j = bracketStart;
+      while (j < str.length && depth > 0) {
+        if (str[j] === '[') depth++;
+        else if (str[j] === ']') depth--;
+        if (depth > 0) j++;
+      }
+      if (depth !== 0) { i += fieldMatch[0].length; continue; }
+      const content = str.substring(bracketStart, j);
+      i = j + 1;
+      foundAny = true;
+
+      // Check if content has sub-brackets
+      if (/[a-zA-Z0-9_]+\[/.test(content)) {
+        // Handle identifier:N pattern — extract N as value, then recurse inner
+        const idMatch = field.match(/^(\w+):(\d+)$/);
+        if (idMatch) {
+          results.push({ field: idMatch[1], raw: idMatch[2] });
+        }
+        flattenBrackets(content, field);
+      } else {
+        // Leaf node — content is the value
+        // Handle space-separated values (e.g. "192.168.0.0 0.0.0.255") 
+        const arrowIdx = content.indexOf('->');
+        if (arrowIdx !== -1) {
+          results.push({
+            field,
+            oldVal: content.substring(0, arrowIdx).trim() || '(vazio)',
+            newVal: content.substring(arrowIdx + 2).trim() || '(vazio)',
+          });
+        } else {
+          results.push({ field, raw: content });
+        }
+      }
+    }
+    // If no brackets found, treat as plain value for parent
+    if (!foundAny && str.trim() && parentKey) {
+      results.push({ field: parentKey, raw: str.trim() });
+    }
+  }
+
+  flattenBrackets(raw);
+  return results.length > 0 ? results : [{ field: '', raw }];
 }
 
 /** Generic fallback — try key-value split, otherwise show cleaned text */
@@ -313,6 +386,11 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string): 
     if (result.length > 0) return result;
   }
 
+  // user.group → contextual member list with action-based coloring
+  if (path === 'user.group') {
+    return parseUserGroupFormat(cfgattr, action);
+  }
+
   // user.* paths → try field[old->new] first, then user-specific
   if (path.startsWith('user.')) {
     if (/\w+\[.*->.*\]/.test(cfgattr)) {
@@ -334,6 +412,11 @@ function formatByPath(cfgpath: string, cfgattr: string | null, action: string): 
       if (result.length > 0) return result;
     }
     return parseAddrgrpFormat(cfgattr);
+  }
+
+  // router.access-list → flatten nested brackets
+  if (path === 'router.access-list') {
+    return parseRouterAccessListFormat(cfgattr);
   }
 
   // firewall.policy, firewall.address, system.*, vpn.* → standard field[old->new]
@@ -670,11 +753,20 @@ export default function AnalyzerConfigChangesPage() {
                                               </div>
                                              ) : change.raw ? (
                                                <span className="text-xs text-muted-foreground break-all whitespace-pre-wrap">
-                                                 {change.raw.length > 80
-                                                   ? change.raw.split(/\s+/).map((token, ti) => (
-                                                       <span key={ti} className="inline-block mr-1 mb-0.5 bg-muted px-1 py-0.5 rounded font-mono">{token}</span>
-                                                     ))
-                                                   : change.raw}
+                                                 {(() => {
+                                                   const tokens = change.raw.split(/\s+/).filter(Boolean);
+                                                   const useChips = tokens.length > 1 || change.colorHint;
+                                                   if (!useChips) return change.raw;
+                                                   const normalizedHint = (change.colorHint || '').toLowerCase();
+                                                   const chipClass = normalizedHint === 'add'
+                                                     ? 'bg-emerald-500/20 text-emerald-400'
+                                                     : normalizedHint === 'delete' || normalizedHint === 'del'
+                                                     ? 'bg-rose-500/20 text-rose-400 line-through'
+                                                     : 'bg-muted text-muted-foreground';
+                                                   return tokens.map((token, ti) => (
+                                                     <span key={ti} className={`inline-block mr-1 mb-0.5 px-1.5 py-0.5 rounded font-mono ${chipClass}`}>{token}</span>
+                                                   ));
+                                                 })()}
                                                </span>
                                             ) : null}
                                           </div>
