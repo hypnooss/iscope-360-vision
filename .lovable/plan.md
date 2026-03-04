@@ -1,46 +1,24 @@
 
 
-## Formatadores Específicos por cfgpath
+## Fix `firewall.addrgrp` Formatter
 
-### Problema
+### Problem
 
-O parser genérico `parseConfigAttribute` tenta tratar todos os formatos de `cfgattr` com a mesma lógica de `field[content]`, mas o FortiGate gera formatos completamente diferentes dependendo do `cfgpath`:
+`firewall.addrgrp` is caught by the generic `firewall.*` branch (line 229) and sent to `parseFieldBracketFormat`, which expects `field[old->new]`. The actual content is a member list like `[001]: WT008064dc32d0 WT008064e27ea5 MAC_Susane_B2B...` — this format has no field names before brackets, so the parser produces broken output with orphan `001]:` fragments.
 
-- `firewall.policy` → `nat[disable->enable]status[enable->disable]` (field[old->new])
-- `user.group` → `guest:6 user-id: email, name: Nome, company: X, ...` (key-value livre)
-- `firewall.vip` → `match:1[<Delete>server-name[...]]` (nested com Delete)
-- Listas de MACs/IDs sem pattern
+### Solution
 
-O parser genérico produz resultados estranhos quando aplicado a formatos que não são `field[bracket]`.
+**File**: `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-### Solução
+1. **Add `firewall.addrgrp` exclusion before the generic `firewall.*` branch** in `formatByPath` (around line 228):
+   - Route `firewall.addrgrp` and `firewall.addrgrp6` to a dedicated handler
+   - The handler strips the `[NNN]:` prefix pattern, then tokenizes the remaining content as a member list
+   - Render members as chips/tokens (reuse the existing `parseListFormat` logic but with cleanup for the `[NNN]:` prefix)
 
-Criar um sistema de **formatadores por cfgpath** com fallback genérico:
+2. **Create `parseAddrgrpFormat(raw)`**:
+   - Strip leading patterns like `[001]: ` or numbered prefixes
+   - Split remaining content by whitespace into member names
+   - Return as a single `ParsedChange` with `field: 'Membros'` and the token list in `raw` — the existing chip renderer will display them nicely
 
-**Arquivo**: `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
-
-1. **Criar `formatByPath(cfgpath, cfgattr, action)` dispatcher**:
-   - Recebe o path e despacha para o formatador adequado
-   - Fallback para o parser genérico atual quando não há formatador específico
-
-2. **Formatadores específicos**:
-   - **`user.*` paths** (user.group, user.local, etc.): Detectar pattern `guest:N key: value, key: value` e formatar como lista de campos key-value em layout limpo
-   - **`firewall.policy` / `firewall.address`**: Manter o parser atual de `field[old->new]` (funciona bem)
-   - **`firewall.vip`**: Parser com suporte a nested brackets e `<Delete>` (já existe, refinar)
-   - **Listas brutas** (MACs, IDs sem pattern): Tokenizar por espaço e mostrar em wrap com chips
-
-3. **Formatador `user.*`** — parse específico:
-   - Separar por `, ` para obter pares `key: value`
-   - Se começa com `guest:N` ou `member:N`, extrair como identificador
-   - Renderizar como mini-tabela ou lista de definição (`dl/dt/dd`)
-
-4. **Manter a Badge de Ação** na row expandida (já implementado)
-
-5. **Fallback melhorado**: Para cfgattr que não casa com nenhum pattern, exibir o texto original formatado com quebras de linha em key-value quando possível (split por `, ` se contém `: `)
-
-### Resultado Esperado
-
-- `user.group` com `guest:6 user-id: email, name: Nome...` → Lista formatada: user-id: email, name: Nome, etc.
-- `firewall.policy` com `nat[disable->enable]` → Mantém visual atual (vermelho→verde)
-- Paths desconhecidos → Texto limpo sem colchetes soltos
+3. **Order matters**: Place the `addrgrp` check **before** the generic `firewall.*` check so it doesn't fall through.
 
