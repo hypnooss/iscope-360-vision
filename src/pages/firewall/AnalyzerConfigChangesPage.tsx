@@ -40,60 +40,117 @@ interface ParsedChange {
   raw?: string;
 }
 
+/** Extract top-level field[content] tokens handling nested brackets via depth counting */
+function tokenizeAttributes(raw: string): Array<{ field: string; content: string; start: number; end: number }> {
+  const tokens: Array<{ field: string; content: string; start: number; end: number }> = [];
+  let i = 0;
+  while (i < raw.length) {
+    // Try to match a field name followed by '['
+    const fieldMatch = raw.substring(i).match(/^([a-zA-Z0-9_.:/-]+)\[/);
+    if (fieldMatch) {
+      const field = fieldMatch[1];
+      const bracketStart = i + fieldMatch[0].length;
+      let depth = 1;
+      let j = bracketStart;
+      while (j < raw.length && depth > 0) {
+        if (raw[j] === '[') depth++;
+        else if (raw[j] === ']') depth--;
+        if (depth > 0) j++;
+      }
+      if (depth === 0) {
+        const content = raw.substring(bracketStart, j);
+        tokens.push({ field, content, start: i, end: j + 1 });
+        i = j + 1;
+      } else {
+        // Unbalanced — skip this field name
+        i += fieldMatch[0].length;
+      }
+    } else {
+      i++;
+    }
+  }
+  return tokens;
+}
+
 /** Parse FortiGate cfgattr format into human-readable changes */
 function parseConfigAttribute(raw: string | null): ParsedChange[] {
   if (!raw || !raw.trim()) return [];
 
+  const tokens = tokenizeAttributes(raw);
+
+  // If no tokens found, return cleaned raw text
+  if (tokens.length === 0) {
+    const cleaned = raw.replace(/^\[|\]$/g, '').trim();
+    if (!cleaned) return [];
+    return [{ field: '', raw: cleaned }];
+  }
+
   const results: ParsedChange[] = [];
-  // Match patterns like: fieldName[value] or fieldName[old->new]
-  // FortiGate concatenates multiple changes: status[disable->enable]nat[enable->disable]
-  const regex = /([a-zA-Z0-9_.:/-]+)\[([^\]]*)\]/g;
-  let match: RegExpExecArray | null;
-  let lastIndex = 0;
 
-  while ((match = regex.exec(raw)) !== null) {
-    // Capture any unmatched text before this match
-    const gap = raw.substring(lastIndex, match.index).trim();
-    if (gap) {
-      results.push({ field: '', raw: gap });
+  // Capture any text before the first token
+  if (tokens[0].start > 0) {
+    const prefix = raw.substring(0, tokens[0].start).replace(/[\[\]]/g, '').trim();
+    if (prefix) results.push({ field: '', raw: prefix });
+  }
+
+  for (let t = 0; t < tokens.length; t++) {
+    const { field, content } = tokens[t];
+
+    // Handle password fields
+    if (field.toLowerCase().includes('password') || content === '*') {
+      results.push({ field, raw: '(protegido)' });
+      continue;
     }
-    lastIndex = regex.lastIndex;
-
-    const field = match[1];
-    const value = match[2];
 
     // Check for arrow pattern (old->new)
-    const arrowIdx = value.indexOf('->');
-    if (arrowIdx !== -1) {
+    const arrowIdx = content.indexOf('->');
+    if (arrowIdx !== -1 && !content.substring(0, arrowIdx).includes('[')) {
       results.push({
         field,
-        oldVal: value.substring(0, arrowIdx).trim() || '(vazio)',
-        newVal: value.substring(arrowIdx + 2).trim() || '(vazio)',
+        oldVal: content.substring(0, arrowIdx).trim() || '(vazio)',
+        newVal: content.substring(arrowIdx + 2).trim() || '(vazio)',
       });
-    } else if (value.startsWith('<Delete>')) {
-      // Deletion pattern
-      results.push({
-        field,
-        oldVal: value.replace('<Delete>', '').trim() || field,
-        newVal: '(removido)',
-      });
+    } else if (content.startsWith('<Delete>')) {
+      // Deletion — try to extract sub-fields for readability
+      const inner = content.replace('<Delete>', '').trim();
+      const subTokens = tokenizeAttributes(inner);
+      if (subTokens.length > 0) {
+        const subParts = subTokens.map(s => `${s.field}: ${s.content}`).join(', ');
+        results.push({ field, oldVal: subParts, newVal: '(removido)' });
+      } else {
+        results.push({ field, oldVal: inner || field, newVal: '(removido)' });
+      }
     } else {
-      results.push({ field, raw: value });
+      // No arrow — could be a set value or nested content
+      // Try to extract sub-fields
+      const subTokens = tokenizeAttributes(content);
+      if (subTokens.length > 0) {
+        const subParts = subTokens.map(s => `${s.field}: ${s.content}`).join(', ');
+        results.push({ field, raw: subParts });
+      } else {
+        results.push({ field, raw: content });
+      }
+    }
+
+    // Capture gap text between tokens
+    if (t < tokens.length - 1) {
+      const gap = raw.substring(tokens[t].end, tokens[t + 1].start).replace(/[\[\]]/g, '').trim();
+      if (gap) results.push({ field: '', raw: gap });
     }
   }
 
-  // Any remaining text after the last match
-  const remainder = raw.substring(lastIndex).trim();
-  if (remainder) {
-    results.push({ field: '', raw: remainder });
+  // Capture trailing text
+  const lastEnd = tokens[tokens.length - 1].end;
+  if (lastEnd < raw.length) {
+    const suffix = raw.substring(lastEnd).replace(/[\[\]]/g, '').trim();
+    if (suffix) results.push({ field: '', raw: suffix });
   }
 
-  // If nothing was parsed via regex, return raw text
-  if (results.length === 0) {
-    results.push({ field: '', raw });
-  }
-
-  return results;
+  // Filter out entries that are just punctuation/whitespace
+  return results.filter(r => {
+    const text = (r.field || '') + (r.oldVal || '') + (r.newVal || '') + (r.raw || '');
+    return text.replace(/[\[\]\s]/g, '').length > 0;
+  });
 }
 
 const severityColors: Record<string, string> = {
@@ -359,13 +416,19 @@ export default function AnalyzerConfigChangesPage() {
                             <TableRow className="bg-muted/30 hover:bg-muted/30">
                               <TableCell colSpan={7} className="py-4 px-6">
                                 <div className="space-y-3">
-                                  {/* Path */}
-                                  <div className="flex items-center gap-2 text-sm">
-                                    <span className="text-muted-foreground font-medium">Path:</span>
-                                    <code className="text-xs bg-muted px-2 py-0.5 rounded font-mono">
-                                      {d.cfgpath || '—'}
-                                    </code>
-                                  </div>
+                                   {/* Path + Action */}
+                                   <div className="flex items-center gap-3 text-sm flex-wrap">
+                                     <div className="flex items-center gap-2">
+                                       <span className="text-muted-foreground font-medium">Path:</span>
+                                       <code className="text-xs bg-muted px-2 py-0.5 rounded font-mono">
+                                         {d.cfgpath || '—'}
+                                       </code>
+                                     </div>
+                                     <div className="flex items-center gap-2">
+                                       <span className="text-muted-foreground font-medium">Ação:</span>
+                                       <Badge variant="outline" className="text-xs">{d.action || '—'}</Badge>
+                                     </div>
+                                   </div>
 
                                   {/* Parsed changes */}
                                   {parsedChanges.length > 0 && (
@@ -389,10 +452,14 @@ export default function AnalyzerConfigChangesPage() {
                                                   {change.newVal}
                                                 </span>
                                               </div>
-                                            ) : change.raw ? (
-                                              <span className="text-xs text-muted-foreground break-all">
-                                                {change.raw}
-                                              </span>
+                                             ) : change.raw ? (
+                                               <span className="text-xs text-muted-foreground break-all whitespace-pre-wrap">
+                                                 {change.raw.length > 80
+                                                   ? change.raw.split(/\s+/).map((token, ti) => (
+                                                       <span key={ti} className="inline-block mr-1 mb-0.5 bg-muted px-1 py-0.5 rounded font-mono">{token}</span>
+                                                     ))
+                                                   : change.raw}
+                                               </span>
                                             ) : null}
                                           </div>
                                         ))}
