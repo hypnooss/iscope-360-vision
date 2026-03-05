@@ -386,7 +386,7 @@ function SchedulesTab() {
         .from('agent_tasks')
         .select('target_id, status, completed_at')
         .in('target_id', targetIds)
-        .in('target_type', ['firewall', 'external_domain', 'm365_compliance'])
+        .in('target_type', ['firewall', 'external_domain', 'm365_compliance', 'm365_tenant'])
         .order('completed_at', { ascending: false });
       if (error) throw error;
       const map = new Map<string, TaskRow>();
