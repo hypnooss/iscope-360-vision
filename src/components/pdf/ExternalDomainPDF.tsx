@@ -17,6 +17,7 @@ import {
   PDFExplanatoryCard,
   PDFActionPlan,
 } from './sections';
+import { PDFSubdomainSection } from './sections/PDFSubdomainSection';
 import type { CategorySummary } from './sections';
 import { CategoryConfig, getCategoryConfig } from '@/hooks/useCategoryConfig';
 import {
