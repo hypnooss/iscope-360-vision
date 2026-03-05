@@ -430,6 +430,16 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
         <PDFFooter />
       </Page>
 
+      {/* PAGE 3b: Subdomains (dedicated page) */}
+      {subdomainSummary && subdomainSummary.subdomains?.some(s => s.is_alive) && (
+        <Page size="A4" style={pageStyles.page} wrap>
+          <View style={pageStyles.content}>
+            <PDFSubdomainSection subdomainSummary={subdomainSummary} />
+          </View>
+          <PDFFooter />
+        </Page>
+      )}
+
       {/* PAGE 4+: Explanatory Cards for Failed Checks */}
       {hasFailedChecks && (
         <Page size="A4" style={pageStyles.page} wrap>
