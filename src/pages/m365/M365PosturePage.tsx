@@ -62,6 +62,7 @@ export default function M365PosturePage() {
   const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const hasLoadedOnce = useRef(false);
+  const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
 
