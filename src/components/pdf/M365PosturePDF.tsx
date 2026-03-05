@@ -19,7 +19,6 @@ import type { CategorySummary } from './sections';
 import { CategoryConfig, getCategoryConfig } from '@/hooks/useCategoryConfig';
 import {
   severityToPriority,
-  getExplanatoryContent,
   Priority,
   ExplanatoryContent,
 } from './data/explanatoryContent';
