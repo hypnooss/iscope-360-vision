@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { toast } from '@/hooks/use-toast';
+import { toast as sonnerToast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,6 +18,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { CommandCentralLayout, MiniStat, DetailRow } from '@/components/CommandCentral';
 import { 
   RefreshCw, 
@@ -27,6 +29,10 @@ import {
   Settings,
   Loader2,
   Building2,
+  ChevronDown,
+  FileDown,
+  FileText,
+  ClipboardList,
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { TenantSelector } from '@/components/m365/posture';
@@ -34,6 +40,9 @@ import { M365CategorySection } from '@/components/m365/posture/M365CategorySecti
 import { useM365SecurityPosture, M365_POSTURE_QUERY_KEY } from '@/hooks/useM365SecurityPosture';
 import { mapM365Insight, mapM365AgentInsight } from '@/lib/complianceMappers';
 import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
+import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
+import { M365PosturePDF } from '@/components/pdf/M365PosturePDF';
+import type { CorrectionGuideData } from '@/components/pdf/ExternalDomainPDF';
 import { 
   M365RiskCategory, 
   CATEGORY_LABELS,
@@ -53,6 +62,7 @@ export default function M365PosturePage() {
   const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const hasLoadedOnce = useRef(false);
+  const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
   const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
 
@@ -74,6 +84,56 @@ export default function M365PosturePage() {
   const { tenants, selectedTenantId, selectedTenant, selectTenant, loading: tenantsLoading } = useM365TenantSelector(
     isSuperRole ? selectedWorkspaceId : undefined
   );
+
+  // ── Client name for PDF ──
+  const { data: clientName } = useQuery({
+    queryKey: ['m365-client-name', selectedTenant?.domain],
+    queryFn: async () => {
+      if (!selectedTenant) return null;
+      // Get client_id from the tenant
+      const { data: tenant } = await supabase
+        .from('m365_tenants')
+        .select('client_id')
+        .eq('id', selectedTenantId!)
+        .single();
+      if (!tenant?.client_id) return null;
+      const { data } = await supabase.from('clients').select('name').eq('id', tenant.client_id).single();
+      return data?.name ?? null;
+    },
+    enabled: !!selectedTenantId,
+    staleTime: 1000 * 60 * 10,
+  });
+
+  // ── Correction guides for PDF ──
+  const { data: correctionGuides } = useQuery({
+    queryKey: ['m365-correction-guides'],
+    queryFn: async () => {
+      // Get the device_type_id for M365
+      const { data: deviceType } = await supabase
+        .from('device_types')
+        .select('id')
+        .eq('code', 'm365_tenant')
+        .single();
+      if (!deviceType) return [];
+      const { data, error } = await supabase
+        .from('rule_correction_guides')
+        .select('*, compliance_rules!inner(code, device_type_id)')
+        .eq('compliance_rules.device_type_id', deviceType.id);
+      if (error) throw error;
+      return (data || []).map(g => ({
+        rule_code: (g as any).compliance_rules.code,
+        friendly_title: g.friendly_title,
+        what_is: g.what_is,
+        why_matters: g.why_matters,
+        impacts: Array.isArray(g.impacts) ? g.impacts as string[] : [],
+        how_to_fix: Array.isArray(g.how_to_fix) ? g.how_to_fix as string[] : [],
+        provider_examples: Array.isArray(g.provider_examples) ? g.provider_examples as string[] : [],
+        difficulty: g.difficulty as 'low' | 'medium' | 'high' | null,
+        time_estimate: g.time_estimate,
+      })) as CorrectionGuideData[];
+    },
+    staleTime: 1000 * 60 * 30,
+  });
 
   // Detect in-progress analysis on mount
   const { data: activeAnalysis } = useQuery({
@@ -204,6 +264,94 @@ export default function M365PosturePage() {
     }
   }, [isBlocked, showBlockedMessage, triggerAnalysis]);
 
+  // Handle PDF export
+  const handleExportPDF = useCallback(async () => {
+    if (allUnifiedItemsRef.current.length === 0 || !selectedTenant) return;
+    try {
+      const items = allUnifiedItemsRef.current;
+      const grouped = items.reduce<Record<string, UnifiedComplianceItem[]>>((acc, item) => {
+        const cat = item.category;
+        if (!acc[cat]) acc[cat] = [];
+        acc[cat].push(item);
+        return acc;
+      }, {});
+
+      const sorted = (Object.keys(grouped) as M365RiskCategory[]).sort((a, b) => {
+        const aOrder = categoryConfigs?.find(c => c.name === a)?.display_order ?? 999;
+        const bOrder = categoryConfigs?.find(c => c.name === b)?.display_order ?? 999;
+        return aOrder - bOrder;
+      });
+
+      const calculatePassRate = (checks: UnifiedComplianceItem[]): number => {
+        if (!checks || checks.length === 0) return 0;
+        const applicable = checks.filter(c => c.status !== 'not_found');
+        if (applicable.length === 0) return -1;
+        const passed = applicable.filter(c => c.status === 'pass').length;
+        return Math.round((passed / applicable.length) * 100);
+      };
+
+      const pdfCategories = sorted.map(cat => ({
+        name: CATEGORY_LABELS[cat] || cat,
+        passRate: calculatePassRate(grouped[cat]),
+        checks: grouped[cat].map(item => ({
+          id: item.code,
+          name: item.name,
+          status: item.status as 'pass' | 'fail' | 'warning' | 'pending' | 'unknown',
+          severity: item.severity as 'critical' | 'high' | 'medium' | 'low' | 'info',
+          description: item.description,
+          recommendation: item.recommendation,
+        })),
+      }));
+
+      const passedItems = items.filter(i => i.status === 'pass').length;
+      const failedItems = items.filter(i => i.status === 'fail').length;
+
+      let logoBase64: string | undefined;
+      try {
+        const logoModule = await import('@/assets/logo-iscope.png');
+        const response = await fetch(logoModule.default);
+        const blob = await response.blob();
+        logoBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } catch {}
+
+      const filename = `iscope360-m365-${sanitizePDFFilename(selectedTenant.displayName)}-${getPDFDateString()}.pdf`;
+
+      await downloadPDF(
+        <M365PosturePDF
+          report={{
+            overallScore: data?.score ?? 0,
+            totalChecks: items.length,
+            passed: passedItems,
+            failed: failedItems,
+            warnings: 0,
+            categories: pdfCategories,
+            generatedAt: data?.analyzedAt ? new Date(data.analyzedAt) : new Date(),
+          }}
+          tenantInfo={{
+            name: selectedTenant.displayName,
+            domain: selectedTenant.domain,
+            clientName: clientName || undefined,
+          }}
+          logoBase64={logoBase64}
+          categoryConfigs={categoryConfigs}
+          correctionGuides={correctionGuides}
+        />,
+        filename
+      );
+      sonnerToast.success('PDF exportado com sucesso!');
+    } catch (err) {
+      console.error('PDF export error:', err);
+      sonnerToast.error('Erro ao exportar PDF');
+    }
+  }, [selectedTenant, data, categoryConfigs, correctionGuides, clientName, downloadPDF]);
+
+  // Ref to hold unified items for PDF export (avoids stale closure)
+  const allUnifiedItemsRef = useRef<UnifiedComplianceItem[]>([]);
   if (authLoading || tenantsLoading) {
     return (
       <AppLayout>
@@ -219,6 +367,7 @@ export default function M365PosturePage() {
     ...(data?.insights?.map(mapM365Insight) || []),
     ...(agentInsights?.map(mapM365AgentInsight) || []),
   ];
+  allUnifiedItemsRef.current = allUnifiedItems;
 
   // Compute actual counts from unified items (not from summary subtraction)
   const passCount = allUnifiedItems.filter(i => i.status === 'pass').length;
@@ -279,12 +428,32 @@ export default function M365PosturePage() {
               loading={isLoading}
               disabled={isBlocked}
             />
-            <Button onClick={handleRefresh} disabled={isLoading || isAnalysisRunning || !selectedTenantId}>
-              {isBlocked && <Lock className="w-4 h-4 mr-2" />}
-              {isLoading || isAnalysisRunning
-                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
-                : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button disabled={!selectedTenantId} className="gap-0 pr-0">
+                  <span className="px-3">Executar Ações</span>
+                  <span className="border-l border-primary-foreground/30 h-full flex items-center px-2">
+                    <ChevronDown className="w-4 h-4" />
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[200px]">
+                <DropdownMenuItem onClick={handleRefresh} disabled={isLoading || isAnalysisRunning}>
+                  {isLoading || isAnalysisRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                  Gerar Análise
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPDF} disabled={allUnifiedItems.length === 0 || isExportingPDF}>
+                  {isExportingPDF ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
+                  Exportar PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => sonnerToast.info('Exportar CVE será implementado em breve.')}>
+                  <FileText className="w-4 h-4 mr-2" />Exportar CVE
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => sonnerToast.info('Gerar GMUD será implementado em breve.')}>
+                  <ClipboardList className="w-4 h-4 mr-2" />Gerar GMUD
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               size="icon"
