@@ -356,6 +356,7 @@ export default function M365AnalyzerDashboardPage() {
 
   const { tenants, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
   const { data: snapshot, isLoading, refetch } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
+  const { data: diff } = useM365AnalyzerDiff(selectedTenantId || undefined, snapshot);
   const { data: progress, refetch: refetchProgress, isFetching: isRefetchingProgress } = useM365AnalyzerProgress(selectedTenantId || undefined);
   const isRunning = progress?.status === 'pending' || progress?.status === 'processing';
   const wasOrphan = (progress as any)?.wasOrphan === true;
