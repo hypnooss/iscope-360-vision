@@ -38,7 +38,7 @@ import { toast as sonnerToast } from 'sonner';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
 import { ExternalMovementTab } from '@/components/m365/analyzer/ExternalMovementTab';
 import { useExternalMovementData } from '@/hooks/useExternalMovementData';
-import { AnalyzerKPIRow } from '@/components/m365/analyzer/AnalyzerKPIRow';
+import { AnalyzerKPIRow, type KPIFilterKey } from '@/components/m365/analyzer/AnalyzerKPIRow';
 import { AnalyzerScoreSparkline } from '@/components/m365/analyzer/AnalyzerScoreSparkline';
 import { SnapshotDiffBanner } from '@/components/m365/analyzer/SnapshotDiffBanner';
 
@@ -353,6 +353,7 @@ export default function M365AnalyzerDashboardPage() {
   const queryClient = useQueryClient();
   const [triggering, setTriggering] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
+  const [kpiFilter, setKpiFilter] = useState<KPIFilterKey | null>(null);
 
   const { tenants, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
   const { data: snapshot, isLoading, refetch } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
@@ -518,14 +519,33 @@ export default function M365AnalyzerDashboardPage() {
 
   const score = snapshot?.score || computeRiskScore(operationalInsights);
   const risk = riskLevel(score);
-  const anomalyInsights = (snapshot?.insights ?? [])
-    .filter(i => ANOMALY_CATEGORIES.includes(i.category as M365AnalyzerCategory))
-    .filter(i => !isConfigurationalInsight(i));
+
+  // KPI filter mapping
+  const KPI_FILTER_MAP: Record<KPIFilterKey, (i: M365AnalyzerInsight) => boolean> = {
+    highRiskSignIns: (i) => i.category === 'security_risk' && /risco|risk|sign.?in/i.test(i.name),
+    mfaFailures: (i) => i.category === 'security_risk' && /mfa/i.test(i.name),
+    impossibleTravel: (i) => i.category === 'security_risk' && /imposs|travel|geo|localiz/i.test(i.name),
+    correlatedAlerts: (i) => i.category === 'account_compromise',
+    suspiciousLogins: (i) => i.category === 'account_compromise' && /login|suspeito|suspicious/i.test(i.name),
+    anomalousUsers: (i) => i.category === 'behavioral_baseline',
+  };
+
+  function applyKpiFilter(insights: M365AnalyzerInsight[]): M365AnalyzerInsight[] {
+    if (!kpiFilter) return insights;
+    const fn = KPI_FILTER_MAP[kpiFilter];
+    return fn ? insights.filter(fn) : insights;
+  }
+
+  const anomalyInsights = applyKpiFilter(
+    (snapshot?.insights ?? [])
+      .filter(i => ANOMALY_CATEGORIES.includes(i.category as M365AnalyzerCategory))
+      .filter(i => !isConfigurationalInsight(i))
+  );
 
   // Group by severity for columns
-  const criticalIncidents = operationalInsights.filter(i => i.severity === 'critical');
-  const highIncidents = operationalInsights.filter(i => i.severity === 'high');
-  const mediumIncidents = operationalInsights.filter(i => i.severity === 'medium');
+  const criticalIncidents = applyKpiFilter(operationalInsights.filter(i => i.severity === 'critical'));
+  const highIncidents = applyKpiFilter(operationalInsights.filter(i => i.severity === 'high'));
+  const mediumIncidents = applyKpiFilter(operationalInsights.filter(i => i.severity === 'medium'));
   const totalIncidents = criticalIncidents.length + highIncidents.length + mediumIncidents.length;
 
   // Status dot
@@ -697,7 +717,7 @@ export default function M365AnalyzerDashboardPage() {
 
         {/* KPI Cards */}
         {snapshot && m && (
-          <AnalyzerKPIRow metrics={m} />
+          <AnalyzerKPIRow metrics={m} activeFilter={kpiFilter} onFilter={setKpiFilter} />
         )}
 
         {/* Diff Banner */}
@@ -719,6 +739,18 @@ export default function M365AnalyzerDashboardPage() {
 
         {/* ═══ 3-5. TABS: Incidentes / Anomalias / Movimento Externo ═══ */}
         {snapshot && (
+          <>
+            {kpiFilter && (
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="gap-1.5 text-xs">
+                  <Search className="w-3 h-3" />
+                  Filtro ativo
+                </Badge>
+                <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setKpiFilter(null)}>
+                  Limpar
+                </Button>
+              </div>
+            )}
           <Tabs defaultValue="incidents" className="w-full">
             <TabsList className="mb-4">
               <TabsTrigger value="incidents" className="gap-1.5">
@@ -781,6 +813,7 @@ export default function M365AnalyzerDashboardPage() {
               <ExternalMovementTab tenantRecordId={selectedTenantId || undefined} compact={compactMode} />
             </TabsContent>
           </Tabs>
+          </>
         )}
 
         {/* Empty state */}
