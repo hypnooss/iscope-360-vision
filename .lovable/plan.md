@@ -1,51 +1,27 @@
 
 
-## Alinhar FirewallPDF ao padrão do ExternalDomainPDF
+## Problem
 
-### Resumo das diferenças atuais
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-| Aspecto | Domain PDF (padrão) | Firewall PDF (atual) |
-|---------|---------------------|----------------------|
-| Pág 1 | Header + HowToRead + PostureOverview | Header + ScoreGauge + Stats + DeviceInfo + StatusCards + CategoryTable + Issues |
-| Pág 2 | DomainInfo + CategorySummaryTable | — |
-| Detalhes | "Guia de Correções" com ExplanatoryCards agrupados por categoria | "Detalhamento por Categoria" com PDFCategorySection (headers coloridos) |
-| Aprovadas | Página dedicada com lista verde | Misturadas dentro das categorias |
-| Plano de Ação | Página final com PDFActionPlan | Inexistente |
-| Correction Guides | Usa `correctionGuides` do banco | Não suportado |
+## Solution
 
-### Alterações planejadas
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-**1. `src/components/pdf/FirewallPDF.tsx` — Reescrever estrutura de páginas**
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-- **Página 1**: Header + PDFHowToRead + PDFPostureOverview (substituir ScoreGauge e stats por classificação por prioridade: critical/recommended/ok)
-- **Página 2**: DeviceInfo + StatusCards (firmware/licensing/MFA) + PDFCategorySummaryTable (conteúdo firewall-específico mantido)
-- **Página 3+ (wrap)**: "Guia de Correções" — substituir PDFCategorySection por PDFExplanatoryCard agrupados por categoria (mesmo layout do Domain), com `wrap={false}` no par título+primeiro card
-- **Página dedicada**: "Verificações Aprovadas" — lista verde com página própria
-- **Página final**: PDFActionPlan com ações imediatas (critical) e de curto prazo (recommended), ações contínuas genéricas de firewall
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-- Adicionar prop `correctionGuides?: CorrectionGuideData[]` ao componente
-- Importar e usar `severityToPriority`, `getExplanatoryContent`, `PDFHowToRead`, `PDFPostureOverview`, `PDFExplanatoryCard`, `PDFActionPlan`
-- Remover imports de `PDFScoreGauge`, `PDFIssuesSummary`, `PDFCategorySection`
-- Reutilizar a mesma lógica de `categorizedChecks` (critical/recommended/passed) e `failedByCategory` do Domain PDF
-- Adicionar helper `getGuideContent` (mesmo do Domain PDF)
-- Adicionar styles para `passedTitle`, `passedList`, `passedItem`, `passedDot`, `passedText`, `categoryHeader`
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-**2. Callers do FirewallPDF — Adicionar `correctionGuides`**
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-Os arquivos que instanciam `<FirewallPDF>` precisam buscar e passar `correctionGuides`:
-- `src/pages/firewall/FirewallCompliancePage.tsx`
-- `src/pages/firewall/FirewallReportsPage.tsx`
-- `src/pages/ReportsPage.tsx`
-- `src/components/Dashboard.tsx`
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
 
-Cada um precisa de uma query ao `rule_correction_guides` filtrando pelo `device_type_id` do firewall (mesmo padrão usado no ExternalDomainCompliancePage).
-
-### Resultado final
-
-O PDF de Firewall terá exatamente o mesmo fluxo visual do Domain PDF:
-1. Capa com postura geral
-2. Informações do dispositivo + tabela de categorias
-3. Guia de correções com cards explicativos
-4. Verificações aprovadas (página dedicada)
-5. Plano de ação
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 
