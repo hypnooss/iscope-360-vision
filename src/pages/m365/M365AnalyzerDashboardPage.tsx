@@ -812,6 +812,7 @@ export default function M365AnalyzerDashboardPage() {
               <ExternalMovementTab tenantRecordId={selectedTenantId || undefined} compact={compactMode} />
             </TabsContent>
           </Tabs>
+          </>
         )}
 
         {/* Empty state */}
