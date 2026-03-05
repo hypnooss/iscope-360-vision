@@ -463,10 +463,6 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
             {/* Render explanatory cards grouped by category */}
             {Object.entries(failedByCategory).map(([categoryName, items]) => (
               <View key={categoryName}>
-                <View minPresenceAhead={120}>
-                  <Text style={pageStyles.categoryHeader}>{categoryName}</Text>
-                </View>
-                
                 {items.map((item, index) => {
                   const content = getGuideContent(
                     item.check.id,
@@ -475,7 +471,20 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
                     item.check.description,
                     item.check.recommendation
                   );
-                  
+
+                  if (index === 0) {
+                    return (
+                      <View key={`${item.check.id}-${index}`} wrap={false}>
+                        <Text style={pageStyles.categoryHeader}>{categoryName}</Text>
+                        <PDFExplanatoryCard
+                          content={content}
+                          priority={item.priority}
+                          originalName={item.check.name}
+                        />
+                      </View>
+                    );
+                  }
+
                   return (
                     <PDFExplanatoryCard
                       key={`${item.check.id}-${index}`}
