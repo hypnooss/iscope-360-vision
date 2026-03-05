@@ -476,24 +476,28 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
               </View>
             ))}
 
-            {/* Passed checks summary */}
-            {categorizedChecks.passed.length > 0 && (
-              <View style={pageStyles.passedSection}>
-                <Text style={pageStyles.passedTitle}>
-                  Verificações Aprovadas ({categorizedChecks.passed.length})
-                </Text>
-                <View style={pageStyles.passedList}>
-                  {categorizedChecks.passed.map((item, index) => (
-                    <View key={index} style={pageStyles.passedItem}>
-                      <View style={pageStyles.passedDot} />
-                      <Text style={pageStyles.passedText}>{item.check.name}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
           </View>
 
+          <PDFFooter />
+        </Page>
+      )}
+
+      {/* Passed checks - dedicated page */}
+      {categorizedChecks.passed.length > 0 && (
+        <Page size="A4" style={pageStyles.page} wrap>
+          <View style={pageStyles.content}>
+            <Text style={pageStyles.passedTitle}>
+              Verificações Aprovadas ({categorizedChecks.passed.length})
+            </Text>
+            <View style={pageStyles.passedList}>
+              {categorizedChecks.passed.map((item, index) => (
+                <View key={index} style={pageStyles.passedItem}>
+                  <View style={pageStyles.passedDot} />
+                  <Text style={pageStyles.passedText}>{item.check.name}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
           <PDFFooter />
         </Page>
       )}
