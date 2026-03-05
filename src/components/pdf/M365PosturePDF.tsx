@@ -19,7 +19,6 @@ import type { CategorySummary } from './sections';
 import { CategoryConfig, getCategoryConfig } from '@/hooks/useCategoryConfig';
 import {
   severityToPriority,
-  getExplanatoryContent,
   Priority,
   ExplanatoryContent,
 } from './data/explanatoryContent';
@@ -180,7 +179,7 @@ interface M365PosturePDFProps {
   correctionGuides?: CorrectionGuideData[];
 }
 
-// Helper to get guide content from database or fallback
+// Helper to get guide content from database or M365-specific fallback
 const getGuideContent = (
   ruleId: string,
   correctionGuides: CorrectionGuideData[] | undefined,
@@ -203,7 +202,21 @@ const getGuideContent = (
     };
   }
   
-  return getExplanatoryContent(ruleId, fallbackName, fallbackDescription, fallbackRecommendation);
+  // M365-specific fallback (instead of domain-oriented generic)
+  return {
+    friendlyTitle: fallbackName || ruleId,
+    whatIs: fallbackDescription || 'Verificação de configuração do Microsoft 365.',
+    whyMatters: 'Esta configuração afeta a segurança do seu ambiente Microsoft 365.',
+    impacts: [
+      'Possíveis riscos de segurança no tenant',
+      'Exposição a acessos não autorizados',
+    ],
+    howToFix: fallbackRecommendation
+      ? [fallbackRecommendation]
+      : ['Acesse o portal de administração do Microsoft 365 e revise esta configuração.'],
+    difficulty: 'medium',
+    timeEstimate: '30 min',
+  };
 };
 
 export const M365PosturePDF: React.FC<M365PosturePDFProps> = ({
@@ -247,7 +260,7 @@ export const M365PosturePDF: React.FC<M365PosturePDFProps> = ({
           categoryDisplayName: config.displayName,
         };
 
-        if (check.status === 'pass') {
+        if (check.status === 'pass' || priority === 'ok') {
           passed.push(item);
         } else if (priority === 'critical') {
           critical.push(item);
