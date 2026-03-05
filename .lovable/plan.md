@@ -1,27 +1,36 @@
 
 
-## Problem
+## Plano: Renomear KPI + Filtro por Clique nos Cards
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+### Alterações
 
-## Solution
+**1. Renomear label** (`AnalyzerKPIRow.tsx`)
+- "Viagem Impossível" → "Login Geo. Anômalo"
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+**2. Adicionar filtro por clique nos KPI cards**
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+Cada KPI card mapeia para um subconjunto de insights (por categoria ou nome). Ao clicar num card, o dashboard filtra os incidentes exibidos nas tabs para mostrar apenas os relacionados.
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+**Mecânica:**
+- Adicionar um `kpiKey` string a cada KPI (ex: `'highRiskSignIns'`, `'impossibleTravel'`, etc.)
+- `AnalyzerKPIRow` recebe um callback `onFilter(kpiKey: string | null)` e um `activeFilter: string | null`
+- Cards ficam clicáveis com cursor pointer e borda highlight quando ativos; clicar no mesmo card novamente limpa o filtro
+- Na page, novo estado `const [kpiFilter, setKpiFilter] = useState<string | null>(null)`
+- Mapeamento de `kpiKey` → filtro de insights:
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+| kpiKey | Filtra insights por |
+|---|---|
+| `highRiskSignIns` | `category === 'security_risk'` e nome contém "risco" ou "risk" |
+| `mfaFailures` | `category === 'security_risk'` e nome contém "mfa" |
+| `impossibleTravel` | `category === 'security_risk'` e nome contém "impossível" ou "travel" ou "geo" |
+| `correlatedAlerts` | `category === 'account_compromise'` |
+| `suspiciousLogins` | `category === 'account_compromise'` e nome contém "login" ou "suspeito" |
+| `anomalousUsers` | `category === 'behavioral_baseline'` |
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+- Quando `kpiFilter` está ativo, os arrays `criticalIncidents`, `highIncidents`, `mediumIncidents` e `anomalyInsights` são filtrados antes de renderizar
+- Badge visual "Filtro ativo" aparece acima das tabs com botão "Limpar"
 
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
-
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+**Arquivos impactados:**
+- `src/components/m365/analyzer/AnalyzerKPIRow.tsx` — renomear label, adicionar `onFilter`/`activeFilter` props, cards clicáveis
+- `src/pages/m365/M365AnalyzerDashboardPage.tsx` — estado de filtro, lógica de filtragem, badge de filtro ativo, passar props ao KPIRow
 
