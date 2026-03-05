@@ -2,26 +2,35 @@
 
 ## Problem
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+The Schedules page (`/schedules`) already fetches M365 schedules from `m365_analyzer_schedules`, but labels them all as **"M365 Compliance"**. There is no **"M365 Analyzer"** type in the filter dropdown or badge system. This makes it impossible to distinguish M365 Analyzer schedules, and the `m365_analyzer` task type also maps to `m365_compliance` in the Executions tab.
 
-## Solution
+Additionally, the `latestTasks` query for the Schedules tab filters by `target_type: 'm365_compliance'` but M365 Analyzer tasks use `target_type: 'm365_tenant'`, so their last execution status never shows up.
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+## Plan
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+### 1. Add `m365_analyzer` as a new TargetType
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+Update the `TargetType` union and `UnifiedSchedule` interface to include `'m365_analyzer'`.
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+### 2. Re-label existing M365 schedules
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+Change the `m365Schedules` query mapping from `targetType: 'm365_compliance'` to `targetType: 'm365_analyzer'` (since the table is `m365_analyzer_schedules`).
 
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+### 3. Add badge for M365 Analyzer
 
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+Add a new branch in `renderTypeBadge` for `m365_analyzer` with a distinct color (e.g., teal/cyan with `Activity` icon) to differentiate from M365 Compliance.
+
+### 4. Update filter dropdowns (both tabs)
+
+Add `<SelectItem value="m365_analyzer">M365 Analyzer</SelectItem>` to the type filter in both the Schedules and Executions tabs.
+
+### 5. Fix task type mapping
+
+Update `TASK_TYPE_TO_TARGET` so `m365_analyzer` maps to `'m365_analyzer'` (not `'m365_compliance'`).
+
+### 6. Fix `latestTasks` query
+
+Add `'m365_tenant'` to the `.in('target_type', [...])` filter so M365 Analyzer execution statuses appear correctly in the Schedules tab.
+
+All changes are in a single file: `src/pages/admin/SchedulesPage.tsx`.
 
