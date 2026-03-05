@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import {
-  ShieldAlert, KeyRound, UserX, Send, Search, Activity,
+  ShieldAlert, KeyRound, Globe, AlertTriangle, Search, Activity,
 } from 'lucide-react';
 import type { M365AnalyzerMetrics } from '@/types/m365AnalyzerInsights';
 
@@ -34,8 +34,8 @@ export function AnalyzerKPIRow({ metrics }: Props) {
   const kpis: KPIItem[] = [
     { label: 'Logins de Risco', value: metrics.securityRisk.highRiskSignIns, icon: ShieldAlert, threshold: { warn: 5, critical: 20 } },
     { label: 'Falhas MFA', value: metrics.securityRisk.mfaFailures, icon: KeyRound, threshold: { warn: 10, critical: 50 } },
-    { label: 'Sem MFA', value: metrics.identity.noMfaUsers, icon: UserX, threshold: { warn: 3, critical: 10 } },
-    { label: 'Forwards Ext.', value: metrics.rules.externalForwards, icon: Send, threshold: { warn: 1, critical: 5 } },
+    { label: 'Viagem Impossível', value: metrics.securityRisk.impossibleTravel, icon: Globe, threshold: { warn: 1, critical: 3 } },
+    { label: 'Alertas Correlac.', value: metrics.compromise.correlatedAlerts, icon: AlertTriangle, threshold: { warn: 2, critical: 5 } },
     { label: 'Logins Suspeitos', value: metrics.compromise.suspiciousLogins, icon: Search, threshold: { warn: 3, critical: 10 } },
     { label: 'Usuários Anômalos', value: metrics.behavioral.anomalousUsers, icon: Activity, threshold: { warn: 2, critical: 5 } },
   ];

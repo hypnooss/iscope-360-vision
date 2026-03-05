@@ -1,30 +1,27 @@
 
 
-## Correção: Remover KPIs de Configuração do Analyzer
+## Problem
 
-O Analyzer é um radar de **incidentes operacionais** (estilo SOC), não de postura/configuração. Dois KPIs atuais são itens de compliance/boas práticas e não pertencem a este módulo:
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-- **Sem MFA** (`identity.noMfaUsers`) → configuração estática, já coberta pelo módulo Compliance
-- **Forwards Ext.** (`rules.externalForwards`) → regra de configuração, já coberta pelo Compliance (EXO-022)
+## Solution
 
-### Alteração
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-**Arquivo**: `src/components/m365/analyzer/AnalyzerKPIRow.tsx`
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-Substituir os 2 KPIs removidos por métricas de **incidentes reais**:
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-| Removido | Substituído por | Fonte |
-|---|---|---|
-| Sem MFA | Viagem Impossível (`securityRisk.impossibleTravel`) | Evento de login anômalo |
-| Forwards Ext. | Alertas Correlacionados (`compromise.correlatedAlerts`) | Incidentes de comprometimento |
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-O grid passa a ter 6 KPIs puramente de incidentes:
-1. Logins de Risco (`highRiskSignIns`)
-2. Falhas MFA (`mfaFailures`)
-3. **Viagem Impossível** (`impossibleTravel`) — novo
-4. **Alertas Correlacionados** (`correlatedAlerts`) — novo
-5. Logins Suspeitos (`suspiciousLogins`)
-6. Usuários Anômalos (`anomalousUsers`)
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-Alteração única no array `kpis` dentro de `AnalyzerKPIRow.tsx`, trocando as 2 linhas e ajustando ícones/thresholds.
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 
