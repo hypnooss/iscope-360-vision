@@ -523,10 +523,26 @@ export default function M365AnalyzerDashboardPage() {
     .filter(i => ANOMALY_CATEGORIES.includes(i.category as M365AnalyzerCategory))
     .filter(i => !isConfigurationalInsight(i));
 
+  // KPI filter mapping
+  const KPI_FILTER_MAP: Record<KPIFilterKey, (i: M365AnalyzerInsight) => boolean> = {
+    highRiskSignIns: (i) => i.category === 'security_risk' && /risco|risk|sign.?in/i.test(i.name),
+    mfaFailures: (i) => i.category === 'security_risk' && /mfa/i.test(i.name),
+    impossibleTravel: (i) => i.category === 'security_risk' && /imposs|travel|geo|localiz/i.test(i.name),
+    correlatedAlerts: (i) => i.category === 'account_compromise',
+    suspiciousLogins: (i) => i.category === 'account_compromise' && /login|suspeito|suspicious/i.test(i.name),
+    anomalousUsers: (i) => i.category === 'behavioral_baseline',
+  };
+
+  function applyKpiFilter(insights: M365AnalyzerInsight[]): M365AnalyzerInsight[] {
+    if (!kpiFilter) return insights;
+    const fn = KPI_FILTER_MAP[kpiFilter];
+    return fn ? insights.filter(fn) : insights;
+  }
+
   // Group by severity for columns
-  const criticalIncidents = operationalInsights.filter(i => i.severity === 'critical');
-  const highIncidents = operationalInsights.filter(i => i.severity === 'high');
-  const mediumIncidents = operationalInsights.filter(i => i.severity === 'medium');
+  const criticalIncidents = applyKpiFilter(operationalInsights.filter(i => i.severity === 'critical'));
+  const highIncidents = applyKpiFilter(operationalInsights.filter(i => i.severity === 'high'));
+  const mediumIncidents = applyKpiFilter(operationalInsights.filter(i => i.severity === 'medium'));
   const totalIncidents = criticalIncidents.length + highIncidents.length + mediumIncidents.length;
 
   // Status dot
