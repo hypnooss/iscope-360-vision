@@ -1,27 +1,56 @@
 
 
-## Problem
+## Fix: Manter título de categoria + card juntos no "Guia de Correções"
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+### Problema
+Na seção "Guia de Correções", cada grupo de categoria tem um título (`categoryHeader`) seguido de cards (`PDFExplanatoryCard`). O título usa `minPresenceAhead={120}` mas isso nem sempre é suficiente — o título pode ficar no fim de uma página com o card na próxima.
 
-## Solution
+### Solução
+Envolver cada par de título + primeiro card num `<View wrap={false}>` para que o react-pdf os mantenha juntos. Os cards subsequentes da mesma categoria podem quebrar normalmente.
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+### Alteração em `src/components/pdf/ExternalDomainPDF.tsx` (linhas 464-488)
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+Substituir a lógica atual por:
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+```tsx
+{Object.entries(failedByCategory).map(([categoryName, items]) => (
+  <View key={categoryName}>
+    {items.map((item, index) => {
+      const content = getGuideContent(
+        item.check.id,
+        correctionGuides,
+        item.check.name,
+        item.check.description,
+        item.check.recommendation
+      );
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+      // First item: wrap header + card together
+      if (index === 0) {
+        return (
+          <View key={`${item.check.id}-${index}`} wrap={false}>
+            <Text style={pageStyles.categoryHeader}>{categoryName}</Text>
+            <PDFExplanatoryCard
+              content={content}
+              priority={item.priority}
+              originalName={item.check.name}
+            />
+          </View>
+        );
+      }
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+      // Subsequent items: just the card (wrap={false} already on the card)
+      return (
+        <PDFExplanatoryCard
+          key={`${item.check.id}-${index}`}
+          content={content}
+          priority={item.priority}
+          originalName={item.check.name}
+        />
+      );
+    })}
+  </View>
+))}
+```
 
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
-
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+Isso garante que o título de cada categoria sempre aparece na mesma página que seu primeiro card. Os demais cards fluem normalmente.
 
