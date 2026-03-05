@@ -9,6 +9,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Dashboard } from '@/components/Dashboard';
 import { ComplianceReport, ComplianceCategory } from '@/types/compliance';
+import type { CorrectionGuideData } from '@/components/pdf/ExternalDomainPDF';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, Play, Clock, Building2, FileText, RefreshCw, Settings, ChevronDown, FileDown, ClipboardList } from 'lucide-react';
