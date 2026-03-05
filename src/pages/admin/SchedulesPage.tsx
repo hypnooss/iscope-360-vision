@@ -45,7 +45,7 @@ interface UnifiedSchedule {
   id: string;
   targetId: string;
   targetName: string;
-  targetType: 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer' | 'm365_compliance';
+  targetType: 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer' | 'm365_compliance' | 'm365_analyzer';
   frequency: string;
   isActive: boolean;
   nextRunAt: string | null;
