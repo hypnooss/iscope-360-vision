@@ -738,6 +738,18 @@ export default function M365AnalyzerDashboardPage() {
 
         {/* ═══ 3-5. TABS: Incidentes / Anomalias / Movimento Externo ═══ */}
         {snapshot && (
+          <>
+            {kpiFilter && (
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="gap-1.5 text-xs">
+                  <Search className="w-3 h-3" />
+                  Filtro ativo
+                </Badge>
+                <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setKpiFilter(null)}>
+                  Limpar
+                </Button>
+              </div>
+            )}
           <Tabs defaultValue="incidents" className="w-full">
             <TabsList className="mb-4">
               <TabsTrigger value="incidents" className="gap-1.5">
