@@ -38,6 +38,9 @@ import { toast as sonnerToast } from 'sonner';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
 import { ExternalMovementTab } from '@/components/m365/analyzer/ExternalMovementTab';
 import { useExternalMovementData } from '@/hooks/useExternalMovementData';
+import { AnalyzerKPIRow } from '@/components/m365/analyzer/AnalyzerKPIRow';
+import { AnalyzerScoreSparkline } from '@/components/m365/analyzer/AnalyzerScoreSparkline';
+import { SnapshotDiffBanner } from '@/components/m365/analyzer/SnapshotDiffBanner';
 
 // ─── Operational categories only ─────────────────────────────────────────────
 const OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
