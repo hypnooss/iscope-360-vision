@@ -180,6 +180,11 @@ export function SystemAlertBanner() {
     navigate(`/scope-firewall/compliance`);
   };
 
+  const handleViewAnalyzer = async (alertId: string) => {
+    await dismissAlert(alertId);
+    navigate('/scope-m365/analyzer');
+  };
+
   const handleViewExternalDomainReport = async (alertId: string, domainId: string, reportId: string) => {
     await dismissAlert(alertId);
     navigate(`/scope-external-domain/domains/${domainId}/report/${reportId}`);
