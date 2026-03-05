@@ -402,6 +402,7 @@ export default function FirewallCompliancePage() {
           }}
           logoBase64={logoBase64}
           categoryConfigs={categoryConfigs}
+          correctionGuides={correctionGuides}
         />,
         filename
       );
