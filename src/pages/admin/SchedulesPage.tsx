@@ -937,6 +937,7 @@ function ExecutionsTab() {
             <SelectItem value="attack_surface">Surface Analyzer</SelectItem>
             <SelectItem value="firewall_analyzer">Firewall Analyzer</SelectItem>
             <SelectItem value="m365_compliance">M365 Compliance</SelectItem>
+            <SelectItem value="m365_analyzer">M365 Analyzer</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filterWorkspace} onValueChange={setFilterWorkspace}>
