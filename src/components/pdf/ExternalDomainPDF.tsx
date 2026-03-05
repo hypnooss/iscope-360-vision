@@ -17,6 +17,7 @@ import {
   PDFExplanatoryCard,
   PDFActionPlan,
 } from './sections';
+import { PDFSubdomainSection } from './sections/PDFSubdomainSection';
 import type { CategorySummary } from './sections';
 import { CategoryConfig, getCategoryConfig } from '@/hooks/useCategoryConfig';
 import {
@@ -155,6 +156,7 @@ interface SubdomainEntry {
   subdomain: string;
   sources: string[];
   addresses: Array<{ ip: string; type?: string }>;
+  is_alive?: boolean;
 }
 
 interface SubdomainSummary {
@@ -428,6 +430,16 @@ export const ExternalDomainPDF: React.FC<ExternalDomainPDFProps> = ({
         </View>
         <PDFFooter />
       </Page>
+
+      {/* PAGE 3b: Subdomains (dedicated page) */}
+      {subdomainSummary && subdomainSummary.subdomains?.some(s => s.is_alive) && (
+        <Page size="A4" style={pageStyles.page} wrap>
+          <View style={pageStyles.content}>
+            <PDFSubdomainSection subdomainSummary={subdomainSummary} />
+          </View>
+          <PDFFooter />
+        </Page>
+      )}
 
       {/* PAGE 4+: Explanatory Cards for Failed Checks */}
       {hasFailedChecks && (
