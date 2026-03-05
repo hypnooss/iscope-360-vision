@@ -6,7 +6,7 @@ import { useModules } from '@/contexts/ModuleContext';
 import { usePreview } from '@/contexts/PreviewContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
-import { useLatestM365AnalyzerSnapshot, useM365AnalyzerProgress } from '@/hooks/useM365AnalyzerData';
+import { useLatestM365AnalyzerSnapshot, useM365AnalyzerProgress, useM365AnalyzerDiff } from '@/hooks/useM365AnalyzerData';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
