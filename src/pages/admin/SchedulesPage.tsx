@@ -164,6 +164,14 @@ function renderTypeBadge(type: TargetType) {
       </Badge>
     );
   }
+  if (type === 'm365_analyzer') {
+    return (
+      <Badge variant="outline" className="bg-teal-500/15 text-teal-400 border-teal-500/30 gap-1">
+        <Activity className="w-3 h-3" />
+        M365 Analyzer
+      </Badge>
+    );
+  }
   return (
     <Badge variant="outline" className="bg-cyan-500/15 text-cyan-400 border-cyan-500/30 gap-1">
       <Globe className="w-3 h-3" />
