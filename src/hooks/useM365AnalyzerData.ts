@@ -180,7 +180,12 @@ function deduplicateInsights(insights: M365AnalyzerInsight[]): M365AnalyzerInsig
   return Array.from(grouped.values());
 }
 
-function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnapshot & { snapshotCount: number } | null {
+export interface ScoreHistoryPoint {
+  date: string;
+  score: number;
+}
+
+function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnapshot & { snapshotCount: number; scoreHistory: ScoreHistoryPoint[] } | null {
   if (!snapshots.length) return null;
 
   const latest = snapshots[0];
@@ -199,6 +204,11 @@ function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnap
 
   const metrics = latest.metrics;
 
+  const scoreHistory: ScoreHistoryPoint[] = snapshots
+    .filter(s => s.score != null)
+    .map(s => ({ date: s.created_at, score: s.score! }))
+    .reverse();
+
   return {
     ...latest,
     period_start: oldest.period_start ?? latest.period_start,
@@ -207,6 +217,7 @@ function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnap
     insights: deduplicateInsights(snapshots.flatMap(s => s.insights ?? [])),
     metrics,
     snapshotCount: snapshots.length,
+    scoreHistory,
   };
 }
 
