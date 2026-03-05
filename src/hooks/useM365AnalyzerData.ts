@@ -142,13 +142,42 @@ function parseSnapshot(row: Record<string, unknown>): M365AnalyzerSnapshot {
 }
 
 function deduplicateInsights(insights: M365AnalyzerInsight[]): M365AnalyzerInsight[] {
-  const seen = new Set<string>();
-  return insights.filter(ins => {
-    const key = ins.id ? ins.id : `${ins.category}::${ins.name}::${ins.description ?? ''}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  // Group by category::name to merge identical incident types into single cards
+  const grouped = new Map<string, M365AnalyzerInsight>();
+
+  for (const ins of insights) {
+    const key = `${ins.category}::${ins.name}`;
+    const existing = grouped.get(key);
+
+    if (!existing) {
+      // Clone to avoid mutating original
+      grouped.set(key, {
+        ...ins,
+        affectedUsers: ins.affectedUsers ? [...ins.affectedUsers] : undefined,
+        count: ins.count ?? (ins.affectedUsers?.length || 0),
+      });
+    } else {
+      // Merge affected users (deduplicated)
+      if (ins.affectedUsers?.length) {
+        const existingUsers = new Set(existing.affectedUsers || []);
+        for (const u of ins.affectedUsers) existingUsers.add(u);
+        existing.affectedUsers = Array.from(existingUsers);
+      }
+      // Sum counts
+      existing.count = (existing.count || 0) + (ins.count ?? (ins.affectedUsers?.length || 1));
+      // Keep highest severity
+      const sevOrder = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+      if ((sevOrder[ins.severity] ?? 0) > (sevOrder[existing.severity] ?? 0)) {
+        existing.severity = ins.severity;
+      }
+      // Merge metadata
+      if (ins.metadata) {
+        existing.metadata = { ...existing.metadata, ...ins.metadata };
+      }
+    }
+  }
+
+  return Array.from(grouped.values());
 }
 
 function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnapshot & { snapshotCount: number } | null {
