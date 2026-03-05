@@ -264,6 +264,94 @@ export default function M365PosturePage() {
     }
   }, [isBlocked, showBlockedMessage, triggerAnalysis]);
 
+  // Handle PDF export
+  const handleExportPDF = useCallback(async () => {
+    if (allUnifiedItemsRef.current.length === 0 || !selectedTenant) return;
+    try {
+      const items = allUnifiedItemsRef.current;
+      const grouped = items.reduce<Record<string, UnifiedComplianceItem[]>>((acc, item) => {
+        const cat = item.category;
+        if (!acc[cat]) acc[cat] = [];
+        acc[cat].push(item);
+        return acc;
+      }, {});
+
+      const sorted = (Object.keys(grouped) as M365RiskCategory[]).sort((a, b) => {
+        const aOrder = categoryConfigs?.find(c => c.name === a)?.display_order ?? 999;
+        const bOrder = categoryConfigs?.find(c => c.name === b)?.display_order ?? 999;
+        return aOrder - bOrder;
+      });
+
+      const calculatePassRate = (checks: UnifiedComplianceItem[]): number => {
+        if (!checks || checks.length === 0) return 0;
+        const applicable = checks.filter(c => c.status !== 'not_found');
+        if (applicable.length === 0) return -1;
+        const passed = applicable.filter(c => c.status === 'pass').length;
+        return Math.round((passed / applicable.length) * 100);
+      };
+
+      const pdfCategories = sorted.map(cat => ({
+        name: CATEGORY_LABELS[cat] || cat,
+        passRate: calculatePassRate(grouped[cat]),
+        checks: grouped[cat].map(item => ({
+          id: item.code,
+          name: item.name,
+          status: item.status as 'pass' | 'fail' | 'warning' | 'pending' | 'unknown',
+          severity: item.severity as 'critical' | 'high' | 'medium' | 'low' | 'info',
+          description: item.description,
+          recommendation: item.recommendation,
+        })),
+      }));
+
+      const passedItems = items.filter(i => i.status === 'pass').length;
+      const failedItems = items.filter(i => i.status === 'fail').length;
+
+      let logoBase64: string | undefined;
+      try {
+        const logoModule = await import('@/assets/logo-iscope.png');
+        const response = await fetch(logoModule.default);
+        const blob = await response.blob();
+        logoBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } catch {}
+
+      const filename = `iscope360-m365-${sanitizePDFFilename(selectedTenant.displayName)}-${getPDFDateString()}.pdf`;
+
+      await downloadPDF(
+        <M365PosturePDF
+          report={{
+            overallScore: data?.score ?? 0,
+            totalChecks: items.length,
+            passed: passedItems,
+            failed: failedItems,
+            warnings: 0,
+            categories: pdfCategories,
+            generatedAt: data?.analyzedAt ? new Date(data.analyzedAt) : new Date(),
+          }}
+          tenantInfo={{
+            name: selectedTenant.displayName,
+            domain: selectedTenant.domain,
+            clientName: clientName || undefined,
+          }}
+          logoBase64={logoBase64}
+          categoryConfigs={categoryConfigs}
+          correctionGuides={correctionGuides}
+        />,
+        filename
+      );
+      sonnerToast.success('PDF exportado com sucesso!');
+    } catch (err) {
+      console.error('PDF export error:', err);
+      sonnerToast.error('Erro ao exportar PDF');
+    }
+  }, [selectedTenant, data, categoryConfigs, correctionGuides, clientName, downloadPDF]);
+
+  // Ref to hold unified items for PDF export (avoids stale closure)
+  const allUnifiedItemsRef = useRef<UnifiedComplianceItem[]>([]);
   if (authLoading || tenantsLoading) {
     return (
       <AppLayout>
