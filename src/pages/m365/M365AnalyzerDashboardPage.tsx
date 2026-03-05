@@ -519,11 +519,6 @@ export default function M365AnalyzerDashboardPage() {
 
   const score = snapshot?.score || computeRiskScore(operationalInsights);
   const risk = riskLevel(score);
-  const anomalyInsights = applyKpiFilter(
-    (snapshot?.insights ?? [])
-      .filter(i => ANOMALY_CATEGORIES.includes(i.category as M365AnalyzerCategory))
-      .filter(i => !isConfigurationalInsight(i))
-  );
 
   // KPI filter mapping
   const KPI_FILTER_MAP: Record<KPIFilterKey, (i: M365AnalyzerInsight) => boolean> = {
@@ -540,6 +535,12 @@ export default function M365AnalyzerDashboardPage() {
     const fn = KPI_FILTER_MAP[kpiFilter];
     return fn ? insights.filter(fn) : insights;
   }
+
+  const anomalyInsights = applyKpiFilter(
+    (snapshot?.insights ?? [])
+      .filter(i => ANOMALY_CATEGORIES.includes(i.category as M365AnalyzerCategory))
+      .filter(i => !isConfigurationalInsight(i))
+  );
 
   // Group by severity for columns
   const criticalIncidents = applyKpiFilter(operationalInsights.filter(i => i.severity === 'critical'));
