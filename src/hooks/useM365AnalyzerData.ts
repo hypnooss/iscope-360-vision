@@ -289,6 +289,10 @@ export function useM365AnalyzerDiff(tenantRecordId?: string, latestSnapshotData?
 
       const prevKeys = new Set(prevInsights.map((i: any) => `${i.category}::${i.name}`));
       const currKeys = new Set(currentInsights.map((i: any) => `${i.category}::${i.name}`));
+      const prevSevMap = new Map<string, string>(prevInsights.map((i: any) => [`${i.category}::${i.name}`, i.severity]));
+
+      const currKeysArr = Array.from(currKeys) as string[];
+      const prevKeysArr = Array.from(prevKeys) as string[];
       const prevSevMap = new Map(prevInsights.map((i: any) => [`${i.category}::${i.name}`, i.severity]));
 
       let newCount = 0;
