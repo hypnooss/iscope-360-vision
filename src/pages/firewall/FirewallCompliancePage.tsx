@@ -236,6 +236,31 @@ export default function FirewallCompliancePage() {
 
   const { data: categoryConfigs } = useCategoryConfigs(firewallMeta?.device_type_id || undefined);
 
+  // ── Correction guides for PDF ──
+  const { data: correctionGuides } = useQuery({
+    queryKey: ['fw-correction-guides', firewallMeta?.device_type_id],
+    queryFn: async () => {
+      if (!firewallMeta?.device_type_id) return [];
+      const { data, error } = await supabase
+        .from('rule_correction_guides')
+        .select('*, compliance_rules!inner(code, device_type_id)')
+        .eq('compliance_rules.device_type_id', firewallMeta.device_type_id);
+      if (error) throw error;
+      return (data || []).map(g => ({
+        rule_code: (g as any).compliance_rules.code,
+        friendly_title: g.friendly_title,
+        what_is: g.what_is,
+        why_matters: g.why_matters,
+        impacts: Array.isArray(g.impacts) ? g.impacts as string[] : [],
+        how_to_fix: Array.isArray(g.how_to_fix) ? g.how_to_fix as string[] : [],
+        provider_examples: Array.isArray(g.provider_examples) ? g.provider_examples as string[] : [],
+        difficulty: g.difficulty as 'low' | 'medium' | 'high' | null,
+        time_estimate: g.time_estimate,
+      })) as CorrectionGuideData[];
+    },
+    enabled: !!firewallMeta?.device_type_id,
+  });
+
   // ── Task polling ──
   const { data: taskStatus } = useQuery({
     queryKey: ['fw-compliance-task', activeTaskId],
