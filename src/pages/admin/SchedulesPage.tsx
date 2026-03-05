@@ -129,7 +129,7 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
 
 // ── Shared renderTypeBadge ──
 
-type TargetType = 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer' | 'm365_compliance';
+type TargetType = 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer' | 'm365_compliance' | 'm365_analyzer';
 
 function renderTypeBadge(type: TargetType) {
   if (type === 'firewall') {
