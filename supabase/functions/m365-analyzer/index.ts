@@ -2081,6 +2081,97 @@ Deno.serve(async (req) => {
       })
       .eq('id', snapshot_id);
 
+    // ── Invoke m365-external-movement to process user external metrics ──
+    try {
+      // Build user_metrics from exoMessageTrace grouped by sender
+      const extUserMap: Record<string, { emails: number; sizeMB: number; domains: Set<string>; hours: number[]; domainsList: string[] }> = {};
+      const tenantDomainsLower = tenantDomains.map(d => d.toLowerCase());
+
+      for (const msg of exoMessageTrace) {
+        const sender = (msg.SenderAddress || '').toLowerCase();
+        const recipient = (msg.RecipientAddress || '').toLowerCase();
+        const recipientDomain = recipient.includes('@') ? recipient.split('@')[1] : '';
+        if (!recipientDomain || !sender) continue;
+
+        const isExternal = tenantDomainsLower.length > 0
+          ? !tenantDomainsLower.some(d => recipientDomain.endsWith(d))
+          : recipientDomain !== (sender.includes('@') ? sender.split('@')[1] : '');
+
+        if (!isExternal) continue;
+
+        if (!extUserMap[sender]) {
+          extUserMap[sender] = { emails: 0, sizeMB: 0, domains: new Set(), hours: [], domainsList: [] };
+        }
+        extUserMap[sender].emails++;
+        extUserMap[sender].sizeMB += parseSizeToBytes(msg.Size) / (1024 * 1024);
+        extUserMap[sender].domains.add(recipientDomain);
+
+        // Parse hour from Received or Date field
+        const dateStr = msg.Received || msg.Date || '';
+        if (dateStr) {
+          const d = new Date(dateStr);
+          if (!isNaN(d.getTime())) extUserMap[sender].hours.push(d.getUTCHours());
+        }
+      }
+
+      const userMetricsArray = Object.entries(extUserMap).map(([userId, u]) => {
+        const hourArr = u.hours;
+        const meanHour = hourArr.length > 0 ? hourArr.reduce((a, b) => a + b, 0) / hourArr.length : null;
+        let stdHour: number | null = null;
+        if (hourArr.length > 1 && meanHour !== null) {
+          const variance = hourArr.reduce((sum, h) => sum + (h - meanHour) ** 2, 0) / hourArr.length;
+          stdHour = Math.sqrt(variance);
+        }
+        const hourDist: Record<string, number> = {};
+        for (const h of hourArr) { const k = String(h); hourDist[k] = (hourDist[k] || 0) + 1; }
+
+        return {
+          user_id: userId,
+          total_external_emails: u.emails,
+          total_external_mb: Math.round(u.sizeMB * 100) / 100,
+          unique_domains: u.domains.size,
+          mean_hour: meanHour !== null ? Math.round(meanHour * 10) / 10 : null,
+          std_hour: stdHour !== null ? Math.round(stdHour * 10) / 10 : null,
+          hour_distribution: hourDist,
+          domains_list: Array.from(u.domains),
+        };
+      });
+
+      if (userMetricsArray.length > 0) {
+        // Build security signals from compromise/securityRisk insights
+        const securitySignalsMap: Record<string, string[]> = {};
+        for (const ins of allInsights) {
+          if (ins.affectedUsers && (ins.category === 'account_compromise' || ins.category === 'security_risk')) {
+            for (const u of ins.affectedUsers) {
+              const uLower = u.toLowerCase();
+              if (!securitySignalsMap[uLower]) securitySignalsMap[uLower] = [];
+              securitySignalsMap[uLower].push(ins.id);
+            }
+          }
+        }
+
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const emResp = await fetch(`${supabaseUrl}/functions/v1/m365-external-movement`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+          body: JSON.stringify({
+            tenant_record_id: snapshot.tenant_record_id,
+            client_id: snapshot.client_id,
+            snapshot_id,
+            user_metrics: userMetricsArray,
+            security_signals: securitySignalsMap,
+          }),
+        });
+        const emBody = await emResp.text();
+        console.log(`[m365-analyzer] m365-external-movement response (${emResp.status}): ${emBody.slice(0, 200)}`);
+      } else {
+        console.log('[m365-analyzer] No external user metrics to send to m365-external-movement');
+      }
+    } catch (emErr) {
+      console.warn('[m365-analyzer] Failed to invoke m365-external-movement:', emErr);
+    }
+
     // Proactive alert: insert system_alert when critical incidents detected
     if (summary.critical > 0) {
       try {

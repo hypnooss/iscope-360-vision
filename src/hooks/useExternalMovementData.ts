@@ -65,13 +65,13 @@ export function useBaselineMaturity(tenantRecordId: string | undefined) {
       if (!tenantRecordId) return 0;
       const { data, error } = await supabase
         .from('m365_user_external_daily_stats' as any)
-        .select('stat_date')
+        .select('date')
         .eq('tenant_record_id', tenantRecordId)
-        .order('stat_date', { ascending: false })
+        .order('date', { ascending: false })
         .limit(500) as any;
 
       if (error || !data) return 0;
-      const uniqueDays = new Set((data as any[]).map((r: any) => r.stat_date));
+      const uniqueDays = new Set((data as any[]).map((r: any) => r.date));
       return uniqueDays.size;
     },
     enabled: !!tenantRecordId,
