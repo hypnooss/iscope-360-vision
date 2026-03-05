@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { toast } from '@/hooks/use-toast';
+import { toast as sonnerToast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,6 +18,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { CommandCentralLayout, MiniStat, DetailRow } from '@/components/CommandCentral';
 import { 
   RefreshCw, 
@@ -27,6 +29,10 @@ import {
   Settings,
   Loader2,
   Building2,
+  ChevronDown,
+  FileDown,
+  FileText,
+  ClipboardList,
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { TenantSelector } from '@/components/m365/posture';
@@ -34,6 +40,9 @@ import { M365CategorySection } from '@/components/m365/posture/M365CategorySecti
 import { useM365SecurityPosture, M365_POSTURE_QUERY_KEY } from '@/hooks/useM365SecurityPosture';
 import { mapM365Insight, mapM365AgentInsight } from '@/lib/complianceMappers';
 import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
+import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
+import { M365PosturePDF } from '@/components/pdf/M365PosturePDF';
+import type { CorrectionGuideData } from '@/components/pdf/ExternalDomainPDF';
 import { 
   M365RiskCategory, 
   CATEGORY_LABELS,
