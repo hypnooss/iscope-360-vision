@@ -367,6 +367,7 @@ export default function M365PosturePage() {
     ...(data?.insights?.map(mapM365Insight) || []),
     ...(agentInsights?.map(mapM365AgentInsight) || []),
   ];
+  allUnifiedItemsRef.current = allUnifiedItems;
 
   // Compute actual counts from unified items (not from summary subtraction)
   const passCount = allUnifiedItems.filter(i => i.status === 'pass').length;
