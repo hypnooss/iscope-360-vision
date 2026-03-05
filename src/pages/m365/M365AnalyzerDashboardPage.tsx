@@ -686,7 +686,23 @@ export default function M365AnalyzerDashboardPage() {
                 )}
               </div>
             </CardContent>
+            {/* Sparkline de tendência */}
+            {(snapshot as any).scoreHistory?.length >= 2 && (
+              <div className="px-4 pb-3">
+                <AnalyzerScoreSparkline data={(snapshot as any).scoreHistory} />
+              </div>
+            )}
           </Card>
+        )}
+
+        {/* KPI Cards */}
+        {snapshot && m && (
+          <AnalyzerKPIRow metrics={m} />
+        )}
+
+        {/* Diff Banner */}
+        {diff && (diff.newCount > 0 || diff.resolvedCount > 0 || diff.escalatedCount > 0) && (
+          <SnapshotDiffBanner diff={diff} />
         )}
 
         {/* Loading skeleton */}
