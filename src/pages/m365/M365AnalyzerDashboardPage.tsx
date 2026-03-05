@@ -714,7 +714,7 @@ export default function M365AnalyzerDashboardPage() {
 
         {/* KPI Cards */}
         {snapshot && m && (
-          <AnalyzerKPIRow metrics={m} />
+          <AnalyzerKPIRow metrics={m} activeFilter={kpiFilter} onFilter={setKpiFilter} />
         )}
 
         {/* Diff Banner */}
