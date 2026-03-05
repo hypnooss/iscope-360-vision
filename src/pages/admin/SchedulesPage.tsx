@@ -45,7 +45,7 @@ interface UnifiedSchedule {
   id: string;
   targetId: string;
   targetName: string;
-  targetType: 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer' | 'm365_compliance';
+  targetType: 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer' | 'm365_compliance' | 'm365_analyzer';
   frequency: string;
   isActive: boolean;
   nextRunAt: string | null;
@@ -129,7 +129,7 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
 
 // ── Shared renderTypeBadge ──
 
-type TargetType = 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer' | 'm365_compliance';
+type TargetType = 'firewall' | 'external_domain' | 'attack_surface' | 'firewall_analyzer' | 'm365_compliance' | 'm365_analyzer';
 
 function renderTypeBadge(type: TargetType) {
   if (type === 'firewall') {
@@ -164,6 +164,14 @@ function renderTypeBadge(type: TargetType) {
       </Badge>
     );
   }
+  if (type === 'm365_analyzer') {
+    return (
+      <Badge variant="outline" className="bg-teal-500/15 text-teal-400 border-teal-500/30 gap-1">
+        <Activity className="w-3 h-3" />
+        M365 Analyzer
+      </Badge>
+    );
+  }
   return (
     <Badge variant="outline" className="bg-cyan-500/15 text-cyan-400 border-cyan-500/30 gap-1">
       <Globe className="w-3 h-3" />
@@ -178,7 +186,7 @@ const TASK_TYPE_TO_TARGET: Record<string, TargetType> = {
   fortigate_analyzer: 'firewall_analyzer',
   external_domain_compliance: 'external_domain',
   m365_compliance: 'm365_compliance',
-  m365_analyzer: 'm365_compliance',
+  m365_analyzer: 'm365_analyzer',
   attack_surface_scan: 'attack_surface',
 };
 
@@ -186,7 +194,7 @@ function mapTaskType(taskType: string, targetType: string): TargetType {
   if (TASK_TYPE_TO_TARGET[taskType]) return TASK_TYPE_TO_TARGET[taskType];
   if (targetType === 'firewall') return 'firewall';
   if (targetType === 'external_domain') return 'external_domain';
-  if (targetType === 'm365_tenant') return 'm365_compliance';
+  if (targetType === 'm365_tenant') return 'm365_analyzer';
   return 'firewall';
 }
 
@@ -347,7 +355,7 @@ function SchedulesTab() {
         .order('next_run_at', { ascending: true, nullsFirst: false });
       if (error) throw error;
       return ((data || []) as any[]).map((s): UnifiedSchedule => ({
-        id: s.id, targetId: s.tenant_record_id, targetName: s.m365_tenants?.display_name || '—', targetType: 'm365_compliance',
+        id: s.id, targetId: s.tenant_record_id, targetName: s.m365_tenants?.display_name || '—', targetType: 'm365_analyzer',
         frequency: s.frequency, isActive: s.is_active, nextRunAt: s.next_run_at,
         scheduledHour: s.scheduled_hour, scheduledDayOfWeek: s.scheduled_day_of_week, scheduledDayOfMonth: s.scheduled_day_of_month,
         clientId: s.m365_tenants?.clients?.id || '', clientName: s.m365_tenants?.clients?.name || '—', lastScore: null,
@@ -378,7 +386,7 @@ function SchedulesTab() {
         .from('agent_tasks')
         .select('target_id, status, completed_at')
         .in('target_id', targetIds)
-        .in('target_type', ['firewall', 'external_domain', 'm365_compliance'])
+        .in('target_type', ['firewall', 'external_domain', 'm365_compliance', 'm365_tenant'])
         .order('completed_at', { ascending: false });
       if (error) throw error;
       const map = new Map<string, TaskRow>();
@@ -556,6 +564,7 @@ function SchedulesTab() {
             <SelectItem value="attack_surface">Surface Analyzer</SelectItem>
             <SelectItem value="firewall_analyzer">Firewall Analyzer</SelectItem>
             <SelectItem value="m365_compliance">M365 Compliance</SelectItem>
+            <SelectItem value="m365_analyzer">M365 Analyzer</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filterWorkspace} onValueChange={setFilterWorkspace}>
@@ -928,6 +937,7 @@ function ExecutionsTab() {
             <SelectItem value="attack_surface">Surface Analyzer</SelectItem>
             <SelectItem value="firewall_analyzer">Firewall Analyzer</SelectItem>
             <SelectItem value="m365_compliance">M365 Compliance</SelectItem>
+            <SelectItem value="m365_analyzer">M365 Analyzer</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filterWorkspace} onValueChange={setFilterWorkspace}>
