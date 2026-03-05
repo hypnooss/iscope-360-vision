@@ -180,6 +180,11 @@ export function SystemAlertBanner() {
     navigate(`/scope-firewall/compliance`);
   };
 
+  const handleViewAnalyzer = async (alertId: string) => {
+    await dismissAlert(alertId);
+    navigate('/scope-m365/analyzer');
+  };
+
   const handleViewExternalDomainReport = async (alertId: string, domainId: string, reportId: string) => {
     await dismissAlert(alertId);
     navigate(`/scope-external-domain/domains/${domainId}/report/${reportId}`);
@@ -283,7 +288,7 @@ export function SystemAlertBanner() {
           
           {/* Ações */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {primaryAlert.alert_type.startsWith('m365_') && (
+            {primaryAlert.alert_type.startsWith('m365_') && primaryAlert.alert_type !== 'm365_analyzer_critical' && (
               <Button
                 variant="outline"
                 size="sm"
@@ -292,6 +297,18 @@ export function SystemAlertBanner() {
               >
                 <Settings className="h-3.5 w-3.5 mr-1.5" />
                 Ver Configurações
+              </Button>
+            )}
+
+            {primaryAlert.alert_type === 'm365_analyzer_critical' && (
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
+                onClick={() => handleViewAnalyzer(primaryAlert.id)}
+              >
+                <AlertCircle className="h-3.5 w-3.5 mr-1.5" />
+                Ver Analyzer
               </Button>
             )}
             

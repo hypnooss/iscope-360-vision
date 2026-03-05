@@ -2081,6 +2081,33 @@ Deno.serve(async (req) => {
       })
       .eq('id', snapshot_id);
 
+    // Proactive alert: insert system_alert when critical incidents detected
+    if (summary.critical > 0) {
+      try {
+        // Fetch tenant display name for alert message
+        const tenantName = snapshot.tenant_display_name || snapshot.tenant_domain || 'Tenant';
+        await supabase
+          .from('system_alerts')
+          .insert({
+            alert_type: 'm365_analyzer_critical',
+            severity: summary.critical >= 3 ? 'error' : 'warning',
+            title: `M365 Analyzer: ${summary.critical} incidente${summary.critical > 1 ? 's' : ''} crítico${summary.critical > 1 ? 's' : ''} detectado${summary.critical > 1 ? 's' : ''}`,
+            message: `Análise do tenant "${tenantName}" encontrou ${summary.critical} incidente(s) de severidade crítica. Verifique o Radar de Incidentes.`,
+            metadata: {
+              tenant_record_id: snapshot.tenant_record_id,
+              snapshot_id,
+              critical_count: summary.critical,
+              high_count: summary.high,
+              score,
+            },
+            is_active: true,
+          });
+        console.log(`[m365-analyzer] Created system_alert for ${summary.critical} critical incidents`);
+      } catch (alertErr) {
+        console.warn('[m365-analyzer] Failed to create system_alert:', alertErr);
+      }
+    }
+
     // Update baselines from effective activity (message trace or graph)
     const effectiveActivity = (behavioral.metrics as any)._effectiveActivity || emailActivity;
     if (effectiveActivity.length > 0 && (!baselines || baselines.length === 0)) {

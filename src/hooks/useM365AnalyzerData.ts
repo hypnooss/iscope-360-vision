@@ -180,7 +180,12 @@ function deduplicateInsights(insights: M365AnalyzerInsight[]): M365AnalyzerInsig
   return Array.from(grouped.values());
 }
 
-function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnapshot & { snapshotCount: number } | null {
+export interface ScoreHistoryPoint {
+  date: string;
+  score: number;
+}
+
+function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnapshot & { snapshotCount: number; scoreHistory: ScoreHistoryPoint[] } | null {
   if (!snapshots.length) return null;
 
   const latest = snapshots[0];
@@ -199,6 +204,11 @@ function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnap
 
   const metrics = latest.metrics;
 
+  const scoreHistory: ScoreHistoryPoint[] = snapshots
+    .filter(s => s.score != null)
+    .map(s => ({ date: s.created_at, score: s.score! }))
+    .reverse();
+
   return {
     ...latest,
     period_start: oldest.period_start ?? latest.period_start,
@@ -207,6 +217,7 @@ function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnap
     insights: deduplicateInsights(snapshots.flatMap(s => s.insights ?? [])),
     metrics,
     snapshotCount: snapshots.length,
+    scoreHistory,
   };
 }
 
@@ -216,7 +227,6 @@ export function useLatestM365AnalyzerSnapshot(tenantRecordId?: string) {
     queryFn: async () => {
       if (!tenantRecordId) return null;
 
-      // Query 1: summaries + metrics from last 24 snapshots (no insights for performance)
       const { data, error } = await supabase
         .from('m365_analyzer_snapshots' as any)
         .select('id, tenant_record_id, client_id, agent_task_id, status, period_start, period_end, score, summary, metrics, created_at')
@@ -233,7 +243,7 @@ export function useLatestM365AnalyzerSnapshot(tenantRecordId?: string) {
       const aggregated = aggregateSnapshots(snapshots);
       if (!aggregated) return null;
 
-      // Query 2: load insights only from the latest snapshot
+      // Load insights only from the latest snapshot
       const { data: latestInsightsData } = await supabase
         .from('m365_analyzer_snapshots' as any)
         .select('insights')
@@ -243,10 +253,65 @@ export function useLatestM365AnalyzerSnapshot(tenantRecordId?: string) {
       const rawInsights = Array.isArray(latestInsightsData?.insights) ? latestInsightsData.insights : [];
       aggregated.insights = deduplicateInsights(rawInsights as M365AnalyzerInsight[]);
 
+      // Store snapshot IDs for diff
+      (aggregated as any)._snapshotIds = rows.map((r: any) => r.id);
+
       return aggregated;
     },
     enabled: !!tenantRecordId,
     staleTime: 1000 * 30,
+  });
+}
+
+export interface SnapshotDiffResult {
+  newCount: number;
+  resolvedCount: number;
+  escalatedCount: number;
+}
+
+export function useM365AnalyzerDiff(tenantRecordId?: string, latestSnapshotData?: any) {
+  const snapshotIds: string[] = latestSnapshotData?._snapshotIds ?? [];
+  const secondId = snapshotIds.length >= 2 ? snapshotIds[1] : undefined;
+
+  return useQuery<SnapshotDiffResult | null>({
+    queryKey: ['m365-analyzer-diff', secondId],
+    queryFn: async () => {
+      if (!secondId) return null;
+
+      const { data } = await supabase
+        .from('m365_analyzer_snapshots' as any)
+        .select('insights')
+        .eq('id', secondId)
+        .single() as any;
+
+      const prevInsights = Array.isArray(data?.insights) ? (data.insights as M365AnalyzerInsight[]) : [];
+      const currentInsights = latestSnapshotData?.insights ?? [];
+
+      const prevKeys = new Set<string>(prevInsights.map((i: any) => `${i.category}::${i.name}`));
+      const currKeys = new Set<string>(currentInsights.map((i: any) => `${i.category}::${i.name}`));
+      const prevSevMap = new Map<string, string>(prevInsights.map((i: any) => [`${i.category}::${i.name}`, i.severity] as [string, string]));
+
+      let newCount = 0;
+      let resolvedCount = 0;
+      let escalatedCount = 0;
+      const sevOrder: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+
+      currKeys.forEach((key) => {
+        if (!prevKeys.has(key)) newCount++;
+        else {
+          const prevSev = prevSevMap.get(key);
+          const curr = currentInsights.find((i: any) => `${i.category}::${i.name}` === key);
+          if (curr && prevSev && (sevOrder[curr.severity] ?? 0) > (sevOrder[prevSev] ?? 0)) escalatedCount++;
+        }
+      });
+      prevKeys.forEach((key) => {
+        if (!currKeys.has(key)) resolvedCount++;
+      });
+
+      return { newCount, resolvedCount, escalatedCount };
+    },
+    enabled: !!secondId && !!latestSnapshotData?.insights,
+    staleTime: 1000 * 60,
   });
 }
 

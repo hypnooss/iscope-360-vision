@@ -3,8 +3,9 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { AlertOctagon, AlertTriangle, Shield, CheckCircle2 } from 'lucide-react';
-import { useExternalMovementData } from '@/hooks/useExternalMovementData';
+import { useExternalMovementData, useBaselineMaturity } from '@/hooks/useExternalMovementData';
 import { ExternalMovementCard } from './ExternalMovementCard';
+import { BaselineMaturityCard } from './BaselineMaturityCard';
 import type { ExternalMovementAlert, ExternalMovementSeverity } from '@/types/externalMovement';
 
 const SEV_CFG = {
@@ -46,7 +47,7 @@ interface Props {
 
 export function ExternalMovementTab({ tenantRecordId, compact }: Props) {
   const { data, isLoading } = useExternalMovementData(tenantRecordId);
-
+  const { data: baselineDays = 0 } = useBaselineMaturity(tenantRecordId);
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -70,10 +71,13 @@ export function ExternalMovementTab({ tenantRecordId, compact }: Props) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <SeverityColumn severity="critical" alerts={data.bySeverity.critical} compact={compact} />
-      <SeverityColumn severity="high" alerts={data.bySeverity.high} compact={compact} />
-      <SeverityColumn severity="medium" alerts={data.bySeverity.medium} compact={compact} />
+    <div>
+      <BaselineMaturityCard daysCollected={baselineDays} />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <SeverityColumn severity="critical" alerts={data.bySeverity.critical} compact={compact} />
+        <SeverityColumn severity="high" alerts={data.bySeverity.high} compact={compact} />
+        <SeverityColumn severity="medium" alerts={data.bySeverity.medium} compact={compact} />
+      </div>
     </div>
   );
 }

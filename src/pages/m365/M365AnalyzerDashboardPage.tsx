@@ -6,7 +6,7 @@ import { useModules } from '@/contexts/ModuleContext';
 import { usePreview } from '@/contexts/PreviewContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
-import { useLatestM365AnalyzerSnapshot, useM365AnalyzerProgress } from '@/hooks/useM365AnalyzerData';
+import { useLatestM365AnalyzerSnapshot, useM365AnalyzerProgress, useM365AnalyzerDiff } from '@/hooks/useM365AnalyzerData';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
@@ -38,6 +38,9 @@ import { toast as sonnerToast } from 'sonner';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
 import { ExternalMovementTab } from '@/components/m365/analyzer/ExternalMovementTab';
 import { useExternalMovementData } from '@/hooks/useExternalMovementData';
+import { AnalyzerKPIRow } from '@/components/m365/analyzer/AnalyzerKPIRow';
+import { AnalyzerScoreSparkline } from '@/components/m365/analyzer/AnalyzerScoreSparkline';
+import { SnapshotDiffBanner } from '@/components/m365/analyzer/SnapshotDiffBanner';
 
 // ─── Operational categories only ─────────────────────────────────────────────
 const OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
@@ -353,6 +356,7 @@ export default function M365AnalyzerDashboardPage() {
 
   const { tenants, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
   const { data: snapshot, isLoading, refetch } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
+  const { data: diff } = useM365AnalyzerDiff(selectedTenantId || undefined, snapshot);
   const { data: progress, refetch: refetchProgress, isFetching: isRefetchingProgress } = useM365AnalyzerProgress(selectedTenantId || undefined);
   const isRunning = progress?.status === 'pending' || progress?.status === 'processing';
   const wasOrphan = (progress as any)?.wasOrphan === true;
@@ -682,7 +686,23 @@ export default function M365AnalyzerDashboardPage() {
                 )}
               </div>
             </CardContent>
+            {/* Sparkline de tendência */}
+            {(snapshot as any).scoreHistory?.length >= 2 && (
+              <div className="px-4 pb-3">
+                <AnalyzerScoreSparkline data={(snapshot as any).scoreHistory} />
+              </div>
+            )}
           </Card>
+        )}
+
+        {/* KPI Cards */}
+        {snapshot && m && (
+          <AnalyzerKPIRow metrics={m} />
+        )}
+
+        {/* Diff Banner */}
+        {diff && (diff.newCount > 0 || diff.resolvedCount > 0 || diff.escalatedCount > 0) && (
+          <SnapshotDiffBanner diff={diff} />
         )}
 
         {/* Loading skeleton */}
