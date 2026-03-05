@@ -71,10 +71,13 @@ export function ExternalMovementTab({ tenantRecordId, compact }: Props) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <SeverityColumn severity="critical" alerts={data.bySeverity.critical} compact={compact} />
-      <SeverityColumn severity="high" alerts={data.bySeverity.high} compact={compact} />
-      <SeverityColumn severity="medium" alerts={data.bySeverity.medium} compact={compact} />
+    <div>
+      <BaselineMaturityCard daysCollected={baselineDays} />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <SeverityColumn severity="critical" alerts={data.bySeverity.critical} compact={compact} />
+        <SeverityColumn severity="high" alerts={data.bySeverity.high} compact={compact} />
+        <SeverityColumn severity="medium" alerts={data.bySeverity.medium} compact={compact} />
+      </div>
     </div>
   );
 }

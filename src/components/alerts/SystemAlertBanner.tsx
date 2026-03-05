@@ -288,7 +288,7 @@ export function SystemAlertBanner() {
           
           {/* Ações */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {primaryAlert.alert_type.startsWith('m365_') && (
+            {primaryAlert.alert_type.startsWith('m365_') && primaryAlert.alert_type !== 'm365_analyzer_critical' && (
               <Button
                 variant="outline"
                 size="sm"
@@ -297,6 +297,18 @@ export function SystemAlertBanner() {
               >
                 <Settings className="h-3.5 w-3.5 mr-1.5" />
                 Ver Configurações
+              </Button>
+            )}
+
+            {primaryAlert.alert_type === 'm365_analyzer_critical' && (
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
+                onClick={() => handleViewAnalyzer(primaryAlert.id)}
+              >
+                <AlertCircle className="h-3.5 w-3.5 mr-1.5" />
+                Ver Analyzer
               </Button>
             )}
             
