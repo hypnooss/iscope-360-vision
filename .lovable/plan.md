@@ -1,27 +1,46 @@
 
 
-## Problem
+## Diagnóstico: Movimento Externo sem dados
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+### Problema identificado
 
-## Solution
+A edge function `m365-external-movement` existe e está deployada, mas **ninguém a invoca**. O `m365-analyzer` finaliza o snapshot (linha ~2082) e gera alertas de sistema, mas nunca chama `m365-external-movement` para processar métricas de movimento externo por usuário.
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+Há também um bug secundário no hook `useBaselineMaturity`: consulta a coluna `stat_date` que não existe na tabela (a coluna real é `date`).
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+### Correção necessária
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+**1. `supabase/functions/m365-analyzer/index.ts`** (principal)
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+Após salvar o snapshot como `completed` (~linha 2082), adicionar uma chamada à function `m365-external-movement` passando os `user_metrics` extraídos do módulo de exfiltração (message trace). O analyzer já tem os dados necessários:
+- `exfiltration.metrics.topExternalDomains` e `userExternalSent` por usuário
+- `messageTrace` com detalhes de envio externo
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+Construir o array `user_metrics` a partir do `messageTrace` (agrupar por remetente: total emails, total MB estimado, domínios únicos, hora média) e chamar:
 
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+```typescript
+await fetch(`${supabaseUrl}/functions/v1/m365-external-movement`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+  body: JSON.stringify({
+    tenant_record_id: snapshot.tenant_record_id,
+    client_id: snapshot.client_id,
+    snapshot_id,
+    user_metrics: userMetricsArray,
+    security_signals: securitySignalsMap,
+  }),
+});
+```
 
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+**2. `src/hooks/useExternalMovementData.ts`** (bug fix)
+
+No `useBaselineMaturity`, trocar `.select('stat_date')` por `.select('date')` e ajustar o `.map` para usar `r.date` em vez de `r.stat_date`.
+
+### Resumo
+
+| Item | Causa | Fix |
+|---|---|---|
+| Sem alertas de movimento externo | `m365-analyzer` nunca chama `m365-external-movement` | Adicionar invocação após snapshot completed |
+| Baseline sempre 0 | Hook consulta coluna `stat_date` inexistente (coluna real: `date`) | Corrigir nome da coluna |
+| Dados diários vazios | Sem invocação = sem upserts em `m365_user_external_daily_stats` | Resolvido pelo fix #1 |
 
