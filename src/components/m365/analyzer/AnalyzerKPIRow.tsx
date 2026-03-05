@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import {
-  ShieldAlert, KeyRound, UserX, Send, Search, Activity,
+  ShieldAlert, KeyRound, Globe, AlertTriangle, Search, Activity,
 } from 'lucide-react';
 import type { M365AnalyzerMetrics } from '@/types/m365AnalyzerInsights';
 
