@@ -194,7 +194,7 @@ function mapTaskType(taskType: string, targetType: string): TargetType {
   if (TASK_TYPE_TO_TARGET[taskType]) return TASK_TYPE_TO_TARGET[taskType];
   if (targetType === 'firewall') return 'firewall';
   if (targetType === 'external_domain') return 'external_domain';
-  if (targetType === 'm365_tenant') return 'm365_compliance';
+  if (targetType === 'm365_tenant') return 'm365_analyzer';
   return 'firewall';
 }
 
