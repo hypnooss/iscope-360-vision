@@ -3,8 +3,9 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { AlertOctagon, AlertTriangle, Shield, CheckCircle2 } from 'lucide-react';
-import { useExternalMovementData } from '@/hooks/useExternalMovementData';
+import { useExternalMovementData, useBaselineMaturity } from '@/hooks/useExternalMovementData';
 import { ExternalMovementCard } from './ExternalMovementCard';
+import { BaselineMaturityCard } from './BaselineMaturityCard';
 import type { ExternalMovementAlert, ExternalMovementSeverity } from '@/types/externalMovement';
 
 const SEV_CFG = {
