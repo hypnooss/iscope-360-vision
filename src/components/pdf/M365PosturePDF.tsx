@@ -261,7 +261,7 @@ export const M365PosturePDF: React.FC<M365PosturePDFProps> = ({
           categoryDisplayName: config.displayName,
         };
 
-        if (check.status === 'pass') {
+        if (check.status === 'pass' || priority === 'ok') {
           passed.push(item);
         } else if (priority === 'critical') {
           critical.push(item);
