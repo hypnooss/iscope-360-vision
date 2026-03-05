@@ -428,12 +428,32 @@ export default function M365PosturePage() {
               loading={isLoading}
               disabled={isBlocked}
             />
-            <Button onClick={handleRefresh} disabled={isLoading || isAnalysisRunning || !selectedTenantId}>
-              {isBlocked && <Lock className="w-4 h-4 mr-2" />}
-              {isLoading || isAnalysisRunning
-                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
-                : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button disabled={!selectedTenantId} className="gap-0 pr-0">
+                  <span className="px-3">Executar Ações</span>
+                  <span className="border-l border-primary-foreground/30 h-full flex items-center px-2">
+                    <ChevronDown className="w-4 h-4" />
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[200px]">
+                <DropdownMenuItem onClick={handleRefresh} disabled={isLoading || isAnalysisRunning}>
+                  {isLoading || isAnalysisRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                  Gerar Análise
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPDF} disabled={allUnifiedItems.length === 0 || isExportingPDF}>
+                  {isExportingPDF ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
+                  Exportar PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => sonnerToast.info('Exportar CVE será implementado em breve.')}>
+                  <FileText className="w-4 h-4 mr-2" />Exportar CVE
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => sonnerToast.info('Gerar GMUD será implementado em breve.')}>
+                  <ClipboardList className="w-4 h-4 mr-2" />Gerar GMUD
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               size="icon"
