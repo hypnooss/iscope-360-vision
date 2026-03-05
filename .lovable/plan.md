@@ -1,27 +1,37 @@
 
 
-## Problem
+## Fix: Manter "Verificações Aprovadas" junto na mesma página do PDF
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+### Problema
+No `ExternalDomainPDF.tsx`, o bloco de "Verificações Aprovadas" (título + lista verde) está dentro de uma `<Page wrap>` mas sem indicação ao `@react-pdf/renderer` de que o título e a lista devem permanecer juntos. Quando o conteúdo anterior ocupa quase toda a página, o título fica numa página e a lista na seguinte.
 
-## Solution
+### Solução
+Envolver o bloco `passedSection` (linhas 480-494) com `<View break={false} minPresenceAhead={80}>` para que o `@react-pdf/renderer` saiba que o título precisa de pelo menos 80pt de conteúdo à frente. Adicionalmente, wrapping the entire passed section in a single `<View wrap={false}>` would be ideal **if** the list is short enough — but with 20+ items it may not fit on one page.
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+A abordagem correta é:
+1. Wrap o título + primeiros itens da lista num `<View minPresenceAhead={120}>` para garantir que o título nunca fique sozinho no fim de uma página
+2. Mover o `passedSection` inteiro para uma **nova `<Page>`** dedicada, separando-o da página de "Guia de Correções"
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+**Abordagem escolhida**: Mover para página própria — é a mais robusta e evita qualquer quebra entre título e lista.
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+### Alteração em `src/components/pdf/ExternalDomainPDF.tsx`
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+Extrair o bloco de "Verificações Aprovadas" (linhas 480-494) de dentro da `<Page wrap>` do "Guia de Correções" e colocá-lo numa `<Page>` separada logo após, com `wrap` habilitado para que a lista possa fluir por múltiplas páginas se necessário. O título ficará fixo no topo da nova página.
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
-
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
-
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+```
+{/* Passed checks - dedicated page */}
+{categorizedChecks.passed.length > 0 && (
+  <Page size="A4" style={pageStyles.page} wrap>
+    <View style={pageStyles.content}>
+      <Text style={pageStyles.passedTitle}>
+        Verificações Aprovadas ({categorizedChecks.passed.length})
+      </Text>
+      <View style={pageStyles.passedList}>
+        {categorizedChecks.passed.map(...)}
+      </View>
+    </View>
+    <PDFFooter />
+  </Page>
+)}
+```
 
