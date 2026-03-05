@@ -47,7 +47,7 @@ interface Props {
 
 export function ExternalMovementTab({ tenantRecordId, compact }: Props) {
   const { data, isLoading } = useExternalMovementData(tenantRecordId);
-
+  const { data: baselineDays = 0 } = useBaselineMaturity(tenantRecordId);
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
