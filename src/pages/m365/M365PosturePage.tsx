@@ -85,6 +85,56 @@ export default function M365PosturePage() {
     isSuperRole ? selectedWorkspaceId : undefined
   );
 
+  // ── Client name for PDF ──
+  const { data: clientName } = useQuery({
+    queryKey: ['m365-client-name', selectedTenant?.domain],
+    queryFn: async () => {
+      if (!selectedTenant) return null;
+      // Get client_id from the tenant
+      const { data: tenant } = await supabase
+        .from('m365_tenants')
+        .select('client_id')
+        .eq('id', selectedTenantId!)
+        .single();
+      if (!tenant?.client_id) return null;
+      const { data } = await supabase.from('clients').select('name').eq('id', tenant.client_id).single();
+      return data?.name ?? null;
+    },
+    enabled: !!selectedTenantId,
+    staleTime: 1000 * 60 * 10,
+  });
+
+  // ── Correction guides for PDF ──
+  const { data: correctionGuides } = useQuery({
+    queryKey: ['m365-correction-guides'],
+    queryFn: async () => {
+      // Get the device_type_id for M365
+      const { data: deviceType } = await supabase
+        .from('device_types')
+        .select('id')
+        .eq('code', 'm365_tenant')
+        .single();
+      if (!deviceType) return [];
+      const { data, error } = await supabase
+        .from('rule_correction_guides')
+        .select('*, compliance_rules!inner(code, device_type_id)')
+        .eq('compliance_rules.device_type_id', deviceType.id);
+      if (error) throw error;
+      return (data || []).map(g => ({
+        rule_code: (g as any).compliance_rules.code,
+        friendly_title: g.friendly_title,
+        what_is: g.what_is,
+        why_matters: g.why_matters,
+        impacts: Array.isArray(g.impacts) ? g.impacts as string[] : [],
+        how_to_fix: Array.isArray(g.how_to_fix) ? g.how_to_fix as string[] : [],
+        provider_examples: Array.isArray(g.provider_examples) ? g.provider_examples as string[] : [],
+        difficulty: g.difficulty as 'low' | 'medium' | 'high' | null,
+        time_estimate: g.time_estimate,
+      })) as CorrectionGuideData[];
+    },
+    staleTime: 1000 * 60 * 30,
+  });
+
   // Detect in-progress analysis on mount
   const { data: activeAnalysis } = useQuery({
     queryKey: ['m365-active-analysis', selectedTenantId],
