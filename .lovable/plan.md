@@ -1,27 +1,23 @@
 
 
-## Problem
+## Fix: Subdomínios quebrando entre páginas no PDF
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+### Problema
+A seção "Subdomínios" está dentro do `PDFDNSMap`, que é renderizado na Page 3 do PDF. Quando NS, SOA, MX e TXT ocupam espaço suficiente, os subdomínios começam no fim da página e quebram entre páginas.
 
-## Solution
+### Solução
+Separar os subdomínios do `PDFDNSMap` e renderizá-los numa `<Page>` dedicada no `ExternalDomainPDF.tsx` — mesma abordagem usada para "Verificações Aprovadas".
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+### Alterações
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+**1. `src/components/pdf/sections/PDFDNSMap.tsx`**
+- Remover a seção de subdomínios (linhas 426-493) do componente
+- Exportar as funções auxiliares `truncate` e os tipos/styles necessários para reuso, ou criar um novo componente `PDFSubdomainSection`
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+**2. `src/components/pdf/ExternalDomainPDF.tsx`**
+- Adicionar uma nova `<Page>` dedicada para subdomínios, após a página do DNS Map
+- Renderizar o header "Subdomínios" + cards na nova página com `wrap` habilitado
+- A seção só aparece se houver subdomínios ativos
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
-
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
-
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
-
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+**Abordagem concreta**: Extrair a renderização dos subdomínios para um componente separado (ou inline no ExternalDomainPDF) e colocá-lo numa `<Page>` própria com `wrap`, garantindo que o título sempre fique no topo da página e os cards fluam naturalmente.
 
