@@ -287,30 +287,26 @@ export function useM365AnalyzerDiff(tenantRecordId?: string, latestSnapshotData?
       const prevInsights = Array.isArray(data?.insights) ? (data.insights as M365AnalyzerInsight[]) : [];
       const currentInsights = latestSnapshotData?.insights ?? [];
 
-      const prevKeys = new Set(prevInsights.map((i: any) => `${i.category}::${i.name}`));
-      const currKeys = new Set(currentInsights.map((i: any) => `${i.category}::${i.name}`));
-      const prevSevMap = new Map<string, string>(prevInsights.map((i: any) => [`${i.category}::${i.name}`, i.severity]));
-
-      const currKeysArr = Array.from(currKeys) as string[];
-      const prevKeysArr = Array.from(prevKeys) as string[];
-      const prevSevMap = new Map(prevInsights.map((i: any) => [`${i.category}::${i.name}`, i.severity]));
+      const prevKeys = new Set<string>(prevInsights.map((i: any) => `${i.category}::${i.name}`));
+      const currKeys = new Set<string>(currentInsights.map((i: any) => `${i.category}::${i.name}`));
+      const prevSevMap = new Map<string, string>(prevInsights.map((i: any) => [`${i.category}::${i.name}`, i.severity] as [string, string]));
 
       let newCount = 0;
       let resolvedCount = 0;
       let escalatedCount = 0;
       const sevOrder: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
 
-      for (const key of currKeys) {
+      currKeys.forEach((key) => {
         if (!prevKeys.has(key)) newCount++;
         else {
           const prevSev = prevSevMap.get(key);
           const curr = currentInsights.find((i: any) => `${i.category}::${i.name}` === key);
           if (curr && prevSev && (sevOrder[curr.severity] ?? 0) > (sevOrder[prevSev] ?? 0)) escalatedCount++;
         }
-      }
-      for (const key of prevKeys) {
+      });
+      prevKeys.forEach((key) => {
         if (!currKeys.has(key)) resolvedCount++;
-      }
+      });
 
       return { newCount, resolvedCount, escalatedCount };
     },
