@@ -53,6 +53,7 @@ function parseMetrics(raw: unknown): M365AnalyzerMetrics {
   const ca = m.conditionalAccess ?? m.conditional_access ?? {};
   const eh = m.exchangeHealth ?? m.exchange_health ?? {};
   const au = m.audit ?? m.audit_compliance ?? {};
+  const tp = m.threatProtection ?? m.threat_protection ?? {};
 
   return {
     phishing: {
