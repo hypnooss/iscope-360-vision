@@ -109,6 +109,26 @@ export interface M365AnalyzerMetrics {
     newDelegations: number;
     activeEdiscovery: number;
   };
+  threatProtection: {
+    spamBlocked: number;
+    phishingDetected: number;
+    malwareBlocked: number;
+    quarantined: number;
+    totalDelivered: number;
+    totalFiltered: number;
+    topSpamSenderDomains: { domain: string; count: number }[];
+    topPhishingTargets: { user: string; count: number }[];
+    topMalwareSenders: { domain: string; count: number }[];
+    topSpamRecipients: { user: string; count: number }[];
+    deliveryBreakdown: { status: string; count: number }[];
+    policyStatus: {
+      antiSpam: 'enabled' | 'weak' | 'disabled';
+      antiPhish: 'enabled' | 'weak' | 'disabled';
+      safeLinks: 'enabled' | 'disabled';
+      safeAttach: 'enabled' | 'disabled';
+      malwareFilter: 'enabled' | 'weak' | 'disabled';
+    };
+  };
 }
 
 export interface M365AnalyzerSnapshot {
