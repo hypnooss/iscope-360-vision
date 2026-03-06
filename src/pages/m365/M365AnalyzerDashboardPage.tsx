@@ -560,6 +560,9 @@ export default function M365AnalyzerDashboardPage() {
   const extMovementCount = extMovementData?.totalAlerts ?? 0;
   const threatCount = (m?.threatProtection?.spamBlocked ?? 0) + (m?.threatProtection?.phishingDetected ?? 0) + (m?.threatProtection?.malwareBlocked ?? 0);
 
+  // Threat dismissals
+  const { dismissedKeys, dismiss: dismissThreat, restore: restoreThreat, isDismissing, isRestoring } = useThreatDismissals(selectedTenantId);
+
   return (
     <AppLayout>
       <div className={cn('p-6 lg:p-8 space-y-5', compactMode && 'space-y-3')}>
