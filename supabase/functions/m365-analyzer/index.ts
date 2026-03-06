@@ -2415,7 +2415,12 @@ Deno.serve(async (req) => {
     if (summary.critical > 0) {
       try {
         // Fetch tenant display name for alert message
-        const tenantName = snapshot.tenant_display_name || snapshot.tenant_domain || 'Tenant';
+        const { data: tenantRow } = await supabase
+          .from('m365_tenants')
+          .select('display_name, tenant_domain')
+          .eq('id', snapshot.tenant_record_id)
+          .single();
+        const tenantName = tenantRow?.display_name || tenantRow?.tenant_domain || 'Tenant';
         await supabase
           .from('system_alerts')
           .insert({
