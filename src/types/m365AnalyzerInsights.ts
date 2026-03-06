@@ -14,7 +14,8 @@ export type M365AnalyzerCategory =
   | 'account_compromise'
   | 'suspicious_rules'
   | 'exfiltration'
-  | 'operational_risks';
+  | 'operational_risks'
+  | 'threat_protection';
 
 export interface M365AnalyzerInsight {
   id: string;
