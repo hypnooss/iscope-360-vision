@@ -20,6 +20,13 @@ const defaultMetrics: M365AnalyzerMetrics = {
   conditionalAccess: { disabledPolicies: 0, reportOnlyPolicies: 0, excludedUsers: 0, recentlyCreated: 0 },
   exchangeHealth: { serviceIncidents: 0, messageTraceFailures: 0, sharedMailboxesNoOwner: 0, connectorFailures: 0 },
   audit: { mailboxAuditAlerts: 0, adminAuditChanges: 0, newDelegations: 0, activeEdiscovery: 0 },
+  threatProtection: {
+    spamBlocked: 0, phishingDetected: 0, malwareBlocked: 0, quarantined: 0,
+    totalDelivered: 0, totalFiltered: 0,
+    topSpamSenderDomains: [], topPhishingTargets: [], topMalwareSenders: [], topSpamRecipients: [],
+    deliveryBreakdown: [],
+    policyStatus: { antiSpam: 'disabled', antiPhish: 'disabled', safeLinks: 'disabled', safeAttach: 'disabled', malwareFilter: 'disabled' },
+  },
 };
 
 function safeArray<T>(val: unknown): T[] {
