@@ -79,8 +79,8 @@ export function useThreatDismissals(tenantRecordId: string | null) {
     dismissals,
     dismissedKeys,
     isLoading,
-    dismiss: dismissMutation.mutate,
-    restore: restoreMutation.mutate,
+    dismiss: (type: string, label: string, reason?: string) => dismissMutation.mutate({ type, label, reason }),
+    restore: (type: string, label: string) => restoreMutation.mutate({ type, label }),
     isDismissing: dismissMutation.isPending,
     isRestoring: restoreMutation.isPending,
   };
