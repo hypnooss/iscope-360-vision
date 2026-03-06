@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
@@ -11,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { ExternalMovementAlert } from '@/types/externalMovement';
 import { riskScoreLabel } from '@/types/externalMovement';
+import { ExternalMovementDetailSheet } from './ExternalMovementDetailSheet';
 
 const SEV_CFG = {
   critical: { label: 'Critical', icon: AlertOctagon, border: 'border-rose-500/40', bg: 'bg-rose-500/10', text: 'text-rose-400', glow: 'shadow-[0_0_12px_hsl(350_70%_50%/0.15)]' },
@@ -109,89 +109,8 @@ export function ExternalMovementCard({ alert, compact }: Props) {
         </CardContent>
       </Card>
 
-      {/* Detail Dialog */}
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <div className="flex items-center gap-3">
-              <div className={cn('p-2 rounded-lg', sev.bg)}>
-                <sev.icon className={cn('w-5 h-5', sev.text)} />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <Badge variant="outline" className={cn('text-xs', sev.bg, sev.text, sev.border)}>{sev.label}</Badge>
-                  <Badge variant="secondary" className="text-xs">Risk: {alert.risk_score}/100</Badge>
-                </div>
-                <DialogTitle className="text-lg">{alert.title}</DialogTitle>
-              </div>
-            </div>
-            <DialogDescription className="mt-2">
-              {alert.description || 'Sem descrição disponível.'}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto space-y-5 py-4 -mx-6 px-6">
-            {/* User */}
-            <div className="p-3 rounded-lg bg-muted/30">
-              <span className="text-xs text-muted-foreground">Usuário</span>
-              <p className="font-medium text-sm">{alert.user_id}</p>
-            </div>
-
-            {/* Metrics grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {alert.z_score !== null && (
-                <div className="p-2 rounded-lg bg-muted/30 text-sm">
-                  <span className="text-muted-foreground text-xs">Z-Score</span>
-                  <p className="font-bold">{alert.z_score?.toFixed(2)}</p>
-                </div>
-              )}
-              {alert.pct_increase !== null && (
-                <div className="p-2 rounded-lg bg-muted/30 text-sm">
-                  <span className="text-muted-foreground text-xs">Aumento %</span>
-                  <p className="font-bold">{alert.pct_increase?.toFixed(0)}%</p>
-                </div>
-              )}
-              <div className="p-2 rounded-lg bg-muted/30 text-sm">
-                <span className="text-muted-foreground text-xs">Risk Score</span>
-                <p className={cn('font-bold', risk.color)}>{alert.risk_score}/100</p>
-              </div>
-              <div className="p-2 rounded-lg bg-muted/30 text-sm">
-                <span className="text-muted-foreground text-xs">Tipo</span>
-                <p className="font-medium">{alert.alert_type}</p>
-              </div>
-            </div>
-
-            {/* Affected domains */}
-            {alert.affected_domains && alert.affected_domains.length > 0 && (
-              <div>
-                <h4 className="font-medium text-sm mb-2">Domínios Afetados</h4>
-                <div className="flex flex-wrap gap-1">
-                  {alert.affected_domains.map((d, i) => (
-                    <Badge key={i} variant="outline" className="text-xs">{d}</Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Evidence */}
-            {alert.evidence && Object.keys(alert.evidence).length > 0 && (
-              <div>
-                <h4 className="font-medium text-sm mb-2">Evidências</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(alert.evidence).map(([key, value]) => (
-                    <div key={key} className="p-2 rounded-lg bg-muted/30 text-sm">
-                      <span className="text-muted-foreground text-xs">{key}</span>
-                      <p className="font-medium truncate">
-                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Detail Sheet */}
+      <ExternalMovementDetailSheet alert={alert} open={detailOpen} onOpenChange={setDetailOpen} />
     </>
   );
 }

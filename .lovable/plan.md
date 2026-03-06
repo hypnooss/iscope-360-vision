@@ -1,49 +1,27 @@
 
 
-## Implementar Sheet lateral nos módulos Incidentes, Anomalias e Movimento Externo
+## Problem
 
-### Situação atual
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-- **Incidentes e Anomalias**: O `IncidentCard` (inline no `M365AnalyzerDashboardPage.tsx`) usa `Dialog` (modal central) para exibir detalhes.
-- **Movimento Externo**: O `ExternalMovementCard` também usa `Dialog`.
-- **Proteção contra Ameaças**: Já usa `Sheet` lateral com o padrão correto (`ThreatDetailSheet`).
+## Solution
 
-### Objetivo
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-Converter os detalhes de Incidentes/Anomalias e Movimento Externo para abrir em `Sheet` lateral (50vw), seguindo o mesmo padrão visual do `ThreatDetailSheet` com abas Análise e Evidências.
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-### Alterações
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-**1. Novo componente: `src/components/m365/analyzer/IncidentDetailSheet.tsx`**
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-Sheet lateral para insights do Analyzer (incidentes e anomalias):
-- **Header**: Icone de severidade + nome do incidente + badges (severidade, contagem, delta vs anterior)
-- **Aba Análise**: Descrição, impacto contextual, recomendação (mesmo layout do ThreatDetailSheet)
-- **Aba Evidências**: Lista de usuários afetados + metadados adicionais
-- Cores por severidade: Critical=rosa, High=laranja, Medium=amarelo
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-**2. Novo componente: `src/components/m365/analyzer/ExternalMovementDetailSheet.tsx`**
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
 
-Sheet lateral para alertas de movimento externo:
-- **Header**: Icone de severidade + título + badges (severidade, risk score, tipo)
-- **Aba Análise**: Descrição, métricas (Z-Score, aumento %, risk score), recomendação
-- **Aba Evidências**: Domínios afetados + evidências do alerta
-- Badges de "Novo" e "Anômalo"
-
-**3. Editar `IncidentCard` em `M365AnalyzerDashboardPage.tsx`**
-
-- Remover o `Dialog` inline
-- Substituir por abertura do `IncidentDetailSheet`
-- O botão "Detalhes" e click no card abrem o Sheet
-
-**4. Editar `ExternalMovementCard.tsx`**
-
-- Substituir `Dialog` por `ExternalMovementDetailSheet`
-
-### Arquivos
-
-1. `src/components/m365/analyzer/IncidentDetailSheet.tsx` — novo
-2. `src/components/m365/analyzer/ExternalMovementDetailSheet.tsx` — novo
-3. `src/pages/m365/M365AnalyzerDashboardPage.tsx` — substituir Dialog por Sheet no IncidentCard
-4. `src/components/m365/analyzer/ExternalMovementCard.tsx` — substituir Dialog por Sheet
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 
