@@ -159,8 +159,35 @@ export function IncidentDetailSheet({ insight, open, onOpenChange }: IncidentDet
 
           {/* Tab: Evidências */}
           {hasEvidence && (
-            <TabsContent value="evidencias" className="p-6 space-y-4 mt-0">
-              {insight.affectedUsers && insight.affectedUsers.length > 0 && (
+          <TabsContent value="evidencias" className="p-6 space-y-4 mt-0">
+              {/* Per-user detail cards (from consolidated insights) */}
+              {(insight.metadata as any)?.userDetails && (insight.metadata as any).userDetails.length > 0 && (
+                <div className="space-y-2">
+                  <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <Users className="w-3 h-3 text-muted-foreground" />
+                    DETALHAMENTO POR USUÁRIO
+                  </h5>
+                  <div className="rounded-md border border-border/50 divide-y divide-border/30">
+                    {((insight.metadata as any).userDetails as { user: string; description: string; count: number }[]).map((ud, i) => (
+                      <div key={i} className="px-3 py-3 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-foreground flex items-center gap-2">
+                            <UserX className="w-3 h-3 text-muted-foreground shrink-0" />
+                            {ud.user}
+                          </span>
+                          {ud.count > 0 && (
+                            <Badge variant="secondary" className="text-[10px] font-mono">{ud.count} ocorrências</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground pl-5">{ud.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Simple affected users list (fallback when no userDetails) */}
+              {insight.affectedUsers && insight.affectedUsers.length > 0 && !(insight.metadata as any)?.userDetails && (
                 <div className="space-y-2">
                   <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
                     <Users className="w-3 h-3 text-muted-foreground" />
@@ -177,7 +204,7 @@ export function IncidentDetailSheet({ insight, open, onOpenChange }: IncidentDet
                 </div>
               )}
 
-              {insight.metadata && Object.keys(insight.metadata).filter(k => k !== 'previousCount').length > 0 && (
+              {insight.metadata && Object.keys(insight.metadata).filter(k => k !== 'previousCount' && k !== 'userDetails').length > 0 && (
                 <div className="space-y-2">
                   <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
                     <Info className="w-3 h-3 text-muted-foreground" />
@@ -185,7 +212,7 @@ export function IncidentDetailSheet({ insight, open, onOpenChange }: IncidentDet
                   </h5>
                   <div className="grid grid-cols-2 gap-2">
                     {Object.entries(insight.metadata)
-                      .filter(([k]) => k !== 'previousCount')
+                      .filter(([k]) => k !== 'previousCount' && k !== 'userDetails')
                       .map(([key, value]) => (
                         <div key={key} className="p-2.5 rounded-md border border-border/50 bg-muted/30 text-sm">
                           <span className="text-muted-foreground text-xs block mb-0.5">{key}</span>
