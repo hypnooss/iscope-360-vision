@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -7,6 +8,7 @@ import {
   Globe, Users, Ban,
 } from 'lucide-react';
 import type { M365AnalyzerMetrics, M365AnalyzerInsight } from '@/types/m365AnalyzerInsights';
+import { ThreatDetailSheet, type ThreatDetailItem, type ThreatItemType } from './ThreatDetailSheet';
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
 function KpiCard({ label, value, icon: Icon, color }: {
@@ -47,10 +49,11 @@ function PolicyCard({ name, status }: { name: string; status: 'enabled' | 'weak'
 }
 
 // ─── Ranking List ────────────────────────────────────────────────────────────
-function RankingList({ title, icon: Icon, items, labelKey }: {
+function RankingList({ title, icon: Icon, items, labelKey, onItemClick }: {
   title: string; icon: React.ElementType;
   items: { [key: string]: any; count: number }[];
   labelKey: string;
+  onItemClick?: (item: any) => void;
 }) {
   if (!items?.length) return null;
   const maxCount = Math.max(...items.map(i => i.count), 1);
@@ -65,7 +68,14 @@ function RankingList({ title, icon: Icon, items, labelKey }: {
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-1">
         {items.slice(0, 8).map((item, i) => (
-          <div key={i} className="py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
+          <div
+            key={i}
+            className={cn(
+              'py-2 px-2 rounded-md transition-colors',
+              onItemClick ? 'cursor-pointer hover:bg-primary/10' : 'hover:bg-secondary/50',
+            )}
+            onClick={() => onItemClick?.(item)}
+          >
             <div className="flex items-center gap-3">
               <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">
                 {i + 1}
@@ -83,7 +93,7 @@ function RankingList({ title, icon: Icon, items, labelKey }: {
   );
 }
 
-// ─── Incident Card (simplified) ──────────────────────────────────────────────
+// ─── Incident Card ───────────────────────────────────────────────────────────
 function ThreatInsightCard({ insight }: { insight: M365AnalyzerInsight }) {
   const sevConfig = {
     critical: { color: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/40' },
@@ -124,6 +134,21 @@ export function ThreatProtectionTab({ metrics, insights, compact }: ThreatProtec
   const threatInsights = insights.filter(i => i.category === 'threat_protection');
   const totalThreats = tp.spamBlocked + tp.phishingDetected + tp.malwareBlocked;
 
+  const [selectedItem, setSelectedItem] = useState<ThreatDetailItem | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  const openDetail = (type: ThreatItemType, item: any) => {
+    setSelectedItem({
+      type,
+      label: item.domain || item.user,
+      count: item.count,
+      recipients: item.recipients,
+      senders: item.senders,
+      sampleSubjects: item.sampleSubjects,
+    });
+    setSheetOpen(true);
+  };
+
   return (
     <div className={cn('space-y-5', compact && 'space-y-3')}>
       {/* KPI Cards */}
@@ -158,18 +183,21 @@ export function ThreatProtectionTab({ metrics, insights, compact }: ThreatProtec
           icon={Globe}
           items={tp.topSpamSenderDomains}
           labelKey="domain"
+          onItemClick={(item) => openDetail('spam', item)}
         />
         <RankingList
           title="Top Alvos de Phishing"
           icon={Users}
           items={tp.topPhishingTargets}
           labelKey="user"
+          onItemClick={(item) => openDetail('phishing', item)}
         />
         <RankingList
           title="Top Fontes de Malware"
           icon={Bug}
           items={tp.topMalwareSenders}
           labelKey="domain"
+          onItemClick={(item) => openDetail('malware', item)}
         />
       </div>
 
@@ -198,6 +226,13 @@ export function ThreatProtectionTab({ metrics, insights, compact }: ThreatProtec
           </CardContent>
         </Card>
       )}
+
+      {/* Detail Sheet */}
+      <ThreatDetailSheet
+        item={selectedItem}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
     </div>
   );
 }
