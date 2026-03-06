@@ -821,7 +821,7 @@ export default function M365AnalyzerDashboardPage() {
 
             {/* Tab: Proteção contra Ameaças */}
             <TabsContent value="protection">
-              {m && <ThreatProtectionTab metrics={m} insights={snapshot?.insights ?? []} compact={compactMode} />}
+              {m && <ThreatProtectionTab metrics={m} insights={snapshot?.insights ?? []} compact={compactMode} dismissedKeys={dismissedKeys} onDismiss={dismissThreat} onRestore={restoreThreat} isDismissing={isDismissing} isRestoring={isRestoring} />}
             </TabsContent>
 
             {/* Tab: Movimento Externo */}
