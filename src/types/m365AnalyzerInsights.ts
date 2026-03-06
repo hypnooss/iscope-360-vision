@@ -116,9 +116,9 @@ export interface M365AnalyzerMetrics {
     quarantined: number;
     totalDelivered: number;
     totalFiltered: number;
-    topSpamSenderDomains: { domain: string; count: number }[];
-    topPhishingTargets: { user: string; count: number }[];
-    topMalwareSenders: { domain: string; count: number }[];
+    topSpamSenderDomains: { domain: string; count: number; recipients?: string[]; sampleSubjects?: string[] }[];
+    topPhishingTargets: { user: string; count: number; senders?: string[]; sampleSubjects?: string[] }[];
+    topMalwareSenders: { domain: string; count: number; recipients?: string[]; sampleSubjects?: string[] }[];
     topSpamRecipients: { user: string; count: number }[];
     deliveryBreakdown: { status: string; count: number }[];
     policyStatus: {
