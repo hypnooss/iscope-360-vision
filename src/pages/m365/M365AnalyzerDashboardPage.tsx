@@ -557,6 +557,7 @@ export default function M365AnalyzerDashboardPage() {
   // External movement data
   const { data: extMovementData } = useExternalMovementData(selectedTenantId || undefined);
   const extMovementCount = extMovementData?.totalAlerts ?? 0;
+  const threatCount = (m?.threatProtection?.spamBlocked ?? 0) + (m?.threatProtection?.phishingDetected ?? 0) + (m?.threatProtection?.malwareBlocked ?? 0);
 
   return (
     <AppLayout>
