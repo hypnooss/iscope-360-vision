@@ -1,67 +1,27 @@
 
 
-## Consolidar insights com mesmo nome no backend do M365 Analyzer
+## Problem
 
-### Problema
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-O backend gera um insight separado por usuário (ex: 4x "Envio Anômalo de Emails"), cada um com `affectedUsers: [singleUser]` e `description` mencionando apenas aquele usuário. Quando a UI exibe o card consolidado (95 ocorrências, 4 usuários), ao abrir o detalhe, a descrição mostra apenas os dados de um usuário (cristiane).
+## Solution
 
-### Solução
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-Adicionar um passo de **consolidação de insights com mesmo `name`** no backend, logo antes de salvar o snapshot. Insights com o mesmo `name` serão mesclados em um único insight com:
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-- `affectedUsers`: união de todos os usuários
-- `count`: soma dos counts individuais
-- `severity`: a mais alta entre os insights mesclados
-- `description`: resumo geral (ex: "4 usuários com envio anômalo detectado")
-- `metadata.userDetails`: array com o detalhe individual de cada usuário (email, count, desvio%)
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-### Alteração
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-**`supabase/functions/m365-analyzer/index.ts`** — 1 arquivo
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-Após a linha ~2308 (depois de `calculateScore`), antes de salvar o snapshot, adicionar uma função `consolidateInsights(allInsights)` que:
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
 
-1. Agrupa insights pelo campo `name`
-2. Para grupos com mais de 1 insight:
-   - Merge `affectedUsers` em array único
-   - Soma `count`
-   - Mantém a `severity` mais alta (critical > high > medium > low)
-   - Gera uma `description` genérica: `"${n} usuários detectados com ${name.toLowerCase()}"`
-   - Move as descrições originais para `metadata.userDetails` como array de objetos `{ user, description, count }`
-   - Preserva a `recommendation` do primeiro insight
-3. Insights únicos (sem duplicatas de nome) permanecem inalterados
-
-```text
-Antes:
-  insight1: { name: "Envio Anômalo", desc: "cristiane enviou 44...", affectedUsers: ["cristiane"], count: 44 }
-  insight2: { name: "Envio Anômalo", desc: "julio enviou 20...",    affectedUsers: ["julio"],     count: 20 }
-  insight3: { name: "Envio Anômalo", desc: "samuel enviou 18...",   affectedUsers: ["samuel"],    count: 18 }
-  insight4: { name: "Envio Anômalo", desc: "jessica enviou 13...",  affectedUsers: ["jessica"],   count: 13 }
-
-Depois:
-  insight: {
-    name: "Envio Anômalo de Emails",
-    description: "4 usuários com envio anômalo detectado. Total: 95 emails.",
-    affectedUsers: ["cristiane", "julio", "samuel", "jessica"],
-    count: 95,
-    severity: "critical",  // a mais alta
-    metadata: {
-      userDetails: [
-        { user: "cristiane", description: "cristiane enviou 44 emails (733% da média diária de 6)", count: 44 },
-        { user: "julio",     description: "julio enviou 20 emails ...", count: 20 },
-        ...
-      ]
-    }
-  }
-```
-
-**`src/components/m365/analyzer/IncidentDetailSheet.tsx`** — atualizar a aba Evidências
-
-Na aba **Evidências**, quando `metadata.userDetails` existir, renderizar uma tabela/lista com o detalhe individual de cada usuário (user, description, count) em vez de apenas listar os nomes. Isso permite ver as informações específicas de cada usuário afetado.
-
-### Arquivos
-
-1. `supabase/functions/m365-analyzer/index.ts` — adicionar `consolidateInsights()` antes do save
-2. `src/components/m365/analyzer/IncidentDetailSheet.tsx` — exibir `userDetails` na aba Evidências
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 

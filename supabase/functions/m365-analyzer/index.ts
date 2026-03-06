@@ -1888,8 +1888,71 @@ function calculateScore(insights: M365AnalyzerInsight[]): { score: number; summa
 }
 
 // ============================================
-// Main Handler
+// Insight Consolidation (merge duplicates by name)
 // ============================================
+
+const SEVERITY_ORDER: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+
+function consolidateInsights(insights: M365AnalyzerInsight[]): M365AnalyzerInsight[] {
+  const groups = new Map<string, M365AnalyzerInsight[]>();
+
+  for (const ins of insights) {
+    const key = `${ins.category}::${ins.name}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(ins);
+  }
+
+  const result: M365AnalyzerInsight[] = [];
+
+  for (const [, group] of groups) {
+    if (group.length === 1) {
+      result.push(group[0]);
+      continue;
+    }
+
+    // Merge group
+    const allUsers: string[] = [];
+    let totalCount = 0;
+    let highestSev = 'info';
+    const userDetails: { user: string; description: string; count: number }[] = [];
+
+    for (const ins of group) {
+      if (ins.affectedUsers) {
+        for (const u of ins.affectedUsers) {
+          if (!allUsers.includes(u)) allUsers.push(u);
+        }
+      }
+      const c = ins.count ?? 0;
+      totalCount += c;
+
+      if ((SEVERITY_ORDER[ins.severity] ?? 0) > (SEVERITY_ORDER[highestSev] ?? 0)) {
+        highestSev = ins.severity;
+      }
+
+      // Capture per-user detail
+      const userName = ins.affectedUsers?.[0] || 'desconhecido';
+      userDetails.push({ user: userName, description: ins.description, count: c });
+    }
+
+    const base = group[0];
+    const merged: M365AnalyzerInsight = {
+      ...base,
+      severity: highestSev as M365AnalyzerInsight['severity'],
+      affectedUsers: allUsers,
+      count: totalCount,
+      description: `${allUsers.length} usuário(s) detectado(s) com ${base.name.toLowerCase()}. Total: ${totalCount} ocorrência(s).`,
+      metadata: {
+        ...(base.metadata || {}),
+        userDetails,
+      },
+    };
+
+    result.push(merged);
+  }
+
+  return result;
+}
+
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -2305,9 +2368,13 @@ Deno.serve(async (req) => {
       stepsReceived,
     };
 
-    const { score, summary } = calculateScore(allInsights);
+    // ── Consolidate duplicate insights (same name) ──
+    const consolidatedInsights = consolidateInsights(allInsights);
+    console.log(`[m365-analyzer] Consolidated ${allInsights.length} insights into ${consolidatedInsights.length}`);
 
-    console.log(`[m365-analyzer] Result: score=${score}, insights=${allInsights.length}, summary=${JSON.stringify(summary)}`);
+    const { score, summary } = calculateScore(consolidatedInsights);
+
+    console.log(`[m365-analyzer] Result: score=${score}, insights=${consolidatedInsights.length}, summary=${JSON.stringify(summary)}`);
 
     await supabase
       .from('m365_analyzer_snapshots')
@@ -2315,7 +2382,7 @@ Deno.serve(async (req) => {
         status: 'completed',
         score,
         summary,
-        insights: allInsights,
+        insights: consolidatedInsights,
         metrics: allMetrics,
       })
       .eq('id', snapshot_id);
