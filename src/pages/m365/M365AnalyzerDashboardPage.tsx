@@ -39,6 +39,7 @@ import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365Anal
 import { ExternalMovementTab } from '@/components/m365/analyzer/ExternalMovementTab';
 import { ThreatProtectionTab } from '@/components/m365/analyzer/ThreatProtectionTab';
 import { useExternalMovementData } from '@/hooks/useExternalMovementData';
+import { useThreatDismissals } from '@/hooks/useThreatDismissals';
 import { AnalyzerKPIRow, type KPIFilterKey } from '@/components/m365/analyzer/AnalyzerKPIRow';
 import { AnalyzerScoreSparkline } from '@/components/m365/analyzer/AnalyzerScoreSparkline';
 import { SnapshotDiffBanner } from '@/components/m365/analyzer/SnapshotDiffBanner';

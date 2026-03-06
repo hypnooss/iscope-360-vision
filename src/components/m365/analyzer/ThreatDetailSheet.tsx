@@ -1,6 +1,10 @@
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Sheet,
   SheetContent,
@@ -10,6 +14,7 @@ import {
 import {
   MailX, ShieldAlert, Bug, Search, Layers,
   Users, Globe, FileText, Wrench, Mail,
+  AlertTriangle, ShieldOff, RotateCcw,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -18,7 +23,7 @@ export type ThreatItemType = 'spam' | 'phishing' | 'malware';
 
 export interface ThreatDetailItem {
   type: ThreatItemType;
-  label: string;           // domain or user
+  label: string;
   count: number;
   recipients?: string[];
   senders?: string[];
@@ -92,9 +97,17 @@ interface ThreatDetailSheetProps {
   item: ThreatDetailItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  isDismissed?: boolean;
+  onDismiss?: (type: string, label: string, reason?: string) => void;
+  onRestore?: (type: string, label: string) => void;
+  isDismissing?: boolean;
+  isRestoring?: boolean;
 }
 
-export function ThreatDetailSheet({ item, open, onOpenChange }: ThreatDetailSheetProps) {
+export function ThreatDetailSheet({ item, open, onOpenChange, isDismissed, onDismiss, onRestore, isDismissing, isRestoring }: ThreatDetailSheetProps) {
+  const [reason, setReason] = useState('');
+  const [showDismissForm, setShowDismissForm] = useState(false);
+
   if (!item) return null;
 
   const cfg = TYPE_CONFIG[item.type];
@@ -105,8 +118,18 @@ export function ThreatDetailSheet({ item, open, onOpenChange }: ThreatDetailShee
   const ContactIcon = contactIcon;
   const hasEvidence = (contacts && contacts.length > 0) || (item.sampleSubjects && item.sampleSubjects.length > 0);
 
+  const handleDismiss = () => {
+    onDismiss?.(item.type, item.label, reason || undefined);
+    setShowDismissForm(false);
+    setReason('');
+  };
+
+  const handleRestore = () => {
+    onRestore?.(item.type, item.label);
+  };
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) { setShowDismissForm(false); setReason(''); } }}>
       <SheetContent side="right" className="w-full sm:max-w-[50vw] overflow-y-auto p-0">
         {/* Header */}
         <SheetHeader className="p-6 pb-4 border-b border-border/50">
@@ -125,6 +148,12 @@ export function ThreatDetailSheet({ item, open, onOpenChange }: ThreatDetailShee
                 <Badge variant="secondary" className="text-xs font-mono">
                   {item.count} ocorrências
                 </Badge>
+                {isDismissed && (
+                  <Badge variant="outline" className="text-xs bg-muted/50 text-muted-foreground border-muted-foreground/30">
+                    <ShieldOff className="w-3 h-3 mr-1" />
+                    Falso Positivo
+                  </Badge>
+                )}
               </div>
             </div>
           </div>
@@ -164,6 +193,65 @@ export function ThreatDetailSheet({ item, open, onOpenChange }: ThreatDetailShee
                 <p className="text-sm text-foreground">{cfg.recommendation(item.label)}</p>
               </div>
             </div>
+
+            {/* False positive action */}
+            {(onDismiss || onRestore) && (
+              <div className="pt-2 border-t border-border/50 space-y-3">
+                <Alert className="border-warning/30 bg-warning/5">
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                  <AlertDescription className="text-xs text-muted-foreground">
+                    Esta ação é apenas na plataforma iScope e <strong>não altera configurações no Microsoft 365</strong>.
+                  </AlertDescription>
+                </Alert>
+
+                {isDismissed ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2"
+                    onClick={handleRestore}
+                    disabled={isRestoring}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Restaurar Item
+                  </Button>
+                ) : showDismissForm ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      placeholder="Motivo (opcional)..."
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      className="text-sm h-20 resize-none"
+                    />
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowDismissForm(false)}>
+                        Cancelar
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="flex-1 gap-1.5"
+                        onClick={handleDismiss}
+                        disabled={isDismissing}
+                      >
+                        <ShieldOff className="w-3.5 h-3.5" />
+                        Confirmar
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowDismissForm(true)}
+                  >
+                    <ShieldOff className="w-3.5 h-3.5" />
+                    Marcar como Falso Positivo
+                  </Button>
+                )}
+              </div>
+            )}
           </TabsContent>
 
           {/* Tab: Evidências */}
