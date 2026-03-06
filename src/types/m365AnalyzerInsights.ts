@@ -159,6 +159,7 @@ export const M365_ANALYZER_CATEGORY_LABELS: Record<M365AnalyzerCategory, string>
   suspicious_rules: 'Regras Suspeitas',
   exfiltration: 'Exfiltração',
   operational_risks: 'Riscos Operacionais',
+  threat_protection: 'Proteção contra Ameaças',
 };
 
 export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
