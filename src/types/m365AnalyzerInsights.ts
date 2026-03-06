@@ -14,7 +14,8 @@ export type M365AnalyzerCategory =
   | 'account_compromise'
   | 'suspicious_rules'
   | 'exfiltration'
-  | 'operational_risks';
+  | 'operational_risks'
+  | 'threat_protection';
 
 export interface M365AnalyzerInsight {
   id: string;
@@ -108,6 +109,26 @@ export interface M365AnalyzerMetrics {
     newDelegations: number;
     activeEdiscovery: number;
   };
+  threatProtection: {
+    spamBlocked: number;
+    phishingDetected: number;
+    malwareBlocked: number;
+    quarantined: number;
+    totalDelivered: number;
+    totalFiltered: number;
+    topSpamSenderDomains: { domain: string; count: number }[];
+    topPhishingTargets: { user: string; count: number }[];
+    topMalwareSenders: { domain: string; count: number }[];
+    topSpamRecipients: { user: string; count: number }[];
+    deliveryBreakdown: { status: string; count: number }[];
+    policyStatus: {
+      antiSpam: 'enabled' | 'weak' | 'disabled';
+      antiPhish: 'enabled' | 'weak' | 'disabled';
+      safeLinks: 'enabled' | 'disabled';
+      safeAttach: 'enabled' | 'disabled';
+      malwareFilter: 'enabled' | 'weak' | 'disabled';
+    };
+  };
 }
 
 export interface M365AnalyzerSnapshot {
@@ -138,6 +159,7 @@ export const M365_ANALYZER_CATEGORY_LABELS: Record<M365AnalyzerCategory, string>
   suspicious_rules: 'Regras Suspeitas',
   exfiltration: 'Exfiltração',
   operational_risks: 'Riscos Operacionais',
+  threat_protection: 'Proteção contra Ameaças',
 };
 
 export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
@@ -153,6 +175,7 @@ export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
   'suspicious_rules',
   'exfiltration',
   'operational_risks',
+  'threat_protection',
 ];
 
 export function groupM365AnalyzerInsightsByCategory(

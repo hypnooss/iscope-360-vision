@@ -20,6 +20,13 @@ const defaultMetrics: M365AnalyzerMetrics = {
   conditionalAccess: { disabledPolicies: 0, reportOnlyPolicies: 0, excludedUsers: 0, recentlyCreated: 0 },
   exchangeHealth: { serviceIncidents: 0, messageTraceFailures: 0, sharedMailboxesNoOwner: 0, connectorFailures: 0 },
   audit: { mailboxAuditAlerts: 0, adminAuditChanges: 0, newDelegations: 0, activeEdiscovery: 0 },
+  threatProtection: {
+    spamBlocked: 0, phishingDetected: 0, malwareBlocked: 0, quarantined: 0,
+    totalDelivered: 0, totalFiltered: 0,
+    topSpamSenderDomains: [], topPhishingTargets: [], topMalwareSenders: [], topSpamRecipients: [],
+    deliveryBreakdown: [],
+    policyStatus: { antiSpam: 'disabled', antiPhish: 'disabled', safeLinks: 'disabled', safeAttach: 'disabled', malwareFilter: 'disabled' },
+  },
 };
 
 function safeArray<T>(val: unknown): T[] {
@@ -46,6 +53,7 @@ function parseMetrics(raw: unknown): M365AnalyzerMetrics {
   const ca = m.conditionalAccess ?? m.conditional_access ?? {};
   const eh = m.exchangeHealth ?? m.exchange_health ?? {};
   const au = m.audit ?? m.audit_compliance ?? {};
+  const tp = m.threatProtection ?? m.threat_protection ?? {};
 
   return {
     phishing: {
@@ -116,6 +124,26 @@ function parseMetrics(raw: unknown): M365AnalyzerMetrics {
       adminAuditChanges: safeNum(au.adminAuditChanges),
       newDelegations: safeNum(au.newDelegations),
       activeEdiscovery: safeNum(au.activeEdiscovery),
+    },
+    threatProtection: {
+      spamBlocked: safeNum(tp.spamBlocked),
+      phishingDetected: safeNum(tp.phishingDetected),
+      malwareBlocked: safeNum(tp.malwareBlocked),
+      quarantined: safeNum(tp.quarantined),
+      totalDelivered: safeNum(tp.totalDelivered),
+      totalFiltered: safeNum(tp.totalFiltered),
+      topSpamSenderDomains: safeArray(tp.topSpamSenderDomains),
+      topPhishingTargets: safeArray(tp.topPhishingTargets),
+      topMalwareSenders: safeArray(tp.topMalwareSenders),
+      topSpamRecipients: safeArray(tp.topSpamRecipients),
+      deliveryBreakdown: safeArray(tp.deliveryBreakdown),
+      policyStatus: {
+        antiSpam: tp.policyStatus?.antiSpam ?? 'disabled',
+        antiPhish: tp.policyStatus?.antiPhish ?? 'disabled',
+        safeLinks: tp.policyStatus?.safeLinks ?? 'disabled',
+        safeAttach: tp.policyStatus?.safeAttach ?? 'disabled',
+        malwareFilter: tp.policyStatus?.malwareFilter ?? 'disabled',
+      },
     },
   };
 }

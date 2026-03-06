@@ -37,6 +37,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast as sonnerToast } from 'sonner';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
 import { ExternalMovementTab } from '@/components/m365/analyzer/ExternalMovementTab';
+import { ThreatProtectionTab } from '@/components/m365/analyzer/ThreatProtectionTab';
 import { useExternalMovementData } from '@/hooks/useExternalMovementData';
 import { AnalyzerKPIRow, type KPIFilterKey } from '@/components/m365/analyzer/AnalyzerKPIRow';
 import { AnalyzerScoreSparkline } from '@/components/m365/analyzer/AnalyzerScoreSparkline';
@@ -556,6 +557,7 @@ export default function M365AnalyzerDashboardPage() {
   // External movement data
   const { data: extMovementData } = useExternalMovementData(selectedTenantId || undefined);
   const extMovementCount = extMovementData?.totalAlerts ?? 0;
+  const threatCount = (m?.threatProtection?.spamBlocked ?? 0) + (m?.threatProtection?.phishingDetected ?? 0) + (m?.threatProtection?.malwareBlocked ?? 0);
 
   return (
     <AppLayout>
@@ -763,6 +765,11 @@ export default function M365AnalyzerDashboardPage() {
                 Anomalias
                 {anomalyInsights.length > 0 && <Badge variant="secondary" className="text-[10px] ml-1 h-4 px-1">{anomalyInsights.length}</Badge>}
               </TabsTrigger>
+              <TabsTrigger value="protection" className="gap-1.5">
+                <ShieldCheck className="w-4 h-4" />
+                Proteção
+                {threatCount > 0 && <Badge variant="secondary" className="text-[10px] ml-1 h-4 px-1">{threatCount}</Badge>}
+              </TabsTrigger>
               <TabsTrigger value="external" className="gap-1.5">
                 <ExternalLink className="w-4 h-4" />
                 Movimento Externo
@@ -806,6 +813,11 @@ export default function M365AnalyzerDashboardPage() {
                   ))}
                 </div>
               )}
+            </TabsContent>
+
+            {/* Tab: Proteção contra Ameaças */}
+            <TabsContent value="protection">
+              {m && <ThreatProtectionTab metrics={m} insights={snapshot?.insights ?? []} compact={compactMode} />}
             </TabsContent>
 
             {/* Tab: Movimento Externo */}

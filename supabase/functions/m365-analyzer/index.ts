@@ -1102,6 +1102,198 @@ function analyzeOperationalRisks(
 }
 
 // ============================================
+// Module: Threat Protection (SPAM, Phishing, Malware)
+// ============================================
+
+function analyzeThreatProtection(
+  exoMessageTrace: any[],
+  threatData: any[],
+  exoContentFilter: any[],
+  exoMalwareFilter: any[],
+  exoAntiPhish: any[],
+  exoSafeLinks: any[],
+  exoSafeAttach: any[],
+): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
+  const insights: M365AnalyzerInsight[] = [];
+  const metrics: Record<string, any> = {
+    spamBlocked: 0,
+    phishingDetected: 0,
+    malwareBlocked: 0,
+    quarantined: 0,
+    totalDelivered: 0,
+    totalFiltered: 0,
+    topSpamSenderDomains: [],
+    topPhishingTargets: [],
+    topMalwareSenders: [],
+    topSpamRecipients: [],
+    deliveryBreakdown: [],
+    policyStatus: {
+      antiSpam: 'disabled' as string,
+      antiPhish: 'disabled' as string,
+      safeLinks: 'disabled' as string,
+      safeAttach: 'disabled' as string,
+      malwareFilter: 'disabled' as string,
+    },
+  };
+
+  const statusMap: Record<string, number> = {};
+  const spamDomainMap: Record<string, number> = {};
+  const spamRecipientMap: Record<string, number> = {};
+  const phishTargetMap: Record<string, number> = {};
+  const malwareDomainMap: Record<string, number> = {};
+
+  for (const msg of exoMessageTrace) {
+    const status = (msg.Status || '').toLowerCase();
+    const sender = (msg.SenderAddress || '').toLowerCase();
+    const recipient = (msg.RecipientAddress || '').toLowerCase();
+    const senderDomain = sender.includes('@') ? sender.split('@')[1] : sender;
+    statusMap[status] = (statusMap[status] || 0) + 1;
+
+    if (status === 'filteredasspam' || status === 'spamfiltered') {
+      metrics.spamBlocked++;
+      metrics.totalFiltered++;
+      if (senderDomain) spamDomainMap[senderDomain] = (spamDomainMap[senderDomain] || 0) + 1;
+      if (recipient) spamRecipientMap[recipient] = (spamRecipientMap[recipient] || 0) + 1;
+    } else if (status === 'quarantined') {
+      metrics.quarantined++;
+      metrics.totalFiltered++;
+      metrics.phishingDetected++;
+      if (recipient) phishTargetMap[recipient] = (phishTargetMap[recipient] || 0) + 1;
+    } else if (status === 'failed') {
+      metrics.malwareBlocked++;
+      metrics.totalFiltered++;
+      if (senderDomain) malwareDomainMap[senderDomain] = (malwareDomainMap[senderDomain] || 0) + 1;
+    } else if (status === 'delivered') {
+      metrics.totalDelivered++;
+    }
+  }
+
+  for (const t of threatData) {
+    const threatType = (t.threatType || '').toLowerCase();
+    const recipient = (t.recipientEmailAddress || '').toLowerCase();
+    const sender = (t.senderAddress || '').toLowerCase();
+    const senderDomain = sender.includes('@') ? sender.split('@')[1] : sender;
+    if (threatType.includes('phish')) {
+      metrics.phishingDetected++;
+      if (recipient) phishTargetMap[recipient] = (phishTargetMap[recipient] || 0) + 1;
+    } else if (threatType.includes('malware')) {
+      metrics.malwareBlocked++;
+      if (senderDomain) malwareDomainMap[senderDomain] = (malwareDomainMap[senderDomain] || 0) + 1;
+    }
+  }
+
+  metrics.topSpamSenderDomains = Object.entries(spamDomainMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([domain, count]) => ({ domain, count }));
+  metrics.topPhishingTargets = Object.entries(phishTargetMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([user, count]) => ({ user, count }));
+  metrics.topMalwareSenders = Object.entries(malwareDomainMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([domain, count]) => ({ domain, count }));
+  metrics.topSpamRecipients = Object.entries(spamRecipientMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([user, count]) => ({ user, count }));
+  metrics.deliveryBreakdown = Object.entries(statusMap).sort((a, b) => b[1] - a[1]).map(([status, count]) => ({ status, count }));
+
+  // Contextual insights
+  for (const entry of metrics.topSpamSenderDomains.slice(0, 3)) {
+    if (entry.count >= 10) {
+      insights.push({
+        id: `spam_domain_${entry.domain.replace(/[^a-z0-9]/gi, '_')}`,
+        category: 'threat_protection',
+        name: `SPAM massivo de ${entry.domain}`,
+        description: `O domínio ${entry.domain} enviou ${entry.count} emails de SPAM para sua organização`,
+        severity: entry.count >= 100 ? 'high' : 'medium',
+        count: entry.count,
+        recommendation: `Considere bloquear o domínio ${entry.domain} nas políticas de transporte.`,
+        metadata: { domain: entry.domain },
+      });
+    }
+  }
+
+  for (const entry of metrics.topPhishingTargets.slice(0, 3)) {
+    if (entry.count >= 3) {
+      insights.push({
+        id: `phish_target_${entry.user.replace(/[^a-z0-9]/gi, '_')}`,
+        category: 'threat_protection',
+        name: `Alvo principal de phishing`,
+        description: `${entry.user} recebeu ${entry.count} tentativas de phishing`,
+        severity: entry.count >= 20 ? 'critical' : entry.count >= 10 ? 'high' : 'medium',
+        count: entry.count,
+        affectedUsers: [entry.user],
+        recommendation: 'Aplique treinamento de conscientização e reforce MFA para este usuário.',
+      });
+    }
+  }
+
+  for (const entry of metrics.topMalwareSenders.slice(0, 3)) {
+    if (entry.count >= 3) {
+      insights.push({
+        id: `malware_domain_${entry.domain.replace(/[^a-z0-9]/gi, '_')}`,
+        category: 'threat_protection',
+        name: `Malware detectado de ${entry.domain}`,
+        description: `${entry.count} emails com malware bloqueados do domínio ${entry.domain}`,
+        severity: entry.count >= 20 ? 'critical' : 'high',
+        count: entry.count,
+        recommendation: `Bloqueie o domínio ${entry.domain} e investigue possíveis comprometimentos.`,
+      });
+    }
+  }
+
+  if (metrics.spamBlocked > 100) {
+    insights.push({
+      id: 'spam_volume_high',
+      category: 'threat_protection',
+      name: 'Alto volume de SPAM',
+      description: `${metrics.spamBlocked} emails de SPAM bloqueados no período`,
+      severity: metrics.spamBlocked > 500 ? 'high' : 'medium',
+      count: metrics.spamBlocked,
+      recommendation: 'Revise as regras de transporte e considere reforçar os filtros anti-spam.',
+    });
+  }
+
+  if (metrics.quarantined > 10) {
+    insights.push({
+      id: 'quarantine_volume',
+      category: 'threat_protection',
+      name: 'Emails em quarentena',
+      description: `${metrics.quarantined} emails enviados para quarentena no período`,
+      severity: metrics.quarantined > 50 ? 'high' : 'medium',
+      count: metrics.quarantined,
+      recommendation: 'Revise os emails em quarentena para identificar falsos positivos.',
+    });
+  }
+
+  // Policy status evaluation
+  if (exoContentFilter.length > 0) {
+    const hasWeakAction = exoContentFilter.some((p: any) => {
+      const hcpa = (p.HighConfidencePhishAction || '').toLowerCase();
+      return hcpa === 'movetojmf' || hcpa === 'addxheader' || !hcpa;
+    });
+    metrics.policyStatus.antiSpam = hasWeakAction ? 'weak' : 'enabled';
+  }
+
+  if (exoAntiPhish.length > 0) {
+    const allDisabled = exoAntiPhish.every((p: any) => p.Enabled === false);
+    const hasWeakConfig = exoAntiPhish.some((p: any) => p.EnableSpoofIntelligence === false);
+    metrics.policyStatus.antiPhish = allDisabled ? 'disabled' : hasWeakConfig ? 'weak' : 'enabled';
+  }
+
+  if (exoSafeLinks.length > 0) {
+    const allDisabled = exoSafeLinks.every((p: any) => p.EnableSafeLinksForEmail === false);
+    metrics.policyStatus.safeLinks = allDisabled ? 'disabled' : 'enabled';
+  }
+
+  if (exoSafeAttach.length > 0) {
+    const hasWeak = exoSafeAttach.some((p: any) => {
+      const action = (p.Action || '').toLowerCase();
+      return action === 'allow' || p.Enable === false;
+    });
+    metrics.policyStatus.safeAttach = hasWeak ? 'disabled' : 'enabled';
+  }
+
+  if (exoMalwareFilter.length > 0) {
+    const hasWeakConfig = exoMalwareFilter.some((p: any) => p.EnableFileFilter === false);
+    metrics.policyStatus.malwareFilter = hasWeakConfig ? 'weak' : 'enabled';
+  }
+
+  return { insights, metrics };
+}
+
+// ============================================
 // Module 8: Security & Risk (Entra ID sign-ins)
 // ============================================
 
@@ -1990,7 +2182,9 @@ Deno.serve(async (req) => {
     const operational = analyzeOperationalRisks(signInLogs, auditLogs, exoOrgConfig, exoRemoteDomains, exoMalwareFilter, exoAuthPolicy);
     allInsights.push(...operational.insights);
 
-    // Build metrics in the exact shape expected by the frontend
+    const threatProtection = analyzeThreatProtection(exoMessageTrace, threatData, exoContentFilter, exoMalwareFilter, exoAntiPhish, exoSafeLinks, exoSafeAttach);
+    allInsights.push(...threatProtection.insights);
+
     const allMetrics = {
       securityRisk: {
         highRiskSignIns: securityRisk.metrics.highRiskSignIns || 0,
@@ -2061,6 +2255,7 @@ Deno.serve(async (req) => {
         inactiveWithActivity: operational.metrics.inactiveWithActivity || 0,
         fullAccessGrants: operational.metrics.fullAccessGrants || 0,
       },
+      threatProtection: threatProtection.metrics,
       dataSource,
       normalizationVersion: 4,
       stepsReceived,
