@@ -37,6 +37,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast as sonnerToast } from 'sonner';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
 import { ExternalMovementTab } from '@/components/m365/analyzer/ExternalMovementTab';
+import { ThreatProtectionTab } from '@/components/m365/analyzer/ThreatProtectionTab';
 import { useExternalMovementData } from '@/hooks/useExternalMovementData';
 import { AnalyzerKPIRow, type KPIFilterKey } from '@/components/m365/analyzer/AnalyzerKPIRow';
 import { AnalyzerScoreSparkline } from '@/components/m365/analyzer/AnalyzerScoreSparkline';
