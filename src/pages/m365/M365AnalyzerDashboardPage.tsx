@@ -39,6 +39,7 @@ import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365Anal
 import { ExternalMovementTab } from '@/components/m365/analyzer/ExternalMovementTab';
 import { ThreatProtectionTab } from '@/components/m365/analyzer/ThreatProtectionTab';
 import { useExternalMovementData } from '@/hooks/useExternalMovementData';
+import { useThreatDismissals } from '@/hooks/useThreatDismissals';
 import { AnalyzerKPIRow, type KPIFilterKey } from '@/components/m365/analyzer/AnalyzerKPIRow';
 import { AnalyzerScoreSparkline } from '@/components/m365/analyzer/AnalyzerScoreSparkline';
 import { SnapshotDiffBanner } from '@/components/m365/analyzer/SnapshotDiffBanner';
@@ -559,6 +560,9 @@ export default function M365AnalyzerDashboardPage() {
   const extMovementCount = extMovementData?.totalAlerts ?? 0;
   const threatCount = (m?.threatProtection?.spamBlocked ?? 0) + (m?.threatProtection?.phishingDetected ?? 0) + (m?.threatProtection?.malwareBlocked ?? 0);
 
+  // Threat dismissals
+  const { dismissedKeys, dismiss: dismissThreat, restore: restoreThreat, isDismissing, isRestoring } = useThreatDismissals(selectedTenantId);
+
   return (
     <AppLayout>
       <div className={cn('p-6 lg:p-8 space-y-5', compactMode && 'space-y-3')}>
@@ -817,7 +821,7 @@ export default function M365AnalyzerDashboardPage() {
 
             {/* Tab: Proteção contra Ameaças */}
             <TabsContent value="protection">
-              {m && <ThreatProtectionTab metrics={m} insights={snapshot?.insights ?? []} compact={compactMode} />}
+              {m && <ThreatProtectionTab metrics={m} insights={snapshot?.insights ?? []} compact={compactMode} dismissedKeys={dismissedKeys} onDismiss={dismissThreat} onRestore={restoreThreat} isDismissing={isDismissing} isRestoring={isRestoring} />}
             </TabsContent>
 
             {/* Tab: Movimento Externo */}

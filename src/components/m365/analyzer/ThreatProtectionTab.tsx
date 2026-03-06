@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import {
   ShieldCheck, ShieldAlert, ShieldX, Mail, MailX,
   Bug, FileWarning, AlertTriangle, CheckCircle2,
-  Globe, Users, Ban,
+  Globe, Users, Ban, ShieldOff, Eye,
 } from 'lucide-react';
 import type { M365AnalyzerMetrics, M365AnalyzerInsight } from '@/types/m365AnalyzerInsights';
 import { ThreatDetailSheet, type ThreatDetailItem, type ThreatItemType } from './ThreatDetailSheet';
@@ -49,14 +51,31 @@ function PolicyCard({ name, status }: { name: string; status: 'enabled' | 'weak'
 }
 
 // ─── Ranking List ────────────────────────────────────────────────────────────
-function RankingList({ title, icon: Icon, items, labelKey, onItemClick }: {
+function RankingList({ title, icon: Icon, items, labelKey, onItemClick, dismissedKeys, showDismissed }: {
   title: string; icon: React.ElementType;
   items: { [key: string]: any; count: number }[];
   labelKey: string;
   onItemClick?: (item: any) => void;
+  dismissedKeys?: Set<string>;
+  showDismissed?: boolean;
 }) {
   if (!items?.length) return null;
-  const maxCount = Math.max(...items.map(i => i.count), 1);
+
+  const typeMap: Record<string, ThreatItemType> = {
+    'Top Domínios de SPAM': 'spam',
+    'Top Alvos de Phishing': 'phishing',
+    'Top Fontes de Malware': 'malware',
+  };
+  const type = typeMap[title] || 'spam';
+
+  const filteredItems = items.filter(item => {
+    const key = `${type}::${item[labelKey]}`;
+    const isDismissed = dismissedKeys?.has(key);
+    return showDismissed ? true : !isDismissed;
+  });
+
+  if (!filteredItems.length) return null;
+  const maxCount = Math.max(...filteredItems.map(i => i.count), 1);
 
   return (
     <Card className="glass-card border">
@@ -67,27 +86,33 @@ function RankingList({ title, icon: Icon, items, labelKey, onItemClick }: {
         </CardTitle>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-1">
-        {items.slice(0, 8).map((item, i) => (
-          <div
-            key={i}
-            className={cn(
-              'py-2 px-2 rounded-md transition-colors',
-              onItemClick ? 'cursor-pointer hover:bg-primary/10' : 'hover:bg-secondary/50',
-            )}
-            onClick={() => onItemClick?.(item)}
-          >
-            <div className="flex items-center gap-3">
-              <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">
-                {i + 1}
-              </span>
-              <span className="flex-1 min-w-0 text-sm font-medium text-foreground truncate">{item[labelKey]}</span>
-              <Badge variant="secondary" className="font-mono text-xs shrink-0">{item.count}</Badge>
+        {filteredItems.slice(0, 8).map((item, i) => {
+          const key = `${type}::${item[labelKey]}`;
+          const isDismissed = dismissedKeys?.has(key);
+          return (
+            <div
+              key={i}
+              className={cn(
+                'py-2 px-2 rounded-md transition-colors',
+                onItemClick ? 'cursor-pointer hover:bg-primary/10' : 'hover:bg-secondary/50',
+                isDismissed && 'opacity-40',
+              )}
+              onClick={() => onItemClick?.(item)}
+            >
+              <div className="flex items-center gap-3">
+                <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">
+                  {i + 1}
+                </span>
+                <span className={cn('flex-1 min-w-0 text-sm font-medium text-foreground truncate', isDismissed && 'line-through')}>{item[labelKey]}</span>
+                {isDismissed && <ShieldOff className="w-3 h-3 text-muted-foreground shrink-0" />}
+                <Badge variant="secondary" className="font-mono text-xs shrink-0">{item.count}</Badge>
+              </div>
+              <div className="mt-1.5 ml-8 h-1 bg-secondary/60 rounded-full overflow-hidden">
+                <div className="h-full bg-primary/50 rounded-full transition-all" style={{ width: `${(item.count / maxCount) * 100}%` }} />
+              </div>
             </div>
-            <div className="mt-1.5 ml-8 h-1 bg-secondary/60 rounded-full overflow-hidden">
-              <div className="h-full bg-primary/50 rounded-full transition-all" style={{ width: `${(item.count / maxCount) * 100}%` }} />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </CardContent>
     </Card>
   );
@@ -127,15 +152,23 @@ interface ThreatProtectionTabProps {
   metrics: M365AnalyzerMetrics;
   insights: M365AnalyzerInsight[];
   compact?: boolean;
+  dismissedKeys?: Set<string>;
+  onDismiss?: (type: string, label: string, reason?: string) => void;
+  onRestore?: (type: string, label: string) => void;
+  isDismissing?: boolean;
+  isRestoring?: boolean;
 }
 
-export function ThreatProtectionTab({ metrics, insights, compact }: ThreatProtectionTabProps) {
+export function ThreatProtectionTab({ metrics, insights, compact, dismissedKeys, onDismiss, onRestore, isDismissing, isRestoring }: ThreatProtectionTabProps) {
   const tp = metrics.threatProtection;
   const threatInsights = insights.filter(i => i.category === 'threat_protection');
   const totalThreats = tp.spamBlocked + tp.phishingDetected + tp.malwareBlocked;
 
   const [selectedItem, setSelectedItem] = useState<ThreatDetailItem | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [showDismissed, setShowDismissed] = useState(false);
+
+  const hasDismissals = dismissedKeys && dismissedKeys.size > 0;
 
   const openDetail = (type: ThreatItemType, item: any) => {
     setSelectedItem({
@@ -148,6 +181,10 @@ export function ThreatProtectionTab({ metrics, insights, compact }: ThreatProtec
     });
     setSheetOpen(true);
   };
+
+  const selectedIsDismissed = selectedItem
+    ? dismissedKeys?.has(`${selectedItem.type}::${selectedItem.label}`) ?? false
+    : false;
 
   return (
     <div className={cn('space-y-5', compact && 'space-y-3')}>
@@ -176,6 +213,21 @@ export function ThreatProtectionTab({ metrics, insights, compact }: ThreatProtec
         </div>
       </div>
 
+      {/* Show dismissed toggle */}
+      {hasDismissals && (
+        <div className="flex items-center gap-2">
+          <Switch
+            id="show-dismissed"
+            checked={showDismissed}
+            onCheckedChange={setShowDismissed}
+          />
+          <Label htmlFor="show-dismissed" className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-pointer">
+            <Eye className="w-3.5 h-3.5" />
+            Mostrar ocultos ({dismissedKeys.size})
+          </Label>
+        </div>
+      )}
+
       {/* Rankings */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <RankingList
@@ -184,6 +236,8 @@ export function ThreatProtectionTab({ metrics, insights, compact }: ThreatProtec
           items={tp.topSpamSenderDomains}
           labelKey="domain"
           onItemClick={(item) => openDetail('spam', item)}
+          dismissedKeys={dismissedKeys}
+          showDismissed={showDismissed}
         />
         <RankingList
           title="Top Alvos de Phishing"
@@ -191,6 +245,8 @@ export function ThreatProtectionTab({ metrics, insights, compact }: ThreatProtec
           items={tp.topPhishingTargets}
           labelKey="user"
           onItemClick={(item) => openDetail('phishing', item)}
+          dismissedKeys={dismissedKeys}
+          showDismissed={showDismissed}
         />
         <RankingList
           title="Top Fontes de Malware"
@@ -198,6 +254,8 @@ export function ThreatProtectionTab({ metrics, insights, compact }: ThreatProtec
           items={tp.topMalwareSenders}
           labelKey="domain"
           onItemClick={(item) => openDetail('malware', item)}
+          dismissedKeys={dismissedKeys}
+          showDismissed={showDismissed}
         />
       </div>
 
@@ -232,6 +290,11 @@ export function ThreatProtectionTab({ metrics, insights, compact }: ThreatProtec
         item={selectedItem}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
+        isDismissed={selectedIsDismissed}
+        onDismiss={onDismiss}
+        onRestore={onRestore}
+        isDismissing={isDismissing}
+        isRestoring={isRestoring}
       />
     </div>
   );

@@ -2170,6 +2170,44 @@ export type Database = {
           },
         ]
       }
+      m365_threat_dismissals: {
+        Row: {
+          created_at: string
+          dismissed_by: string
+          id: string
+          label: string
+          reason: string | null
+          tenant_record_id: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          dismissed_by: string
+          id?: string
+          label: string
+          reason?: string | null
+          tenant_record_id: string
+          type: string
+        }
+        Update: {
+          created_at?: string
+          dismissed_by?: string
+          id?: string
+          label?: string
+          reason?: string | null
+          tenant_record_id?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_threat_dismissals_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       m365_tokens: {
         Row: {
           access_token_encrypted: string | null
