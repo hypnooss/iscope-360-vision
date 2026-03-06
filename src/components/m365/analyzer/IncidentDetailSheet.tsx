@@ -56,7 +56,8 @@ export function IncidentDetailSheet({ insight, open, onOpenChange }: IncidentDet
   const Icon = sev.icon;
   const prevCount = (insight.metadata as any)?.previousCount;
   const hasEvidence = (insight.affectedUsers && insight.affectedUsers.length > 0) ||
-    (insight.metadata && Object.keys(insight.metadata).filter(k => k !== 'previousCount').length > 0);
+    ((insight.metadata as any)?.userDetails?.length > 0) ||
+    (insight.metadata && Object.keys(insight.metadata).filter(k => k !== 'previousCount' && k !== 'userDetails').length > 0);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
