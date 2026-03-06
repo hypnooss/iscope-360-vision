@@ -2061,6 +2061,7 @@ Deno.serve(async (req) => {
         inactiveWithActivity: operational.metrics.inactiveWithActivity || 0,
         fullAccessGrants: operational.metrics.fullAccessGrants || 0,
       },
+      threatProtection: threatProtection.metrics,
       dataSource,
       normalizationVersion: 4,
       stepsReceived,
