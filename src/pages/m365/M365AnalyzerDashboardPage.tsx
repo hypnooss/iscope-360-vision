@@ -815,6 +815,11 @@ export default function M365AnalyzerDashboardPage() {
               )}
             </TabsContent>
 
+            {/* Tab: Proteção contra Ameaças */}
+            <TabsContent value="protection">
+              {m && <ThreatProtectionTab metrics={m} insights={snapshot?.insights ?? []} compact={compactMode} />}
+            </TabsContent>
+
             {/* Tab: Movimento Externo */}
             <TabsContent value="external">
               <ExternalMovementTab tenantRecordId={selectedTenantId || undefined} compact={compactMode} />

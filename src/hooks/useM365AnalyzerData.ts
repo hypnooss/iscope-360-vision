@@ -125,6 +125,26 @@ function parseMetrics(raw: unknown): M365AnalyzerMetrics {
       newDelegations: safeNum(au.newDelegations),
       activeEdiscovery: safeNum(au.activeEdiscovery),
     },
+    threatProtection: {
+      spamBlocked: safeNum(tp.spamBlocked),
+      phishingDetected: safeNum(tp.phishingDetected),
+      malwareBlocked: safeNum(tp.malwareBlocked),
+      quarantined: safeNum(tp.quarantined),
+      totalDelivered: safeNum(tp.totalDelivered),
+      totalFiltered: safeNum(tp.totalFiltered),
+      topSpamSenderDomains: safeArray(tp.topSpamSenderDomains),
+      topPhishingTargets: safeArray(tp.topPhishingTargets),
+      topMalwareSenders: safeArray(tp.topMalwareSenders),
+      topSpamRecipients: safeArray(tp.topSpamRecipients),
+      deliveryBreakdown: safeArray(tp.deliveryBreakdown),
+      policyStatus: {
+        antiSpam: tp.policyStatus?.antiSpam ?? 'disabled',
+        antiPhish: tp.policyStatus?.antiPhish ?? 'disabled',
+        safeLinks: tp.policyStatus?.safeLinks ?? 'disabled',
+        safeAttach: tp.policyStatus?.safeAttach ?? 'disabled',
+        malwareFilter: tp.policyStatus?.malwareFilter ?? 'disabled',
+      },
+    },
   };
 }
 

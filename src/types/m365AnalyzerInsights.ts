@@ -175,6 +175,7 @@ export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
   'suspicious_rules',
   'exfiltration',
   'operational_risks',
+  'threat_protection',
 ];
 
 export function groupM365AnalyzerInsightsByCategory(
