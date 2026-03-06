@@ -1,27 +1,22 @@
 
 
-## Problem
+## Diagnóstico: Aba "Proteção" mostrando tudo zerado
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+### Causa raiz
 
-## Solution
+Os snapshots existentes no banco de dados foram gerados **antes** da função `analyzeThreatProtection` ser adicionada ao backend. Olhando os dados reais do snapshot mais recente (`446dbf53...`), o campo `metrics` contém `phishing`, `exfiltration`, `securityRisk`, etc., mas **não contém `threatProtection`**. 
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+O hook `useM365AnalyzerData.ts` faz fallback para defaults zerados quando `m.threatProtection` é `undefined`, resultando em todos os KPIs em 0 e todas as políticas como "Desativado".
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+### Solução
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+A edge function `m365-analyzer` precisa ser **redeployada** para que a nova lógica `analyzeThreatProtection` seja executada. Após o deploy, a **próxima execução** do Analyzer gerará um snapshot com os dados de `threatProtection` populados.
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+### Ações necessárias
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+1. **Deploy da edge function `m365-analyzer`** — o código já está correto no repositório, mas precisa ser deployado no Supabase para que novas execuções incluam o módulo `analyzeThreatProtection`.
 
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+2. **Executar uma nova análise** — após o deploy, disparar uma nova análise do tenant para gerar um snapshot com os dados de proteção contra ameaças.
 
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+Nenhuma alteração de código é necessária. O problema é exclusivamente de deploy/timing.
 
