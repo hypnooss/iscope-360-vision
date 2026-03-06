@@ -2305,9 +2305,13 @@ Deno.serve(async (req) => {
       stepsReceived,
     };
 
-    const { score, summary } = calculateScore(allInsights);
+    // ── Consolidate duplicate insights (same name) ──
+    const consolidatedInsights = consolidateInsights(allInsights);
+    console.log(`[m365-analyzer] Consolidated ${allInsights.length} insights into ${consolidatedInsights.length}`);
 
-    console.log(`[m365-analyzer] Result: score=${score}, insights=${allInsights.length}, summary=${JSON.stringify(summary)}`);
+    const { score, summary } = calculateScore(consolidatedInsights);
+
+    console.log(`[m365-analyzer] Result: score=${score}, insights=${consolidatedInsights.length}, summary=${JSON.stringify(summary)}`);
 
     await supabase
       .from('m365_analyzer_snapshots')
@@ -2315,7 +2319,7 @@ Deno.serve(async (req) => {
         status: 'completed',
         score,
         summary,
-        insights: allInsights,
+        insights: consolidatedInsights,
         metrics: allMetrics,
       })
       .eq('id', snapshot_id);
