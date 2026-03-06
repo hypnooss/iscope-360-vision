@@ -201,87 +201,8 @@ function IncidentCard({ insight, compact }: { insight: M365AnalyzerInsight; comp
         </CardContent>
       </Card>
 
-      {/* Detail Dialog */}
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <div className="flex items-center gap-3">
-              <div className={cn('p-2 rounded-lg', sev.bg)}>
-                <sev.icon className={cn('w-5 h-5', sev.text)} />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <Badge variant="outline" className={cn('text-xs', sev.bg, sev.text, sev.border)}>
-                    {sev.label}
-                  </Badge>
-                  {insight.count !== undefined && (
-                    <Badge variant="secondary" className="text-xs">{insight.count} ocorrências</Badge>
-                  )}
-                </div>
-                <DialogTitle className="text-lg">{insight.name}</DialogTitle>
-              </div>
-            </div>
-            <DialogDescription className="mt-2">
-              {insight.description || 'Sem descrição disponível.'}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto space-y-5 py-4 -mx-6 px-6">
-            {/* Recommendation */}
-            {insight.recommendation && (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Lightbulb className="w-4 h-4 text-warning" />
-                  <h4 className="font-medium text-sm">Recomendação</h4>
-                </div>
-                <p className="text-sm text-muted-foreground bg-warning/5 border border-warning/20 p-3 rounded-lg">
-                  {insight.recommendation}
-                </p>
-              </div>
-            )}
-
-            {/* Affected Users */}
-            {insight.affectedUsers && insight.affectedUsers.length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Users className="w-4 h-4 text-muted-foreground" />
-                  <h4 className="font-medium text-sm">
-                    Usuários Afetados ({insight.affectedUsers.length})
-                  </h4>
-                </div>
-                <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                  {insight.affectedUsers.map((userEntry, idx) => (
-                    <div key={idx} className="flex items-center p-2.5 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                      <UserX className="w-4 h-4 text-muted-foreground mr-2 shrink-0" />
-                      <span className="text-sm font-medium truncate">{userEntry}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Metadata */}
-            {insight.metadata && Object.keys(insight.metadata).length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Info className="w-4 h-4 text-muted-foreground" />
-                  <h4 className="font-medium text-sm">Detalhes Adicionais</h4>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(insight.metadata).filter(([k]) => k !== 'previousCount').map(([key, value]) => (
-                    <div key={key} className="p-2 rounded-lg bg-muted/30 text-sm">
-                      <span className="text-muted-foreground text-xs">{key}</span>
-                      <p className="font-medium truncate">
-                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Detail Sheet */}
+      <IncidentDetailSheet insight={insight} open={detailOpen} onOpenChange={setDetailOpen} />
     </>
   );
 }
