@@ -1142,27 +1142,48 @@ function analyzeThreatProtection(
   const phishTargetMap: Record<string, number> = {};
   const malwareDomainMap: Record<string, number> = {};
 
+  // Enriched detail maps for side-sheet
+  const spamDomainDetails: Record<string, { recipients: Set<string>; subjects: string[] }> = {};
+  const phishTargetDetails: Record<string, { senders: Set<string>; subjects: string[] }> = {};
+  const malwareDomainDetails: Record<string, { recipients: Set<string>; subjects: string[] }> = {};
+
   for (const msg of exoMessageTrace) {
     const status = (msg.Status || '').toLowerCase();
     const sender = (msg.SenderAddress || '').toLowerCase();
     const recipient = (msg.RecipientAddress || '').toLowerCase();
+    const subject = msg.Subject || '';
     const senderDomain = sender.includes('@') ? sender.split('@')[1] : sender;
     statusMap[status] = (statusMap[status] || 0) + 1;
 
     if (status === 'filteredasspam' || status === 'spamfiltered') {
       metrics.spamBlocked++;
       metrics.totalFiltered++;
-      if (senderDomain) spamDomainMap[senderDomain] = (spamDomainMap[senderDomain] || 0) + 1;
+      if (senderDomain) {
+        spamDomainMap[senderDomain] = (spamDomainMap[senderDomain] || 0) + 1;
+        if (!spamDomainDetails[senderDomain]) spamDomainDetails[senderDomain] = { recipients: new Set(), subjects: [] };
+        if (recipient) spamDomainDetails[senderDomain].recipients.add(recipient);
+        if (subject && spamDomainDetails[senderDomain].subjects.length < 10) spamDomainDetails[senderDomain].subjects.push(subject);
+      }
       if (recipient) spamRecipientMap[recipient] = (spamRecipientMap[recipient] || 0) + 1;
     } else if (status === 'quarantined') {
       metrics.quarantined++;
       metrics.totalFiltered++;
       metrics.phishingDetected++;
-      if (recipient) phishTargetMap[recipient] = (phishTargetMap[recipient] || 0) + 1;
+      if (recipient) {
+        phishTargetMap[recipient] = (phishTargetMap[recipient] || 0) + 1;
+        if (!phishTargetDetails[recipient]) phishTargetDetails[recipient] = { senders: new Set(), subjects: [] };
+        if (senderDomain) phishTargetDetails[recipient].senders.add(senderDomain);
+        if (subject && phishTargetDetails[recipient].subjects.length < 10) phishTargetDetails[recipient].subjects.push(subject);
+      }
     } else if (status === 'failed') {
       metrics.malwareBlocked++;
       metrics.totalFiltered++;
-      if (senderDomain) malwareDomainMap[senderDomain] = (malwareDomainMap[senderDomain] || 0) + 1;
+      if (senderDomain) {
+        malwareDomainMap[senderDomain] = (malwareDomainMap[senderDomain] || 0) + 1;
+        if (!malwareDomainDetails[senderDomain]) malwareDomainDetails[senderDomain] = { recipients: new Set(), subjects: [] };
+        if (recipient) malwareDomainDetails[senderDomain].recipients.add(recipient);
+        if (subject && malwareDomainDetails[senderDomain].subjects.length < 10) malwareDomainDetails[senderDomain].subjects.push(subject);
+      }
     } else if (status === 'delivered') {
       metrics.totalDelivered++;
     }
@@ -1173,18 +1194,41 @@ function analyzeThreatProtection(
     const recipient = (t.recipientEmailAddress || '').toLowerCase();
     const sender = (t.senderAddress || '').toLowerCase();
     const senderDomain = sender.includes('@') ? sender.split('@')[1] : sender;
+    const subject = t.subject || '';
     if (threatType.includes('phish')) {
       metrics.phishingDetected++;
-      if (recipient) phishTargetMap[recipient] = (phishTargetMap[recipient] || 0) + 1;
+      if (recipient) {
+        phishTargetMap[recipient] = (phishTargetMap[recipient] || 0) + 1;
+        if (!phishTargetDetails[recipient]) phishTargetDetails[recipient] = { senders: new Set(), subjects: [] };
+        if (senderDomain) phishTargetDetails[recipient].senders.add(senderDomain);
+        if (subject && phishTargetDetails[recipient].subjects.length < 10) phishTargetDetails[recipient].subjects.push(subject);
+      }
     } else if (threatType.includes('malware')) {
       metrics.malwareBlocked++;
-      if (senderDomain) malwareDomainMap[senderDomain] = (malwareDomainMap[senderDomain] || 0) + 1;
+      if (senderDomain) {
+        malwareDomainMap[senderDomain] = (malwareDomainMap[senderDomain] || 0) + 1;
+        if (!malwareDomainDetails[senderDomain]) malwareDomainDetails[senderDomain] = { recipients: new Set(), subjects: [] };
+        if (recipient) malwareDomainDetails[senderDomain].recipients.add(recipient);
+        if (subject && malwareDomainDetails[senderDomain].subjects.length < 10) malwareDomainDetails[senderDomain].subjects.push(subject);
+      }
     }
   }
 
-  metrics.topSpamSenderDomains = Object.entries(spamDomainMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([domain, count]) => ({ domain, count }));
-  metrics.topPhishingTargets = Object.entries(phishTargetMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([user, count]) => ({ user, count }));
-  metrics.topMalwareSenders = Object.entries(malwareDomainMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([domain, count]) => ({ domain, count }));
+  metrics.topSpamSenderDomains = Object.entries(spamDomainMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([domain, count]) => ({
+    domain, count,
+    recipients: [...(spamDomainDetails[domain]?.recipients || [])].slice(0, 20),
+    sampleSubjects: (spamDomainDetails[domain]?.subjects || []).slice(0, 10),
+  }));
+  metrics.topPhishingTargets = Object.entries(phishTargetMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([user, count]) => ({
+    user, count,
+    senders: [...(phishTargetDetails[user]?.senders || [])].slice(0, 20),
+    sampleSubjects: (phishTargetDetails[user]?.subjects || []).slice(0, 10),
+  }));
+  metrics.topMalwareSenders = Object.entries(malwareDomainMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([domain, count]) => ({
+    domain, count,
+    recipients: [...(malwareDomainDetails[domain]?.recipients || [])].slice(0, 20),
+    sampleSubjects: (malwareDomainDetails[domain]?.subjects || []).slice(0, 10),
+  }));
   metrics.topSpamRecipients = Object.entries(spamRecipientMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([user, count]) => ({ user, count }));
   metrics.deliveryBreakdown = Object.entries(statusMap).sort((a, b) => b[1] - a[1]).map(([status, count]) => ({ status, count }));
 
