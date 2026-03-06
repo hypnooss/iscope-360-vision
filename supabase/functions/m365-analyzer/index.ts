@@ -1990,7 +1990,9 @@ Deno.serve(async (req) => {
     const operational = analyzeOperationalRisks(signInLogs, auditLogs, exoOrgConfig, exoRemoteDomains, exoMalwareFilter, exoAuthPolicy);
     allInsights.push(...operational.insights);
 
-    // Build metrics in the exact shape expected by the frontend
+    const threatProtection = analyzeThreatProtection(exoMessageTrace, threatData, exoContentFilter, exoMalwareFilter, exoAntiPhish, exoSafeLinks, exoSafeAttach);
+    allInsights.push(...threatProtection.insights);
+
     const allMetrics = {
       securityRisk: {
         highRiskSignIns: securityRisk.metrics.highRiskSignIns || 0,
