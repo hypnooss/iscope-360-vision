@@ -397,15 +397,12 @@ export default function M365PosturePage() {
   });
 
   // Compute product counts for filter badges
-  const productCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const item of allUnifiedItems) {
-      if (item.product) {
-        counts[item.product] = (counts[item.product] || 0) + 1;
-      }
+  const productCounts: Record<string, number> = {};
+  for (const item of allUnifiedItems) {
+    if (item.product) {
+      productCounts[item.product] = (productCounts[item.product] || 0) + 1;
     }
-    return counts;
-  }, [allUnifiedItems]);
+  }
 
   const isAnalysisRunning = !!activeAnalysisId;
   const analysisStatus = analysisRecord?.status ?? 'pending';
