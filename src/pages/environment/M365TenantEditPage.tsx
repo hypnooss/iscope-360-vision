@@ -135,11 +135,19 @@ export default function M365TenantEditPage() {
   };
 
   // Background polling for permission propagation
+  const cancelPolling = useCallback(() => {
+    setPollingCancelled(true);
+    setPollingStatus(null);
+    toast.info('Verificação de permissões cancelada.');
+  }, []);
+
   const startPermissionPolling = useCallback(async () => {
-    const MAX_ATTEMPTS = 9;
-    const INTERVAL_MS = 20000; // 20 seconds
+    const MAX_ATTEMPTS = 5;
+    const INTERVAL_MS = 10000; // 10 seconds
+    setPollingCancelled(false);
     
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (pollingCancelled) { setPollingStatus(null); return; }
       setPollingStatus({ active: true, attempt, maxAttempts: MAX_ATTEMPTS });
       
       try {
