@@ -1,0 +1,84 @@
+import { useState, useCallback, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+
+export interface ExchangeDashboardData {
+  mailboxes: { total: number; overQuota: number; forwardingEnabled: number; autoReplyExternal: number; newLast30d: number; notLoggedIn30d: number };
+  traffic: { sent: number; received: number };
+  security: { maliciousInbound: number; phishing: number; malware: number; spam: number };
+  analyzedAt: string;
+}
+
+interface UseExchangeDashboardOptions {
+  tenantRecordId: string | null;
+}
+
+export function useExchangeDashboard({ tenantRecordId }: UseExchangeDashboardOptions) {
+  const [data, setData] = useState<ExchangeDashboardData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadCache = useCallback(async () => {
+    if (!tenantRecordId) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data: tenant, error: dbError } = await supabase
+        .from('m365_tenants')
+        .select('exchange_dashboard_cache, exchange_dashboard_cached_at')
+        .eq('id', tenantRecordId)
+        .single();
+
+      if (dbError) throw new Error(dbError.message);
+
+      if (tenant?.exchange_dashboard_cache) {
+        const cache = tenant.exchange_dashboard_cache as any;
+        setData(mapToData(cache, tenant.exchange_dashboard_cached_at));
+      } else {
+        setData(null);
+      }
+    } catch (err) {
+      console.error('useExchangeDashboard loadCache error:', err);
+      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+    } finally {
+      setLoading(false);
+    }
+  }, [tenantRecordId]);
+
+  const mapToData = (cache: any, cachedAt?: string): ExchangeDashboardData => ({
+    mailboxes: cache.mailboxes || { total: 0, overQuota: 0, forwardingEnabled: 0, autoReplyExternal: 0, newLast30d: 0, notLoggedIn30d: 0 },
+    traffic: cache.traffic || { sent: 0, received: 0 },
+    security: cache.security || { maliciousInbound: 0, phishing: 0, malware: 0, spam: 0 },
+    analyzedAt: cache.analyzedAt || cachedAt || '',
+  });
+
+  const refresh = useCallback(async () => {
+    if (!tenantRecordId) return;
+    setRefreshing(true);
+    setError(null);
+
+    try {
+      const { data: result, error: fnError } = await supabase.functions.invoke('exchange-dashboard', {
+        body: { tenant_record_id: tenantRecordId },
+      });
+
+      if (fnError) throw new Error(fnError.message);
+      if (!result?.success) throw new Error(result?.error || 'Erro ao atualizar dashboard');
+
+      setData(mapToData(result));
+      loadCache().catch(() => {});
+    } catch (err) {
+      console.error('useExchangeDashboard refresh error:', err);
+      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [tenantRecordId, loadCache]);
+
+  useEffect(() => {
+    if (tenantRecordId) loadCache();
+  }, [tenantRecordId, loadCache]);
+
+  return { data, loading, refreshing, error, refresh };
+}

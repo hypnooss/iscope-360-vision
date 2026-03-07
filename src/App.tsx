@@ -64,6 +64,7 @@ const EntraIdSecurityInsightsPage = lazy(() => import("./pages/m365/EntraIdSecur
 const EntraIdApplicationInsightsPage = lazy(() => import("./pages/m365/EntraIdApplicationInsightsPage"));
 const EntraIdAnalysisPage = lazy(() => import("./pages/m365/EntraIdAnalysisPage"));
 const ExchangeOnlinePage = lazy(() => import("./pages/m365/ExchangeOnlinePage"));
+const CollaborationPage = lazy(() => import("./pages/m365/CollaborationPage"));
 const M365CVEsPage = lazy(() => import("./pages/m365/M365CVEsPage"));
 const M365AnalyzerDashboardPage = lazy(() => import("./pages/m365/M365AnalyzerDashboardPage"));
 const M365ServiceHealthPage = lazy(() => import("./pages/m365/M365ServiceHealthPage"));
@@ -147,6 +148,7 @@ const App = () => (
                   <Route path="/scope-m365/entra-id/audit-logs" element={<Navigate to="/scope-m365/entra-id/security-insights" replace />} />
                   <Route path="/scope-m365/entra-id/analysis" element={<EntraIdAnalysisPage />} />
                   <Route path="/scope-m365/exchange-online" element={<ExchangeOnlinePage />} />
+                  <Route path="/scope-m365/collaboration" element={<CollaborationPage />} />
                   <Route path="/scope-m365/cves" element={<M365CVEsPage />} />
                   <Route path="/scope-m365/analyzer" element={<M365AnalyzerDashboardPage />} />
                   <Route path="/scope-m365/service-health" element={<M365ServiceHealthPage />} />
