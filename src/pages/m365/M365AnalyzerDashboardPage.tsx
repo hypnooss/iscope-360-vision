@@ -278,6 +278,7 @@ export default function M365AnalyzerDashboardPage() {
   const [triggering, setTriggering] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
   const [kpiFilter, setKpiFilter] = useState<KPIFilterKey | null>(null);
+  const [activeTab, setActiveTab] = useState('incidents');
 
   const { tenants, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
   const { data: snapshot, isLoading, refetch } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
