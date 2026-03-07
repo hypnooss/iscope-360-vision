@@ -494,7 +494,8 @@ async function validatePermissions(
   tenantId: string,
   appId: string,
   clientSecret: string,
-  appObjectId?: string
+  appObjectId?: string,
+  supabaseClient?: SupabaseClient
 ): Promise<PermissionStatus[]> {
   console.log('Getting access token for tenant:', tenantId);
   
@@ -523,30 +524,30 @@ async function validatePermissions(
   
   console.log('Access token obtained, testing permissions...');
 
+  // Fetch permissions from database
+  const { data: dbPermissions } = await supabaseClient!
+    .from('m365_required_permissions')
+    .select('permission_name, test_url, is_required')
+    .order('permission_name');
+
   const results: PermissionStatus[] = [];
 
-  for (const permission of REQUIRED_PERMISSIONS) {
-    const granted = await testPermission(accessToken, permission);
-    results.push({ name: permission, granted, type: 'required' });
-    console.log(`Permission ${permission}: ${granted ? 'granted' : 'denied'}`);
+  for (const dbPerm of (dbPermissions || [])) {
+    const granted = await testPermission(accessToken, dbPerm.permission_name, appObjectId, dbPerm.test_url || undefined);
+    results.push({ 
+      name: dbPerm.permission_name, 
+      granted, 
+      type: dbPerm.is_required ? 'required' : 'recommended' 
+    });
+    console.log(`Permission ${dbPerm.permission_name}: ${granted ? 'granted' : 'denied'}`);
   }
 
-  for (const permission of RECOMMENDED_PERMISSIONS) {
-    const granted = await testPermission(accessToken, permission);
-    results.push({ name: permission, granted, type: 'recommended' });
-    console.log(`Permission ${permission}: ${granted ? 'granted' : 'denied'}`);
-  }
-
-  // Only test certificate permissions if app_object_id is provided
-  if (appObjectId) {
+  // Only test certificate permissions if app_object_id is provided and not already in results
+  if (appObjectId && !results.find(r => r.name === 'Application.ReadWrite.All')) {
     console.log('Testing certificate upload permissions with app_object_id:', appObjectId);
-    for (const permission of CERTIFICATE_PERMISSIONS) {
-      const granted = await testPermission(accessToken, permission, appObjectId);
-      results.push({ name: permission, granted, type: 'recommended' });
-      console.log(`Permission ${permission}: ${granted ? 'granted' : 'denied'}`);
-    }
-  } else {
-    console.log('Skipping certificate permissions test (no app_object_id provided)');
+    const granted = await testPermission(accessToken, 'Application.ReadWrite.All', appObjectId);
+    results.push({ name: 'Application.ReadWrite.All', granted, type: 'recommended' });
+    console.log(`Permission Application.ReadWrite.All: ${granted ? 'granted' : 'denied'}`);
   }
 
   // Test Exchange Administrator Role assignment (required for PowerShell CBA)
