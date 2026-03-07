@@ -1,30 +1,27 @@
 
 
-## Correção: Status "Parcial" causado por permissões duplicadas com nomes diferentes
+## Problem
 
-### Causa Raiz
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-Após o loop dinâmico do banco de dados (que testa `Exchange.ManageAsApp` e `Sites.FullControl.All`), o código nas linhas 690-700 adiciona **mais duas entradas** ao `permissionResults` com nomes diferentes:
-- `Exchange.ManageAsApp` (do DB) + `Exchange Administrator` (hardcoded) 
-- `Sites.FullControl.All` (do DB) + `SharePoint Administrator` (hardcoded)
+## Solution
 
-Esses testes de App Role Assignment frequentemente falham (Resource SP not found em alguns tenants). Como `allPermissionsGranted` usa `permissionResults.every(p => p.granted)` na linha 791, qualquer falha — mesmo de uma permissão opcional duplicada — marca o tenant como "partial".
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-### Solução
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-Duas mudanças na linha 791 de `validate-m365-connection/index.ts`:
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-1. **Mudar a lógica de `allPermissionsGranted`** para considerar apenas permissões **obrigatórias** (`required: true`):
-```ts
-const allPermissionsGranted = permissionResults
-  .filter(p => p.required)
-  .every(p => p.granted);
-```
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-2. Se **todas as obrigatórias** passaram, status = `connected`. Se alguma obrigatória falhou, status = `partial`.
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-Isso é consistente com o propósito: permissões opcionais (como Exchange.ManageAsApp, Sites.FullControl.All, Application.ReadWrite.All) não devem bloquear o status de conexão.
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
 
-### Arquivo
-- `supabase/functions/validate-m365-connection/index.ts` — alterar linha 791
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 
