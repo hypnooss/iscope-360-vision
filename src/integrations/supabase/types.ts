@@ -2123,12 +2123,16 @@ export type Database = {
       m365_tenants: {
         Row: {
           client_id: string
+          collaboration_dashboard_cache: Json | null
+          collaboration_dashboard_cached_at: string | null
           connection_status: Database["public"]["Enums"]["tenant_connection_status"]
           created_at: string
           created_by: string | null
           display_name: string | null
           entra_dashboard_cache: Json | null
           entra_dashboard_cached_at: string | null
+          exchange_dashboard_cache: Json | null
+          exchange_dashboard_cached_at: string | null
           exchange_rbac_assigned: boolean | null
           exchange_sp_registered: boolean | null
           id: string
@@ -2139,12 +2143,16 @@ export type Database = {
         }
         Insert: {
           client_id: string
+          collaboration_dashboard_cache?: Json | null
+          collaboration_dashboard_cached_at?: string | null
           connection_status?: Database["public"]["Enums"]["tenant_connection_status"]
           created_at?: string
           created_by?: string | null
           display_name?: string | null
           entra_dashboard_cache?: Json | null
           entra_dashboard_cached_at?: string | null
+          exchange_dashboard_cache?: Json | null
+          exchange_dashboard_cached_at?: string | null
           exchange_rbac_assigned?: boolean | null
           exchange_sp_registered?: boolean | null
           id?: string
@@ -2155,12 +2163,16 @@ export type Database = {
         }
         Update: {
           client_id?: string
+          collaboration_dashboard_cache?: Json | null
+          collaboration_dashboard_cached_at?: string | null
           connection_status?: Database["public"]["Enums"]["tenant_connection_status"]
           created_at?: string
           created_by?: string | null
           display_name?: string | null
           entra_dashboard_cache?: Json | null
           entra_dashboard_cached_at?: string | null
+          exchange_dashboard_cache?: Json | null
+          exchange_dashboard_cached_at?: string | null
           exchange_rbac_assigned?: boolean | null
           exchange_sp_registered?: boolean | null
           id?: string
