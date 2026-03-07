@@ -1,27 +1,56 @@
 
 
-## Problem
+## Diagnóstico
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+Os dados existem -- a edge function retorna dados reais (263 users, 7 admins, etc.), mas o `UPDATE` na tabela `m365_tenants` para salvar o cache está falhando silenciosamente. Quando o `loadCache()` é chamado após o refresh, ele lê `null` do banco e mostra zeros.
 
-## Solution
+A evidência está nos network requests:
+- Edge function retorna: `{"success":true,"users":{"total":263,...}}`
+- Mas `loadCache` logo após retorna: `{"entra_dashboard_cache":null,"entra_dashboard_cached_at":null}`
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+## Causa provável
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+A edge function pode não ter sido redeployada com o código de cache, ou o `UPDATE` falha silenciosamente sem log. Independente da causa raiz do UPDATE, o hook deveria usar os dados retornados diretamente pela edge function como fallback.
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+## Solução
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+### 1. `src/hooks/useEntraIdDashboard.ts`
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+No `refresh`, usar os dados retornados diretamente pela edge function em vez de depender exclusivamente do `loadCache()`:
 
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+```ts
+const refresh = async () => {
+  const { data: result } = await supabase.functions.invoke('entra-id-dashboard', { body: { ... } });
+  if (result?.success) {
+    setData({
+      users: result.users,
+      admins: result.admins,
+      // ... mapear todos os campos
+      analyzedAt: result.analyzedAt,
+    });
+  }
+  // Também tenta recarregar do cache (para futuras visitas)
+  await loadCache();
+};
+```
 
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+Isso garante que os dados aparecem imediatamente após o refresh, mesmo que o cache no banco ainda não tenha sido persistido.
+
+### 2. `supabase/functions/entra-id-dashboard/index.ts`
+
+Redeployar a edge function garantindo que o bloco de UPDATE do cache está presente e logando erros:
+
+```ts
+const { error: updateError } = await supabase.from('m365_tenants').update({
+  entra_dashboard_cache: result,
+  entra_dashboard_cached_at: now.toISOString(),
+}).eq('id', tenant_record_id);
+
+if (updateError) console.error('Failed to save cache:', updateError);
+```
+
+### Arquivos modificados
+
+1. `src/hooks/useEntraIdDashboard.ts` -- usar resultado direto da edge function + fallback para cache
+2. `supabase/functions/entra-id-dashboard/index.ts` -- adicionar log de erro no UPDATE do cache
 
