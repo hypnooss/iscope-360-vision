@@ -15,32 +15,23 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    // Validate auth - accept either service_role_key or super_admin user token
-    const authHeader = req.headers.get('Authorization')
-    console.log('Auth header present:', !!authHeader, 'starts with Bearer:', authHeader?.startsWith('Bearer '))
+    // Check multiple auth methods
+    const authHeader = req.headers.get('Authorization') || ''
+    const apikeyHeader = req.headers.get('apikey') || ''
+    const token = authHeader.replace('Bearer ', '')
     
-    // Also check apikey header (used by Supabase tools)
-    const apikeyHeader = req.headers.get('apikey')
-    console.log('Apikey header present:', !!apikeyHeader)
+    const isServiceRole = token === serviceRoleKey || apikeyHeader === serviceRoleKey
     
-    if (!authHeader?.startsWith('Bearer ')) {
-      // If no Bearer auth but apikey is service_role_key, allow
-      if (apikeyHeader === serviceRoleKey) {
-        console.log('Authorized via apikey header (service_role_key)')
-      } else {
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
+
+    if (!isServiceRole) {
+      if (!authHeader.startsWith('Bearer ')) {
         return new Response(JSON.stringify({ error: 'Unauthorized' }), {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
-    }
 
-    const token = authHeader.replace('Bearer ', '')
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
-
-    // If the token IS the service_role_key, skip user validation (internal/admin call)
-    if (token !== serviceRoleKey) {
-      // Verify user with anon key
       const supabaseUser = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: authHeader } },
       })
@@ -52,7 +43,6 @@ Deno.serve(async (req) => {
         })
       }
 
-      // Check if super_admin
       const { data: hasRole } = await supabaseAdmin.rpc('has_role', {
         _user_id: user.id,
         _role: 'super_admin',
