@@ -141,10 +141,9 @@ Deno.serve(async (req) => {
     const now = new Date();
 
     // Fetch reports in parallel - reports return CSV by default
-    const [mailboxUsageResult, emailActivityResult, securityAlertsResult] = await Promise.all([
+    const [mailboxUsageResult, emailActivityResult] = await Promise.all([
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='D30')").catch(e => { console.warn('mailboxUsage error:', e); return null; }),
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getEmailActivityCounts(period='D30')").catch(e => { console.warn('emailActivity error:', e); return null; }),
-      graphGet(accessToken, "https://graph.microsoft.com/v1.0/security/alerts_v2?$filter=category eq 'InitialAccess' or category eq 'Malware' or category eq 'Phishing'&$top=200&$select=id,title,category,severity,status,createdDateTime").catch(e => { console.warn('securityAlerts error:', e); return null; }),
     ]);
 
     // Parse mailbox usage data
@@ -248,38 +247,38 @@ Deno.serve(async (req) => {
       console.warn('Failed to fetch user mailbox settings:', e);
     }
 
-    // Security data from alerts_v2
+    // Security data from M365 Analyzer snapshots (collected via PowerShell exoMessageTrace)
     let maliciousInbound = 0;
     let phishing = 0;
     let malware = 0;
     let spam = 0;
 
-    if (securityAlertsResult?.value) {
-      const alerts = securityAlertsResult.value;
-      console.log(`Security alerts: ${alerts.length} total`);
-      alerts.forEach((alert: any) => {
-        const cat = (alert.category || '').toLowerCase();
-        if (cat.includes('phish')) phishing++;
-        else if (cat.includes('malware')) malware++;
-        else if (cat.includes('initialaccess') || cat.includes('initial access')) maliciousInbound++;
-      });
-    } else {
-      console.warn('Security alerts returned no data. Trying threat reports...');
-      // Fallback: try beta threat protection reports
-      try {
-        const [spamResult, phishResult, malwareResult] = await Promise.all([
-          graphGet(accessToken, "https://graph.microsoft.com/beta/reports/getMailDetailSpamReport(period='D30')").catch(() => null),
-          graphGet(accessToken, "https://graph.microsoft.com/beta/reports/getMailDetailPhishReport(period='D30')").catch(() => null),
-          graphGet(accessToken, "https://graph.microsoft.com/beta/reports/getMailDetailMalwareReport(period='D30')").catch(() => null),
-        ]);
-        if (spamResult?._csv) spam = parseCsvReport(spamResult._csv).length;
-        if (phishResult?._csv) phishing = parseCsvReport(phishResult._csv).length;
-        if (malwareResult?._csv) malware = parseCsvReport(malwareResult._csv).length;
-        maliciousInbound = phishing + malware;
-        console.log(`Threat reports - spam: ${spam}, phishing: ${phishing}, malware: ${malware}`);
-      } catch (e) {
-        console.warn('Threat reports also failed:', e);
+    try {
+      const { data: latestSnapshot } = await supabase
+        .from('m365_analyzer_snapshots')
+        .select('metrics')
+        .eq('tenant_record_id', tenant_record_id)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestSnapshot?.metrics) {
+        const tp = (latestSnapshot.metrics as any).threatProtection;
+        if (tp) {
+          spam = tp.spamBlocked || 0;
+          phishing = tp.phishingDetected || 0;
+          malware = tp.malwareBlocked || 0;
+          maliciousInbound = phishing + malware;
+          console.log(`Security from analyzer snapshot - spam: ${spam}, phishing: ${phishing}, malware: ${malware}`);
+        } else {
+          console.warn('Analyzer snapshot has no threatProtection metrics');
+        }
+      } else {
+        console.warn('No completed M365 analyzer snapshot found for tenant');
       }
+    } catch (e) {
+      console.warn('Failed to fetch analyzer snapshot for security data:', e);
     }
 
     const result = {
