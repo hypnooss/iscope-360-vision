@@ -19,11 +19,51 @@ interface UseEntraIdDashboardOptions {
 export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptions) {
   const [data, setData] = useState<EntraIdDashboardData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  // Load cached data from m365_tenants table (fast DB query)
+  const loadCache = useCallback(async () => {
     if (!tenantRecordId) return;
     setLoading(true);
+    setError(null);
+
+    try {
+      const { data: tenant, error: dbError } = await supabase
+        .from('m365_tenants')
+        .select('entra_dashboard_cache, entra_dashboard_cached_at')
+        .eq('id', tenantRecordId)
+        .single();
+
+      if (dbError) throw new Error(dbError.message);
+
+      if (tenant?.entra_dashboard_cache) {
+        const cache = tenant.entra_dashboard_cache as any;
+        setData({
+          users: cache.users || { total: 0, signInEnabled: 0, disabled: 0, guests: 0, onPremSynced: 0 },
+          admins: cache.admins || { total: 0, globalAdmins: 0 },
+          mfa: cache.mfa || { total: 0, enabled: 0, disabled: 0 },
+          risks: cache.risks || { riskyUsers: 0, atRisk: 0, compromised: 0 },
+          loginActivity: cache.loginActivity || { total: 0, success: 0, failed: 0, mfaRequired: 0, blocked: 0 },
+          userChanges: cache.userChanges || { updated: 0, new: 0, enabled: 0, disabled: 0, deleted: 0 },
+          passwordActivity: cache.passwordActivity || { resets: 0, forcedChanges: 0, selfService: 0 },
+          analyzedAt: tenant.entra_dashboard_cached_at || '',
+        });
+      } else {
+        setData(null);
+      }
+    } catch (err) {
+      console.error('useEntraIdDashboard loadCache error:', err);
+      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+    } finally {
+      setLoading(false);
+    }
+  }, [tenantRecordId]);
+
+  // Refresh: calls edge function (which saves cache), then reloads from DB
+  const refresh = useCallback(async () => {
+    if (!tenantRecordId) return;
+    setRefreshing(true);
     setError(null);
 
     try {
@@ -32,20 +72,22 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
       });
 
       if (fnError) throw new Error(fnError.message);
-      if (!result?.success) throw new Error(result?.error || 'Erro ao carregar dashboard');
+      if (!result?.success) throw new Error(result?.error || 'Erro ao atualizar dashboard');
 
-      setData(result as EntraIdDashboardData);
+      // Reload from cache to get consistent data
+      await loadCache();
     } catch (err) {
-      console.error('useEntraIdDashboard error:', err);
+      console.error('useEntraIdDashboard refresh error:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
-  }, [tenantRecordId]);
+  }, [tenantRecordId, loadCache]);
 
+  // Load cache when tenant changes
   useEffect(() => {
-    if (tenantRecordId) refresh();
-  }, [tenantRecordId, refresh]);
+    if (tenantRecordId) loadCache();
+  }, [tenantRecordId, loadCache]);
 
-  return { data, loading, error, refresh };
+  return { data, loading, refreshing, error, refresh };
 }

@@ -293,7 +293,13 @@ Deno.serve(async (req) => {
       analyzedAt: now.toISOString(),
     };
 
-    console.log('Entra ID Dashboard data aggregated successfully');
+    // Save cache to m365_tenants
+    await supabase.from('m365_tenants').update({
+      entra_dashboard_cache: result,
+      entra_dashboard_cached_at: now.toISOString(),
+    }).eq('id', tenant_record_id);
+
+    console.log('Entra ID Dashboard data aggregated and cached successfully');
 
     return new Response(JSON.stringify(result), {
       status: 200,
