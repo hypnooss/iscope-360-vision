@@ -67,6 +67,7 @@ import {
   Bug,
   Radar,
   BookOpen,
+  HeartPulse,
   LucideIcon,
 } from 'lucide-react';
 import logoIscope from '@/assets/logo-iscope.png';
