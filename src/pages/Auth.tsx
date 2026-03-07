@@ -29,7 +29,9 @@ export default function Auth() {
   const {
     user,
     loading,
-    signIn
+    signIn,
+    mfaRequired,
+    mfaEnrolled
   } = useAuth();
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,12 +49,19 @@ export default function Auth() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   useEffect(() => {
-    // Não redirecionar se estiver no fluxo de recuperação de senha
     if (isRecoveryFlow) return;
     if (!loading && user) {
-      navigate('/dashboard');
+      if (mfaRequired) {
+        if (mfaEnrolled) {
+          navigate('/mfa/challenge');
+        } else {
+          navigate('/mfa/enroll');
+        }
+      } else {
+        navigate('/dashboard');
+      }
     }
-  }, [user, loading, navigate, isRecoveryFlow]);
+  }, [user, loading, navigate, isRecoveryFlow, mfaRequired, mfaEnrolled]);
 
   // Detectar evento de recuperação de senha quando usuário clica no link do email
   useEffect(() => {
