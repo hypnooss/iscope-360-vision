@@ -643,8 +643,8 @@ export default function M365AnalyzerDashboardPage() {
           </Card>
         )}
 
-        {/* KPI Cards */}
-        {snapshot && m && (
+        {/* KPI Cards — only for incidents/anomalies tabs */}
+        {snapshot && m && (activeTab === 'incidents' || activeTab === 'anomalies') && (
           <AnalyzerKPIRow metrics={m} activeFilter={kpiFilter} onFilter={setKpiFilter} />
         )}
 
