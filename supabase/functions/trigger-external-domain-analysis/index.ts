@@ -34,7 +34,30 @@ Deno.serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    // 1. Validate auth
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 2. Verify user
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
+    if (userError || !user) {
+      return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { domain_id }: TriggerRequest = await req.json();
@@ -46,7 +69,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[trigger-external-domain-analysis] Triggering analysis for domain: ${domain_id}`);
+    console.log(`[trigger-external-domain-analysis] Triggering analysis for domain: ${domain_id}, user: ${user.id}`);
 
     const { data: domain, error: domainError } = await supabase
       .from('external_domains')
@@ -58,6 +81,20 @@ Deno.serve(async (req) => {
       console.error('[trigger-external-domain-analysis] Domain not found:', domainError);
       return new Response(JSON.stringify({ success: false, error: 'Domain not found' }), {
         status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 3. Check user has access to this client
+    const { data: hasAccess } = await supabase.rpc('has_client_access', {
+      _user_id: user.id,
+      _client_id: domain.client_id,
+    });
+
+    if (!hasAccess) {
+      console.warn(`[trigger-external-domain-analysis] Access denied: user ${user.id} → client ${domain.client_id}`);
+      return new Response(JSON.stringify({ success: false, error: 'Acesso negado a este recurso' }), {
+        status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

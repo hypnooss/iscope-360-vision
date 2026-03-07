@@ -105,8 +105,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check for pending/running analysis
+    // Check user has access to this client
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+
+    const { data: hasAccess } = await supabaseAdmin.rpc('has_client_access', {
+      _user_id: userId,
+      _client_id: tenant.client_id,
+    });
+
+    if (!hasAccess) {
+      console.warn(`[trigger-m365-posture-analysis] Access denied: user ${userId} → client ${tenant.client_id}`);
+      return new Response(JSON.stringify({ error: 'Acesso negado a este recurso' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     
     const { data: pendingAnalysis } = await supabaseAdmin
       .from('m365_posture_history')

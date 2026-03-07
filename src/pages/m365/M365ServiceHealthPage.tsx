@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -632,7 +633,7 @@ function M365ServiceHealthPage() {
                           {post.contentType === 'html' ? (
                             <div
                               className="text-xs text-foreground/90 leading-relaxed prose prose-invert prose-xs max-w-none [&_a]:text-primary [&_a]:underline"
-                              dangerouslySetInnerHTML={{ __html: post.content }}
+                              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(post.content) }}
                             />
                           ) : (
                             <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">{post.content}</p>

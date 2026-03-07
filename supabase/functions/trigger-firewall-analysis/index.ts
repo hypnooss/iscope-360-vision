@@ -33,7 +33,30 @@ Deno.serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    // 1. Validate auth
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 2. Verify user
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
+    if (userError || !user) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { firewall_id }: TriggerRequest = await req.json();
@@ -45,7 +68,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[trigger-firewall-analysis] Triggering analysis for firewall: ${firewall_id}`);
+    console.log(`[trigger-firewall-analysis] Triggering analysis for firewall: ${firewall_id}, user: ${user.id}`);
 
     // Fetch firewall details
     const { data: firewall, error: fwError } = await supabase
@@ -59,6 +82,20 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ success: false, error: 'Firewall not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 3. Check user has access to this client
+    const { data: hasAccess } = await supabase.rpc('has_client_access', {
+      _user_id: user.id,
+      _client_id: firewall.client_id,
+    });
+
+    if (!hasAccess) {
+      console.warn(`[trigger-firewall-analysis] Access denied: user ${user.id} → client ${firewall.client_id}`);
+      return new Response(
+        JSON.stringify({ success: false, error: 'Acesso negado a este recurso' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
