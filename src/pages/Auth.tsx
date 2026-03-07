@@ -45,6 +45,26 @@ export default function Auth() {
   const [loginPassword, setLoginPassword] = useState('');
   const [isRecoveryFlow, setIsRecoveryFlow] = useState(false);
 
+  // Rate limiting state
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+  const [lockoutCountdown, setLockoutCountdown] = useState(0);
+
+  // Lockout countdown timer
+  useEffect(() => {
+    if (!lockoutUntil) return;
+    const interval = setInterval(() => {
+      const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      if (remaining <= 0) {
+        setLockoutUntil(null);
+        setLockoutCountdown(0);
+      } else {
+        setLockoutCountdown(remaining);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutUntil]);
+
   // Password reset state
   const [resetEmail, setResetEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
