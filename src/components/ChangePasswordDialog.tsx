@@ -28,8 +28,9 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (password.length < 6) {
-      toast({ title: 'Senha deve ter no mínimo 6 caracteres', variant: 'destructive' });
+    const pwValidation = validatePassword(password);
+    if (!pwValidation.valid) {
+      toast({ title: pwValidation.errors[0], variant: 'destructive' });
       return;
     }
     if (password !== confirmPassword) {
