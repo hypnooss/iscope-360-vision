@@ -17,6 +17,7 @@ interface Permission {
   submodule: string;
   permission_type: string;
   description: string | null;
+  test_url: string | null;
   is_required: boolean;
   created_at: string;
 }
