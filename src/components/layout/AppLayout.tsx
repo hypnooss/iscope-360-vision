@@ -175,7 +175,7 @@ const getDefaultModuleConfig = (code: string) => {
 };
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const { profile, role, signOut } = useAuth();
+  const { profile, role, signOut, mfaRequired, mfaEnrolled } = useAuth();
   const { activeModule, setActiveModule, hasModuleAccess } = useModules();
   const { effectiveProfile, effectiveRole, isPreviewMode } = useEffectiveAuth();
   const { effectiveUserModules, allActiveModules } = useEffectiveModules();
@@ -227,6 +227,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       setExpandedModules({});
     }
   }, [location.pathname, setActiveModule]);
+
+  // MFA Guard: redirect to MFA pages if MFA is required
+  useEffect(() => {
+    if (mfaRequired) {
+      if (mfaEnrolled) {
+        navigate('/mfa/challenge', { replace: true });
+      } else {
+        navigate('/mfa/enroll', { replace: true });
+      }
+    }
+  }, [mfaRequired, mfaEnrolled, navigate]);
 
   const handleSignOut = async () => {
     await signOut();
