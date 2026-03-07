@@ -43,9 +43,11 @@ export default function MfaEnrollPage() {
         }
       }
 
+      // Use unique friendly name to avoid conflicts
+      const friendlyName = `iScope 360 ${Date.now()}`;
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: 'totp',
-        friendlyName: 'iScope 360',
+        friendlyName,
       });
 
       if (error) throw error;
