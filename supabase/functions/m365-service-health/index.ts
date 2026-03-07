@@ -7,17 +7,49 @@ const corsHeaders = {
 
 // ====== Helpers ======
 
-function hex(h: string): Uint8Array {
-  return new Uint8Array(h.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+// Decrypt AES-256-GCM secret (hex IV:ciphertext format used by m365_global_config)
+async function decryptSecretHex(encrypted: string): Promise<string | null> {
+  if (!encrypted.includes(':')) return null;
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!keyHex || keyHex.length !== 64) return null;
+  try {
+    const [ivHex, ctHex] = encrypted.split(':');
+    const keyBytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) keyBytes[i] = parseInt(keyHex.substr(i * 2, 2), 16);
+    const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt']);
+    const iv = new Uint8Array(ivHex.length / 2);
+    for (let i = 0; i < iv.length; i++) iv[i] = parseInt(ivHex.substr(i * 2, 2), 16);
+    const ct = new Uint8Array(ctHex.length / 2);
+    for (let i = 0; i < ct.length; i++) ct[i] = parseInt(ctHex.substr(i * 2, 2), 16);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+    return new TextDecoder().decode(decrypted);
+  } catch (e) {
+    console.error('[m365-service-health] Hex decryption failed:', e);
+    return null;
+  }
 }
 
-async function decryptSecret(encrypted: string): Promise<string> {
-  if (!encrypted.includes(':')) return atob(encrypted);
-  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY') ?? '';
-  const [ivH, ctH] = encrypted.split(':');
-  const key = await crypto.subtle.importKey('raw', hex(keyHex), { name: 'AES-GCM' }, false, ['decrypt']);
-  const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: hex(ivH) }, key, hex(ctH));
-  return new TextDecoder().decode(dec);
+// Decrypt AES-GCM secret (legacy Base64 format used by m365_app_credentials)
+async function decryptSecretBase64(encrypted: string): Promise<string | null> {
+  const encryptionKey = Deno.env.get('M365_ENCRYPTION_KEY');
+  if (!encryptionKey) return null;
+  try {
+    const keyBytes = new TextEncoder().encode(encryptionKey.padEnd(32, '0').slice(0, 32));
+    const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
+    const combined = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+    return new TextDecoder().decode(decrypted);
+  } catch {
+    return null;
+  }
+}
+
+// Unified decryption: tries hex format first, then base64 legacy
+async function decryptSecret(encrypted: string): Promise<string | null> {
+  if (encrypted.includes(':')) return await decryptSecretHex(encrypted);
+  return await decryptSecretBase64(encrypted);
 }
 
 async function requestGraphToken(tenantId: string, appId: string, clientSecret: string): Promise<string | null> {
@@ -85,7 +117,11 @@ Deno.serve(async (req) => {
     if (cred?.client_secret_encrypted) {
       console.log(`[m365-service-health] Trying per-tenant credentials (app: ${cred.azure_app_id})`);
       const secret = await decryptSecret(cred.client_secret_encrypted);
-      access_token = await requestGraphToken(tenant.tenant_id, cred.azure_app_id, secret);
+      if (secret) {
+        access_token = await requestGraphToken(tenant.tenant_id, cred.azure_app_id, secret);
+      } else {
+        console.error(`[m365-service-health] Per-tenant secret decryption failed`);
+      }
     }
 
     // 3. Fallback to global config
@@ -104,7 +140,11 @@ Deno.serve(async (req) => {
       }
 
       const secret = await decryptSecret(config.client_secret_encrypted);
-      access_token = await requestGraphToken(tenant.tenant_id, config.app_id, secret);
+      if (secret) {
+        access_token = await requestGraphToken(tenant.tenant_id, config.app_id, secret);
+      } else {
+        console.error(`[m365-service-health] Global secret decryption failed`);
+      }
     }
 
     if (!access_token) {
