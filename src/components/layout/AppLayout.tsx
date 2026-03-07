@@ -228,6 +228,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [location.pathname, setActiveModule]);
 
+  // MFA Guard: redirect to MFA pages if MFA is required
+  useEffect(() => {
+    if (mfaRequired) {
+      if (mfaEnrolled) {
+        navigate('/mfa/challenge', { replace: true });
+      } else {
+        navigate('/mfa/enroll', { replace: true });
+      }
+    }
+  }, [mfaRequired, mfaEnrolled, navigate]);
+
   const handleSignOut = async () => {
     await signOut();
     navigate('/auth');
