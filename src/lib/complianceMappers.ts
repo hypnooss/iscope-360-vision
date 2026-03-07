@@ -204,6 +204,7 @@ export function mapM365AgentInsight(insight: M365AgentInsight): UnifiedComplianc
       details: e.details ? { info: e.details } : undefined,
     })),
     affectedCount: insight.affectedEntities?.length || 0,
+    product: (insight as any).product || inferProductFromCategory(insight.category),
   };
 }
 
