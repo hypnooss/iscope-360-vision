@@ -10,16 +10,17 @@ import logoIscope from '@/assets/logo-iscope.png';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
+import { strongPasswordSchema } from '@/lib/passwordValidation';
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
-  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres')
+  password: z.string().min(1, 'Senha é obrigatória')
 });
 const emailSchema = z.object({
   email: z.string().email('Email inválido')
 });
 const passwordSchema = z.object({
-  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
-  confirmPassword: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres')
+  password: strongPasswordSchema,
+  confirmPassword: z.string().min(1, 'Confirmação é obrigatória')
 }).refine(data => data.password === data.confirmPassword, {
   message: 'As senhas não coincidem',
   path: ['confirmPassword']
