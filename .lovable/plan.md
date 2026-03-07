@@ -1,27 +1,20 @@
 
 
-## Problem
+## Fix: Cores do gráfico "Serviços Afetados" na Saúde do M365
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+### Problema
+O gráfico de barras horizontais está usando `<rect>` para colorir as barras, mas o componente correto do Recharts é `<Cell>`. Isso faz com que as barras fiquem escuras/pretas contra o fundo dark, tornando o gráfico ilegível.
 
-## Solution
+### Solução
+Em `src/pages/m365/M365ServiceHealthPage.tsx`:
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+1. Importar `Cell` do recharts
+2. Substituir `<rect key={i} fill={...} />` por `<Cell key={i} fill={...} />`
+3. Usar uma paleta de cores com melhor contraste no tema dark — tons mais vibrantes de ciano, azul, roxo, verde, âmbar
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
-
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
-
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
-
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
-
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
-
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+### Mudança
+- Arquivo: `src/pages/m365/M365ServiceHealthPage.tsx`
+- Linha ~21: adicionar `Cell` ao import do recharts
+- Linhas ~438-440: trocar `<rect>` por `<Cell>`
+- Opcionalmente ajustar `BAR_COLORS` para cores mais vibrantes
 
