@@ -150,3 +150,5 @@ verify_jwt = false
 [functions.m365-external-movement]
 verify_jwt = false
 
+[functions.m365-service-health]
+verify_jwt = false
