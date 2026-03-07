@@ -34,6 +34,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'Application.ReadWrite.All': 'Gestão de certificados e credenciais',
   // Outros
   'Reports.Read.All': 'Leitura de relatórios de uso',
+  'ServiceHealth.Read.All': 'Leitura da integridade dos serviços Microsoft 365',
   // Directory Roles
   'Exchange Administrator': 'Administração do Exchange Online',
   'SharePoint Administrator': 'Administração do SharePoint Online',
@@ -45,7 +46,7 @@ export const GRAPH_PERMISSIONS = [
   'Policy.Read.All', 'IdentityRiskyUser.Read.All', 'IdentityRiskEvent.Read.All', 'Domain.Read.All',
   'MailboxSettings.Read', 'Mail.Read',
   'RoleManagement.ReadWrite.Directory', 'Sites.Read.All',
-  'Application.ReadWrite.All', 'Reports.Read.All',
+  'Application.ReadWrite.All', 'Reports.Read.All', 'ServiceHealth.Read.All',
   'DeviceManagementManagedDevices.Read.All', 'DeviceManagementConfiguration.Read.All',
   'SecurityAlert.Read.All', 'SecurityEvents.Read.All',
   'SecurityIncident.Read.All', 'AttackSimulation.Read.All',

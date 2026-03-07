@@ -1,47 +1,27 @@
 
 
-## Adicionar permissão `ServiceHealth.Read.All` ao pipeline de permissões M365
+## Problem
 
-### Problema
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-A permissão `ServiceHealth.Read.All` não está registrada no sistema de gerenciamento de permissões. Os endpoints `/admin/serviceAnnouncement/healthOverviews` e `/admin/serviceAnnouncement/issues` retornam erro porque o App Registration no Azure não possui esta permissão no manifesto e ela nunca é validada por tenant.
+## Solution
 
-### Alterações
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-**1. `supabase/functions/ensure-exchange-permission/index.ts`**
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-Adicionar à lista `REQUIRED_PERMISSIONS`:
-```ts
-{ resourceAppId: GRAPH_RESOURCE_ID, permissionId: "79c261e0-fe76-4144-aad5-bdc68fbe4037", name: "ServiceHealth.Read.All" }
-```
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-Isso garante que ao revalidar permissões, o manifesto do App Registration será atualizado com este escopo.
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-**2. `supabase/functions/validate-m365-connection/index.ts`**
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-- Adicionar `'ServiceHealth.Read.All'` à lista `REQUIRED_PERMISSIONS` (linha ~42)
-- Adicionar bloco de validação no `else if` chain (após `Reports.Read.All`, ~linha 628):
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
 
-```ts
-} else if (permission === 'ServiceHealth.Read.All') {
-  const response = await fetch('https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/healthOverviews?$top=1', {
-    headers: { 'Authorization': `Bearer ${accessToken}` },
-  });
-  granted = response.ok;
-  console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
-}
-```
-
-### Fluxo esperado após a alteração
-
-1. Admin acessa **Configurações** e executa a revalidação de permissões
-2. `ensure-exchange-permission` detecta `ServiceHealth.Read.All` ausente no manifesto e faz PATCH
-3. Admin concede Admin Consent no popup do Azure
-4. `validate-m365-connection` verifica a nova permissão e persiste status `granted`
-5. A página **Saúde do 365** passa a retornar dados
-
-### Arquivos
-
-1. `supabase/functions/ensure-exchange-permission/index.ts` — adicionar permissão ao manifesto
-2. `supabase/functions/validate-m365-connection/index.ts` — adicionar validação da permissão
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 

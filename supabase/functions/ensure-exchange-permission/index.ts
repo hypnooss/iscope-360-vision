@@ -56,6 +56,7 @@ const REQUIRED_PERMISSIONS = [
   // SharePointTenantSettings.Read.All removed — GUID was fabricated
   { resourceAppId: GRAPH_RESOURCE_ID, permissionId: "6e472fd1-ad78-48da-a0f0-97ab2c6b769e", name: "IdentityRiskEvent.Read.All" },
   { resourceAppId: GRAPH_RESOURCE_ID, permissionId: "332a536c-c7ef-4017-ab91-336970924f0d", name: "Sites.Read.All" },
+  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: "79c261e0-fe76-4144-aad5-bdc68fbe4037", name: "ServiceHealth.Read.All" },
 ];
 
 function fromHex(hex: string): Uint8Array {
