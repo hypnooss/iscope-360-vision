@@ -436,7 +436,7 @@ function M365ServiceHealthPage() {
                           onClick={(entry: any) => toggleFilter('service', entry.name)}
                         >
                           {serviceChartData.map((_, i) => (
-                            <rect key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
+                            <Cell key={`bar-${i}`} fill={BAR_COLORS[i % BAR_COLORS.length]} />
                           ))}
                         </Bar>
                       </BarChart>
