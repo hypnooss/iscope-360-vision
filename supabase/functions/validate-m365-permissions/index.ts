@@ -719,7 +719,7 @@ Deno.serve(async (req) => {
     // Validar permissões
     let newPermissions: PermissionStatus[];
     try {
-      newPermissions = await validatePermissions(tenantId, appId, clientSecret, appObjectId);
+      newPermissions = await validatePermissions(tenantId, appId, clientSecret, appObjectId, supabase);
     } catch (error) {
       console.error('Failed to validate permissions:', error);
       

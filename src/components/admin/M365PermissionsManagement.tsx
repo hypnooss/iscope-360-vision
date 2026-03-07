@@ -259,6 +259,18 @@ export function M365PermissionsManagement() {
                     <Label>Descrição</Label>
                     <Input placeholder="Descrição da permissão" value={newDescription} onChange={e => setNewDescription(e.target.value)} />
                   </div>
+                  <div className="space-y-2">
+                    <Label>URL de Teste (Graph API)</Label>
+                    <Input 
+                      placeholder="https://graph.microsoft.com/v1.0/..." 
+                      value={newTestUrl} 
+                      onChange={e => setNewTestUrl(e.target.value)} 
+                      className="font-mono text-xs"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      URL do endpoint Graph API para validar esta permissão. Ex: https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/healthOverviews?$top=1
+                    </p>
+                  </div>
                   <div className="flex items-center gap-2">
                     <Switch checked={newRequired} onCheckedChange={setNewRequired} />
                     <Label>Obrigatória</Label>

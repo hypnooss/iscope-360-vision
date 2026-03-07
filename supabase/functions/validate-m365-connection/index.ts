@@ -799,34 +799,8 @@ serve(async (req) => {
     
     if (failedPermissions.length > 0) {
       // Build a test URL map for quick retesting
-      const RETRY_TEST_URLS: Record<string, string> = {
-        'User.Read.All': 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id',
-        'Directory.Read.All': 'https://graph.microsoft.com/v1.0/domains?$top=1',
-        'Group.Read.All': 'https://graph.microsoft.com/v1.0/groups?$top=1&$select=id',
-        'Application.Read.All': 'https://graph.microsoft.com/v1.0/applications?$top=1&$select=id',
-        'AuditLog.Read.All': 'https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=1',
-        'Organization.Read.All': 'https://graph.microsoft.com/v1.0/organization?$select=id',
-        'Policy.Read.All': 'https://graph.microsoft.com/v1.0/policies/conditionalAccessPolicies?$top=1',
-        'IdentityRiskyUser.Read.All': 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1',
-        'IdentityRiskEvent.Read.All': 'https://graph.microsoft.com/beta/identityProtection/riskDetections?$top=1',
-        'RoleManagement.ReadWrite.Directory': 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions',
-        'MailboxSettings.Read': 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id', // proxy test
-        'Mail.Read': 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id', // proxy test
-        'Sites.Read.All': 'https://graph.microsoft.com/v1.0/sites/root?$select=id',
-        'Reports.Read.All': 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=1',
-        'DeviceManagementManagedDevices.Read.All': 'https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?$top=1&$select=id',
-        'DeviceManagementConfiguration.Read.All': 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?$top=1&$select=id',
-        'SecurityAlert.Read.All': 'https://graph.microsoft.com/v1.0/security/alerts_v2?$top=1&$select=id',
-        'SecurityEvents.Read.All': 'https://graph.microsoft.com/v1.0/security/alerts?$top=1&$select=id',
-        'SecurityIncident.Read.All': 'https://graph.microsoft.com/v1.0/security/incidents?$top=1&$select=id',
-        'AttackSimulation.Read.All': 'https://graph.microsoft.com/v1.0/security/attackSimulation/simulations?$top=1',
-        'InformationProtectionPolicy.Read.All': 'https://graph.microsoft.com/beta/informationProtection/policy/labels?$top=1',
-        'TeamSettings.Read.All': 'https://graph.microsoft.com/v1.0/teams?$top=1&$select=id',
-        'Channel.ReadBasic.All': 'https://graph.microsoft.com/v1.0/teams?$select=id&$top=1',
-        'TeamMember.Read.All': 'https://graph.microsoft.com/v1.0/teams?$select=id&$top=1',
-        'SharePointTenantSettings.Read.All': 'https://graph.microsoft.com/beta/admin/sharepoint/settings',
-        'Domain.Read.All': 'https://graph.microsoft.com/v1.0/domains?$top=1&$select=id',
-      };
+      // Use test URLs from database (built earlier from dbPermissions)
+      const RETRY_TEST_URLS = permTestUrlMap;
 
       // First pass: check which failed permissions have "scopes are missing" error
       const scopesMissingPermissions: string[] = [];
