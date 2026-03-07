@@ -69,6 +69,7 @@ async function requestGraphToken(tenantId: string, appId: string, clientSecret: 
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

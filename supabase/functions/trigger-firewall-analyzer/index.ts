@@ -5,6 +5,7 @@ import { getCorsHeaders } from '../_shared/cors.ts';
 const AGENT_OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
