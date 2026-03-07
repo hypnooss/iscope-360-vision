@@ -142,6 +142,7 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
       { label: 'CVEs', href: '/scope-m365/cves', icon: ShieldCheck },
       { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
       { label: 'Exchange Online', href: '/scope-m365/exchange-online', icon: Mail },
+      { label: 'Saúde do 365', href: '/scope-m365/service-health', icon: Activity },
       { label: 'Execuções', href: '/scope-m365/executions', icon: Activity },
     ],
   },

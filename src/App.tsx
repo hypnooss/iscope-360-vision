@@ -149,6 +149,7 @@ const App = () => (
                   <Route path="/scope-m365/exchange-online" element={<ExchangeOnlinePage />} />
                   <Route path="/scope-m365/cves" element={<M365CVEsPage />} />
                   <Route path="/scope-m365/analyzer" element={<M365AnalyzerDashboardPage />} />
+                  <Route path="/scope-m365/service-health" element={<M365ServiceHealthPage />} />
 
                   {/* Legacy routes - redirect to new structure */}
                   <Route path="/firewalls" element={<Navigate to="/scope-firewall/firewalls" replace />} />

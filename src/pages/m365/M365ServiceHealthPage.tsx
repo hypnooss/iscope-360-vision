@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
+import { usePreview } from '@/contexts/PreviewContext';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -83,8 +85,26 @@ const CLASSIFICATION_LABELS: Record<string, string> = {
 
 function M365ServiceHealthPage() {
   const { user } = useAuth();
-  const { selectedWorkspaceId } = useWorkspaceSelector();
-  const { tenants, selectedTenantId, selectTenant, loading: tenantLoading } = useM365TenantSelector(selectedWorkspaceId);
+  const { effectiveRole } = useEffectiveAuth();
+  const { isPreviewMode } = usePreview();
+
+  const isSuperRole = effectiveRole === 'super_admin' || effectiveRole === 'super_suporte';
+
+  const { data: allWorkspaces } = useQuery({
+    queryKey: ['clients-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('clients').select('id, name').order('name');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: isSuperRole && !isPreviewMode,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const { selectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
+  const { tenants, selectedTenantId, selectTenant, loading: tenantLoading } = useM365TenantSelector(
+    isSuperRole ? selectedWorkspaceId : undefined
+  );
   const [selectedIssue, setSelectedIssue] = useState<ServiceIssue | null>(null);
 
   const { data, isLoading, refetch, isFetching } = useQuery({
