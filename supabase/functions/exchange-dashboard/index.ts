@@ -47,17 +47,18 @@ async function getAccessToken(tenantId: string, appId: string, clientSecret: str
   return data.access_token;
 }
 
-async function graphGet(accessToken: string, url: string, headers?: Record<string, string>): Promise<any> {
+async function graphGet(accessToken: string, url: string): Promise<any> {
   const res = await fetch(url, {
-    headers: { 'Authorization': `Bearer ${accessToken}`, ...headers },
+    headers: { 'Authorization': `Bearer ${accessToken}` },
   });
   if (!res.ok) {
-    console.warn(`Graph GET ${url} failed: ${res.status}`);
+    const body = await res.text();
+    console.warn(`Graph GET ${url} failed: ${res.status} - ${body.substring(0, 200)}`);
     return null;
   }
   const contentType = res.headers.get('content-type') || '';
-  if (contentType.includes('text/plain')) {
-    return await res.text();
+  if (contentType.includes('text/plain') || contentType.includes('text/csv') || contentType.includes('application/octet-stream')) {
+    return { _csv: await res.text() };
   }
   return await res.json();
 }
@@ -76,16 +77,12 @@ async function graphGetAllPages(accessToken: string, url: string, maxPages = 5):
   return allValues;
 }
 
-// Parse CSV report data from Graph reporting endpoints
 function parseCsvReport(csvText: string): any[] {
   if (!csvText || typeof csvText !== 'string') return [];
   const lines = csvText.trim().split('\n');
   if (lines.length < 2) return [];
-  
-  // Remove BOM and clean headers
   const headers = lines[0].replace(/^\uFEFF/, '').split(',').map(h => h.trim().replace(/"/g, ''));
   const rows: any[] = [];
-  
   for (let i = 1; i < lines.length; i++) {
     const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
     const row: any = {};
@@ -143,18 +140,10 @@ Deno.serve(async (req) => {
 
     const now = new Date();
 
-    // Fetch mailbox usage report (CSV) and transport rules in parallel
-    const [
-      mailboxUsageCsv,
-      emailActivityCsv,
-      transportRules,
-    ] = await Promise.all([
-      // Mailbox usage detail (CSV report)
-      graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='D30')", { 'Accept': 'application/json' }).catch(() => null),
-      // Email activity counts
-      graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getEmailActivityCounts(period='D30')", { 'Accept': 'application/json' }).catch(() => null),
-      // Transport rules (mail flow rules) - inbox rules with forwarding
-      graphGetAllPages(accessToken, 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,mailboxSettings&$top=999', 3).catch(() => []),
+    // Fetch reports in parallel - reports return CSV by default
+    const [mailboxUsageResult, emailActivityResult] = await Promise.all([
+      graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='D30')").catch(e => { console.warn('mailboxUsage error:', e); return null; }),
+      graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getEmailActivityCounts(period='D30')").catch(e => { console.warn('emailActivity error:', e); return null; }),
     ]);
 
     // Parse mailbox usage data
@@ -162,18 +151,20 @@ Deno.serve(async (req) => {
     let overQuota = 0;
     let newLast30d = 0;
     let notLoggedIn30d = 0;
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    if (mailboxUsageCsv && typeof mailboxUsageCsv === 'string') {
-      const rows = parseCsvReport(mailboxUsageCsv);
+    // Reports return CSV via _csv wrapper
+    if (mailboxUsageResult?._csv) {
+      const rows = parseCsvReport(mailboxUsageResult._csv);
+      console.log(`Mailbox usage report: ${rows.length} rows, headers: ${rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'none'}`);
       totalMailboxes = rows.length;
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       
       rows.forEach((row: any) => {
-        if (row['Storage Used (Byte)'] && row['Prohibit Send/Receive Quota (Byte)']) {
-          const used = parseInt(row['Storage Used (Byte)'], 10) || 0;
-          const quota = parseInt(row['Prohibit Send/Receive Quota (Byte)'], 10) || 0;
-          if (quota > 0 && used >= quota * 0.9) overQuota++;
-        }
+        // Check storage quota (CSV field names)
+        const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
+        const quota = parseInt(row['Prohibit Send/Receive Quota (Byte)'] || '0', 10);
+        if (quota > 0 && used >= quota * 0.9) overQuota++;
+        
         if (row['Created Date']) {
           const created = new Date(row['Created Date']);
           if (created >= thirtyDaysAgo) newLast30d++;
@@ -185,59 +176,96 @@ Deno.serve(async (req) => {
           notLoggedIn30d++;
         }
       });
-    } else if (mailboxUsageCsv?.value) {
-      // JSON format
-      const rows = mailboxUsageCsv.value || [];
+    } else if (mailboxUsageResult?.value) {
+      // JSON format fallback
+      const rows = mailboxUsageResult.value || [];
+      console.log(`Mailbox usage JSON: ${rows.length} rows`);
       totalMailboxes = rows.length;
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      
       rows.forEach((row: any) => {
         const used = row.storageUsedInBytes || 0;
         const quota = row.prohibitSendReceiveQuotaInBytes || 0;
         if (quota > 0 && used >= quota * 0.9) overQuota++;
         if (row.createdDateTime) {
-          const created = new Date(row.createdDateTime);
-          if (created >= thirtyDaysAgo) newLast30d++;
+          if (new Date(row.createdDateTime) >= thirtyDaysAgo) newLast30d++;
         }
         if (row.lastActivityDate) {
-          const lastActivity = new Date(row.lastActivityDate);
-          if (lastActivity < thirtyDaysAgo) notLoggedIn30d++;
+          if (new Date(row.lastActivityDate) < thirtyDaysAgo) notLoggedIn30d++;
         } else {
           notLoggedIn30d++;
         }
       });
+    } else {
+      console.warn('Mailbox usage report returned no data. Check Reports.Read.All permission.');
     }
-
-    // Forwarding and auto-reply
-    let forwardingEnabled = 0;
-    let autoReplyExternal = 0;
-
-    transportRules.forEach((user: any) => {
-      const settings = user.mailboxSettings;
-      if (settings) {
-        if (settings.automaticRepliesSetting?.status === 'alwaysEnabled' || settings.automaticRepliesSetting?.status === 'scheduled') {
-          if (settings.automaticRepliesSetting?.externalAudience === 'all' || settings.automaticRepliesSetting?.externalAudience === 'contactsOnly') {
-            autoReplyExternal++;
-          }
-        }
-      }
-    });
 
     // Email traffic
     let sent = 0;
     let received = 0;
     
-    if (emailActivityCsv && typeof emailActivityCsv === 'string') {
-      const rows = parseCsvReport(emailActivityCsv);
+    if (emailActivityResult?._csv) {
+      const rows = parseCsvReport(emailActivityResult._csv);
+      console.log(`Email activity report: ${rows.length} rows, headers: ${rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'none'}`);
       rows.forEach((row: any) => {
         sent += parseInt(row['Send Count'] || '0', 10);
         received += parseInt(row['Receive Count'] || '0', 10);
       });
-    } else if (emailActivityCsv?.value) {
-      emailActivityCsv.value.forEach((row: any) => {
+    } else if (emailActivityResult?.value) {
+      emailActivityResult.value.forEach((row: any) => {
         sent += row.sendCount || 0;
         received += row.receiveCount || 0;
       });
+    } else {
+      console.warn('Email activity report returned no data. Check Reports.Read.All permission.');
+    }
+
+    // Fetch auto-reply and forwarding info separately (mailboxSettings cannot be bulk-selected)
+    // Use a sample of users to check mailbox settings
+    let forwardingEnabled = 0;
+    let autoReplyExternal = 0;
+
+    try {
+      const users = await graphGetAllPages(accessToken, 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$filter=assignedLicenses/$count ne 0&$count=true&$top=100', 2);
+      console.log(`Users for mailbox settings check: ${users.length}`);
+
+      // Check mailbox settings for each user (limited to first 50 to avoid timeouts)
+      const usersToCheck = users.slice(0, 50);
+      const settingsPromises = usersToCheck.map(async (u: any) => {
+        try {
+          const settings = await graphGet(accessToken, `https://graph.microsoft.com/v1.0/users/${u.id}/mailboxSettings`);
+          if (settings) {
+            if (settings.automaticRepliesSetting?.status === 'alwaysEnabled' || settings.automaticRepliesSetting?.status === 'scheduled') {
+              if (settings.automaticRepliesSetting?.externalAudience === 'all' || settings.automaticRepliesSetting?.externalAudience === 'contactsOnly') {
+                autoReplyExternal++;
+              }
+            }
+          }
+        } catch { /* skip individual user errors */ }
+      });
+      await Promise.all(settingsPromises);
+    } catch (e) {
+      console.warn('Failed to fetch user mailbox settings:', e);
+      
+      // Fallback: try simpler user list without $filter/$count
+      try {
+        const simpleUsers = await graphGetAllPages(accessToken, 'https://graph.microsoft.com/v1.0/users?$select=id&$top=50', 1);
+        console.log(`Fallback users for mailbox settings: ${simpleUsers.length}`);
+        
+        const settingsPromises = simpleUsers.slice(0, 30).map(async (u: any) => {
+          try {
+            const settings = await graphGet(accessToken, `https://graph.microsoft.com/v1.0/users/${u.id}/mailboxSettings`);
+            if (settings) {
+              if (settings.automaticRepliesSetting?.status === 'alwaysEnabled' || settings.automaticRepliesSetting?.status === 'scheduled') {
+                if (settings.automaticRepliesSetting?.externalAudience === 'all' || settings.automaticRepliesSetting?.externalAudience === 'contactsOnly') {
+                  autoReplyExternal++;
+                }
+              }
+            }
+          } catch { /* skip */ }
+        });
+        await Promise.all(settingsPromises);
+      } catch (e2) {
+        console.warn('Fallback mailbox settings also failed:', e2);
+      }
     }
 
     const result = {
@@ -260,6 +288,8 @@ Deno.serve(async (req) => {
       analyzedAt: now.toISOString(),
     };
 
+    console.log('Exchange Dashboard result:', JSON.stringify({ mailboxes: result.mailboxes, traffic: result.traffic }));
+
     // Save cache
     const { error: updateError } = await supabase.from('m365_tenants').update({
       exchange_dashboard_cache: result,
@@ -267,8 +297,6 @@ Deno.serve(async (req) => {
     }).eq('id', tenant_record_id);
 
     if (updateError) console.error('Failed to save exchange dashboard cache:', updateError);
-
-    console.log('Exchange Dashboard data aggregated and cached successfully');
 
     return new Response(JSON.stringify(result), {
       status: 200,
