@@ -1,66 +1,27 @@
 
 
-## Plano: Cache do Dashboard Entra ID para carregamento rápido
+## Problem
 
-### Problema
-Atualmente, toda troca de tenant chama a edge function que faz ~10 requests ao Graph API, demorando segundos. O usuário quer ver dados cached instantaneamente e só buscar dados frescos ao clicar "Atualizar".
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-### Solução
+## Solution
 
-Salvar o resultado da edge function no banco e carregar o cache direto no frontend.
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-#### 1. Edge Function `entra-id-dashboard/index.ts`
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-Após agregar os dados, salvar/atualizar na tabela `m365_tenants` usando uma coluna JSONB `entra_dashboard_cache`:
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-```sql
--- Adicionar coluna na tabela existente
-ALTER TABLE m365_tenants ADD COLUMN IF NOT EXISTS entra_dashboard_cache jsonb;
-ALTER TABLE m365_tenants ADD COLUMN IF NOT EXISTS entra_dashboard_cached_at timestamptz;
-```
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-No final da edge function, antes de retornar:
-```ts
-await supabase.from('m365_tenants').update({
-  entra_dashboard_cache: result,
-  entra_dashboard_cached_at: now.toISOString(),
-}).eq('id', tenant_record_id);
-```
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-#### 2. Hook `src/hooks/useEntraIdDashboard.ts`
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
 
-- Ao mudar de tenant, primeiro buscar `entra_dashboard_cache` e `entra_dashboard_cached_at` direto da tabela `m365_tenants` (query Supabase rápida)
-- Exibir dados do cache imediatamente
-- O botão "Atualizar" chama a edge function (que atualiza o cache)
-- Após refresh, recarregar do cache atualizado
-
-```ts
-// loadCache — chamado no useEffect ao trocar tenant
-const loadCache = async () => {
-  const { data } = await supabase
-    .from('m365_tenants')
-    .select('entra_dashboard_cache, entra_dashboard_cached_at')
-    .eq('id', tenantRecordId)
-    .single();
-  if (data?.entra_dashboard_cache) {
-    setData({ ...data.entra_dashboard_cache, analyzedAt: data.entra_dashboard_cached_at });
-  }
-};
-
-// refresh — chamado pelo botão Atualizar
-const refresh = async () => {
-  await supabase.functions.invoke('entra-id-dashboard', { body: { tenant_record_id } });
-  await loadCache(); // recarrega do banco
-};
-```
-
-#### 3. Migração SQL
-
-Adicionar as duas colunas à tabela `m365_tenants`.
-
-### Arquivos
-
-1. `supabase/migrations/add_entra_dashboard_cache.sql` — nova migração
-2. `supabase/functions/entra-id-dashboard/index.ts` — salvar cache após coleta
-3. `src/hooks/useEntraIdDashboard.ts` — carregar cache primeiro, refresh sob demanda
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 

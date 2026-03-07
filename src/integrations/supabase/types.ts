@@ -2127,6 +2127,8 @@ export type Database = {
           created_at: string
           created_by: string | null
           display_name: string | null
+          entra_dashboard_cache: Json | null
+          entra_dashboard_cached_at: string | null
           exchange_rbac_assigned: boolean | null
           exchange_sp_registered: boolean | null
           id: string
@@ -2141,6 +2143,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           display_name?: string | null
+          entra_dashboard_cache?: Json | null
+          entra_dashboard_cached_at?: string | null
           exchange_rbac_assigned?: boolean | null
           exchange_sp_registered?: boolean | null
           id?: string
@@ -2155,6 +2159,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           display_name?: string | null
+          entra_dashboard_cache?: Json | null
+          entra_dashboard_cached_at?: string | null
           exchange_rbac_assigned?: boolean | null
           exchange_sp_registered?: boolean | null
           id?: string
