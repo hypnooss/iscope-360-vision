@@ -45,10 +45,12 @@ interface InviteUserDialogProps {
   onUserCreated: () => void;
 }
 
+import { strongPasswordSchema } from '@/lib/passwordValidation';
+
 const inviteSchema = z.object({
   email: z.string().email('Email inválido'),
   fullName: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
-  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
+  password: strongPasswordSchema,
 });
 
 export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: InviteUserDialogProps) {
