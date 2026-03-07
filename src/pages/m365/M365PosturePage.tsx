@@ -370,13 +370,19 @@ export default function M365PosturePage() {
     ...(data?.insights?.map(mapM365Insight) || []),
     ...(agentInsights?.map(mapM365AgentInsight) || []),
   ];
-  allUnifiedItemsRef.current = allUnifiedItems;
 
-  // Compute actual counts from unified items (not from summary subtraction)
-  const passCount = allUnifiedItems.filter(i => i.status === 'pass').length;
-  const failCount = allUnifiedItems.filter(i => i.status === 'fail').length;
+  // Apply product filter
+  const filteredItems = productFilter
+    ? allUnifiedItems.filter(item => item.product === productFilter)
+    : allUnifiedItems;
 
-  const groupedItems = allUnifiedItems.reduce<Record<string, UnifiedComplianceItem[]>>((acc, item) => {
+  allUnifiedItemsRef.current = filteredItems;
+
+  // Compute actual counts from filtered items
+  const passCount = filteredItems.filter(i => i.status === 'pass').length;
+  const failCount = filteredItems.filter(i => i.status === 'fail').length;
+
+  const groupedItems = filteredItems.reduce<Record<string, UnifiedComplianceItem[]>>((acc, item) => {
     const cat = item.category;
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(item);
@@ -389,6 +395,17 @@ export default function M365PosturePage() {
     const bOrder = categoryConfigs?.find(c => c.name === b)?.display_order ?? 999;
     return aOrder - bOrder;
   });
+
+  // Compute product counts for filter badges
+  const productCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const item of allUnifiedItems) {
+      if (item.product) {
+        counts[item.product] = (counts[item.product] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [allUnifiedItems]);
 
   const isAnalysisRunning = !!activeAnalysisId;
   const analysisStatus = analysisRecord?.status ?? 'pending';
