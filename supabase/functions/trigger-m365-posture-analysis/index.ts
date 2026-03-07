@@ -45,6 +45,7 @@ import { getCorsHeaders } from '../_shared/cors.ts';
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

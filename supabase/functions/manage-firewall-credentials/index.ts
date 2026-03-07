@@ -51,6 +51,7 @@ function isEncrypted(value: string | null | undefined): boolean {
 // ============================================
 
 serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
