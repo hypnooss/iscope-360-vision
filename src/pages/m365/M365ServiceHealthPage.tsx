@@ -195,6 +195,19 @@ function M365ServiceHealthPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            {isSuperRole && allWorkspaces && (
+              <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
+                <SelectTrigger className="w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces.map(w => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <TenantSelector
               tenants={tenants}
               selectedId={selectedTenantId}

@@ -5,6 +5,40 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ====== Helpers ======
+
+function hex(h: string): Uint8Array {
+  return new Uint8Array(h.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+}
+
+async function decryptSecret(encrypted: string): Promise<string> {
+  if (!encrypted.includes(':')) return atob(encrypted);
+  const keyHex = Deno.env.get('M365_ENCRYPTION_KEY') ?? '';
+  const [ivH, ctH] = encrypted.split(':');
+  const key = await crypto.subtle.importKey('raw', hex(keyHex), { name: 'AES-GCM' }, false, ['decrypt']);
+  const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: hex(ivH) }, key, hex(ctH));
+  return new TextDecoder().decode(dec);
+}
+
+async function requestGraphToken(tenantId: string, appId: string, clientSecret: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `client_id=${appId}&client_secret=${encodeURIComponent(clientSecret)}&scope=https://graph.microsoft.com/.default&grant_type=client_credentials`,
+    });
+    if (!res.ok) {
+      console.error(`[m365-service-health] Token failed for tenant ${tenantId}: ${await res.text()}`);
+      return null;
+    }
+    const { access_token } = await res.json();
+    return access_token || null;
+  } catch (err) {
+    console.error(`[m365-service-health] Token error:`, err);
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -18,7 +52,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[m365-service-health] Fetching service health for tenant: ${tenant_record_id}`);
+    console.log(`[m365-service-health] Fetching for tenant: ${tenant_record_id}`);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -37,51 +71,49 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 2. Load global config
-    const { data: config } = await supabase
-      .from('m365_global_config')
+    // 2. Try per-tenant credentials first
+    let access_token: string | null = null;
+
+    const { data: cred } = await supabase
+      .from('m365_app_credentials')
       .select('*')
+      .eq('tenant_record_id', tenant_record_id)
+      .eq('is_active', true)
       .limit(1)
-      .single();
+      .maybeSingle();
 
-    if (!config) {
-      return new Response(JSON.stringify({ success: false, error: 'Config not found' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (cred?.client_secret_encrypted) {
+      console.log(`[m365-service-health] Trying per-tenant credentials (app: ${cred.azure_app_id})`);
+      const secret = await decryptSecret(cred.client_secret_encrypted);
+      access_token = await requestGraphToken(tenant.tenant_id, cred.azure_app_id, secret);
     }
 
-    // 3. Decrypt client secret
-    const enc = config.client_secret_encrypted;
-    let secret = '';
-    if (!enc.includes(':')) {
-      secret = atob(enc);
-    } else {
-      const keyHex = Deno.env.get('M365_ENCRYPTION_KEY') ?? '';
-      const [ivH, ctH] = enc.split(':');
-      const hex = (h: string) => new Uint8Array(h.match(/.{2}/g)!.map(b => parseInt(b, 16)));
-      const key = await crypto.subtle.importKey('raw', hex(keyHex), { name: 'AES-GCM' }, false, ['decrypt']);
-      const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: hex(ivH) }, key, hex(ctH));
-      secret = new TextDecoder().decode(dec);
+    // 3. Fallback to global config
+    if (!access_token) {
+      console.log(`[m365-service-health] Falling back to global config`);
+      const { data: config } = await supabase
+        .from('m365_global_config')
+        .select('*')
+        .limit(1)
+        .single();
+
+      if (!config) {
+        return new Response(JSON.stringify({ success: false, error: 'No credentials available' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const secret = await decryptSecret(config.client_secret_encrypted);
+      access_token = await requestGraphToken(tenant.tenant_id, config.app_id, secret);
     }
 
-    // 4. Get access token
-    const tokenRes = await fetch(`https://login.microsoftonline.com/${tenant.tenant_id}/oauth2/v2.0/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `client_id=${config.app_id}&client_secret=${encodeURIComponent(secret)}&scope=https://graph.microsoft.com/.default&grant_type=client_credentials`,
-    });
-
-    if (!tokenRes.ok) {
-      const errText = await tokenRes.text();
-      console.error(`[m365-service-health] Token failed: ${errText}`);
+    if (!access_token) {
       return new Response(JSON.stringify({ success: false, error: 'Token acquisition failed' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const { access_token } = await tokenRes.json();
-
-    // 5. Fetch service health data in parallel
+    // 4. Fetch service health data in parallel
     const graphHeaders = {
       Authorization: `Bearer ${access_token}`,
       'Content-Type': 'application/json',
