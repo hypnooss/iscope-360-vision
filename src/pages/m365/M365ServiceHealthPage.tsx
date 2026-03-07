@@ -12,6 +12,7 @@ import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -101,7 +102,7 @@ function M365ServiceHealthPage() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const { selectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
   const { tenants, selectedTenantId, selectTenant, loading: tenantLoading } = useM365TenantSelector(
     isSuperRole ? selectedWorkspaceId : undefined
   );
@@ -180,7 +181,7 @@ function M365ServiceHealthPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Microsoft 365', href: '/scope-m365/compliance' },
           { label: 'Saúde do 365' },
@@ -193,6 +194,19 @@ function M365ServiceHealthPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            {isSuperRole && allWorkspaces && (
+              <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
+                <SelectTrigger className="w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWorkspaces.map(w => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <TenantSelector
               tenants={tenants}
               selectedId={selectedTenantId}
