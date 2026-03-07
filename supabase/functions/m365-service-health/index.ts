@@ -117,7 +117,11 @@ Deno.serve(async (req) => {
     if (cred?.client_secret_encrypted) {
       console.log(`[m365-service-health] Trying per-tenant credentials (app: ${cred.azure_app_id})`);
       const secret = await decryptSecret(cred.client_secret_encrypted);
-      access_token = await requestGraphToken(tenant.tenant_id, cred.azure_app_id, secret);
+      if (secret) {
+        access_token = await requestGraphToken(tenant.tenant_id, cred.azure_app_id, secret);
+      } else {
+        console.error(`[m365-service-health] Per-tenant secret decryption failed`);
+      }
     }
 
     // 3. Fallback to global config
