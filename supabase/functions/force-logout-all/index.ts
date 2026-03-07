@@ -17,11 +17,22 @@ Deno.serve(async (req) => {
 
     // Validate auth - accept either service_role_key or super_admin user token
     const authHeader = req.headers.get('Authorization')
+    console.log('Auth header present:', !!authHeader, 'starts with Bearer:', authHeader?.startsWith('Bearer '))
+    
+    // Also check apikey header (used by Supabase tools)
+    const apikeyHeader = req.headers.get('apikey')
+    console.log('Apikey header present:', !!apikeyHeader)
+    
     if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      // If no Bearer auth but apikey is service_role_key, allow
+      if (apikeyHeader === serviceRoleKey) {
+        console.log('Authorized via apikey header (service_role_key)')
+      } else {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
     const token = authHeader.replace('Bearer ', '')
