@@ -72,13 +72,13 @@ export function M365PermissionsManagement() {
     try {
       const { error } = await supabase
         .from('m365_required_permissions')
-        .insert({
+        .insert([{
           permission_name: newName.trim(),
-          submodule: newSubmodule,
+          submodule: newSubmodule as any,
           permission_type: 'Application',
           description: newDescription.trim() || null,
           is_required: newRequired,
-        });
+        }]);
       if (error) throw error;
       toast.success(`Permissão ${newName} adicionada`);
       setNewName(''); setNewDescription(''); setShowForm(false);
