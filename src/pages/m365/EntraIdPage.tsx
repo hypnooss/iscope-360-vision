@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -10,18 +10,18 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
-import { M365StatsCard as EntraIdStatsCard } from '@/components/m365/shared/M365StatsCard';
-import { M365DonutChart as EntraIdDonutChart } from '@/components/m365/shared/M365DonutChart';
+import { IdentityScoreCard } from '@/components/m365/entra-id/IdentityScoreCard';
+import { IdentityOverviewCards } from '@/components/m365/entra-id/IdentityOverviewCards';
+import { AuthPostureCard } from '@/components/m365/entra-id/AuthPostureCard';
+import { IdentityRiskCard } from '@/components/m365/entra-id/IdentityRiskCard';
+import { LoginActivityCard } from '@/components/m365/entra-id/LoginActivityCard';
+import { GovernanceCards } from '@/components/m365/entra-id/GovernanceCards';
 import {
   RefreshCw,
   AlertTriangle,
   Link as LinkIcon,
-  Users,
-  ShieldCheck,
-  KeyRound,
-  Activity,
-  UserCog,
-  Lock,
+  ExternalLink,
+  Download,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -68,37 +68,39 @@ export default function EntraIdPage() {
     );
   }
 
-  const d = data;
+  const selectedTenant = tenants.find(t => t.id === selectedTenantId);
 
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Microsoft 365', href: '/scope-m365/dashboard' }, { label: 'Entra ID' }]} />
 
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Entra ID</h1>
-            <p className="text-muted-foreground">Visão operacional de identidades, segurança e atividades</p>
-          </div>
-          <Button className="gap-2" onClick={refresh} disabled={refreshing}>
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing ? 'Atualizando...' : 'Atualizar'}
-          </Button>
-        </div>
-
-        {/* Tenant Selector */}
-        <Card className="border-primary/20 bg-primary/5">
+        {/* SEÇÃO 1: Contexto do Tenant */}
+        <Card className="border-primary/20 bg-card/80">
           <CardContent className="py-4">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <TenantSelector tenants={tenants} selectedId={selectedTenantId} onSelect={selectTenant} loading={tenantsLoading} />
-              <div className="flex items-center gap-3">
-                {d?.analyzedAt && (
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
+                <TenantSelector tenants={tenants} selectedId={selectedTenantId} onSelect={selectTenant} loading={tenantsLoading} />
+                <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Conectado</Badge>
+                {data?.analyzedAt && (
                   <span className="text-xs text-muted-foreground">
-                    Atualizado em {format(new Date(d.analyzedAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
+                    Atualizado em {format(new Date(data.analyzedAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
                   </span>
                 )}
-                <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Conectado</Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="gap-2 text-xs" disabled>
+                  <Download className="w-3.5 h-3.5" />Exportar
+                </Button>
+                <Button variant="outline" size="sm" className="gap-2 text-xs" asChild>
+                  <a href="https://entra.microsoft.com" target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="w-3.5 h-3.5" />Abrir no Entra ID
+                  </a>
+                </Button>
+                <Button size="sm" className="gap-2 text-xs" onClick={refresh} disabled={refreshing}>
+                  <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                  {refreshing ? 'Atualizando...' : 'Atualizar'}
+                </Button>
               </div>
             </div>
           </CardContent>
@@ -114,102 +116,23 @@ export default function EntraIdPage() {
           </Card>
         )}
 
-        {/* Dashboard Grid - 3 columns */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Column 1: Identidades */}
-          <div className="space-y-4">
-            <EntraIdStatsCard
-              title="Entra ID"
-              icon={Users}
-              loading={loading}
-              rows={[
-                { label: 'Usuários', value: d?.users.total ?? 0 },
-                { label: 'Sign-In Habilitado', value: d?.users.signInEnabled ?? 0, color: 'text-green-500' },
-                { label: 'Desabilitados', value: d?.users.disabled ?? 0, color: 'text-destructive' },
-                { label: 'Convidados (Guests)', value: d?.users.guests ?? 0, color: 'text-warning' },
-                { label: 'On-Premises Sync', value: d?.users.onPremSynced ?? 0, color: 'text-primary' },
-              ]}
-            />
-            <EntraIdStatsCard
-              title="Administradores"
-              icon={UserCog}
-              loading={loading}
-              rows={[
-                { label: 'Total de Admins', value: d?.admins.total ?? 0 },
-                { label: 'Global Admins', value: d?.admins.globalAdmins ?? 0, color: 'text-destructive' },
-              ]}
-            />
-          </div>
+        {/* SEÇÃO 2: Score de Segurança de Identidade */}
+        <IdentityScoreCard data={data} loading={loading} />
 
-          {/* Column 2: Segurança */}
-          <div className="space-y-4">
-            <EntraIdDonutChart
-              title="Status MFA dos Usuários"
-              icon={KeyRound}
-              loading={loading}
-              centerValue={d?.mfa.total ?? 0}
-              centerLabel="Total"
-              segments={[
-                { name: 'MFA Habilitado', value: d?.mfa.enabled ?? 0, color: 'hsl(142, 71%, 45%)' },
-                { name: 'MFA Desabilitado', value: d?.mfa.disabled ?? 0, color: 'hsl(0, 84%, 60%)' },
-              ]}
-            />
-            <EntraIdStatsCard
-              title="Azure AD Risks (30 dias)"
-              icon={ShieldCheck}
-              loading={loading}
-              rows={[
-                { label: 'Usuários em Risco', value: d?.risks.riskyUsers ?? 0, color: d?.risks.riskyUsers ? 'text-warning' : 'text-green-500' },
-                { label: 'Em Risco Ativo', value: d?.risks.atRisk ?? 0, color: d?.risks.atRisk ? 'text-destructive' : 'text-muted-foreground' },
-                { label: 'Comprometidos', value: d?.risks.compromised ?? 0, color: d?.risks.compromised ? 'text-destructive' : 'text-muted-foreground' },
-              ]}
-            />
-          </div>
+        {/* SEÇÃO 3: Visão Geral da Identidade */}
+        <IdentityOverviewCards data={data} loading={loading} />
 
-          {/* Column 3: Atividade */}
-          <div className="space-y-4">
-            <EntraIdDonutChart
-              title="Atividade de Login (30 dias)"
-              icon={Activity}
-              loading={loading}
-              centerValue={d?.loginActivity.total ?? 0}
-              centerLabel="Total"
-              segments={[
-                { name: 'Sucesso', value: d?.loginActivity.success ?? 0, color: 'hsl(142, 71%, 45%)' },
-                { name: 'Falha', value: d?.loginActivity.failed ?? 0, color: 'hsl(0, 84%, 60%)' },
-                { name: 'MFA Requerido', value: d?.loginActivity.mfaRequired ?? 0, color: 'hsl(217, 91%, 60%)' },
-                { name: 'Bloqueado', value: d?.loginActivity.blocked ?? 0, color: 'hsl(25, 95%, 53%)' },
-              ]}
-            />
-            <EntraIdDonutChart
-              title="Alterações de Usuário (30 dias)"
-              icon={Users}
-              loading={loading}
-              centerValue={
-                (d?.userChanges.updated ?? 0) + (d?.userChanges.new ?? 0) + (d?.userChanges.enabled ?? 0) +
-                (d?.userChanges.disabled ?? 0) + (d?.userChanges.deleted ?? 0)
-              }
-              centerLabel="Total"
-              segments={[
-                { name: 'Atualizados', value: d?.userChanges.updated ?? 0, color: 'hsl(217, 91%, 60%)' },
-                { name: 'Novos', value: d?.userChanges.new ?? 0, color: 'hsl(142, 71%, 45%)' },
-                { name: 'Habilitados', value: d?.userChanges.enabled ?? 0, color: 'hsl(162, 63%, 41%)' },
-                { name: 'Desabilitados', value: d?.userChanges.disabled ?? 0, color: 'hsl(25, 95%, 53%)' },
-                { name: 'Deletados', value: d?.userChanges.deleted ?? 0, color: 'hsl(0, 84%, 60%)' },
-              ]}
-            />
-            <EntraIdStatsCard
-              title="Atividade de Senhas (7 dias)"
-              icon={Lock}
-              loading={loading}
-              rows={[
-                { label: 'Resets por Admin', value: d?.passwordActivity.resets ?? 0 },
-                { label: 'Alterações Forçadas', value: d?.passwordActivity.forcedChanges ?? 0, color: 'text-warning' },
-                { label: 'Self-Service', value: d?.passwordActivity.selfService ?? 0, color: 'text-primary' },
-              ]}
-            />
-          </div>
+        {/* SEÇÃO 4: Postura de Autenticação */}
+        <AuthPostureCard data={data} loading={loading} />
+
+        {/* SEÇÕES 5 & 6: Risco + Login Activity (side by side) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <IdentityRiskCard data={data} loading={loading} />
+          <LoginActivityCard data={data} loading={loading} />
         </div>
+
+        {/* SEÇÃO 7: Governança de Usuários */}
+        <GovernanceCards data={data} loading={loading} />
       </div>
     </AppLayout>
   );
