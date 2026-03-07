@@ -103,7 +103,7 @@ function M365ServiceHealthPage() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const { selectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
+  const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
   const { tenants, selectedTenantId, selectTenant, loading: tenantLoading } = useM365TenantSelector(
     isSuperRole ? selectedWorkspaceId : undefined
   );
