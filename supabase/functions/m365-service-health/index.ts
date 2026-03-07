@@ -140,7 +140,11 @@ Deno.serve(async (req) => {
       }
 
       const secret = await decryptSecret(config.client_secret_encrypted);
-      access_token = await requestGraphToken(tenant.tenant_id, config.app_id, secret);
+      if (secret) {
+        access_token = await requestGraphToken(tenant.tenant_id, config.app_id, secret);
+      } else {
+        console.error(`[m365-service-health] Global secret decryption failed`);
+      }
     }
 
     if (!access_token) {
