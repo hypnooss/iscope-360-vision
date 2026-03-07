@@ -632,7 +632,7 @@ export default function M365PosturePage() {
             )}
 
             {/* Empty State */}
-            {!isLoading && !isAnalysisRunning && !error && allUnifiedItems.length === 0 && (
+            {!isLoading && !isAnalysisRunning && !error && filteredItems.length === 0 && (
               <Card className="glass-card">
                 <CardContent className="p-12 text-center">
                   <AlertTriangle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
