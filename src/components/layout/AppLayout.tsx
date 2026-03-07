@@ -175,7 +175,7 @@ const getDefaultModuleConfig = (code: string) => {
 };
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const { profile, role, signOut } = useAuth();
+  const { profile, role, signOut, mfaRequired, mfaEnrolled } = useAuth();
   const { activeModule, setActiveModule, hasModuleAccess } = useModules();
   const { effectiveProfile, effectiveRole, isPreviewMode } = useEffectiveAuth();
   const { effectiveUserModules, allActiveModules } = useEffectiveModules();
