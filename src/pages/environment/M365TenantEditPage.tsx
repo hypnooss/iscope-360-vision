@@ -51,6 +51,7 @@ export default function M365TenantEditPage() {
   const [revalidating, setRevalidating] = useState(false);
   const [waitingForConsent, setWaitingForConsent] = useState(false);
   const [pollingStatus, setPollingStatus] = useState<{ active: boolean; attempt: number; maxAttempts: number } | null>(null);
+  const [pollingCancelled, setPollingCancelled] = useState(false);
   // Fetch tenant data
   const { data: tenant, isLoading: tenantLoading } = useQuery({
     queryKey: ['m365-tenant-edit', id],
@@ -134,11 +135,19 @@ export default function M365TenantEditPage() {
   };
 
   // Background polling for permission propagation
+  const cancelPolling = useCallback(() => {
+    setPollingCancelled(true);
+    setPollingStatus(null);
+    toast.info('Verificação de permissões cancelada.');
+  }, []);
+
   const startPermissionPolling = useCallback(async () => {
-    const MAX_ATTEMPTS = 9;
-    const INTERVAL_MS = 20000; // 20 seconds
+    const MAX_ATTEMPTS = 5;
+    const INTERVAL_MS = 10000; // 10 seconds
+    setPollingCancelled(false);
     
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (pollingCancelled) { setPollingStatus(null); return; }
       setPollingStatus({ active: true, attempt, maxAttempts: MAX_ATTEMPTS });
       
       try {
@@ -181,7 +190,7 @@ export default function M365TenantEditPage() {
       }
     }
     setPollingStatus(null);
-  }, [id, queryClient]);
+  }, [id, queryClient, pollingCancelled]);
 
   // Listen for OAuth popup postMessage (for re-consent flow)
   useEffect(() => {
@@ -475,11 +484,16 @@ export default function M365TenantEditPage() {
               <Button variant="outline" size="sm" onClick={handleRevalidatePermissions} disabled={revalidating || waitingForConsent || !!pollingStatus?.active || tenant.connection_status === 'disconnected'}>
                 {(revalidating || waitingForConsent || pollingStatus?.active) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
                 {pollingStatus?.active
-                  ? `Propagando... (${pollingStatus.attempt}/${pollingStatus.maxAttempts})`
+                  ? `Verificando... (${pollingStatus.attempt}/${pollingStatus.maxAttempts})`
                   : waitingForConsent
                     ? 'Aguardando consentimento...'
                     : 'Revalidar Permissões'}
               </Button>
+              {pollingStatus?.active && (
+                <Button variant="outline" size="sm" onClick={cancelPolling} className="text-muted-foreground">
+                  Cancelar
+                </Button>
+              )}
               <Button
                 variant="outline" size="sm"
                 className="text-warning hover:text-warning hover:bg-warning/10 border-border"

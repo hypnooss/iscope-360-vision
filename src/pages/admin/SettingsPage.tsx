@@ -10,11 +10,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Save, CheckCircle, AlertCircle, RefreshCw, Bot, Upload, AlertTriangle, Layers, Key, Info } from 'lucide-react';
+import { Loader2, Save, CheckCircle, AlertCircle, RefreshCw, Bot, Upload, AlertTriangle, Layers, Key, Info, Shield } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ModulesManagement } from '@/components/admin/ModulesManagement';
+import { M365PermissionsManagement } from '@/components/admin/M365PermissionsManagement';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ApiKeyStatus {
@@ -569,6 +570,10 @@ export default function SettingsPage() {
               <Layers className="w-4 h-4" />
               Módulos
             </TabsTrigger>
+            <TabsTrigger value="m365" className="gap-2">
+              <Shield className="w-4 h-4" />
+              Microsoft 365
+            </TabsTrigger>
           </TabsList>
 
           {/* API Keys Tab */}
@@ -667,6 +672,10 @@ export default function SettingsPage() {
 
           <TabsContent value="modules">
             <ModulesManagement />
+          </TabsContent>
+
+          <TabsContent value="m365">
+            <M365PermissionsManagement />
           </TabsContent>
 
           <TabsContent value="agents" className="space-y-6">

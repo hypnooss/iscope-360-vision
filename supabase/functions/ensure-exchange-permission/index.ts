@@ -7,57 +7,42 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Office 365 Exchange Online
-const EXCHANGE_RESOURCE_ID = "00000002-0000-0ff1-ce00-000000000000";
-const EXCHANGE_MANAGE_AS_APP_ID = "dc50a0fb-09a3-484d-be87-e023b12c6440";
-
-// SharePoint Online
-const SHAREPOINT_RESOURCE_ID = "00000003-0000-0ff1-ce00-000000000000";
-const SHAREPOINT_SITES_FULLCONTROL_ID = "678536fe-1083-478a-9c59-b99265e6b0d3";
-
-// Microsoft Graph
-const GRAPH_RESOURCE_ID = "00000003-0000-0000-c000-000000000000";
-const IDENTITY_RISKY_USER_READ_ALL_ID = "dc5007c0-2d7d-4c42-879c-2dab87571379";
-
-// Intune / Device Management
-const DEVICE_MGMT_MANAGED_DEVICES_READ_ALL_ID = "e4c9e354-4dc5-45b8-9e7c-e1393b0b1a20";
-const DEVICE_MGMT_CONFIGURATION_READ_ALL_ID = "dc377aa6-52d8-4e23-b271-b3b7f5e4f6c4";
-
-// Security / Defender
-const SECURITY_ALERT_READ_ALL_ID = "472e4a4d-bb4a-4026-98d1-0b0d74cb74a5";
-const SECURITY_EVENTS_READ_ALL_ID = "bf394140-e372-4bf9-a898-299cfc7564e5";
-const AUDIT_LOG_READ_ALL_ID = "b0afded3-3588-46d8-8b3d-9842eff778da";
-const SECURITY_INCIDENT_READ_ALL_ID = "45cc0394-e837-488b-a098-1918f48d186c";
-const INFORMATION_PROTECTION_POLICY_READ_ALL_ID = "19da66cb-0fb0-49a4-b7a2-3607ae4e9acf";
-const ATTACK_SIMULATION_READ_ALL_ID = "93283d0a-6322-4fa8-966b-813c78c0e1b4";
-
-// Teams
-const TEAM_SETTINGS_READ_ALL_ID = "242607bd-1d2c-432c-82eb-bdb27baa23ab";
-const CHANNEL_READ_BASIC_ALL_ID = "59a6b24b-4225-4393-a6be-42ed3eab75c4";
-const TEAM_MEMBER_READ_ALL_ID = "660b7406-55f1-41ca-a0ed-0b035e182f3e";
-
-// SharePoint Tenant Settings — removed: GUID was fabricated and never granted by Azure
-
-const REQUIRED_PERMISSIONS = [
-  { resourceAppId: EXCHANGE_RESOURCE_ID, permissionId: EXCHANGE_MANAGE_AS_APP_ID, name: "Exchange.ManageAsApp" },
-  { resourceAppId: SHAREPOINT_RESOURCE_ID, permissionId: SHAREPOINT_SITES_FULLCONTROL_ID, name: "Sites.FullControl.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: IDENTITY_RISKY_USER_READ_ALL_ID, name: "IdentityRiskyUser.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: DEVICE_MGMT_MANAGED_DEVICES_READ_ALL_ID, name: "DeviceManagementManagedDevices.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: DEVICE_MGMT_CONFIGURATION_READ_ALL_ID, name: "DeviceManagementConfiguration.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: SECURITY_ALERT_READ_ALL_ID, name: "SecurityAlert.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: SECURITY_EVENTS_READ_ALL_ID, name: "SecurityEvents.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: AUDIT_LOG_READ_ALL_ID, name: "AuditLog.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: SECURITY_INCIDENT_READ_ALL_ID, name: "SecurityIncident.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: INFORMATION_PROTECTION_POLICY_READ_ALL_ID, name: "InformationProtectionPolicy.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: ATTACK_SIMULATION_READ_ALL_ID, name: "AttackSimulation.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: TEAM_SETTINGS_READ_ALL_ID, name: "TeamSettings.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: CHANNEL_READ_BASIC_ALL_ID, name: "Channel.ReadBasic.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: TEAM_MEMBER_READ_ALL_ID, name: "TeamMember.Read.All" },
-  // SharePointTenantSettings.Read.All removed — GUID was fabricated
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: "6e472fd1-ad78-48da-a0f0-97ab2c6b769e", name: "IdentityRiskEvent.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: "332a536c-c7ef-4017-ab91-336970924f0d", name: "Sites.Read.All" },
-  { resourceAppId: GRAPH_RESOURCE_ID, permissionId: "79c261e0-fe76-4144-aad5-bdc68fbe4037", name: "ServiceHealth.Read.All" },
-];
+// Map of permission names to their Microsoft Graph API GUIDs
+// These are fixed identifiers from Microsoft and won't change
+const PERMISSION_GUID_MAP: Record<string, { resourceAppId: string; permissionId: string }> = {
+  // Microsoft Graph
+  "User.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "df021288-bdef-4463-88db-98f22de89214" },
+  "Directory.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "7ab1d382-f21e-4acd-a863-ba3e13f7da61" },
+  "Group.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "5b567255-7703-4780-807c-7be8301ae99b" },
+  "Application.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "9a5d68dd-52b0-4cc2-bd40-abcf44ac3a30" },
+  "Organization.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "498476ce-e0fe-48b0-b801-37ba7e2685c6" },
+  "Policy.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "246dd0d5-5bd0-4def-940b-0421030a5b68" },
+  "IdentityRiskyUser.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "dc5007c0-2d7d-4c42-879c-2dab87571379" },
+  "IdentityRiskEvent.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "6e472fd1-ad78-48da-a0f0-97ab2c6b769e" },
+  "MailboxSettings.Read": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "40f97065-369a-49f4-947c-6a90f8a4153e" },
+  "Mail.Read": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "810c84a8-4a9e-49e6-bf7d-12d183f40d01" },
+  "Sites.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "332a536c-c7ef-4017-ab91-336970924f0d" },
+  "Reports.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "230c1aed-a721-4c5d-9cb4-a90514e508ef" },
+  "ServiceHealth.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "79c261e0-fe76-4144-aad5-bdc68fbe4037" },
+  "Application.ReadWrite.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "1bfefb4e-e0b5-418b-a88f-73c46d2cc8e9" },
+  "DeviceManagementManagedDevices.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "e4c9e354-4dc5-45b8-9e7c-e1393b0b1a20" },
+  "DeviceManagementConfiguration.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "dc377aa6-52d8-4e23-b271-b3b7f5e4f6c4" },
+  "SecurityAlert.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "472e4a4d-bb4a-4026-98d1-0b0d74cb74a5" },
+  "SecurityEvents.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "bf394140-e372-4bf9-a898-299cfc7564e5" },
+  "AuditLog.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "b0afded3-3588-46d8-8b3d-9842eff778da" },
+  "SecurityIncident.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "45cc0394-e837-488b-a098-1918f48d186c" },
+  "InformationProtectionPolicy.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "19da66cb-0fb0-49a4-b7a2-3607ae4e9acf" },
+  "AttackSimulation.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "93283d0a-6322-4fa8-966b-813c78c0e1b4" },
+  "TeamSettings.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "242607bd-1d2c-432c-82eb-bdb27baa23ab" },
+  "Channel.ReadBasic.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "59a6b24b-4225-4393-a6be-42ed3eab75c4" },
+  "TeamMember.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "660b7406-55f1-41ca-a0ed-0b035e182f3e" },
+  "Domain.Read.All": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "dbb9058a-0e50-45d7-ae91-66909b5d4f1d" },
+  "RoleManagement.ReadWrite.Directory": { resourceAppId: "00000003-0000-0000-c000-000000000000", permissionId: "9e3f62cf-ca93-4989-b6ce-bf83d28f9fe8" },
+  // Exchange Online
+  "Exchange.ManageAsApp": { resourceAppId: "00000002-0000-0ff1-ce00-000000000000", permissionId: "dc50a0fb-09a3-484d-be87-e023b12c6440" },
+  // SharePoint Online
+  "Sites.FullControl.All": { resourceAppId: "00000003-0000-0ff1-ce00-000000000000", permissionId: "678536fe-1083-478a-9c59-b99265e6b0d3" },
+};
 
 function fromHex(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2);
@@ -103,7 +88,36 @@ serve(async (req) => {
 
     console.log("[ensure-exchange-permission] Starting...");
 
-    // 1. Read global config
+    // 1. Read required permissions from database
+    const { data: dbPermissions, error: dbError } = await supabase
+      .from("m365_required_permissions")
+      .select("permission_name")
+      .order("permission_name");
+
+    if (dbError) {
+      console.error("[ensure-exchange-permission] DB error:", dbError);
+      return jsonResponse({ success: false, error: "Failed to read permissions from database", skipped: true });
+    }
+
+    // Build REQUIRED_PERMISSIONS from DB + GUID map
+    const REQUIRED_PERMISSIONS = (dbPermissions || [])
+      .filter((p: any) => PERMISSION_GUID_MAP[p.permission_name])
+      .map((p: any) => ({
+        ...PERMISSION_GUID_MAP[p.permission_name],
+        name: p.permission_name,
+      }));
+
+    const unmapped = (dbPermissions || [])
+      .filter((p: any) => !PERMISSION_GUID_MAP[p.permission_name])
+      .map((p: any) => p.permission_name);
+
+    if (unmapped.length > 0) {
+      console.log("[ensure-exchange-permission] Permissions without GUID mapping (skipped):", unmapped.join(", "));
+    }
+
+    console.log(`[ensure-exchange-permission] ${REQUIRED_PERMISSIONS.length} permissions to check from DB`);
+
+    // 2. Read global config
     const { data: globalConfig, error: configError } = await supabase
       .from("m365_global_config")
       .select("id, app_id, client_secret_encrypted, home_tenant_id, validation_tenant_id")
@@ -120,7 +134,7 @@ serve(async (req) => {
       return jsonResponse({ success: false, error: "Tenant ID not configured", skipped: true });
     }
 
-    // 2. Get access token for HOME tenant
+    // 3. Get access token for HOME tenant
     const clientSecret = await decryptSecret(globalConfig.client_secret_encrypted);
     console.log("[ensure-exchange-permission] Getting token for home tenant:", tenantForToken);
 
@@ -146,7 +160,7 @@ serve(async (req) => {
 
     const { access_token: accessToken } = await tokenResponse.json();
 
-    // 3. Auto-discover Object ID via appId filter (single call returns id + manifest)
+    // 4. Auto-discover Object ID via appId filter
     console.log("[ensure-exchange-permission] Auto-discovering Object ID for appId:", globalConfig.app_id);
     const discoveryUrl = `https://graph.microsoft.com/v1.0/applications(appId='${globalConfig.app_id}')?$select=id,requiredResourceAccess`;
 
@@ -166,13 +180,13 @@ serve(async (req) => {
 
     console.log("[ensure-exchange-permission] Discovered Object ID:", objectId);
 
-    // 4. Save discovered Object ID back to config
+    // 5. Save discovered Object ID back to config
     await supabase
       .from("m365_global_config")
       .update({ app_object_id: objectId })
       .eq("id", globalConfig.id);
 
-    // 5. Check and add missing permissions
+    // 6. Check and add missing permissions
     const addedPermissions: string[] = [];
 
     for (const perm of REQUIRED_PERMISSIONS) {
@@ -199,7 +213,7 @@ serve(async (req) => {
       return jsonResponse({ success: true, added: false, message: "All permissions already configured", permissions: [], objectId });
     }
 
-    // 6. PATCH manifest with discovered Object ID
+    // 7. PATCH manifest with discovered Object ID
     console.log(`[ensure-exchange-permission] Patching manifest for ${objectId}...`);
     const updateResponse = await fetch(`https://graph.microsoft.com/v1.0/applications/${objectId}`, {
       method: "PATCH",
