@@ -100,6 +100,13 @@ export default function Auth() {
   }, []);
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Check lockout
+    if (lockoutUntil && Date.now() < lockoutUntil) {
+      toast.error(`Aguarde ${lockoutCountdown}s antes de tentar novamente`);
+      return;
+    }
+
     const validation = loginSchema.safeParse({
       email: loginEmail,
       password: loginPassword
@@ -108,22 +115,38 @@ export default function Auth() {
       toast.error(validation.error.errors[0].message);
       return;
     }
+
+    // Progressive delay based on failed attempts
+    if (failedAttempts > 0) {
+      const delayMs = Math.min(1000 * Math.pow(2, failedAttempts - 1), 8000);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+
     setIsSubmitting(true);
     const {
       error
     } = await signIn(loginEmail, loginPassword);
     setIsSubmitting(false);
     if (error) {
-      if (error.message.includes('Invalid login credentials')) {
-        toast.error('Email ou senha incorretos');
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+
+      // After 5 failed attempts, lock out for 30 seconds
+      if (newAttempts >= 5) {
+        const lockout = Date.now() + 30000;
+        setLockoutUntil(lockout);
+        setLockoutCountdown(30);
+        toast.error('Muitas tentativas falhas. Aguarde 30 segundos.');
+      } else if (error.message.includes('Invalid login credentials')) {
+        toast.error(`Email ou senha incorretos (tentativa ${newAttempts}/5)`);
       } else if (error.message.includes('Email not confirmed')) {
         toast.error('Email não confirmado. Verifique sua caixa de entrada.');
       } else {
         toast.error(error.message);
       }
     } else {
-      // MFA redirect is handled by the useEffect above
-      // after auth state updates
+      setFailedAttempts(0);
+      setLockoutUntil(null);
     }
   };
   const handleSendResetCode = async (e: React.FormEvent) => {
