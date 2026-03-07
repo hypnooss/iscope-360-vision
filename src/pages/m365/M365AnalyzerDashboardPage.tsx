@@ -680,7 +680,7 @@ export default function M365AnalyzerDashboardPage() {
                 </Button>
               </div>
             )}
-          <Tabs defaultValue="incidents" className="w-full">
+          <Tabs defaultValue="incidents" className="w-full" onValueChange={(v) => { setActiveTab(v); setKpiFilter(null); }}>
             <TabsList className="mb-4">
               <TabsTrigger value="incidents" className="gap-1.5">
                 <ShieldAlert className="w-4 h-4" />
