@@ -45,7 +45,9 @@ import { M365PosturePDF } from '@/components/pdf/M365PosturePDF';
 import type { CorrectionGuideData } from '@/components/pdf/ExternalDomainPDF';
 import { 
   M365RiskCategory, 
+  M365Product,
   CATEGORY_LABELS,
+  PRODUCT_LABELS,
 } from '@/types/m365Insights';
 import { UnifiedComplianceItem } from '@/types/unifiedCompliance';
 
