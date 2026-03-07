@@ -79,11 +79,12 @@ export function M365PermissionsManagement() {
           submodule: newSubmodule as any,
           permission_type: 'Application',
           description: newDescription.trim() || null,
+          test_url: newTestUrl.trim() || null,
           is_required: newRequired,
         }]);
       if (error) throw error;
       toast.success(`Permissão ${newName} adicionada`);
-      setNewName(''); setNewDescription(''); setShowForm(false);
+      setNewName(''); setNewDescription(''); setNewTestUrl(''); setShowForm(false);
       await loadPermissions();
     } catch (err: any) {
       toast.error(err.message?.includes('duplicate') ? 'Permissão já existe' : 'Erro ao adicionar');
