@@ -107,6 +107,11 @@ function M365ServiceHealthPage() {
     isSuperRole ? selectedWorkspaceId : undefined
   );
   const [selectedIssue, setSelectedIssue] = useState<ServiceIssue | null>(null);
+  const [filter, setFilter] = useState<{ type: string; value: string } | null>(null);
+
+  const toggleFilter = (type: string, value: string) => {
+    setFilter(prev => (prev?.type === type && prev?.value === value) ? null : { type, value });
+  };
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['m365-service-health', selectedTenantId],
