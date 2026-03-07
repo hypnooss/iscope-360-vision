@@ -477,7 +477,7 @@ function M365ServiceHealthPage() {
                         </TableCell>
                       </TableRow>
                     )}
-                    {issues.map(issue => {
+                    {filteredIssues.map(issue => {
                       const sc = STATUS_CONFIG[issue.status];
                       const StatusIcon = sc?.icon || Info;
                       return (
