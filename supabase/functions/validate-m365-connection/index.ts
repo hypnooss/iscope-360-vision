@@ -627,6 +627,12 @@ serve(async (req) => {
           // May return 403 if no license, 400/200 if permission exists
           granted = response.ok || response.status === 400;
           console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
+        } else if (permission === 'ServiceHealth.Read.All') {
+          const response = await fetch('https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/healthOverviews?$top=1', {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          granted = response.ok;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
         }
       } catch (e) {
         console.error(`Error testing ${permission}:`, e);
