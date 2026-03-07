@@ -36,6 +36,7 @@ interface StepResultErrorResponse {
 
 serve(async (req: Request) => {
   // Handle CORS preflight requests
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }

@@ -22,6 +22,7 @@ async function generateAccessToken(agentId: string, jwtSecret: string): Promise<
 
 serve(async (req) => {
   // Handle CORS preflight
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }

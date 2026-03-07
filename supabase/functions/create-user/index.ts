@@ -10,6 +10,7 @@ interface ModulePermission {
 
 serve(async (req) => {
   // Handle CORS preflight requests
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }

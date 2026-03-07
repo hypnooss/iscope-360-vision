@@ -82,6 +82,7 @@ async function verifyAgentToken(req: Request, supabase: any): Promise<{ agentId:
 }
 
 serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
