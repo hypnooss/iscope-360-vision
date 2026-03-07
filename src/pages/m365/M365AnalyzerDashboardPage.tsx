@@ -278,6 +278,7 @@ export default function M365AnalyzerDashboardPage() {
   const [triggering, setTriggering] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
   const [kpiFilter, setKpiFilter] = useState<KPIFilterKey | null>(null);
+  const [activeTab, setActiveTab] = useState('incidents');
 
   const { tenants, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
   const { data: snapshot, isLoading, refetch } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
@@ -643,8 +644,8 @@ export default function M365AnalyzerDashboardPage() {
           </Card>
         )}
 
-        {/* KPI Cards */}
-        {snapshot && m && (
+        {/* KPI Cards — only for incidents/anomalies tabs */}
+        {snapshot && m && (activeTab === 'incidents' || activeTab === 'anomalies') && (
           <AnalyzerKPIRow metrics={m} activeFilter={kpiFilter} onFilter={setKpiFilter} />
         )}
 
@@ -679,7 +680,7 @@ export default function M365AnalyzerDashboardPage() {
                 </Button>
               </div>
             )}
-          <Tabs defaultValue="incidents" className="w-full">
+          <Tabs defaultValue="incidents" className="w-full" onValueChange={(v) => { setActiveTab(v); setKpiFilter(null); }}>
             <TabsList className="mb-4">
               <TabsTrigger value="incidents" className="gap-1.5">
                 <ShieldAlert className="w-4 h-4" />

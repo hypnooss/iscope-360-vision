@@ -1,36 +1,27 @@
 
 
-## Exibir KPIs apenas nas abas correspondentes
+## Problem
 
-### Problema
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-A barra de KPIs (Logins de Risco, Falhas MFA, Login Geo. Anômalo, etc.) aparece sempre, independente da aba selecionada. Esses KPIs são métricas de incidentes/anomalias e não fazem sentido quando o usuário está na aba **Proteção** ou **Movimento Externo**.
+## Solution
 
-### Solução
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-Controlar a visibilidade do `AnalyzerKPIRow` com base na aba ativa. Mover a renderização dos KPIs para dentro das `TabsContent` de **Incidentes** e **Anomalias**, ou alternativamente, rastrear a aba ativa com state e condicionar a renderização.
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-### Alteração
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-**`src/pages/m365/M365AnalyzerDashboardPage.tsx`** — 1 arquivo
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-1. Adicionar estado `activeTab` para rastrear a aba selecionada:
-   ```ts
-   const [activeTab, setActiveTab] = useState('incidents');
-   ```
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-2. Passar `onValueChange={setActiveTab}` no componente `<Tabs>` (linha ~682).
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
 
-3. Condicionar a renderização do `AnalyzerKPIRow` (linha ~647) para só aparecer nas abas `incidents` e `anomalies`:
-   ```tsx
-   {snapshot && m && (activeTab === 'incidents' || activeTab === 'anomalies') && (
-     <AnalyzerKPIRow metrics={m} activeFilter={kpiFilter} onFilter={setKpiFilter} />
-   )}
-   ```
-
-4. Limpar o `kpiFilter` ao trocar de aba (para não manter um filtro ativo invisível):
-   ```ts
-   // dentro do onValueChange ou useEffect
-   setKpiFilter(null);
-   ```
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 
