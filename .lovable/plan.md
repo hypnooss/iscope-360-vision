@@ -1,22 +1,27 @@
 
 
-## Diagnóstico
+## Problem
 
-Ambas as edge functions (`exchange-dashboard` e `collaboration-dashboard`) falham com "Failed to send a request to the Edge Function". Isso é um erro de CORS — os headers `Access-Control-Allow-Headers` estão incompletos, faltando os headers que o cliente Supabase envia automaticamente.
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-## Solução
+## Solution
 
-Atualizar o `corsHeaders` em ambas as edge functions para incluir todos os headers necessários:
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-```javascript
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
-```
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-### Arquivos modificados
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-1. `supabase/functions/exchange-dashboard/index.ts` — linha 5, atualizar corsHeaders
-2. `supabase/functions/collaboration-dashboard/index.ts` — linha 5, atualizar corsHeaders
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 
