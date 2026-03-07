@@ -141,10 +141,9 @@ Deno.serve(async (req) => {
     const now = new Date();
 
     // Fetch reports in parallel - reports return CSV by default
-    const [mailboxUsageResult, emailActivityResult, securityAlertsResult] = await Promise.all([
+    const [mailboxUsageResult, emailActivityResult] = await Promise.all([
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='D30')").catch(e => { console.warn('mailboxUsage error:', e); return null; }),
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getEmailActivityCounts(period='D30')").catch(e => { console.warn('emailActivity error:', e); return null; }),
-      graphGet(accessToken, "https://graph.microsoft.com/v1.0/security/alerts_v2?$filter=category eq 'InitialAccess' or category eq 'Malware' or category eq 'Phishing'&$top=200&$select=id,title,category,severity,status,createdDateTime").catch(e => { console.warn('securityAlerts error:', e); return null; }),
     ]);
 
     // Parse mailbox usage data
