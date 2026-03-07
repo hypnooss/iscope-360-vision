@@ -10,16 +10,17 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
-import { M365StatsCard } from '@/components/m365/shared/M365StatsCard';
-import { M365DonutChart } from '@/components/m365/shared/M365DonutChart';
+import { EmailSecurityScoreCard } from '@/components/m365/exchange/EmailSecurityScoreCard';
+import { ExchangeOverviewCards } from '@/components/m365/exchange/ExchangeOverviewCards';
+import { EmailSecurityPostureCard } from '@/components/m365/exchange/EmailSecurityPostureCard';
+import { EmailTrafficCard } from '@/components/m365/exchange/EmailTrafficCard';
+import { MailboxHealthCard } from '@/components/m365/exchange/MailboxHealthCard';
 import {
   RefreshCw,
   AlertTriangle,
   Link as LinkIcon,
-  Mail,
-  ShieldAlert,
-  Inbox,
-  Send,
+  Download,
+  ExternalLink,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -66,34 +67,41 @@ export default function ExchangeOnlinePage() {
     );
   }
 
-  const d = data;
-
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Microsoft 365', href: '/scope-m365/dashboard' }, { label: 'Exchange Online' }]} />
 
-        {/* Header */}
+        {/* SEÇÃO 1: Contexto do Tenant */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Exchange Online</h1>
-            <p className="text-muted-foreground">Visão operacional de caixas de correio, tráfego e segurança</p>
+            <p className="text-muted-foreground">Dashboard operacional e postura de segurança do email</p>
           </div>
-          <Button className="gap-2" onClick={refresh} disabled={refreshing}>
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing ? 'Atualizando...' : 'Atualizar'}
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" size="sm" className="gap-2">
+              <Download className="w-4 h-4" />Exportar
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2" asChild>
+              <a href="https://admin.exchange.microsoft.com" target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="w-4 h-4" />Exchange Admin
+              </a>
+            </Button>
+            <Button size="sm" className="gap-2" onClick={refresh} disabled={refreshing}>
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Atualizando...' : 'Atualizar'}
+            </Button>
+          </div>
         </div>
 
-        {/* Tenant Selector */}
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="py-4">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <TenantSelector tenants={tenants} selectedId={selectedTenantId} onSelect={selectTenant} loading={tenantsLoading} />
               <div className="flex items-center gap-3">
-                {d?.analyzedAt && (
+                {data?.analyzedAt && (
                   <span className="text-xs text-muted-foreground">
-                    Atualizado em {format(new Date(d.analyzedAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
+                    Atualizado em {format(new Date(data.analyzedAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
                   </span>
                 )}
                 <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Conectado</Badge>
@@ -112,62 +120,20 @@ export default function ExchangeOnlinePage() {
           </Card>
         )}
 
-        {/* Dashboard Grid - 2 columns */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Column 1: Mailboxes + Traffic */}
-          <div className="space-y-4">
-            <M365StatsCard
-              title="Caixas de Correio"
-              icon={Mail}
-              loading={loading}
-              rows={[
-                { label: 'Total de Mailboxes', value: d?.mailboxes.total ?? 0 },
-                { label: 'Novas (30 dias)', value: d?.mailboxes.newLast30d ?? 0, color: 'text-green-500' },
-                { label: 'Sem Login (30 dias)', value: d?.mailboxes.notLoggedIn30d ?? 0, color: 'text-warning' },
-                { label: 'Próximas do Limite', value: d?.mailboxes.overQuota ?? 0, color: 'text-destructive' },
-                { label: 'Forwarding Habilitado', value: d?.mailboxes.forwardingEnabled ?? 0, color: 'text-warning' },
-                { label: 'Auto-Reply Externo', value: d?.mailboxes.autoReplyExternal ?? 0, color: 'text-warning' },
-              ]}
-            />
-            <M365DonutChart
-              title="Tráfego de Email (30 dias)"
-              icon={Send}
-              loading={loading}
-              centerValue={(d?.traffic.sent ?? 0) + (d?.traffic.received ?? 0)}
-              centerLabel="Total"
-              segments={[
-                { name: 'Enviados', value: d?.traffic.sent ?? 0, color: 'hsl(217, 91%, 60%)' },
-                { name: 'Recebidos', value: d?.traffic.received ?? 0, color: 'hsl(142, 71%, 45%)' },
-              ]}
-            />
-          </div>
+        {/* SEÇÃO 2: Email Security Score */}
+        <EmailSecurityScoreCard data={data} loading={loading} />
 
-          {/* Column 2: Security */}
-          <div className="space-y-4">
-            <M365DonutChart
-              title="Emails Maliciosos (30 dias)"
-              icon={ShieldAlert}
-              loading={loading}
-              centerValue={(d?.security.phishing ?? 0) + (d?.security.malware ?? 0) + (d?.security.spam ?? 0)}
-              centerLabel="Total"
-              segments={[
-                { name: 'Phishing', value: d?.security.phishing ?? 0, color: 'hsl(0, 84%, 60%)' },
-                { name: 'Malware', value: d?.security.malware ?? 0, color: 'hsl(25, 95%, 53%)' },
-                { name: 'Spam', value: d?.security.spam ?? 0, color: 'hsl(45, 93%, 47%)' },
-              ]}
-            />
-            <M365StatsCard
-              title="Segurança do Exchange"
-              icon={Inbox}
-              loading={loading}
-              rows={[
-                { label: 'Emails Maliciosos Inbound', value: d?.security.maliciousInbound ?? 0, color: d?.security.maliciousInbound ? 'text-destructive' : 'text-green-500' },
-                { label: 'Forwarding Rules', value: d?.mailboxes.forwardingEnabled ?? 0, color: d?.mailboxes.forwardingEnabled ? 'text-warning' : 'text-muted-foreground' },
-                { label: 'Auto-Reply External', value: d?.mailboxes.autoReplyExternal ?? 0, color: d?.mailboxes.autoReplyExternal ? 'text-warning' : 'text-muted-foreground' },
-              ]}
-            />
-          </div>
+        {/* SEÇÃO 3: Visão Geral do Exchange */}
+        <ExchangeOverviewCards data={data} loading={loading} />
+
+        {/* SEÇÃO 4 & 5: Segurança + Tráfego */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <EmailSecurityPostureCard data={data} loading={loading} />
+          <EmailTrafficCard data={data} loading={loading} />
         </div>
+
+        {/* SEÇÃO 6: Configuração e Saúde */}
+        <MailboxHealthCard data={data} loading={loading} />
       </div>
     </AppLayout>
   );
