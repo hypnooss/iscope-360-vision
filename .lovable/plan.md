@@ -1,27 +1,25 @@
 
 
-## Problem
+## Correção: Service Health não traz dados — Decriptação do secret incorreta
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+### Causa Raiz
 
-## Solution
+A edge function `m365-service-health` usa uma função `decryptSecret` **simplificada** que, para secrets sem `:` (formato base64 legacy), faz apenas `atob(encrypted)` — devolvendo bytes brutos em vez do secret decriptado.
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+O `m365-analyzer` (que funciona) usa uma lógica de decriptação **em duas camadas**:
+1. **Hex** (`iv:ciphertext` com `:`) — `decryptSecretHex` com AES-GCM
+2. **Base64 legacy** (sem `:`) — `decryptSecretBase64` com AES-GCM usando `TextEncoder` para derivar a chave
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+Os tenants do usuário usam `multi_tenant_app` sem `client_secret_encrypted` próprio, caindo para o `m365_global_config`. O secret global existe mas está em formato que requer decriptação AES-GCM real — não um simples `atob()`.
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+### Solução
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+Substituir as funções `hex()` e `decryptSecret()` no `m365-service-health/index.ts` pela mesma lógica unificada do `m365-analyzer`:
+- `decryptSecretHex()` para formato hex com `:`
+- `decryptSecretBase64()` para formato base64 legacy
+- `decryptSecret()` unificada que tenta hex primeiro, depois base64
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+### Arquivo
 
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
-
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+**`supabase/functions/m365-service-health/index.ts`** — substituir as funções de decriptação (linhas 10-21) pela lógica completa do analyzer.
 
