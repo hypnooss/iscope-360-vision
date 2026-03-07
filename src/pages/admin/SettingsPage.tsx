@@ -570,6 +570,10 @@ export default function SettingsPage() {
               <Layers className="w-4 h-4" />
               Módulos
             </TabsTrigger>
+            <TabsTrigger value="m365" className="gap-2">
+              <Shield className="w-4 h-4" />
+              Microsoft 365
+            </TabsTrigger>
           </TabsList>
 
           {/* API Keys Tab */}
