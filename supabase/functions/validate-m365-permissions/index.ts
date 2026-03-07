@@ -154,7 +154,7 @@ async function decryptSecret(encrypted: string): Promise<string> {
   }
 }
 
-async function testPermission(accessToken: string, permission: string, appObjectId?: string): Promise<boolean> {
+async function testPermission(accessToken: string, permission: string, appObjectId?: string, testUrl?: string): Promise<boolean> {
   try {
     let url = '';
     
