@@ -46,7 +46,7 @@ export const GRAPH_PERMISSIONS = [
   'Policy.Read.All', 'IdentityRiskyUser.Read.All', 'IdentityRiskEvent.Read.All', 'Domain.Read.All',
   'MailboxSettings.Read', 'Mail.Read',
   'RoleManagement.ReadWrite.Directory', 'Sites.Read.All',
-  'Application.ReadWrite.All', 'Reports.Read.All',
+  'Application.ReadWrite.All', 'Reports.Read.All', 'ServiceHealth.Read.All',
   'DeviceManagementManagedDevices.Read.All', 'DeviceManagementConfiguration.Read.All',
   'SecurityAlert.Read.All', 'SecurityEvents.Read.All',
   'SecurityIncident.Read.All', 'AttackSimulation.Read.All',
