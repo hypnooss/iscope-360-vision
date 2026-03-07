@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
+import { validatePassword } from '@/lib/passwordValidation';
 
 interface ChangePasswordDialogProps {
   open: boolean;
@@ -27,8 +28,9 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (password.length < 6) {
-      toast({ title: 'Senha deve ter no mínimo 6 caracteres', variant: 'destructive' });
+    const pwValidation = validatePassword(password);
+    if (!pwValidation.valid) {
+      toast({ title: pwValidation.errors[0], variant: 'destructive' });
       return;
     }
     if (password !== confirmPassword) {
@@ -64,7 +66,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
               id="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mínimo 6 caracteres"
+              placeholder="Mín. 12 chars, maiúsc., minúsc., número, especial"
               required
             />
           </div>

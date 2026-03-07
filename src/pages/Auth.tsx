@@ -10,16 +10,17 @@ import logoIscope from '@/assets/logo-iscope.png';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
+import { strongPasswordSchema } from '@/lib/passwordValidation';
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
-  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres')
+  password: z.string().min(1, 'Senha é obrigatória')
 });
 const emailSchema = z.object({
   email: z.string().email('Email inválido')
 });
 const passwordSchema = z.object({
-  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
-  confirmPassword: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres')
+  password: strongPasswordSchema,
+  confirmPassword: z.string().min(1, 'Confirmação é obrigatória')
 }).refine(data => data.password === data.confirmPassword, {
   message: 'As senhas não coincidem',
   path: ['confirmPassword']
@@ -43,6 +44,26 @@ export default function Auth() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [isRecoveryFlow, setIsRecoveryFlow] = useState(false);
+
+  // Rate limiting state
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+  const [lockoutCountdown, setLockoutCountdown] = useState(0);
+
+  // Lockout countdown timer
+  useEffect(() => {
+    if (!lockoutUntil) return;
+    const interval = setInterval(() => {
+      const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      if (remaining <= 0) {
+        setLockoutUntil(null);
+        setLockoutCountdown(0);
+      } else {
+        setLockoutCountdown(remaining);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutUntil]);
 
   // Password reset state
   const [resetEmail, setResetEmail] = useState('');
@@ -79,6 +100,13 @@ export default function Auth() {
   }, []);
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Check lockout
+    if (lockoutUntil && Date.now() < lockoutUntil) {
+      toast.error(`Aguarde ${lockoutCountdown}s antes de tentar novamente`);
+      return;
+    }
+
     const validation = loginSchema.safeParse({
       email: loginEmail,
       password: loginPassword
@@ -87,22 +115,38 @@ export default function Auth() {
       toast.error(validation.error.errors[0].message);
       return;
     }
+
+    // Progressive delay based on failed attempts
+    if (failedAttempts > 0) {
+      const delayMs = Math.min(1000 * Math.pow(2, failedAttempts - 1), 8000);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+
     setIsSubmitting(true);
     const {
       error
     } = await signIn(loginEmail, loginPassword);
     setIsSubmitting(false);
     if (error) {
-      if (error.message.includes('Invalid login credentials')) {
-        toast.error('Email ou senha incorretos');
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+
+      // After 5 failed attempts, lock out for 30 seconds
+      if (newAttempts >= 5) {
+        const lockout = Date.now() + 30000;
+        setLockoutUntil(lockout);
+        setLockoutCountdown(30);
+        toast.error('Muitas tentativas falhas. Aguarde 30 segundos.');
+      } else if (error.message.includes('Invalid login credentials')) {
+        toast.error(`Email ou senha incorretos (tentativa ${newAttempts}/5)`);
       } else if (error.message.includes('Email not confirmed')) {
         toast.error('Email não confirmado. Verifique sua caixa de entrada.');
       } else {
         toast.error(error.message);
       }
     } else {
-      // MFA redirect is handled by the useEffect above
-      // after auth state updates
+      setFailedAttempts(0);
+      setLockoutUntil(null);
     }
   };
   const handleSendResetCode = async (e: React.FormEvent) => {
@@ -185,8 +229,10 @@ export default function Auth() {
               </button>
             </div>
           </div>
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? <>
+          <Button type="submit" className="w-full" disabled={isSubmitting || (!!lockoutUntil && Date.now() < lockoutUntil)}>
+            {lockoutUntil && Date.now() < lockoutUntil ? (
+              `Bloqueado (${lockoutCountdown}s)`
+            ) : isSubmitting ? <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Entrando...
               </> : 'Entrar'}

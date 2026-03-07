@@ -15,8 +15,17 @@ export default function MfaChallengePage() {
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
 
+  // Guard: redirect to /auth if no session
   useEffect(() => {
-    loadFactor();
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate('/auth', { replace: true });
+        return;
+      }
+      loadFactor();
+    };
+    checkSession();
   }, []);
 
   const loadFactor = async () => {
