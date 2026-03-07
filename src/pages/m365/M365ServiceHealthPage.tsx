@@ -182,7 +182,7 @@ function M365ServiceHealthPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[
           { label: 'Microsoft 365', href: '/scope-m365/compliance' },
           { label: 'Saúde do 365' },
