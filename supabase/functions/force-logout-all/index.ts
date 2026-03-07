@@ -15,7 +15,7 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    // Validate auth
+    // Validate auth - requires super_admin
     const authHeader = req.headers.get('Authorization')
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -24,7 +24,6 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Verify user
     const supabaseUser = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     })
@@ -36,8 +35,8 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Check if super_admin
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
+
     const { data: hasRole } = await supabaseAdmin.rpc('has_role', {
       _user_id: user.id,
       _role: 'super_admin',
