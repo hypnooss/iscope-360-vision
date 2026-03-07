@@ -60,6 +60,7 @@ export default function M365PosturePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [productFilter, setProductFilter] = useState<M365Product | null>(null);
   const [activeAnalysisId, setActiveAnalysisId] = useState<string | null>(null);
   const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
