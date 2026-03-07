@@ -1,11 +1,7 @@
 // Public installer script for Linux agents (curl | bash)
 // NOTE: keep this endpoint public (verify_jwt = false) and avoid exposing secrets.
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 const PROJECT_REF = "akbosdbyheezghieiefz";
 const API_BASE_URL = `https://${PROJECT_REF}.supabase.co/functions/v1`;
@@ -1404,6 +1400,7 @@ main "$@"
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
