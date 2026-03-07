@@ -788,7 +788,8 @@ serve(async (req) => {
       }
     }
 
-    const allPermissionsGranted = permissionResults.every(p => p.granted);
+    const requiredResults = permissionResults.filter(p => p.required !== false);
+    const allPermissionsGranted = requiredResults.every(p => p.granted);
     const missingPermissions = permissionResults.filter(p => !p.granted).map(p => p.name);
     console.log(`Permission check complete: ${permissionResults.filter(p => p.granted).length}/${permissionResults.length} granted`);
     console.log(`Missing permissions: ${missingPermissions.join(', ') || 'none'}`);
