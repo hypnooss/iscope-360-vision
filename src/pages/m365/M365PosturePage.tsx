@@ -587,6 +587,34 @@ export default function M365PosturePage() {
               }
             />
 
+            {/* Product Filter Bar */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-muted-foreground mr-1">Filtrar por:</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className={!productFilter ? 'ring-2 ring-primary bg-primary/10' : ''}
+                onClick={() => setProductFilter(null)}
+              >
+                Todos ({allUnifiedItems.length})
+              </Button>
+              {(Object.keys(PRODUCT_LABELS) as M365Product[]).map(product => {
+                const count = productCounts[product] || 0;
+                if (count === 0) return null;
+                return (
+                  <Button
+                    key={product}
+                    variant="outline"
+                    size="sm"
+                    className={productFilter === product ? 'ring-2 ring-primary bg-primary/10' : ''}
+                    onClick={() => setProductFilter(productFilter === product ? null : product)}
+                  >
+                    {PRODUCT_LABELS[product]} ({count})
+                  </Button>
+                );
+              })}
+            </div>
+
             {/* Verificações por Categoria */}
             {Object.keys(groupedItems).length > 0 && (
               <div className="space-y-2">
