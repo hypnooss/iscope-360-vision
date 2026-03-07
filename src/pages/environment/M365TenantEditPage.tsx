@@ -484,11 +484,16 @@ export default function M365TenantEditPage() {
               <Button variant="outline" size="sm" onClick={handleRevalidatePermissions} disabled={revalidating || waitingForConsent || !!pollingStatus?.active || tenant.connection_status === 'disconnected'}>
                 {(revalidating || waitingForConsent || pollingStatus?.active) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ExternalLink className="w-3 h-3 mr-1" />}
                 {pollingStatus?.active
-                  ? `Propagando... (${pollingStatus.attempt}/${pollingStatus.maxAttempts})`
+                  ? `Verificando... (${pollingStatus.attempt}/${pollingStatus.maxAttempts})`
                   : waitingForConsent
                     ? 'Aguardando consentimento...'
                     : 'Revalidar Permissões'}
               </Button>
+              {pollingStatus?.active && (
+                <Button variant="outline" size="sm" onClick={cancelPolling} className="text-muted-foreground">
+                  Cancelar
+                </Button>
+              )}
               <Button
                 variant="outline" size="sm"
                 className="text-warning hover:text-warning hover:bg-warning/10 border-border"

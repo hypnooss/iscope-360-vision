@@ -674,6 +674,10 @@ export default function SettingsPage() {
             <ModulesManagement />
           </TabsContent>
 
+          <TabsContent value="m365">
+            <M365PermissionsManagement />
+          </TabsContent>
+
           <TabsContent value="agents" className="space-y-6">
             {/* Card 1: Gerenciamento de Atualizações */}
             <Card className="border-border/50">
