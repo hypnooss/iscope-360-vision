@@ -66,7 +66,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
               id="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mínimo 6 caracteres"
+              placeholder="Mín. 12 chars, maiúsc., minúsc., número, especial"
               required
             />
           </div>

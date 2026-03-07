@@ -229,8 +229,10 @@ export default function Auth() {
               </button>
             </div>
           </div>
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? <>
+          <Button type="submit" className="w-full" disabled={isSubmitting || (!!lockoutUntil && Date.now() < lockoutUntil)}>
+            {lockoutUntil && Date.now() < lockoutUntil ? (
+              `Bloqueado (${lockoutCountdown}s)`
+            ) : isSubmitting ? <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Entrando...
               </> : 'Entrar'}

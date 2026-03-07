@@ -250,7 +250,7 @@ export function InviteUserDialog({ clients, myClientIds = [], onUserCreated }: I
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mín. 12 chars, maiúsc., minúsc., número, especial"
               />
             </div>
 

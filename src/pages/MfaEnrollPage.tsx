@@ -17,8 +17,17 @@ export default function MfaEnrollPage() {
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
 
+  // Guard: redirect to /auth if no session
   useEffect(() => {
-    enrollFactor();
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate('/auth', { replace: true });
+        return;
+      }
+      enrollFactor();
+    };
+    checkSession();
   }, []);
 
   const enrollFactor = async () => {
