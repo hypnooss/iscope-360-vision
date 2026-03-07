@@ -1900,6 +1900,7 @@ export type Database = {
           permission_name: string
           permission_type: string
           submodule: Database["public"]["Enums"]["m365_submodule"]
+          test_url: string | null
         }
         Insert: {
           created_at?: string
@@ -1909,6 +1910,7 @@ export type Database = {
           permission_name: string
           permission_type?: string
           submodule: Database["public"]["Enums"]["m365_submodule"]
+          test_url?: string | null
         }
         Update: {
           created_at?: string
@@ -1918,6 +1920,7 @@ export type Database = {
           permission_name?: string
           permission_type?: string
           submodule?: Database["public"]["Enums"]["m365_submodule"]
+          test_url?: string | null
         }
         Relationships: []
       }

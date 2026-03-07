@@ -17,6 +17,7 @@ interface Permission {
   submodule: string;
   permission_type: string;
   description: string | null;
+  test_url: string | null;
   is_required: boolean;
   created_at: string;
 }
@@ -46,6 +47,7 @@ export function M365PermissionsManagement() {
   const [newDescription, setNewDescription] = useState('');
   const [newRequired, setNewRequired] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [newTestUrl, setNewTestUrl] = useState('');
 
   const loadPermissions = async () => {
     setLoading(true);
@@ -77,11 +79,12 @@ export function M365PermissionsManagement() {
           submodule: newSubmodule as any,
           permission_type: 'Application',
           description: newDescription.trim() || null,
+          test_url: newTestUrl.trim() || null,
           is_required: newRequired,
         }]);
       if (error) throw error;
       toast.success(`Permissão ${newName} adicionada`);
-      setNewName(''); setNewDescription(''); setShowForm(false);
+      setNewName(''); setNewDescription(''); setNewTestUrl(''); setShowForm(false);
       await loadPermissions();
     } catch (err: any) {
       toast.error(err.message?.includes('duplicate') ? 'Permissão já existe' : 'Erro ao adicionar');
@@ -255,6 +258,18 @@ export function M365PermissionsManagement() {
                   <div className="space-y-2">
                     <Label>Descrição</Label>
                     <Input placeholder="Descrição da permissão" value={newDescription} onChange={e => setNewDescription(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>URL de Teste (Graph API)</Label>
+                    <Input 
+                      placeholder="https://graph.microsoft.com/v1.0/..." 
+                      value={newTestUrl} 
+                      onChange={e => setNewTestUrl(e.target.value)} 
+                      className="font-mono text-xs"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      URL do endpoint Graph API para validar esta permissão. Ex: https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/healthOverviews?$top=1
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Switch checked={newRequired} onCheckedChange={setNewRequired} />

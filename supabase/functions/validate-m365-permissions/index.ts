@@ -11,48 +11,7 @@ interface PermissionStatus {
   type: 'required' | 'recommended';
 }
 
-// Permissions to check - MUST MATCH get-m365-config function
-const REQUIRED_PERMISSIONS = [
-  'User.Read.All',
-  'Directory.Read.All',
-  'Organization.Read.All',
-  'Domain.Read.All',
-  'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
-  'IdentityRiskyUser.Read.All', // Required for Identity Protection risky users
-];
-
-const RECOMMENDED_PERMISSIONS = [
-  'Group.Read.All',
-  'Application.Read.All',
-  'Policy.Read.All',
-  'Reports.Read.All',
-  'AuditLog.Read.All',
-  'RoleManagement.Read.Directory',
-  // Exchange Online
-  'MailboxSettings.Read',
-  'Mail.Read',
-  // Intune / Device Management
-  'DeviceManagementManagedDevices.Read.All',
-  'DeviceManagementConfiguration.Read.All',
-  // Security / Defender
-  'SecurityAlert.Read.All',
-  'SecurityEvents.Read.All',
-  'SecurityIncident.Read.All',
-  'AttackSimulation.Read.All',
-  'InformationProtectionPolicy.Read.All',
-  'IdentityRiskEvent.Read.All',
-  // Teams
-  'TeamSettings.Read.All',
-  'Channel.ReadBasic.All',
-  'TeamMember.Read.All',
-  // SharePoint Admin
-  'SharePointTenantSettings.Read.All',
-];
-
-// Certificate Upload - only tested if app_object_id is provided
-const CERTIFICATE_PERMISSIONS = [
-  'Application.ReadWrite.All',
-];
+// Permissions are loaded dynamically from m365_required_permissions table
 
 // Exchange Administrator Role Template ID (constant across all Azure AD tenants)
 const EXCHANGE_ADMIN_ROLE_TEMPLATE_ID = '29232cdf-9323-42fd-ade2-1d097af3e4de';
@@ -195,7 +154,7 @@ async function decryptSecret(encrypted: string): Promise<string> {
   }
 }
 
-async function testPermission(accessToken: string, permission: string, appObjectId?: string): Promise<boolean> {
+async function testPermission(accessToken: string, permission: string, appObjectId?: string, testUrl?: string): Promise<boolean> {
   try {
     let url = '';
     
@@ -440,6 +399,11 @@ async function testPermission(accessToken: string, permission: string, appObject
         url = 'https://graph.microsoft.com/beta/admin/sharepoint/settings';
         break;
       default:
+        if (testUrl) {
+          url = testUrl;
+          break;
+        }
+        console.log(`Permission ${permission}: no test URL configured`);
         return false;
     }
 
@@ -530,7 +494,8 @@ async function validatePermissions(
   tenantId: string,
   appId: string,
   clientSecret: string,
-  appObjectId?: string
+  appObjectId?: string,
+  supabaseClient?: SupabaseClient
 ): Promise<PermissionStatus[]> {
   console.log('Getting access token for tenant:', tenantId);
   
@@ -559,30 +524,30 @@ async function validatePermissions(
   
   console.log('Access token obtained, testing permissions...');
 
+  // Fetch permissions from database
+  const { data: dbPermissions } = await supabaseClient!
+    .from('m365_required_permissions')
+    .select('permission_name, test_url, is_required')
+    .order('permission_name');
+
   const results: PermissionStatus[] = [];
 
-  for (const permission of REQUIRED_PERMISSIONS) {
-    const granted = await testPermission(accessToken, permission);
-    results.push({ name: permission, granted, type: 'required' });
-    console.log(`Permission ${permission}: ${granted ? 'granted' : 'denied'}`);
+  for (const dbPerm of (dbPermissions || [])) {
+    const granted = await testPermission(accessToken, dbPerm.permission_name, appObjectId, dbPerm.test_url || undefined);
+    results.push({ 
+      name: dbPerm.permission_name, 
+      granted, 
+      type: dbPerm.is_required ? 'required' : 'recommended' 
+    });
+    console.log(`Permission ${dbPerm.permission_name}: ${granted ? 'granted' : 'denied'}`);
   }
 
-  for (const permission of RECOMMENDED_PERMISSIONS) {
-    const granted = await testPermission(accessToken, permission);
-    results.push({ name: permission, granted, type: 'recommended' });
-    console.log(`Permission ${permission}: ${granted ? 'granted' : 'denied'}`);
-  }
-
-  // Only test certificate permissions if app_object_id is provided
-  if (appObjectId) {
+  // Only test certificate permissions if app_object_id is provided and not already in results
+  if (appObjectId && !results.find(r => r.name === 'Application.ReadWrite.All')) {
     console.log('Testing certificate upload permissions with app_object_id:', appObjectId);
-    for (const permission of CERTIFICATE_PERMISSIONS) {
-      const granted = await testPermission(accessToken, permission, appObjectId);
-      results.push({ name: permission, granted, type: 'recommended' });
-      console.log(`Permission ${permission}: ${granted ? 'granted' : 'denied'}`);
-    }
-  } else {
-    console.log('Skipping certificate permissions test (no app_object_id provided)');
+    const granted = await testPermission(accessToken, 'Application.ReadWrite.All', appObjectId);
+    results.push({ name: 'Application.ReadWrite.All', granted, type: 'recommended' });
+    console.log(`Permission Application.ReadWrite.All: ${granted ? 'granted' : 'denied'}`);
   }
 
   // Test Exchange Administrator Role assignment (required for PowerShell CBA)
@@ -754,7 +719,7 @@ Deno.serve(async (req) => {
     // Validar permissões
     let newPermissions: PermissionStatus[];
     try {
-      newPermissions = await validatePermissions(tenantId, appId, clientSecret, appObjectId);
+      newPermissions = await validatePermissions(tenantId, appId, clientSecret, appObjectId, supabase);
     } catch (error) {
       console.error('Failed to validate permissions:', error);
       

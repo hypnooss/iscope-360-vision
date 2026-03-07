@@ -19,28 +19,7 @@ interface PermissionStatus {
   required: boolean;
 }
 
-// Required permissions for Entra ID and Exchange Online modules
-const REQUIRED_PERMISSIONS = [
-  // Entra ID
-  'User.Read.All',
-  'Directory.Read.All', 
-  'Group.Read.All',
-  'Application.Read.All',
-  'AuditLog.Read.All',
-  'Organization.Read.All',
-  'Policy.Read.All',
-  'IdentityRiskyUser.Read.All', // Required for Identity Protection risky users
-  'IdentityRiskEvent.Read.All', // Required for Identity Protection risk detections
-  // Exchange Online
-  'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
-  'MailboxSettings.Read',
-  'Mail.Read',
-  // SharePoint
-  'Sites.Read.All',
-  // Outros
-  'Reports.Read.All',
-  'ServiceHealth.Read.All',
-];
+// Permissions are loaded dynamically from m365_required_permissions table
 
 // Office 365 Exchange Online Resource ID
 const EXCHANGE_RESOURCE_ID = "00000002-0000-0ff1-ce00-000000000000";
@@ -384,29 +363,30 @@ serve(async (req) => {
     const verifiedDomains = orgData.value?.[0]?.verifiedDomains?.map((d: any) => d.name) || [];
     console.log('Graph access confirmed for:', tenantDisplayName);
 
-    // Step 3: Check each required permission
+    // Step 3: Fetch permissions from database and test each one dynamically
+    const { data: dbPermissions } = await supabase
+      .from('m365_required_permissions')
+      .select('permission_name, test_url, is_required')
+      .order('permission_name');
+
     const permissionResults: PermissionStatus[] = [];
-    
-    for (const permission of REQUIRED_PERMISSIONS) {
+    const permTestUrlMap: Record<string, string> = {};
+    for (const p of (dbPermissions || [])) {
+      if (p.test_url) permTestUrlMap[p.permission_name] = p.test_url;
+    }
+
+    for (const dbPerm of (dbPermissions || [])) {
+      const permission = dbPerm.permission_name;
       let granted = false;
-      
+
       try {
-        // Test each permission with a minimal API call
-        if (permission === 'User.Read.All') {
-          const response = await fetch('https://graph.microsoft.com/v1.0/users?$top=1&$select=id', {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-          });
-          granted = response.ok;
-          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
-        } else if (permission === 'Directory.Read.All') {
-          // Use /domains endpoint which specifically requires Directory.Read.All
+        // ===== Complex handlers requiring multi-step logic =====
+        if (permission === 'Directory.Read.All') {
           const response = await fetch('https://graph.microsoft.com/v1.0/domains?$top=1', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
           granted = response.ok;
           console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
-          
-          // Fallback to /directoryRoles if domains fails
           if (!granted) {
             const fallbackResponse = await fetch('https://graph.microsoft.com/v1.0/directoryRoles?$top=1&$select=id', {
               headers: { 'Authorization': `Bearer ${accessToken}` },
@@ -414,30 +394,12 @@ serve(async (req) => {
             granted = fallbackResponse.ok;
             console.log(`Permission ${permission} fallback: ${fallbackResponse.status} - granted: ${granted}`);
           }
-        } else if (permission === 'Group.Read.All') {
-          const response = await fetch('https://graph.microsoft.com/v1.0/groups?$top=1&$select=id', {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-          });
-          granted = response.ok;
-          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
-        } else if (permission === 'Application.Read.All') {
-          const response = await fetch('https://graph.microsoft.com/v1.0/applications?$top=1&$select=id', {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-          });
-          granted = response.ok;
-          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
         } else if (permission === 'AuditLog.Read.All') {
-          // Try directoryAudits first (more reliable), then signIns
           const response = await fetch('https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=1', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
-          // AuditLog might return 403 if not licensed (Azure AD Premium required)
-          // 400 can mean permission exists but query issue
-          // We consider it granted if we get 200, 400 (query issue), or if we can at least call the endpoint
           granted = response.ok || response.status === 400;
           console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
-          
-          // If directoryAudits fails with 403, try signIns as fallback
           if (!granted && response.status === 403) {
             const signInsResponse = await fetch('https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=1', {
               headers: { 'Authorization': `Bearer ${accessToken}` },
@@ -445,14 +407,6 @@ serve(async (req) => {
             granted = signInsResponse.ok || signInsResponse.status === 400;
             console.log(`Permission ${permission} fallback: ${signInsResponse.status} - granted: ${granted}`);
           }
-        } else if (permission === 'RoleManagement.ReadWrite.Directory') {
-          // Test ability to read/write directory role assignments
-          // NOTE: This endpoint does not support $top or $select parameters
-          const response = await fetch('https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions', {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-          });
-          granted = response.ok;
-          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
         } else if (permission === 'IdentityRiskyUser.Read.All') {
           const response = await fetch('https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
@@ -464,7 +418,6 @@ serve(async (req) => {
             const errCode = errBody?.error?.code || '';
             const errMsg = errBody?.error?.message || '';
             console.log(`Permission ${permission}: ${response.status} - code: ${errCode} - msg: ${errMsg}`);
-            // If the error is a licensing issue (not a permission issue), treat as granted
             if (response.status === 403 && (
               errCode.includes('NonPremiumTenant') ||
               errCode.includes('NotSupported') ||
@@ -473,12 +426,10 @@ serve(async (req) => {
             )) {
               granted = true;
               console.log(`Permission ${permission}: 403 but license issue - treating as granted`);
-            } else {
-              granted = false;
             }
           }
-          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
-         } else if (permission === 'IdentityRiskEvent.Read.All') {
+          console.log(`Permission ${permission}: granted: ${granted}`);
+        } else if (permission === 'IdentityRiskEvent.Read.All') {
           const response = await fetch('https://graph.microsoft.com/beta/identityProtection/riskDetections?$top=1', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
@@ -497,22 +448,17 @@ serve(async (req) => {
             )) {
               granted = true;
               console.log(`Permission ${permission}: 403 but license issue - treating as granted`);
-            } else {
-              granted = false;
             }
           }
           console.log(`Permission ${permission}: granted: ${granted}`);
         } else if (permission === 'MailboxSettings.Read') {
-          // Fetch up to 5 users to find one with an active mailbox
           const usersResp = await fetch('https://graph.microsoft.com/v1.0/users?$top=5&$select=id', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
           if (usersResp.ok) {
             const usersData = await usersResp.json();
             const userIds: string[] = (usersData.value || []).map((u: any) => u.id);
-            if (userIds.length === 0) {
-              console.log(`Permission ${permission}: no users found - granted: false`);
-            } else {
+            if (userIds.length > 0) {
               let allMailboxNotEnabled = true;
               for (const uid of userIds) {
                 const mailboxResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}/mailboxSettings`, {
@@ -524,7 +470,6 @@ serve(async (req) => {
                   console.log(`Permission ${permission}: ${mailboxResponse.status} on user ${uid} - granted: true`);
                   break;
                 }
-                // Check error body
                 const errBody = await mailboxResponse.json().catch(() => ({}));
                 const errCode = errBody?.error?.code || '';
                 if (mailboxResponse.status === 403) {
@@ -535,10 +480,9 @@ serve(async (req) => {
                 } else if (errCode === 'MailboxNotEnabledForRESTAPI') {
                   console.log(`Permission ${permission}: MailboxNotEnabledForRESTAPI on user ${uid} - trying next`);
                 } else {
-                  console.log(`Permission ${permission}: ${mailboxResponse.status} (${errCode}) on user ${uid} - trying next`);
+                  console.log(`Permission ${permission}: ${mailboxResponse.status} (${errCode}) on user ${uid}`);
                 }
               }
-              // If all users had MailboxNotEnabledForRESTAPI, permission IS granted
               if (allMailboxNotEnabled && !granted) {
                 granted = true;
                 console.log(`Permission ${permission}: all users had MailboxNotEnabledForRESTAPI - treating as granted`);
@@ -548,16 +492,13 @@ serve(async (req) => {
             console.log(`Permission ${permission}: could not fetch users - granted: false`);
           }
         } else if (permission === 'Mail.Read') {
-          // Fetch up to 5 users to find one with an active mailbox
           const usersResponse = await fetch('https://graph.microsoft.com/v1.0/users?$top=5&$select=id', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
           if (usersResponse.ok) {
             const usersData = await usersResponse.json();
             const userIds: string[] = (usersData.value || []).map((u: any) => u.id);
-            if (userIds.length === 0) {
-              console.log(`Permission ${permission}: no users found - granted: false`);
-            } else {
+            if (userIds.length > 0) {
               let allMailboxNotEnabled = true;
               for (const uid of userIds) {
                 const rulesResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}/mailFolders/inbox/messageRules?$top=1`, {
@@ -579,7 +520,7 @@ serve(async (req) => {
                 } else if (errCode === 'MailboxNotEnabledForRESTAPI') {
                   console.log(`Permission ${permission}: MailboxNotEnabledForRESTAPI on user ${uid} - trying next`);
                 } else {
-                  console.log(`Permission ${permission}: ${rulesResponse.status} (${errCode}) on user ${uid} - trying next`);
+                  console.log(`Permission ${permission}: ${rulesResponse.status} (${errCode}) on user ${uid}`);
                 }
               }
               if (allMailboxNotEnabled && !granted) {
@@ -590,65 +531,98 @@ serve(async (req) => {
           } else {
             console.log(`Permission ${permission}: could not fetch users - granted: false`);
           }
-        } else if (permission === 'Organization.Read.All') {
-          const response = await fetch('https://graph.microsoft.com/v1.0/organization?$select=id', {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-          });
-          granted = response.ok;
-          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
-        } else if (permission === 'Policy.Read.All') {
-          const response = await fetch('https://graph.microsoft.com/v1.0/policies/conditionalAccessPolicies?$top=1', {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-          });
-          // 403 = no permission, 400/200 = permission exists (400 can mean query issue but permission granted)
-          granted = response.ok || response.status === 400;
-          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
         } else if (permission === 'Sites.Read.All') {
-          // Use root site access instead of search which requires specific terms
           const response = await fetch('https://graph.microsoft.com/v1.0/sites/root?$select=id', {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
-          let sitesGranted = response.ok;
-          console.log(`Permission ${permission}: ${response.status} - granted: ${sitesGranted}`);
-          
-          // Also try sites collection if root fails (but not on 403)
-          if (!sitesGranted && response.status !== 403) {
+          granted = response.ok;
+          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
+          if (!granted && response.status !== 403) {
             const sitesResponse = await fetch('https://graph.microsoft.com/v1.0/sites?$select=id&$top=1', {
               headers: { 'Authorization': `Bearer ${accessToken}` },
             });
-            sitesGranted = sitesResponse.ok;
-            console.log(`Permission ${permission} fallback: ${sitesResponse.status} - granted: ${sitesGranted}`);
+            granted = sitesResponse.ok;
+            console.log(`Permission ${permission} fallback: ${sitesResponse.status} - granted: ${granted}`);
           }
-          granted = sitesGranted;
-        } else if (permission === 'Reports.Read.All') {
-          const response = await fetch('https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=1', {
+        } else if (dbPerm.test_url) {
+          // ===== Generic handler using test_url from database with tolerance =====
+          const testUrl = dbPerm.test_url;
+          const response = await fetch(testUrl, {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           });
-          // May return 403 if no license, 400/200 if permission exists
-          granted = response.ok || response.status === 400;
-          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
-        } else if (permission === 'ServiceHealth.Read.All') {
-          const response = await fetch('https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/healthOverviews?$top=1', {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-          });
-          granted = response.ok;
-          console.log(`Permission ${permission}: ${response.status} - granted: ${granted}`);
+
+          if (response.ok) {
+            granted = true;
+          } else {
+            const errBody = await response.json().catch(() => ({}));
+            const errCode = errBody?.error?.code || '';
+            const errMsg = errBody?.error?.message || '';
+            const lowerMsg = errMsg.toLowerCase();
+            const lowerCode = errCode.toLowerCase();
+
+            console.log(`Permission ${permission} FAILED: status=${response.status}, code="${errCode}", message="${errMsg.substring(0, 200)}"`);
+
+            const isSecurityEndpoint = testUrl.includes('/security/');
+            const isAdminSharepoint = testUrl.includes('/admin/sharepoint');
+            const isBetaEndpoint = testUrl.includes('/beta/');
+
+            if (response.status === 400 && (
+              lowerMsg.includes('not applicable to target tenant') ||
+              lowerMsg.includes('service principal for resource') ||
+              (lowerMsg.includes('service principal') && lowerMsg.includes('disabled'))
+            )) {
+              granted = true;
+              console.log(`Permission ${permission}: 400 license/service issue - treating as granted`);
+            } else if (response.status === 412 || (response.status === 400 && lowerMsg.includes('not supported'))) {
+              granted = true;
+              console.log(`Permission ${permission}: ${response.status} app-only not supported - treating as granted`);
+            } else if (response.status === 400) {
+              granted = true;
+              console.log(`Permission ${permission}: 400 query issue - treating as granted`);
+            } else if (response.status === 403) {
+              const isMissingRoles = lowerMsg.includes('missing application roles') || lowerMsg.includes('missing role');
+              if (!isMissingRoles) {
+                const isKnownLicenseError = (
+                  lowerCode.includes('nonpremiumtenant') ||
+                  lowerMsg.includes('license') ||
+                  lowerMsg.includes('premium') ||
+                  lowerCode === 'forbidden' ||
+                  lowerCode === 'unknownerror'
+                );
+                const isSecurityLicenseIssue = isSecurityEndpoint && !lowerMsg.includes('insufficient privileges');
+                const isAdminLicenseIssue = (isAdminSharepoint || isBetaEndpoint) && !lowerMsg.includes('insufficient privileges');
+
+                if (isKnownLicenseError || isSecurityLicenseIssue || isAdminLicenseIssue) {
+                  granted = true;
+                  console.log(`Permission ${permission}: 403 license/service issue - treating as granted`);
+                }
+              } else {
+                console.log(`Permission ${permission}: 403 missing application roles - NOT treating as granted`);
+              }
+            } else if (response.status === 404 && isBetaEndpoint) {
+              granted = true;
+              console.log(`Permission ${permission}: 404 on beta endpoint - treating as granted`);
+            }
+          }
+          console.log(`Permission ${permission}: ${granted ? 'granted' : 'not granted'}`);
+        } else {
+          console.log(`Permission ${permission}: no test_url configured - skipping`);
         }
       } catch (e) {
         console.error(`Error testing ${permission}:`, e);
         granted = false;
       }
-      
+
       permissionResults.push({
         name: permission,
         granted,
-        required: true,
+        required: dbPerm.is_required,
       });
     }
 
     // Test Application.ReadWrite.All (certificate management permission)
     // In a client tenant, we use the Service Principal (Enterprise Application)
-    // The endpoint /servicePrincipals works within the client tenant context
+    // The endpoint /servicePrincipals/{id} endpoint works within the client tenant context
     console.log('Testing Application.ReadWrite.All permission...');
     
     let spObjectId: string | null = null;
@@ -668,7 +642,6 @@ serve(async (req) => {
         const appIdToUse = appCreds?.azure_app_id || app_id;
         console.log('Fetching Service Principal from Graph API for appId:', appIdToUse);
         
-        // Use servicePrincipals endpoint - this finds the Enterprise Application in the CLIENT tenant
         const spLookupResponse = await fetch(
           `https://graph.microsoft.com/v1.0/servicePrincipals?$filter=appId eq '${appIdToUse}'&$select=id,appId,displayName`,
           { headers: { 'Authorization': `Bearer ${accessToken}` } }
@@ -679,7 +652,6 @@ serve(async (req) => {
           spObjectId = spData.value?.[0]?.id || null;
           console.log('Found Service Principal:', spObjectId, spData.value?.[0]?.displayName);
           
-          // Store the sp_object_id for future use
           if (spObjectId && tenant_record_id) {
             await supabase
               .from('m365_app_credentials')
@@ -694,57 +666,37 @@ serve(async (req) => {
       }
     }
 
-    // To validate Application.ReadWrite.All, we test if we can read/update the Service Principal
-    // The /servicePrincipals/{id} endpoint with keyCredentials requires Application.ReadWrite.All
-    if (spObjectId) {
-      console.log('Testing Application.ReadWrite.All with Service Principal:', spObjectId);
-      
-      // Try to read the Service Principal with keyCredentials (requires Application.ReadWrite.All or equivalent)
-      const spResponse = await fetch(
-        `https://graph.microsoft.com/v1.0/servicePrincipals/${spObjectId}?$select=id,appId,keyCredentials`,
-        { headers: { 'Authorization': `Bearer ${accessToken}` } }
-      );
-      
-      const appWriteGranted = spResponse.ok;
-      console.log(`Permission Application.ReadWrite.All: ${spResponse.status} - granted: ${appWriteGranted}`);
-      
-      if (!appWriteGranted) {
-        const errorBody = await spResponse.text();
-        console.log('Application.ReadWrite.All error:', errorBody);
+    // Validate Application.ReadWrite.All - only if not already tested from DB
+    if (!permissionResults.find(p => p.name === 'Application.ReadWrite.All')) {
+      if (spObjectId) {
+        console.log('Testing Application.ReadWrite.All with Service Principal:', spObjectId);
+        const spResponse = await fetch(
+          `https://graph.microsoft.com/v1.0/servicePrincipals/${spObjectId}?$select=id,appId,keyCredentials`,
+          { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
+        const appWriteGranted = spResponse.ok;
+        console.log(`Permission Application.ReadWrite.All: ${spResponse.status} - granted: ${appWriteGranted}`);
+        if (!appWriteGranted) {
+          const errorBody = await spResponse.text();
+          console.log('Application.ReadWrite.All error:', errorBody);
+        }
+        permissionResults.push({ name: 'Application.ReadWrite.All', granted: appWriteGranted, required: false });
+      } else {
+        console.log('Could not find Service Principal - marking Application.ReadWrite.All as not granted');
+        permissionResults.push({ name: 'Application.ReadWrite.All', granted: false, required: false });
       }
-      
-      permissionResults.push({
-        name: 'Application.ReadWrite.All',
-        granted: appWriteGranted,
-        required: false,
-      });
-    } else {
-      console.log('Could not find Service Principal - marking Application.ReadWrite.All as not granted');
-      permissionResults.push({
-        name: 'Application.ReadWrite.All',
-        granted: false,
-        required: false,
-      });
     }
 
     // Test Exchange.ManageAsApp permission (displayed as "Exchange Administrator")
     console.log('Testing Exchange.ManageAsApp (Exchange Administrator)...');
     const exchangeResult = await testAppRoleAssignment(accessToken, app_id, EXCHANGE_RESOURCE_ID, EXCHANGE_MANAGE_AS_APP_ID);
-    permissionResults.push({
-      name: 'Exchange Administrator',
-      granted: exchangeResult.granted,
-      required: false,
-    });
+    permissionResults.push({ name: 'Exchange Administrator', granted: exchangeResult.granted, required: false });
     console.log(`Exchange Administrator (Exchange.ManageAsApp): ${exchangeResult.granted ? 'granted' : 'not granted'}${exchangeResult.error ? ` (${exchangeResult.error})` : ''}`);
 
     // Test Sites.FullControl.All permission (displayed as "SharePoint Administrator")
     console.log('Testing Sites.FullControl.All (SharePoint Administrator)...');
     const sharepointResult = await testAppRoleAssignment(accessToken, app_id, SHAREPOINT_RESOURCE_ID, SHAREPOINT_SITES_FULLCONTROL_ID);
-    permissionResults.push({
-      name: 'SharePoint Administrator',
-      granted: sharepointResult.granted,
-      required: false,
-    });
+    permissionResults.push({ name: 'SharePoint Administrator', granted: sharepointResult.granted, required: false });
     console.log(`SharePoint Administrator (Sites.FullControl.All): ${sharepointResult.granted ? 'granted' : 'not granted'}${sharepointResult.error ? ` (${sharepointResult.error})` : ''}`);
 
     // ========== Test additional permissions (Intune, Defender, Teams, SharePoint Admin, Domain) ==========
@@ -847,34 +799,8 @@ serve(async (req) => {
     
     if (failedPermissions.length > 0) {
       // Build a test URL map for quick retesting
-      const RETRY_TEST_URLS: Record<string, string> = {
-        'User.Read.All': 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id',
-        'Directory.Read.All': 'https://graph.microsoft.com/v1.0/domains?$top=1',
-        'Group.Read.All': 'https://graph.microsoft.com/v1.0/groups?$top=1&$select=id',
-        'Application.Read.All': 'https://graph.microsoft.com/v1.0/applications?$top=1&$select=id',
-        'AuditLog.Read.All': 'https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$top=1',
-        'Organization.Read.All': 'https://graph.microsoft.com/v1.0/organization?$select=id',
-        'Policy.Read.All': 'https://graph.microsoft.com/v1.0/policies/conditionalAccessPolicies?$top=1',
-        'IdentityRiskyUser.Read.All': 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1',
-        'IdentityRiskEvent.Read.All': 'https://graph.microsoft.com/beta/identityProtection/riskDetections?$top=1',
-        'RoleManagement.ReadWrite.Directory': 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions',
-        'MailboxSettings.Read': 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id', // proxy test
-        'Mail.Read': 'https://graph.microsoft.com/v1.0/users?$top=1&$select=id', // proxy test
-        'Sites.Read.All': 'https://graph.microsoft.com/v1.0/sites/root?$select=id',
-        'Reports.Read.All': 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=1',
-        'DeviceManagementManagedDevices.Read.All': 'https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?$top=1&$select=id',
-        'DeviceManagementConfiguration.Read.All': 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?$top=1&$select=id',
-        'SecurityAlert.Read.All': 'https://graph.microsoft.com/v1.0/security/alerts_v2?$top=1&$select=id',
-        'SecurityEvents.Read.All': 'https://graph.microsoft.com/v1.0/security/alerts?$top=1&$select=id',
-        'SecurityIncident.Read.All': 'https://graph.microsoft.com/v1.0/security/incidents?$top=1&$select=id',
-        'AttackSimulation.Read.All': 'https://graph.microsoft.com/v1.0/security/attackSimulation/simulations?$top=1',
-        'InformationProtectionPolicy.Read.All': 'https://graph.microsoft.com/beta/informationProtection/policy/labels?$top=1',
-        'TeamSettings.Read.All': 'https://graph.microsoft.com/v1.0/teams?$top=1&$select=id',
-        'Channel.ReadBasic.All': 'https://graph.microsoft.com/v1.0/teams?$select=id&$top=1',
-        'TeamMember.Read.All': 'https://graph.microsoft.com/v1.0/teams?$select=id&$top=1',
-        'SharePointTenantSettings.Read.All': 'https://graph.microsoft.com/beta/admin/sharepoint/settings',
-        'Domain.Read.All': 'https://graph.microsoft.com/v1.0/domains?$top=1&$select=id',
-      };
+      // Use test URLs from database (built earlier from dbPermissions)
+      const RETRY_TEST_URLS = permTestUrlMap;
 
       // First pass: check which failed permissions have "scopes are missing" error
       const scopesMissingPermissions: string[] = [];
