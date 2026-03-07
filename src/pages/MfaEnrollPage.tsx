@@ -34,9 +34,13 @@ export default function MfaEnrollPage() {
       }
 
       // Remove any unverified factors first
-      const unverified = factorsData?.totp?.filter(f => (f as any).status === 'unverified') || [];
+      const unverified = factorsData?.totp?.filter(f => f.status !== 'verified') || [];
       for (const f of unverified) {
-        await supabase.auth.mfa.unenroll({ factorId: f.id });
+        try {
+          await supabase.auth.mfa.unenroll({ factorId: f.id });
+        } catch (e) {
+          console.warn('Failed to unenroll factor:', f.id, e);
+        }
       }
 
       const { data, error } = await supabase.auth.mfa.enroll({
