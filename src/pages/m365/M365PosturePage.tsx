@@ -322,7 +322,8 @@ export default function M365PosturePage() {
         });
       } catch {}
 
-      const filename = `iscope360-m365-${sanitizePDFFilename(selectedTenant.displayName)}-${getPDFDateString()}.pdf`;
+      const productSlug = productFilter ? `-${sanitizePDFFilename(PRODUCT_LABELS[productFilter])}` : '';
+      const filename = `iscope360-m365${productSlug}-${sanitizePDFFilename(selectedTenant.displayName)}-${getPDFDateString()}.pdf`;
 
       await downloadPDF(
         <M365PosturePDF
