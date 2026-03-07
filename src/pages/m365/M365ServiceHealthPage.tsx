@@ -418,7 +418,14 @@ function M365ServiceHealthPage() {
                 <CardContent className="h-[220px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={serviceChartData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
+                      <Pie
+                        data={serviceChartData}
+                        cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}
+                        activeIndex={serviceChartData.findIndex(d => filter?.type === 'service' && d.name === filter.value)}
+                        activeShape={renderActiveShape}
+                        onClick={(_, index) => toggleFilter('service', serviceChartData[index].name)}
+                        className="cursor-pointer"
+                      >
                         {serviceChartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                       </Pie>
                       <ReTooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))' }} />
