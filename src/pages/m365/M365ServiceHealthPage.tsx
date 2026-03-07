@@ -470,7 +470,7 @@ function M365ServiceHealthPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {issues.length === 0 && (
+                    {filteredIssues.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                           Nenhum evento encontrado.
