@@ -32,7 +32,7 @@ export default function EntraIdPage() {
   const navigate = useNavigate();
 
   const { tenants, selectedTenantId, selectTenant, loading: tenantsLoading } = useM365TenantSelector();
-  const { data, loading, error, refresh } = useEntraIdDashboard({ tenantRecordId: selectedTenantId });
+  const { data, loading, refreshing, error, refresh } = useEntraIdDashboard({ tenantRecordId: selectedTenantId });
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth');
