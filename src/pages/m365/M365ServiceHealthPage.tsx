@@ -12,17 +12,18 @@ import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
-  ResponsiveContainer, Legend, Sector,
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
+  ResponsiveContainer,
 } from 'recharts';
 import {
   HeartPulse, RefreshCw, Loader2, CheckCircle2, AlertTriangle, XCircle, Info,
-  Clock, Building2, X,
+  Clock, Building2, X, ExternalLink, Download, Wifi, WifiOff, Activity,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -54,8 +55,8 @@ interface ServiceIssue {
 
 // ====== Constants ======
 
-const CHART_COLORS = [
-  'hsl(175, 80%, 45%)', // primary
+const BAR_COLORS = [
+  'hsl(175, 80%, 45%)',
   'hsl(220, 70%, 55%)',
   'hsl(35, 90%, 55%)',
   'hsl(0, 70%, 55%)',
@@ -65,16 +66,16 @@ const CHART_COLORS = [
   'hsl(340, 60%, 55%)',
 ];
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof CheckCircle2 }> = {
-  serviceOperational: { label: 'Operacional', color: 'text-emerald-400', icon: CheckCircle2 },
-  investigating: { label: 'Investigando', color: 'text-amber-400', icon: AlertTriangle },
-  restoringService: { label: 'Restaurando', color: 'text-amber-400', icon: RefreshCw },
-  serviceDegradation: { label: 'Degradação', color: 'text-orange-400', icon: AlertTriangle },
-  serviceInterruption: { label: 'Interrupção', color: 'text-red-400', icon: XCircle },
-  extendedRecovery: { label: 'Recuperação', color: 'text-orange-400', icon: Clock },
-  falsePositive: { label: 'Falso Positivo', color: 'text-muted-foreground', icon: Info },
-  postIncidentReviewPublished: { label: 'Revisão Publicada', color: 'text-blue-400', icon: Info },
-  serviceRestored: { label: 'Restaurado', color: 'text-emerald-400', icon: CheckCircle2 },
+const STATUS_CONFIG: Record<string, { label: string; color: string; badgeClass: string; icon: typeof CheckCircle2 }> = {
+  serviceOperational: { label: 'Operacional', color: 'text-emerald-400', badgeClass: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', icon: CheckCircle2 },
+  investigating: { label: 'Investigando', color: 'text-amber-400', badgeClass: 'bg-amber-500/15 text-amber-400 border-amber-500/30', icon: AlertTriangle },
+  restoringService: { label: 'Restaurando', color: 'text-amber-400', badgeClass: 'bg-amber-500/15 text-amber-400 border-amber-500/30', icon: RefreshCw },
+  serviceDegradation: { label: 'Degradação', color: 'text-orange-400', badgeClass: 'bg-orange-500/15 text-orange-400 border-orange-500/30', icon: AlertTriangle },
+  serviceInterruption: { label: 'Interrupção', color: 'text-red-400', badgeClass: 'bg-red-500/15 text-red-400 border-red-500/30', icon: XCircle },
+  extendedRecovery: { label: 'Recuperação', color: 'text-orange-400', badgeClass: 'bg-orange-500/15 text-orange-400 border-orange-500/30', icon: Clock },
+  falsePositive: { label: 'Falso Positivo', color: 'text-muted-foreground', badgeClass: 'bg-muted text-muted-foreground border-border', icon: Info },
+  postIncidentReviewPublished: { label: 'Revisão Publicada', color: 'text-blue-400', badgeClass: 'bg-blue-500/15 text-blue-400 border-blue-500/30', icon: Info },
+  serviceRestored: { label: 'Restaurado', color: 'text-emerald-400', badgeClass: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', icon: CheckCircle2 },
 };
 
 const CLASSIFICATION_LABELS: Record<string, string> = {
@@ -103,7 +104,7 @@ function M365ServiceHealthPage() {
   });
 
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceSelector(allWorkspaces, isSuperRole);
-  const { tenants, selectedTenantId, selectTenant, loading: tenantLoading } = useM365TenantSelector(
+  const { tenants, selectedTenantId, selectedTenant, selectTenant, loading: tenantLoading } = useM365TenantSelector(
     isSuperRole ? selectedWorkspaceId : undefined
   );
   const [selectedIssue, setSelectedIssue] = useState<ServiceIssue | null>(null);
@@ -113,7 +114,7 @@ function M365ServiceHealthPage() {
     setFilter(prev => (prev?.type === type && prev?.value === value) ? null : { type, value });
   };
 
-  const { data, isLoading, refetch, isFetching } = useQuery({
+  const { data, isLoading, refetch, isFetching, dataUpdatedAt } = useQuery({
     queryKey: ['m365-service-health', selectedTenantId],
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke('m365-service-health', {
@@ -131,35 +132,26 @@ function M365ServiceHealthPage() {
   const services = data?.services || [];
   const issues = data?.issues || [];
 
-  // ====== Chart Data ======
+  // ====== Computed Data ======
 
-  const statusChartData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    issues.forEach(i => {
-      const label = STATUS_CONFIG[i.status]?.label || i.status;
-      counts[label] = (counts[label] || 0) + 1;
-    });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [issues]);
+  const healthyCount = services.filter(s => s.status === 'serviceOperational').length;
+  const degradedCount = services.length - healthyCount;
 
-  const classificationChartData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    issues.forEach(i => {
-      const label = CLASSIFICATION_LABELS[i.classification] || i.classification;
-      counts[label] = (counts[label] || 0) + 1;
+  const activeIncidentsByService = useMemo(() => {
+    const nonOpServices = services.filter(s => s.status !== 'serviceOperational');
+    return nonOpServices.map(s => {
+      const serviceIssues = issues.filter(i => i.service === s.service && !i.isResolved);
+      return { ...s, issues: serviceIssues };
     });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [issues]);
+  }, [services, issues]);
 
   const serviceChartData = useMemo(() => {
     const counts: Record<string, number> = {};
-    issues.forEach(i => {
-      counts[i.service] = (counts[i.service] || 0) + 1;
-    });
+    issues.forEach(i => { counts[i.service] = (counts[i.service] || 0) + 1; });
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
-      .map(([name, value]) => ({ name, value }));
+      .map(([name, eventos]) => ({ name, eventos }));
   }, [issues]);
 
   const timelineData = useMemo(() => {
@@ -175,17 +167,11 @@ function M365ServiceHealthPage() {
       .map(([name, eventos]) => ({ name, eventos }));
   }, [issues]);
 
-  // ====== Service Health Summary ======
-  const healthyCount = services.filter(s => s.status === 'serviceOperational').length;
-  const degradedCount = services.length - healthyCount;
-
   const filteredIssues = useMemo(() => {
     if (!filter) return issues;
     switch (filter.type) {
       case 'status':
         return issues.filter(i => (STATUS_CONFIG[i.status]?.label || i.status) === filter.value);
-      case 'classification':
-        return issues.filter(i => (CLASSIFICATION_LABELS[i.classification] || i.classification) === filter.value);
       case 'service':
         return issues.filter(i => i.service === filter.value);
       case 'card':
@@ -199,27 +185,14 @@ function M365ServiceHealthPage() {
     }
   }, [issues, services, filter]);
 
-  const renderActiveShape = (props: any) => {
-    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
-    return (
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={innerRadius - 4}
-        outerRadius={outerRadius + 6}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-        stroke="hsl(var(--primary))"
-        strokeWidth={2}
-      />
-    );
-  };
-
   const formatDate = (d: string | null) => {
     if (!d) return '—';
     try { return format(parseISO(d), "dd/MM/yy HH:mm", { locale: ptBR }); } catch { return d; }
   };
+
+  const lastUpdatedLabel = dataUpdatedAt
+    ? format(new Date(dataUpdatedAt), "dd/MM/yy HH:mm", { locale: ptBR })
+    : null;
 
   return (
     <AppLayout>
@@ -229,46 +202,89 @@ function M365ServiceHealthPage() {
           { label: 'Saúde do 365' },
         ]} />
 
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-3">
-            <HeartPulse className="w-6 h-6 text-primary" />
-            <h1 className="text-2xl font-bold text-foreground">Saúde do Microsoft 365</h1>
-          </div>
+        {/* ===== SEÇÃO 1: Contexto do Tenant ===== */}
+        <Card className="border-border/50 bg-card/80">
+          <CardContent className="p-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <HeartPulse className="w-5 h-5 text-primary" />
+                  <h1 className="text-lg font-bold text-foreground">Saúde do Microsoft 365</h1>
+                </div>
 
-          <div className="flex items-center gap-3">
-            {isSuperRole && allWorkspaces && (
-              <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
-                <SelectTrigger className="w-[200px]">
-                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
-                  <SelectValue placeholder="Workspace" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allWorkspaces.map(w => (
-                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <TenantSelector
-              tenants={tenants}
-              selectedId={selectedTenantId}
-              onSelect={selectTenant}
-              loading={tenantLoading}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              disabled={isFetching || !selectedTenantId}
-            >
-              {isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              <span className="ml-2 hidden sm:inline">Atualizar</span>
-            </Button>
-          </div>
-        </div>
+                {isSuperRole && allWorkspaces && (
+                  <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
+                    <SelectTrigger className="w-[200px] h-9">
+                      <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                      <SelectValue placeholder="Workspace" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allWorkspaces.map(w => (
+                        <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
 
+                <TenantSelector
+                  tenants={tenants}
+                  selectedId={selectedTenantId}
+                  onSelect={selectTenant}
+                  loading={tenantLoading}
+                />
+
+                {selectedTenantId && data && (
+                  <>
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 gap-1.5">
+                      <Wifi className="w-3 h-3" />
+                      Conectado
+                    </Badge>
+                    {lastUpdatedLabel && (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <Clock className="w-3 h-3" />
+                        {lastUpdatedLabel}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetch()}
+                  disabled={isFetching || !selectedTenantId}
+                >
+                  {isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  <span className="ml-1.5 hidden sm:inline">Atualizar</span>
+                </Button>
+                <Button variant="outline" size="sm" disabled={!data}>
+                  <Download className="w-4 h-4" />
+                  <span className="ml-1.5 hidden sm:inline">Exportar</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  asChild
+                >
+                  <a
+                    href="https://admin.microsoft.com/Adminportal/Home#/servicehealth"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span className="ml-1.5 hidden sm:inline">Service Health</span>
+                  </a>
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Empty state */}
         {!selectedTenantId && (
-          <Card>
+          <Card className="border-border/50">
             <CardContent className="py-12 text-center text-muted-foreground">
               <Building2 className="w-10 h-10 mx-auto mb-3 opacity-50" />
               <p>Selecione um tenant para visualizar a saúde dos serviços.</p>
@@ -276,171 +292,207 @@ function M365ServiceHealthPage() {
           </Card>
         )}
 
+        {/* Loading */}
         {selectedTenantId && isLoading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i}><CardContent className="p-6"><Skeleton className="h-40 w-full" /></CardContent></Card>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i} className="border-border/50"><CardContent className="p-6"><Skeleton className="h-24 w-full" /></CardContent></Card>
             ))}
           </div>
         )}
 
         {selectedTenantId && !isLoading && data && (
           <>
-            {/* Service Status Summary */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {/* ===== SEÇÃO 2: Status da Plataforma ===== */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Card
-                className={`cursor-pointer transition-all ${filter?.type === 'card' && filter.value === 'operational' ? 'ring-2 ring-primary' : 'border-emerald-500/20 bg-emerald-500/5'}`}
+                className={`border-border/50 bg-card/80 cursor-pointer transition-all hover:border-primary/40 ${filter?.type === 'card' && filter.value === 'operational' ? 'ring-2 ring-primary' : ''}`}
                 onClick={() => toggleFilter('card', 'operational')}
               >
-                <CardContent className="p-4 flex items-center gap-3">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                <CardContent className="p-5 flex items-center gap-4">
+                  <div className="p-3 rounded-xl bg-emerald-500/10">
+                    <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+                  </div>
                   <div>
-                    <p className="text-2xl font-bold text-foreground">{healthyCount}</p>
-                    <p className="text-xs text-muted-foreground">Serviços Operacionais</p>
+                    <p className="text-3xl font-bold text-foreground">{healthyCount}</p>
+                    <p className="text-sm text-muted-foreground">Serviços Operacionais</p>
                   </div>
                 </CardContent>
               </Card>
+
               <Card
-                className={`cursor-pointer transition-all ${filter?.type === 'card' && filter.value === 'degraded' ? 'ring-2 ring-primary' : degradedCount > 0 ? 'border-amber-500/20 bg-amber-500/5' : 'border-border/50'}`}
+                className={`border-border/50 bg-card/80 cursor-pointer transition-all hover:border-primary/40 ${filter?.type === 'card' && filter.value === 'degraded' ? 'ring-2 ring-primary' : ''}`}
                 onClick={() => toggleFilter('card', 'degraded')}
               >
-                <CardContent className="p-4 flex items-center gap-3">
-                  <AlertTriangle className={`w-8 h-8 ${degradedCount > 0 ? 'text-amber-400' : 'text-muted-foreground'}`} />
+                <CardContent className="p-5 flex items-center gap-4">
+                  <div className={`p-3 rounded-xl ${degradedCount > 0 ? 'bg-amber-500/10' : 'bg-muted'}`}>
+                    <AlertTriangle className={`w-7 h-7 ${degradedCount > 0 ? 'text-amber-400' : 'text-muted-foreground'}`} />
+                  </div>
                   <div>
-                    <p className="text-2xl font-bold text-foreground">{degradedCount}</p>
-                    <p className="text-xs text-muted-foreground">Com Problemas</p>
+                    <p className="text-3xl font-bold text-foreground">{degradedCount}</p>
+                    <p className="text-sm text-muted-foreground">Com Problemas</p>
                   </div>
                 </CardContent>
               </Card>
+
               <Card
-                className={`cursor-pointer transition-all ${!filter ? 'ring-2 ring-primary' : 'border-border/50'}`}
+                className={`border-border/50 bg-card/80 cursor-pointer transition-all hover:border-primary/40 ${!filter ? 'ring-2 ring-primary' : ''}`}
                 onClick={() => setFilter(null)}
               >
-                <CardContent className="p-4 flex items-center gap-3">
-                  <Info className="w-8 h-8 text-blue-400" />
+                <CardContent className="p-5 flex items-center gap-4">
+                  <div className="p-3 rounded-xl bg-blue-500/10">
+                    <Activity className="w-7 h-7 text-blue-400" />
+                  </div>
                   <div>
-                    <p className="text-2xl font-bold text-foreground">{issues.length}</p>
-                    <p className="text-xs text-muted-foreground">Eventos Ativos</p>
+                    <p className="text-3xl font-bold text-foreground">{issues.length}</p>
+                    <p className="text-sm text-muted-foreground">Eventos Ativos</p>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Charts */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {/* Timeline */}
-              <Card className="xl:col-span-2">
+            {/* ===== SEÇÃO 3: Incidentes Ativos ===== */}
+            {activeIncidentsByService.length > 0 && (
+              <div className="space-y-3">
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                  Incidentes Ativos
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {activeIncidentsByService.map(svc => {
+                    const sc = STATUS_CONFIG[svc.status];
+                    const StatusIcon = sc?.icon || AlertTriangle;
+                    return (
+                      <Card key={svc.id} className="border-border/50 bg-card/80">
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-foreground text-sm">{svc.service}</span>
+                            <Badge variant="outline" className={sc?.badgeClass || 'bg-muted text-muted-foreground border-border'}>
+                              <StatusIcon className="w-3 h-3 mr-1" />
+                              {sc?.label || svc.status}
+                            </Badge>
+                          </div>
+                          {svc.issues.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {svc.issues.slice(0, 3).map(issue => (
+                                <button
+                                  key={issue.id}
+                                  onClick={() => setSelectedIssue(issue)}
+                                  className="w-full text-left rounded-lg border border-border/30 bg-muted/20 p-2.5 hover:bg-muted/40 transition-colors"
+                                >
+                                  <p className="text-xs text-foreground/90 line-clamp-1">{issue.title}</p>
+                                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                                    {CLASSIFICATION_LABELS[issue.classification] || issue.classification} · {formatDate(issue.startDateTime)}
+                                  </p>
+                                </button>
+                              ))}
+                              {svc.issues.length > 3 && (
+                                <p className="text-[10px] text-muted-foreground text-center">
+                                  +{svc.issues.length - 3} evento(s)
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">Sem incidentes abertos</p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ===== SEÇÕES 4+5: Serviços Afetados + Histórico ===== */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Seção 4: Serviços Afetados - Barras Horizontais */}
+              <Card className="border-border/50 bg-card/80">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Eventos por Tempo</CardTitle>
+                  <CardTitle className="text-sm font-semibold text-muted-foreground">Serviços Afetados</CardTitle>
                 </CardHeader>
-                <CardContent className="h-[220px]">
+                <CardContent className="h-[260px]">
+                  {serviceChartData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={serviceChartData} layout="vertical" margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} allowDecimals={false} />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
+                          tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                          width={120}
+                        />
+                        <ReTooltip
+                          contentStyle={{
+                            background: 'hsl(var(--card))',
+                            border: '1px solid hsl(var(--border))',
+                            borderRadius: 8,
+                            color: 'hsl(var(--foreground))',
+                          }}
+                        />
+                        <Bar
+                          dataKey="eventos"
+                          radius={[0, 4, 4, 0]}
+                          cursor="pointer"
+                          onClick={(entry: any) => toggleFilter('service', entry.name)}
+                        >
+                          {serviceChartData.map((_, i) => (
+                            <rect key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                      Nenhum serviço afetado
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Seção 5: Histórico de Eventos */}
+              <Card className="border-border/50 bg-card/80">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold text-muted-foreground">Histórico de Eventos</CardTitle>
+                </CardHeader>
+                <CardContent className="h-[260px]">
                   {timelineData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={timelineData}>
+                      <LineChart data={timelineData} margin={{ left: 0, right: 16, top: 5, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
                         <YAxis tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} allowDecimals={false} />
-                        <ReTooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))' }} />
-                        <Line type="monotone" dataKey="eventos" stroke="hsl(175, 80%, 45%)" strokeWidth={2} dot={{ r: 3 }} />
+                        <ReTooltip
+                          contentStyle={{
+                            background: 'hsl(var(--card))',
+                            border: '1px solid hsl(var(--border))',
+                            borderRadius: 8,
+                            color: 'hsl(var(--foreground))',
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="eventos"
+                          stroke="hsl(175, 80%, 45%)"
+                          strokeWidth={2}
+                          dot={{ r: 3, fill: 'hsl(175, 80%, 45%)' }}
+                          activeDot={{ r: 5, stroke: 'hsl(175, 80%, 45%)', strokeWidth: 2 }}
+                        />
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
-                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">Sem dados</div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Status Pie */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Por Status</CardTitle>
-                </CardHeader>
-                <CardContent className="h-[220px]">
-                  {statusChartData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie
-                          data={statusChartData}
-                          cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" paddingAngle={2}
-                          activeIndex={statusChartData.findIndex(d => filter?.type === 'status' && d.name === filter.value)}
-                          activeShape={renderActiveShape}
-                          onClick={(_, index) => toggleFilter('status', statusChartData[index].name)}
-                          className="cursor-pointer"
-                        >
-                          {statusChartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                        </Pie>
-                        <ReTooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))' }} />
-                        <Legend wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">Sem dados</div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Classification Pie */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Tipo de Evento</CardTitle>
-                </CardHeader>
-                <CardContent className="h-[220px]">
-                  {classificationChartData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie
-                          data={classificationChartData}
-                          cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" paddingAngle={2}
-                          activeIndex={classificationChartData.findIndex(d => filter?.type === 'classification' && d.name === filter.value)}
-                          activeShape={renderActiveShape}
-                          onClick={(_, index) => toggleFilter('classification', classificationChartData[index].name)}
-                          className="cursor-pointer"
-                        >
-                          {classificationChartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                        </Pie>
-                        <ReTooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))' }} />
-                        <Legend wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">Sem dados</div>
+                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                      Sem dados de histórico
+                    </div>
                   )}
                 </CardContent>
               </Card>
             </div>
 
-            {/* Service-Affected Chart (full width) */}
-            {serviceChartData.length > 0 && (
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Eventos por Serviço Afetado</CardTitle>
-                </CardHeader>
-                <CardContent className="h-[220px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={serviceChartData}
-                        cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}
-                        activeIndex={serviceChartData.findIndex(d => filter?.type === 'service' && d.name === filter.value)}
-                        activeShape={renderActiveShape}
-                        onClick={(_, index) => toggleFilter('service', serviceChartData[index].name)}
-                        className="cursor-pointer"
-                      >
-                        {serviceChartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                      </Pie>
-                      <ReTooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))' }} />
-                      <Legend wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Issues Table */}
-            <Card>
+            {/* ===== SEÇÃO 6: Lista de Incidentes ===== */}
+            <Card className="border-border/50 bg-card/80">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                  <CardTitle className="text-sm font-semibold text-muted-foreground">
                     Incidentes e Avisos ({filteredIssues.length}{filter ? ` de ${issues.length}` : ''})
                   </CardTitle>
                   {filter && (
@@ -536,7 +588,6 @@ function M365ServiceHealthPage() {
               </SheetHeader>
 
               <div className="mt-6 space-y-5">
-                {/* Meta */}
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
                     <p className="text-muted-foreground">Início</p>
@@ -564,7 +615,6 @@ function M365ServiceHealthPage() {
                   )}
                 </div>
 
-                {/* Impact */}
                 {selectedIssue.impactDescription && (
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-1">Impacto</p>
@@ -572,7 +622,6 @@ function M365ServiceHealthPage() {
                   </div>
                 )}
 
-                {/* Posts / Updates */}
                 {selectedIssue.posts.length > 0 && (
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-2">Atualizações ({selectedIssue.posts.length})</p>
