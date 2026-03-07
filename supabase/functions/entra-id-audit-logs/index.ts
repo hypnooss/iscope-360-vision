@@ -231,6 +231,7 @@ function formatDirectoryAuditLog(log: any) {
 
 Deno.serve(async (req) => {
   // Handle CORS
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
