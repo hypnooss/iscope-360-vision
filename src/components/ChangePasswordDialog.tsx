@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
+import { validatePassword } from '@/lib/passwordValidation';
 
 interface ChangePasswordDialogProps {
   open: boolean;
