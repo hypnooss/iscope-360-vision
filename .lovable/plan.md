@@ -1,27 +1,28 @@
 
 
-## Problem
+## Problema
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+Os logs mostram que **nenhuma** das fontes de dados de segurança funciona:
+- `security/alerts_v2` retorna null (sem permissão ou sem Defender ativo)
+- `getMailDetailSpamReport/PhishReport/MalwareReport` retornam 400 "Resource not found" (endpoints inexistentes na Graph API)
 
-## Solution
+Porém, o **M365 Analyzer** já coleta esses dados via PowerShell (`exoMessageTrace`) e armazena em `m365_analyzer_snapshots.metrics.threatProtection` com campos: `spamBlocked`, `phishingDetected`, `malwareBlocked`, `quarantined`.
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+## Solução
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+Modificar `supabase/functions/exchange-dashboard/index.ts` para **ler os dados de segurança do snapshot mais recente do analyzer** em vez de tentar endpoints da Graph API que não funcionam.
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+### Mudanças
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+1. **Remover** as chamadas a `security/alerts_v2` e os fallbacks beta do fetch paralelo
+2. **Adicionar** query ao Supabase para buscar o último `m365_analyzer_snapshots` do tenant com status `completed`, extraindo `metrics.threatProtection`
+3. **Mapear** os campos:
+   - `spamBlocked` → `spam`
+   - `phishingDetected` → `phishing`
+   - `malwareBlocked` → `malware`
+   - `maliciousInbound` = `phishing + malware`
+4. **Redeploy** da edge function
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
-
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
-
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+### Arquivo modificado
+- `supabase/functions/exchange-dashboard/index.ts`
 
