@@ -141,9 +141,10 @@ Deno.serve(async (req) => {
     const now = new Date();
 
     // Fetch reports in parallel - reports return CSV by default
-    const [mailboxUsageResult, emailActivityResult] = await Promise.all([
+    const [mailboxUsageResult, emailActivityResult, securityAlertsResult] = await Promise.all([
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='D30')").catch(e => { console.warn('mailboxUsage error:', e); return null; }),
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getEmailActivityCounts(period='D30')").catch(e => { console.warn('emailActivity error:', e); return null; }),
+      graphGet(accessToken, "https://graph.microsoft.com/v1.0/security/alerts_v2?$filter=category eq 'InitialAccess' or category eq 'Malware' or category eq 'Phishing'&$top=200&$select=id,title,category,severity,status,createdDateTime").catch(e => { console.warn('securityAlerts error:', e); return null; }),
     ]);
 
     // Parse mailbox usage data
@@ -177,7 +178,6 @@ Deno.serve(async (req) => {
         }
       });
     } else if (mailboxUsageResult?.value) {
-      // JSON format fallback
       const rows = mailboxUsageResult.value || [];
       console.log(`Mailbox usage JSON: ${rows.length} rows`);
       totalMailboxes = rows.length;
@@ -198,7 +198,7 @@ Deno.serve(async (req) => {
       console.warn('Mailbox usage report returned no data. Check Reports.Read.All permission.');
     }
 
-    // Email traffic
+    // Email traffic - CSV headers are "Send", "Receive", "Read" (not "Send Count", "Receive Count")
     let sent = 0;
     let received = 0;
     
@@ -206,51 +206,31 @@ Deno.serve(async (req) => {
       const rows = parseCsvReport(emailActivityResult._csv);
       console.log(`Email activity report: ${rows.length} rows, headers: ${rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'none'}`);
       rows.forEach((row: any) => {
-        sent += parseInt(row['Send Count'] || '0', 10);
-        received += parseInt(row['Receive Count'] || '0', 10);
+        // Try both formats: "Send" (actual) and "Send Count" (documented)
+        sent += parseInt(row['Send'] || row['Send Count'] || '0', 10);
+        received += parseInt(row['Receive'] || row['Receive Count'] || '0', 10);
       });
     } else if (emailActivityResult?.value) {
       emailActivityResult.value.forEach((row: any) => {
-        sent += row.sendCount || 0;
-        received += row.receiveCount || 0;
+        sent += row.send || row.sendCount || 0;
+        received += row.receive || row.receiveCount || 0;
       });
     } else {
       console.warn('Email activity report returned no data. Check Reports.Read.All permission.');
     }
 
-    // Fetch auto-reply and forwarding info separately (mailboxSettings cannot be bulk-selected)
-    // Use a sample of users to check mailbox settings
+    // Fetch auto-reply and forwarding info - use simple query (no $filter/$count)
     let forwardingEnabled = 0;
     let autoReplyExternal = 0;
 
     try {
-      const users = await graphGetAllPages(accessToken, 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$filter=assignedLicenses/$count ne 0&$count=true&$top=100', 2);
+      // Simple user query without complex filters that cause 400 errors
+      const users = await graphGetAllPages(accessToken, 'https://graph.microsoft.com/v1.0/users?$select=id&$top=100', 2);
       console.log(`Users for mailbox settings check: ${users.length}`);
 
-      // Check mailbox settings for each user (limited to first 50 to avoid timeouts)
-      const usersToCheck = users.slice(0, 50);
-      const settingsPromises = usersToCheck.map(async (u: any) => {
-        try {
-          const settings = await graphGet(accessToken, `https://graph.microsoft.com/v1.0/users/${u.id}/mailboxSettings`);
-          if (settings) {
-            if (settings.automaticRepliesSetting?.status === 'alwaysEnabled' || settings.automaticRepliesSetting?.status === 'scheduled') {
-              if (settings.automaticRepliesSetting?.externalAudience === 'all' || settings.automaticRepliesSetting?.externalAudience === 'contactsOnly') {
-                autoReplyExternal++;
-              }
-            }
-          }
-        } catch { /* skip individual user errors */ }
-      });
-      await Promise.all(settingsPromises);
-    } catch (e) {
-      console.warn('Failed to fetch user mailbox settings:', e);
-      
-      // Fallback: try simpler user list without $filter/$count
-      try {
-        const simpleUsers = await graphGetAllPages(accessToken, 'https://graph.microsoft.com/v1.0/users?$select=id&$top=50', 1);
-        console.log(`Fallback users for mailbox settings: ${simpleUsers.length}`);
-        
-        const settingsPromises = simpleUsers.slice(0, 30).map(async (u: any) => {
+      if (users.length > 0) {
+        const usersToCheck = users.slice(0, 50);
+        const settingsPromises = usersToCheck.map(async (u: any) => {
           try {
             const settings = await graphGet(accessToken, `https://graph.microsoft.com/v1.0/users/${u.id}/mailboxSettings`);
             if (settings) {
@@ -260,11 +240,45 @@ Deno.serve(async (req) => {
                 }
               }
             }
-          } catch { /* skip */ }
+          } catch { /* skip individual user errors */ }
         });
         await Promise.all(settingsPromises);
-      } catch (e2) {
-        console.warn('Fallback mailbox settings also failed:', e2);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch user mailbox settings:', e);
+    }
+
+    // Security data from alerts_v2
+    let maliciousInbound = 0;
+    let phishing = 0;
+    let malware = 0;
+    let spam = 0;
+
+    if (securityAlertsResult?.value) {
+      const alerts = securityAlertsResult.value;
+      console.log(`Security alerts: ${alerts.length} total`);
+      alerts.forEach((alert: any) => {
+        const cat = (alert.category || '').toLowerCase();
+        if (cat.includes('phish')) phishing++;
+        else if (cat.includes('malware')) malware++;
+        else if (cat.includes('initialaccess') || cat.includes('initial access')) maliciousInbound++;
+      });
+    } else {
+      console.warn('Security alerts returned no data. Trying threat reports...');
+      // Fallback: try beta threat protection reports
+      try {
+        const [spamResult, phishResult, malwareResult] = await Promise.all([
+          graphGet(accessToken, "https://graph.microsoft.com/beta/reports/getMailDetailSpamReport(period='D30')").catch(() => null),
+          graphGet(accessToken, "https://graph.microsoft.com/beta/reports/getMailDetailPhishReport(period='D30')").catch(() => null),
+          graphGet(accessToken, "https://graph.microsoft.com/beta/reports/getMailDetailMalwareReport(period='D30')").catch(() => null),
+        ]);
+        if (spamResult?._csv) spam = parseCsvReport(spamResult._csv).length;
+        if (phishResult?._csv) phishing = parseCsvReport(phishResult._csv).length;
+        if (malwareResult?._csv) malware = parseCsvReport(malwareResult._csv).length;
+        maliciousInbound = phishing + malware;
+        console.log(`Threat reports - spam: ${spam}, phishing: ${phishing}, malware: ${malware}`);
+      } catch (e) {
+        console.warn('Threat reports also failed:', e);
       }
     }
 
@@ -280,15 +294,15 @@ Deno.serve(async (req) => {
       },
       traffic: { sent, received },
       security: {
-        maliciousInbound: 0,
-        phishing: 0,
-        malware: 0,
-        spam: 0,
+        maliciousInbound,
+        phishing,
+        malware,
+        spam,
       },
       analyzedAt: now.toISOString(),
     };
 
-    console.log('Exchange Dashboard result:', JSON.stringify({ mailboxes: result.mailboxes, traffic: result.traffic }));
+    console.log('Exchange Dashboard result:', JSON.stringify({ mailboxes: result.mailboxes, traffic: result.traffic, security: result.security }));
 
     // Save cache
     const { error: updateError } = await supabase.from('m365_tenants').update({
