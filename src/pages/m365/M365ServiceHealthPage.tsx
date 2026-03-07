@@ -18,11 +18,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
-  ResponsiveContainer, Legend,
+  ResponsiveContainer, Legend, Sector,
 } from 'recharts';
 import {
   HeartPulse, RefreshCw, Loader2, CheckCircle2, AlertTriangle, XCircle, Info,
-  Clock, Building2,
+  Clock, Building2, X,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
