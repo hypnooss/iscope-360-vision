@@ -565,7 +565,7 @@ export default function M365PosturePage() {
               skipGaugeAnimation={hasLoadedOnce.current}
               miniStats={
                 <>
-                  <MiniStat value={allUnifiedItems.length} label="Total" variant="primary" />
+                  <MiniStat value={filteredItems.length} label="Total" variant="primary" />
                   <MiniStat value={passCount} label="Aprovadas" variant="success" />
                   <MiniStat value={failCount} label="Falhas" variant="destructive" />
                 </>
