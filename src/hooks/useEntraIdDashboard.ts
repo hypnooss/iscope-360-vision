@@ -61,6 +61,17 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
   }, [tenantRecordId]);
 
   // Refresh: calls edge function (which saves cache), then reloads from DB
+  const mapResultToData = (result: any): EntraIdDashboardData => ({
+    users: result.users || { total: 0, signInEnabled: 0, disabled: 0, guests: 0, onPremSynced: 0 },
+    admins: result.admins || { total: 0, globalAdmins: 0 },
+    mfa: result.mfa || { total: 0, enabled: 0, disabled: 0 },
+    risks: result.risks || { riskyUsers: 0, atRisk: 0, compromised: 0 },
+    loginActivity: result.loginActivity || { total: 0, success: 0, failed: 0, mfaRequired: 0, blocked: 0 },
+    userChanges: result.userChanges || { updated: 0, new: 0, enabled: 0, disabled: 0, deleted: 0 },
+    passwordActivity: result.passwordActivity || { resets: 0, forcedChanges: 0, selfService: 0 },
+    analyzedAt: result.analyzedAt || '',
+  });
+
   const refresh = useCallback(async () => {
     if (!tenantRecordId) return;
     setRefreshing(true);
@@ -74,8 +85,11 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
       if (fnError) throw new Error(fnError.message);
       if (!result?.success) throw new Error(result?.error || 'Erro ao atualizar dashboard');
 
-      // Reload from cache to get consistent data
-      await loadCache();
+      // Use data directly from edge function response
+      setData(mapResultToData(result));
+
+      // Also try to reload from cache for future visits (non-blocking)
+      loadCache().catch(() => {});
     } catch (err) {
       console.error('useEntraIdDashboard refresh error:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
