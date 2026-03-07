@@ -51,6 +51,7 @@ export default function M365TenantEditPage() {
   const [revalidating, setRevalidating] = useState(false);
   const [waitingForConsent, setWaitingForConsent] = useState(false);
   const [pollingStatus, setPollingStatus] = useState<{ active: boolean; attempt: number; maxAttempts: number } | null>(null);
+  const [pollingCancelled, setPollingCancelled] = useState(false);
   // Fetch tenant data
   const { data: tenant, isLoading: tenantLoading } = useQuery({
     queryKey: ['m365-tenant-edit', id],
