@@ -179,6 +179,43 @@ function M365ServiceHealthPage() {
   const healthyCount = services.filter(s => s.status === 'serviceOperational').length;
   const degradedCount = services.length - healthyCount;
 
+  const filteredIssues = useMemo(() => {
+    if (!filter) return issues;
+    switch (filter.type) {
+      case 'status':
+        return issues.filter(i => (STATUS_CONFIG[i.status]?.label || i.status) === filter.value);
+      case 'classification':
+        return issues.filter(i => (CLASSIFICATION_LABELS[i.classification] || i.classification) === filter.value);
+      case 'service':
+        return issues.filter(i => i.service === filter.value);
+      case 'card':
+        if (filter.value === 'degraded') {
+          const degradedServices = new Set(services.filter(s => s.status !== 'serviceOperational').map(s => s.service));
+          return issues.filter(i => degradedServices.has(i.service));
+        }
+        return issues;
+      default:
+        return issues;
+    }
+  }, [issues, services, filter]);
+
+  const renderActiveShape = (props: any) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    return (
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius - 4}
+        outerRadius={outerRadius + 6}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        stroke="hsl(var(--primary))"
+        strokeWidth={2}
+      />
+    );
+  };
+
   const formatDate = (d: string | null) => {
     if (!d) return '—';
     try { return format(parseISO(d), "dd/MM/yy HH:mm", { locale: ptBR }); } catch { return d; }
