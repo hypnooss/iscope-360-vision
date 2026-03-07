@@ -399,6 +399,11 @@ async function testPermission(accessToken: string, permission: string, appObject
         url = 'https://graph.microsoft.com/beta/admin/sharepoint/settings';
         break;
       default:
+        if (testUrl) {
+          url = testUrl;
+          break;
+        }
+        console.log(`Permission ${permission}: no test URL configured`);
         return false;
     }
 

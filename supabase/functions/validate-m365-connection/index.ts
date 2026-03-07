@@ -19,28 +19,7 @@ interface PermissionStatus {
   required: boolean;
 }
 
-// Required permissions for Entra ID and Exchange Online modules
-const REQUIRED_PERMISSIONS = [
-  // Entra ID
-  'User.Read.All',
-  'Directory.Read.All', 
-  'Group.Read.All',
-  'Application.Read.All',
-  'AuditLog.Read.All',
-  'Organization.Read.All',
-  'Policy.Read.All',
-  'IdentityRiskyUser.Read.All', // Required for Identity Protection risky users
-  'IdentityRiskEvent.Read.All', // Required for Identity Protection risk detections
-  // Exchange Online
-  'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
-  'MailboxSettings.Read',
-  'Mail.Read',
-  // SharePoint
-  'Sites.Read.All',
-  // Outros
-  'Reports.Read.All',
-  'ServiceHealth.Read.All',
-];
+// Permissions are loaded dynamically from m365_required_permissions table
 
 // Office 365 Exchange Online Resource ID
 const EXCHANGE_RESOURCE_ID = "00000002-0000-0ff1-ce00-000000000000";
