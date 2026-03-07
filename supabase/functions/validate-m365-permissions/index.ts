@@ -11,48 +11,7 @@ interface PermissionStatus {
   type: 'required' | 'recommended';
 }
 
-// Permissions to check - MUST MATCH get-m365-config function
-const REQUIRED_PERMISSIONS = [
-  'User.Read.All',
-  'Directory.Read.All',
-  'Organization.Read.All',
-  'Domain.Read.All',
-  'RoleManagement.ReadWrite.Directory', // Required to assign Exchange Administrator Role
-  'IdentityRiskyUser.Read.All', // Required for Identity Protection risky users
-];
-
-const RECOMMENDED_PERMISSIONS = [
-  'Group.Read.All',
-  'Application.Read.All',
-  'Policy.Read.All',
-  'Reports.Read.All',
-  'AuditLog.Read.All',
-  'RoleManagement.Read.Directory',
-  // Exchange Online
-  'MailboxSettings.Read',
-  'Mail.Read',
-  // Intune / Device Management
-  'DeviceManagementManagedDevices.Read.All',
-  'DeviceManagementConfiguration.Read.All',
-  // Security / Defender
-  'SecurityAlert.Read.All',
-  'SecurityEvents.Read.All',
-  'SecurityIncident.Read.All',
-  'AttackSimulation.Read.All',
-  'InformationProtectionPolicy.Read.All',
-  'IdentityRiskEvent.Read.All',
-  // Teams
-  'TeamSettings.Read.All',
-  'Channel.ReadBasic.All',
-  'TeamMember.Read.All',
-  // SharePoint Admin
-  'SharePointTenantSettings.Read.All',
-];
-
-// Certificate Upload - only tested if app_object_id is provided
-const CERTIFICATE_PERMISSIONS = [
-  'Application.ReadWrite.All',
-];
+// Permissions are loaded dynamically from m365_required_permissions table
 
 // Exchange Administrator Role Template ID (constant across all Azure AD tenants)
 const EXCHANGE_ADMIN_ROLE_TEMPLATE_ID = '29232cdf-9323-42fd-ade2-1d097af3e4de';
