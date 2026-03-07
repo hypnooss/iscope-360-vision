@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ModulesManagement } from '@/components/admin/ModulesManagement';
+import { M365PermissionsManagement } from '@/components/admin/M365PermissionsManagement';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ApiKeyStatus {
