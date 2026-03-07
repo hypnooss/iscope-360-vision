@@ -460,7 +460,7 @@ export default function M365PosturePage() {
                   {isLoading || isAnalysisRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
                   Gerar Análise
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportPDF} disabled={allUnifiedItems.length === 0 || isExportingPDF}>
+                <DropdownMenuItem onClick={handleExportPDF} disabled={filteredItems.length === 0 || isExportingPDF}>
                   {isExportingPDF ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
                   Exportar PDF
                 </DropdownMenuItem>
