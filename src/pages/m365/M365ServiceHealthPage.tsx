@@ -288,7 +288,10 @@ function M365ServiceHealthPage() {
           <>
             {/* Service Status Summary */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <Card className="border-emerald-500/20 bg-emerald-500/5">
+              <Card
+                className={`cursor-pointer transition-all ${filter?.type === 'card' && filter.value === 'operational' ? 'ring-2 ring-primary' : 'border-emerald-500/20 bg-emerald-500/5'}`}
+                onClick={() => toggleFilter('card', 'operational')}
+              >
                 <CardContent className="p-4 flex items-center gap-3">
                   <CheckCircle2 className="w-8 h-8 text-emerald-400" />
                   <div>
@@ -297,7 +300,10 @@ function M365ServiceHealthPage() {
                   </div>
                 </CardContent>
               </Card>
-              <Card className={degradedCount > 0 ? 'border-amber-500/20 bg-amber-500/5' : 'border-border/50'}>
+              <Card
+                className={`cursor-pointer transition-all ${filter?.type === 'card' && filter.value === 'degraded' ? 'ring-2 ring-primary' : degradedCount > 0 ? 'border-amber-500/20 bg-amber-500/5' : 'border-border/50'}`}
+                onClick={() => toggleFilter('card', 'degraded')}
+              >
                 <CardContent className="p-4 flex items-center gap-3">
                   <AlertTriangle className={`w-8 h-8 ${degradedCount > 0 ? 'text-amber-400' : 'text-muted-foreground'}`} />
                   <div>
@@ -306,7 +312,10 @@ function M365ServiceHealthPage() {
                   </div>
                 </CardContent>
               </Card>
-              <Card className="border-border/50">
+              <Card
+                className={`cursor-pointer transition-all ${!filter ? 'ring-2 ring-primary' : 'border-border/50'}`}
+                onClick={() => setFilter(null)}
+              >
                 <CardContent className="p-4 flex items-center gap-3">
                   <Info className="w-8 h-8 text-blue-400" />
                   <div>
