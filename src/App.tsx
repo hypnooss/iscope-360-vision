@@ -105,6 +105,8 @@ const App = () => (
                   {/* Public routes */}
                   <Route path="/" element={<Index />} />
                   <Route path="/auth" element={<Auth />} />
+                  <Route path="/mfa/enroll" element={<MfaEnrollPage />} />
+                  <Route path="/mfa/challenge" element={<MfaChallengePage />} />
 
                   {/* Module Selection */}
                   <Route path="/modules" element={<ModuleSelectionPage />} />

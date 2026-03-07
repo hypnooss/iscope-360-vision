@@ -101,8 +101,8 @@ export default function Auth() {
         toast.error(error.message);
       }
     } else {
-      toast.success('Login realizado com sucesso!');
-      navigate('/dashboard');
+      // MFA redirect is handled by the useEffect above
+      // after auth state updates
     }
   };
   const handleSendResetCode = async (e: React.FormEvent) => {

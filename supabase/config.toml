@@ -161,3 +161,6 @@ verify_jwt = false
 
 [functions.collaboration-dashboard]
 verify_jwt = false
+
+[functions.force-logout-all]
+verify_jwt = false
