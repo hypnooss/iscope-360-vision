@@ -190,7 +190,7 @@ export default function M365TenantEditPage() {
       }
     }
     setPollingStatus(null);
-  }, [id, queryClient]);
+  }, [id, queryClient, pollingCancelled]);
 
   // Listen for OAuth popup postMessage (for re-consent flow)
   useEffect(() => {
