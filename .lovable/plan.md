@@ -1,27 +1,30 @@
 
 
-## Problem
+## Correções: Saúde do Microsoft 365
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+### Problemas Identificados
 
-## Solution
+1. **Espaçamento**: A página não usa `p-6 lg:p-8` no container principal, diferente do padrão das outras páginas M365.
+2. **Workspace Selector ausente**: Para super_admin, não aparece o seletor de Workspace, então o `useM365TenantSelector` recebe um `selectedWorkspaceId` que pode não corresponder a todos os tenants disponíveis — limitando a visibilidade.
+3. **API retornando 0 dados**: Os logs da edge function mostram `UnknownError` da Graph API. A causa é que a função usa **apenas** as credenciais globais (`m365_global_config`), sem tentar primeiro as credenciais per-tenant (`m365_app_credentials`). O Analyzer usa uma estratégia dupla (`getGraphToken`) que tenta per-tenant primeiro e depois global — e funciona. A service-health precisa replicar essa lógica.
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+### Alterações
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+**1. `src/pages/m365/M365ServiceHealthPage.tsx`**
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+- Adicionar `p-6 lg:p-8` ao container principal (linha ~183) para alinhar com padrão das demais páginas.
+- Adicionar **Workspace Selector** (componente `Select`) para perfis `super_admin`/`super_suporte`, idêntico ao padrão do `M365PosturePage` (linhas 411-422). Expor `setSelectedWorkspaceId` do hook.
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+**2. `supabase/functions/m365-service-health/index.ts`**
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+- Replicar a estratégia de autenticação do Analyzer:
+  1. Tentar credenciais per-tenant (`m365_app_credentials` com `is_active=true`)
+  2. Fallback para credenciais globais (`m365_global_config`)
+- Adicionar função `decryptSecret` e `requestGraphToken` auxiliares (mesma lógica do analyzer)
+- Remover a lógica atual inline de decrypt + token que só consulta `m365_global_config`
 
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+### Arquivos
 
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+1. `src/pages/m365/M365ServiceHealthPage.tsx` — padding + workspace selector
+2. `supabase/functions/m365-service-health/index.ts` — autenticação per-tenant + fallback global
 
