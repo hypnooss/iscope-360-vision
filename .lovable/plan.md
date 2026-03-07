@@ -1,27 +1,18 @@
 
 
-## Problem
+## Correção: Tenant 100% com permissões ainda marcando "Parcial"
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+### Causa Raiz
 
-## Solution
+A função `validate-m365-connection` tem um bloco **hardcoded** `ADDITIONAL_PERMISSIONS` (linhas 702-716) com 12 permissões que já são testadas pelo loop dinâmico que lê do banco de dados. Isso cria **entradas duplicadas** em `permissionResults` — por exemplo, `DeviceManagementManagedDevices.Read.All` aparece duas vezes: uma do DB (com tolerância completa) e outra do hardcode (com tolerância ligeiramente diferente).
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+A verificação final `permissionResults.every(p => p.granted)` falha se **qualquer** entrada duplicada falhar, mesmo que a outra cópia tenha passado. Resultado: status "partial" mesmo com 30/30 na UI (que mostra dados de `m365_tenant_permissions`, não de `permissionResults`).
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+### Solução
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+Remover o bloco `ADDITIONAL_PERMISSIONS` hardcoded (linhas 702-793) inteiramente. Essas permissões já são testadas pelo loop dinâmico do banco de dados com a mesma lógica de tolerância (ou melhor).
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+### Arquivo
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
-
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
-
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+- `supabase/functions/validate-m365-connection/index.ts` — remover linhas 702-793 (bloco `ADDITIONAL_PERMISSIONS` + seu loop de teste)
 
