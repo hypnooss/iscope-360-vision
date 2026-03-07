@@ -34,6 +34,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'Application.ReadWrite.All': 'Gestão de certificados e credenciais',
   // Outros
   'Reports.Read.All': 'Leitura de relatórios de uso',
+  'ServiceHealth.Read.All': 'Leitura da integridade dos serviços Microsoft 365',
   // Directory Roles
   'Exchange Administrator': 'Administração do Exchange Online',
   'SharePoint Administrator': 'Administração do SharePoint Online',
