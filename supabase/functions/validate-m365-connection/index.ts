@@ -39,6 +39,7 @@ const REQUIRED_PERMISSIONS = [
   'Sites.Read.All',
   // Outros
   'Reports.Read.All',
+  'ServiceHealth.Read.All',
 ];
 
 // Office 365 Exchange Online Resource ID
