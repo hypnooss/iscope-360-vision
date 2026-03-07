@@ -81,9 +81,9 @@ export default function EntraIdPage() {
             <h1 className="text-2xl font-bold text-foreground">Entra ID</h1>
             <p className="text-muted-foreground">Visão operacional de identidades, segurança e atividades</p>
           </div>
-          <Button className="gap-2" onClick={refresh} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            {loading ? 'Carregando...' : 'Atualizar'}
+          <Button className="gap-2" onClick={refresh} disabled={refreshing}>
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Atualizando...' : 'Atualizar'}
           </Button>
         </div>
 
