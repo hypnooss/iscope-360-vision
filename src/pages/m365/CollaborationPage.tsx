@@ -10,16 +10,18 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
-import { M365StatsCard } from '@/components/m365/shared/M365StatsCard';
-import { M365DonutChart } from '@/components/m365/shared/M365DonutChart';
+import { CollaborationScoreCard } from '@/components/m365/collaboration/CollaborationScoreCard';
+import { TeamsOverviewCards } from '@/components/m365/collaboration/TeamsOverviewCards';
+import { TeamsGovernanceCard } from '@/components/m365/collaboration/TeamsGovernanceCard';
+import { SharePointOverviewCard, SharePointGovernanceCard } from '@/components/m365/collaboration/SharePointCards';
 import {
   RefreshCw,
   AlertTriangle,
   Link as LinkIcon,
-  Users,
-  Globe,
   MessageSquare,
   HardDrive,
+  ExternalLink,
+  Download,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -73,19 +75,28 @@ export default function CollaborationPage() {
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Microsoft 365', href: '/scope-m365/dashboard' }, { label: 'Colaboração' }]} />
 
-        {/* Header */}
+        {/* SEÇÃO 1: Contexto do Tenant */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Colaboração</h1>
-            <p className="text-muted-foreground">Visão operacional do Microsoft Teams e SharePoint Online</p>
+            <p className="text-muted-foreground">Dashboard de governança do Microsoft Teams e SharePoint Online</p>
           </div>
-          <Button className="gap-2" onClick={refresh} disabled={refreshing}>
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing ? 'Atualizando...' : 'Atualizar'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="gap-2">
+              <Download className="w-4 h-4" />Exportar
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2" asChild>
+              <a href="https://admin.microsoft.com" target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="w-4 h-4" />M365 Admin
+              </a>
+            </Button>
+            <Button className="gap-2" size="sm" onClick={refresh} disabled={refreshing}>
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Atualizando...' : 'Atualizar'}
+            </Button>
+          </div>
         </div>
 
-        {/* Tenant Selector */}
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="py-4">
             <div className="flex items-center justify-between flex-wrap gap-4">
@@ -112,76 +123,30 @@ export default function CollaborationPage() {
           </Card>
         )}
 
-        {/* Section: Teams */}
+        {/* SEÇÃO 2: Collaboration Security Score */}
+        <CollaborationScoreCard data={d} loading={loading} />
+
+        {/* SEÇÃO 3: Microsoft Teams Overview */}
         <div>
           <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-primary" />
-            Microsoft Teams
+            Microsoft Teams Overview
           </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <M365StatsCard
-              title="Equipes"
-              icon={Users}
-              loading={loading}
-              rows={[
-                { label: 'Total de Teams', value: d?.teams.total ?? 0 },
-                { label: 'Públicas', value: d?.teams.public ?? 0, color: 'text-green-500' },
-                { label: 'Privadas', value: d?.teams.private ?? 0, color: 'text-primary' },
-                { label: 'Com Convidados', value: d?.teams.withGuests ?? 0, color: 'text-warning' },
-              ]}
-            />
-            <M365DonutChart
-              title="Visibilidade das Equipes"
-              icon={Users}
-              loading={loading}
-              centerValue={d?.teams.total ?? 0}
-              centerLabel="Total"
-              segments={[
-                { name: 'Públicas', value: d?.teams.public ?? 0, color: 'hsl(142, 71%, 45%)' },
-                { name: 'Privadas', value: d?.teams.private ?? 0, color: 'hsl(217, 91%, 60%)' },
-              ]}
-            />
-            <M365StatsCard
-              title="Canais"
-              icon={MessageSquare}
-              loading={loading}
-              rows={[
-                { label: 'Canais Privados', value: d?.teams.privateChannels ?? 0, color: 'text-primary' },
-                { label: 'Canais Compartilhados', value: d?.teams.sharedChannels ?? 0, color: 'text-warning' },
-              ]}
-            />
-          </div>
+          <TeamsOverviewCards data={d} loading={loading} />
         </div>
 
-        {/* Section: SharePoint */}
+        {/* SEÇÃO 4: Teams Governance */}
+        <TeamsGovernanceCard data={d} loading={loading} />
+
+        {/* SEÇÃO 5 + 6: SharePoint Overview + Governance */}
         <div>
           <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
             <HardDrive className="w-5 h-5 text-primary" />
             SharePoint Online
           </h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <M365StatsCard
-              title="Sites"
-              icon={Globe}
-              loading={loading}
-              rows={[
-                { label: 'Total de Sites', value: d?.sharepoint.totalSites ?? 0 },
-                { label: 'Sites Ativos (30 dias)', value: d?.sharepoint.activeSites ?? 0, color: 'text-green-500' },
-                { label: 'Sites Inativos', value: d?.sharepoint.inactiveSites ?? 0, color: 'text-warning' },
-                { label: 'Compartilhamento Externo', value: d?.sharepoint.externalSharingEnabled ?? 0, color: 'text-destructive' },
-              ]}
-            />
-            <M365DonutChart
-              title="Atividade dos Sites"
-              icon={HardDrive}
-              loading={loading}
-              centerValue={d?.sharepoint.totalSites ?? 0}
-              centerLabel="Total"
-              segments={[
-                { name: 'Ativos', value: d?.sharepoint.activeSites ?? 0, color: 'hsl(142, 71%, 45%)' },
-                { name: 'Inativos', value: d?.sharepoint.inactiveSites ?? 0, color: 'hsl(25, 95%, 53%)' },
-              ]}
-            />
+            <SharePointOverviewCard data={d} loading={loading} />
+            <SharePointGovernanceCard data={d} loading={loading} />
           </div>
         </div>
       </div>
