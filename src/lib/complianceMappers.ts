@@ -6,6 +6,26 @@ import { ApplicationInsight } from '@/types/applicationInsights';
 import { UnifiedComplianceItem, UnifiedComplianceStatus, UnifiedComplianceSeverity } from '@/types/unifiedCompliance';
 
 /**
+ * Infere o produto M365 baseado na categoria de risco
+ */
+function inferProductFromCategory(category: string): string | undefined {
+  const map: Record<string, string> = {
+    identities: 'entra_id',
+    auth_access: 'entra_id',
+    admin_privileges: 'entra_id',
+    apps_integrations: 'entra_id',
+    email_exchange: 'exchange_online',
+    threats_activity: 'entra_id',
+    intune_devices: 'intune',
+    pim_governance: 'entra_id',
+    sharepoint_onedrive: 'sharepoint',
+    teams_collaboration: 'exchange_online',
+    defender_security: 'defender',
+  };
+  return map[category];
+}
+
+/**
  * Normaliza status de diferentes fontes para o formato unificado
  */
 function normalizeStatus(status: string): UnifiedComplianceStatus {
@@ -184,6 +204,7 @@ export function mapM365AgentInsight(insight: M365AgentInsight): UnifiedComplianc
       details: e.details ? { info: e.details } : undefined,
     })),
     affectedCount: insight.affectedEntities?.length || 0,
+    product: (insight as any).product || inferProductFromCategory(insight.category),
   };
 }
 

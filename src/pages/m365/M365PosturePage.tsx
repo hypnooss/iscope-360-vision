@@ -45,7 +45,9 @@ import { M365PosturePDF } from '@/components/pdf/M365PosturePDF';
 import type { CorrectionGuideData } from '@/components/pdf/ExternalDomainPDF';
 import { 
   M365RiskCategory, 
+  M365Product,
   CATEGORY_LABELS,
+  PRODUCT_LABELS,
 } from '@/types/m365Insights';
 import { UnifiedComplianceItem } from '@/types/unifiedCompliance';
 
@@ -58,6 +60,7 @@ export default function M365PosturePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [productFilter, setProductFilter] = useState<M365Product | null>(null);
   const [activeAnalysisId, setActiveAnalysisId] = useState<string | null>(null);
   const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -319,7 +322,8 @@ export default function M365PosturePage() {
         });
       } catch {}
 
-      const filename = `iscope360-m365-${sanitizePDFFilename(selectedTenant.displayName)}-${getPDFDateString()}.pdf`;
+      const productSlug = productFilter ? `-${sanitizePDFFilename(PRODUCT_LABELS[productFilter])}` : '';
+      const filename = `iscope360-m365${productSlug}-${sanitizePDFFilename(selectedTenant.displayName)}-${getPDFDateString()}.pdf`;
 
       await downloadPDF(
         <M365PosturePDF
@@ -367,13 +371,19 @@ export default function M365PosturePage() {
     ...(data?.insights?.map(mapM365Insight) || []),
     ...(agentInsights?.map(mapM365AgentInsight) || []),
   ];
-  allUnifiedItemsRef.current = allUnifiedItems;
 
-  // Compute actual counts from unified items (not from summary subtraction)
-  const passCount = allUnifiedItems.filter(i => i.status === 'pass').length;
-  const failCount = allUnifiedItems.filter(i => i.status === 'fail').length;
+  // Apply product filter
+  const filteredItems = productFilter
+    ? allUnifiedItems.filter(item => item.product === productFilter)
+    : allUnifiedItems;
 
-  const groupedItems = allUnifiedItems.reduce<Record<string, UnifiedComplianceItem[]>>((acc, item) => {
+  allUnifiedItemsRef.current = filteredItems;
+
+  // Compute actual counts from filtered items
+  const passCount = filteredItems.filter(i => i.status === 'pass').length;
+  const failCount = filteredItems.filter(i => i.status === 'fail').length;
+
+  const groupedItems = filteredItems.reduce<Record<string, UnifiedComplianceItem[]>>((acc, item) => {
     const cat = item.category;
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(item);
@@ -386,6 +396,14 @@ export default function M365PosturePage() {
     const bOrder = categoryConfigs?.find(c => c.name === b)?.display_order ?? 999;
     return aOrder - bOrder;
   });
+
+  // Compute product counts for filter badges
+  const productCounts: Record<string, number> = {};
+  for (const item of allUnifiedItems) {
+    if (item.product) {
+      productCounts[item.product] = (productCounts[item.product] || 0) + 1;
+    }
+  }
 
   const isAnalysisRunning = !!activeAnalysisId;
   const analysisStatus = analysisRecord?.status ?? 'pending';
@@ -442,7 +460,7 @@ export default function M365PosturePage() {
                   {isLoading || isAnalysisRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
                   Gerar Análise
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportPDF} disabled={allUnifiedItems.length === 0 || isExportingPDF}>
+                <DropdownMenuItem onClick={handleExportPDF} disabled={filteredItems.length === 0 || isExportingPDF}>
                   {isExportingPDF ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
                   Exportar PDF
                 </DropdownMenuItem>
@@ -548,7 +566,7 @@ export default function M365PosturePage() {
               skipGaugeAnimation={hasLoadedOnce.current}
               miniStats={
                 <>
-                  <MiniStat value={allUnifiedItems.length} label="Total" variant="primary" />
+                  <MiniStat value={filteredItems.length} label="Total" variant="primary" />
                   <MiniStat value={passCount} label="Aprovadas" variant="success" />
                   <MiniStat value={failCount} label="Falhas" variant="destructive" />
                 </>
@@ -570,6 +588,34 @@ export default function M365PosturePage() {
               }
             />
 
+            {/* Product Filter Bar */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-muted-foreground mr-1">Filtrar por:</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className={!productFilter ? 'ring-2 ring-primary bg-primary/10' : ''}
+                onClick={() => setProductFilter(null)}
+              >
+                Todos ({allUnifiedItems.length})
+              </Button>
+              {(Object.keys(PRODUCT_LABELS) as M365Product[]).map(product => {
+                const count = productCounts[product] || 0;
+                if (count === 0) return null;
+                return (
+                  <Button
+                    key={product}
+                    variant="outline"
+                    size="sm"
+                    className={productFilter === product ? 'ring-2 ring-primary bg-primary/10' : ''}
+                    onClick={() => setProductFilter(productFilter === product ? null : product)}
+                  >
+                    {PRODUCT_LABELS[product]} ({count})
+                  </Button>
+                );
+              })}
+            </div>
+
             {/* Verificações por Categoria */}
             {Object.keys(groupedItems).length > 0 && (
               <div className="space-y-2">
@@ -587,7 +633,7 @@ export default function M365PosturePage() {
             )}
 
             {/* Empty State */}
-            {!isLoading && !isAnalysisRunning && !error && allUnifiedItems.length === 0 && (
+            {!isLoading && !isAnalysisRunning && !error && filteredItems.length === 0 && (
               <Card className="glass-card">
                 <CardContent className="p-12 text-center">
                   <AlertTriangle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />

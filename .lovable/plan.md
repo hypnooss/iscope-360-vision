@@ -1,78 +1,27 @@
 
 
-## Plano: Filtros por produto na tela de Compliance + preparar Entra ID para conteúdo rico
+## Problem
 
-### Resumo
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-Adicionar filtros por produto (Entra ID, Exchange Online, SharePoint, Defender, Intune, Todos) na página de Compliance M365, permitindo filtrar as verificações exibidas e exportar apenas a visualização filtrada no PDF.
+## Solution
 
-### Alterações
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-#### 1. `src/pages/m365/M365PosturePage.tsx`
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-**Novo estado de filtro por produto:**
-```ts
-const [productFilter, setProductFilter] = useState<string | null>(null);
-```
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-**Barra de filtros** — inserir abaixo do Command Central, acima de "Verificações por Categoria":
-- Chips/botões toggle: `Todos`, `Entra ID`, `Exchange Online`, `SharePoint`, `Defender`, `Intune`
-- Usar `PRODUCT_LABELS` do `m365Insights.ts`
-- Visual: botão `variant="outline"` com `ring-2 ring-primary` quando ativo
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-**Lógica de filtragem:**
-```ts
-const filteredItems = useMemo(() => {
-  if (!productFilter) return allUnifiedItems;
-  return allUnifiedItems.filter(item => item.product === productFilter);
-}, [allUnifiedItems, productFilter]);
-```
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-Usar `filteredItems` em vez de `allUnifiedItems` para:
-- `groupedItems` (seções de categoria)
-- `passCount` / `failCount` (contadores do Command Central)
-- Ref do PDF (`allUnifiedItemsRef.current`)
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
 
-**Garantir product no AgentInsight:** No mapper `mapM365AgentInsight` em `complianceMappers.ts`, o campo `product` não é mapeado. Precisamos adicioná-lo baseado na categoria:
-
-```ts
-// Em complianceMappers.ts, dentro de mapM365AgentInsight:
-product: (insight as any).product || inferProductFromCategory(insight.category),
-```
-
-Função helper `inferProductFromCategory`:
-```ts
-function inferProductFromCategory(category: string): string | undefined {
-  const map: Record<string, string> = {
-    identities: 'entra_id',
-    auth_access: 'entra_id',
-    admin_privileges: 'entra_id',
-    apps_integrations: 'entra_id',
-    email_exchange: 'exchange_online',
-    threats_activity: 'entra_id',
-    intune_devices: 'intune',
-    pim_governance: 'entra_id',
-    sharepoint_onedrive: 'sharepoint',
-    teams_collaboration: 'exchange_online',
-    defender_security: 'defender',
-  };
-  return map[category];
-}
-```
-
-**PDF exporta visualização filtrada:** O `handleExportPDF` já usa `allUnifiedItemsRef.current`, que passará a apontar para `filteredItems`. Adicionar indicação no filename quando filtrado (ex: `iscope360-m365-entra-id-tenant-2026-03-07.pdf`).
-
-#### 2. `src/lib/complianceMappers.ts`
-
-- Adicionar função `inferProductFromCategory` 
-- No `mapM365AgentInsight`, incluir `product: (insight as any).product || inferProductFromCategory(insight.category)`
-
-#### 3. `src/pages/m365/EntraIdPage.tsx`
-
-Manter a página existente por enquanto — a reestruturação com conteúdo rico será feita no próximo passo após o usuário fornecer os requisitos.
-
-### Arquivos modificados
-
-1. `src/pages/m365/M365PosturePage.tsx` — filtros de produto + filtragem de items + PDF filtrado
-2. `src/lib/complianceMappers.ts` — mapear `product` no AgentInsight
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 
