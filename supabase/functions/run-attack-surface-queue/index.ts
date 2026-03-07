@@ -151,6 +151,7 @@ function extractFirewallIPs(stepResults: any[], firewallName: string): SourceIP[
 // ── Main handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
