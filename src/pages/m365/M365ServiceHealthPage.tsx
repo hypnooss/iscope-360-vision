@@ -439,9 +439,21 @@ function M365ServiceHealthPage() {
             {/* Issues Table */}
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Incidentes e Avisos ({issues.length})
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Incidentes e Avisos ({filteredIssues.length}{filter ? ` de ${issues.length}` : ''})
+                  </CardTitle>
+                  {filter && (
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="secondary" className="text-[10px]">
+                        Filtro: {filter.value}
+                      </Badge>
+                      <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setFilter(null)}>
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="p-0">
                 <Table>
