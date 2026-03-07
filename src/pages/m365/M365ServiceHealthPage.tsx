@@ -18,11 +18,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
-  ResponsiveContainer, Legend,
+  ResponsiveContainer, Legend, Sector,
 } from 'recharts';
 import {
   HeartPulse, RefreshCw, Loader2, CheckCircle2, AlertTriangle, XCircle, Info,
-  Clock, Building2,
+  Clock, Building2, X,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -107,6 +107,11 @@ function M365ServiceHealthPage() {
     isSuperRole ? selectedWorkspaceId : undefined
   );
   const [selectedIssue, setSelectedIssue] = useState<ServiceIssue | null>(null);
+  const [filter, setFilter] = useState<{ type: string; value: string } | null>(null);
+
+  const toggleFilter = (type: string, value: string) => {
+    setFilter(prev => (prev?.type === type && prev?.value === value) ? null : { type, value });
+  };
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['m365-service-health', selectedTenantId],
@@ -173,6 +178,43 @@ function M365ServiceHealthPage() {
   // ====== Service Health Summary ======
   const healthyCount = services.filter(s => s.status === 'serviceOperational').length;
   const degradedCount = services.length - healthyCount;
+
+  const filteredIssues = useMemo(() => {
+    if (!filter) return issues;
+    switch (filter.type) {
+      case 'status':
+        return issues.filter(i => (STATUS_CONFIG[i.status]?.label || i.status) === filter.value);
+      case 'classification':
+        return issues.filter(i => (CLASSIFICATION_LABELS[i.classification] || i.classification) === filter.value);
+      case 'service':
+        return issues.filter(i => i.service === filter.value);
+      case 'card':
+        if (filter.value === 'degraded') {
+          const degradedServices = new Set(services.filter(s => s.status !== 'serviceOperational').map(s => s.service));
+          return issues.filter(i => degradedServices.has(i.service));
+        }
+        return issues;
+      default:
+        return issues;
+    }
+  }, [issues, services, filter]);
+
+  const renderActiveShape = (props: any) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    return (
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius - 4}
+        outerRadius={outerRadius + 6}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        stroke="hsl(var(--primary))"
+        strokeWidth={2}
+      />
+    );
+  };
 
   const formatDate = (d: string | null) => {
     if (!d) return '—';
@@ -246,7 +288,10 @@ function M365ServiceHealthPage() {
           <>
             {/* Service Status Summary */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <Card className="border-emerald-500/20 bg-emerald-500/5">
+              <Card
+                className={`cursor-pointer transition-all ${filter?.type === 'card' && filter.value === 'operational' ? 'ring-2 ring-primary' : 'border-emerald-500/20 bg-emerald-500/5'}`}
+                onClick={() => toggleFilter('card', 'operational')}
+              >
                 <CardContent className="p-4 flex items-center gap-3">
                   <CheckCircle2 className="w-8 h-8 text-emerald-400" />
                   <div>
@@ -255,7 +300,10 @@ function M365ServiceHealthPage() {
                   </div>
                 </CardContent>
               </Card>
-              <Card className={degradedCount > 0 ? 'border-amber-500/20 bg-amber-500/5' : 'border-border/50'}>
+              <Card
+                className={`cursor-pointer transition-all ${filter?.type === 'card' && filter.value === 'degraded' ? 'ring-2 ring-primary' : degradedCount > 0 ? 'border-amber-500/20 bg-amber-500/5' : 'border-border/50'}`}
+                onClick={() => toggleFilter('card', 'degraded')}
+              >
                 <CardContent className="p-4 flex items-center gap-3">
                   <AlertTriangle className={`w-8 h-8 ${degradedCount > 0 ? 'text-amber-400' : 'text-muted-foreground'}`} />
                   <div>
@@ -264,7 +312,10 @@ function M365ServiceHealthPage() {
                   </div>
                 </CardContent>
               </Card>
-              <Card className="border-border/50">
+              <Card
+                className={`cursor-pointer transition-all ${!filter ? 'ring-2 ring-primary' : 'border-border/50'}`}
+                onClick={() => setFilter(null)}
+              >
                 <CardContent className="p-4 flex items-center gap-3">
                   <Info className="w-8 h-8 text-blue-400" />
                   <div>
@@ -307,8 +358,15 @@ function M365ServiceHealthPage() {
                 <CardContent className="h-[220px]">
                   {statusChartData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={statusChartData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" paddingAngle={2}>
+                    <PieChart>
+                        <Pie
+                          data={statusChartData}
+                          cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" paddingAngle={2}
+                          activeIndex={statusChartData.findIndex(d => filter?.type === 'status' && d.name === filter.value)}
+                          activeShape={renderActiveShape}
+                          onClick={(_, index) => toggleFilter('status', statusChartData[index].name)}
+                          className="cursor-pointer"
+                        >
                           {statusChartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                         </Pie>
                         <ReTooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))' }} />
@@ -329,8 +387,15 @@ function M365ServiceHealthPage() {
                 <CardContent className="h-[220px]">
                   {classificationChartData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={classificationChartData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" paddingAngle={2}>
+                    <PieChart>
+                        <Pie
+                          data={classificationChartData}
+                          cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" paddingAngle={2}
+                          activeIndex={classificationChartData.findIndex(d => filter?.type === 'classification' && d.name === filter.value)}
+                          activeShape={renderActiveShape}
+                          onClick={(_, index) => toggleFilter('classification', classificationChartData[index].name)}
+                          className="cursor-pointer"
+                        >
                           {classificationChartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                         </Pie>
                         <ReTooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))' }} />
@@ -353,7 +418,14 @@ function M365ServiceHealthPage() {
                 <CardContent className="h-[220px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={serviceChartData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
+                      <Pie
+                        data={serviceChartData}
+                        cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}
+                        activeIndex={serviceChartData.findIndex(d => filter?.type === 'service' && d.name === filter.value)}
+                        activeShape={renderActiveShape}
+                        onClick={(_, index) => toggleFilter('service', serviceChartData[index].name)}
+                        className="cursor-pointer"
+                      >
                         {serviceChartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                       </Pie>
                       <ReTooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))' }} />
@@ -367,9 +439,21 @@ function M365ServiceHealthPage() {
             {/* Issues Table */}
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Incidentes e Avisos ({issues.length})
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Incidentes e Avisos ({filteredIssues.length}{filter ? ` de ${issues.length}` : ''})
+                  </CardTitle>
+                  {filter && (
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="secondary" className="text-[10px]">
+                        Filtro: {filter.value}
+                      </Badge>
+                      <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setFilter(null)}>
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="p-0">
                 <Table>
@@ -386,14 +470,14 @@ function M365ServiceHealthPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {issues.length === 0 && (
+                    {filteredIssues.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                           Nenhum evento encontrado.
                         </TableCell>
                       </TableRow>
                     )}
-                    {issues.map(issue => {
+                    {filteredIssues.map(issue => {
                       const sc = STATUS_CONFIG[issue.status];
                       const StatusIcon = sc?.icon || Info;
                       return (
