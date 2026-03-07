@@ -47,6 +47,7 @@ export function M365PermissionsManagement() {
   const [newDescription, setNewDescription] = useState('');
   const [newRequired, setNewRequired] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [newTestUrl, setNewTestUrl] = useState('');
 
   const loadPermissions = async () => {
     setLoading(true);
