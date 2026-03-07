@@ -15,7 +15,7 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    // Validate auth
+    // Validate auth - accept either service_role_key or super_admin user token
     const authHeader = req.headers.get('Authorization')
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -24,29 +24,34 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Verify user
-    const supabaseUser = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
-    const { data: { user }, error: userError } = await supabaseUser.auth.getUser()
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // Check if super_admin
+    const token = authHeader.replace('Bearer ', '')
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
-    const { data: hasRole } = await supabaseAdmin.rpc('has_role', {
-      _user_id: user.id,
-      _role: 'super_admin',
-    })
-    if (!hasRole) {
-      return new Response(JSON.stringify({ error: 'Forbidden - super_admin only' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+
+    // If the token IS the service_role_key, skip user validation (internal/admin call)
+    if (token !== serviceRoleKey) {
+      // Verify user with anon key
+      const supabaseUser = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
       })
+      const { data: { user }, error: userError } = await supabaseUser.auth.getUser()
+      if (userError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Check if super_admin
+      const { data: hasRole } = await supabaseAdmin.rpc('has_role', {
+        _user_id: user.id,
+        _role: 'super_admin',
+      })
+      if (!hasRole) {
+        return new Response(JSON.stringify({ error: 'Forbidden - super_admin only' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
     // List all users and sign them out
