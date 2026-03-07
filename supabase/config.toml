@@ -155,3 +155,9 @@ verify_jwt = false
 
 [functions.entra-id-dashboard]
 verify_jwt = false
+
+[functions.exchange-dashboard]
+verify_jwt = false
+
+[functions.collaboration-dashboard]
+verify_jwt = false

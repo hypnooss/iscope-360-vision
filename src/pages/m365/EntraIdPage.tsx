@@ -10,8 +10,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
-import { EntraIdStatsCard } from '@/components/m365/entra-id/EntraIdStatsCard';
-import { EntraIdDonutChart } from '@/components/m365/entra-id/EntraIdDonutChart';
+import { M365StatsCard as EntraIdStatsCard } from '@/components/m365/shared/M365StatsCard';
+import { M365DonutChart as EntraIdDonutChart } from '@/components/m365/shared/M365DonutChart';
 import {
   RefreshCw,
   AlertTriangle,
