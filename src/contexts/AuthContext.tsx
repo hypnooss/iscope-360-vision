@@ -34,12 +34,15 @@ interface AuthContextType {
   role: AppRole | null;
   permissions: ModulePermissions;
   loading: boolean;
+  mfaRequired: boolean;
+  mfaEnrolled: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   hasPermission: (module: keyof ModulePermissions, required: ModulePermission) => boolean;
   isAdmin: () => boolean;
   isSuperAdmin: () => boolean;
+  refreshMfaStatus: () => Promise<void>;
 }
 
 const defaultPermissions: ModulePermissions = {
@@ -51,7 +54,7 @@ const defaultPermissions: ModulePermissions = {
 };
 
 const CACHE_KEY_PREFIX = 'user_data_';
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -62,10 +65,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<AppRole | null>(null);
   const [permissions, setPermissions] = useState<ModulePermissions>(defaultPermissions);
   const [loading, setLoading] = useState(true);
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaEnrolled, setMfaEnrolled] = useState(false);
   
   // Ref to prevent duplicate fetch calls
   const fetchingRef = useRef(false);
   const lastFetchedUserIdRef = useRef<string | null>(null);
+
+  const checkMfaStatus = async () => {
+    try {
+      const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (!aalData) return;
+
+      const { currentLevel, nextLevel } = aalData;
+
+      // Check if user has TOTP factors enrolled
+      const { data: factorsData } = await supabase.auth.mfa.listFactors();
+      const hasVerifiedTotp = factorsData?.totp?.some(f => f.status === 'verified') ?? false;
+
+      setMfaEnrolled(hasVerifiedTotp);
+
+      // MFA is required if: user has a factor but hasn't completed aal2, OR user doesn't have a factor yet (needs to enroll)
+      if (nextLevel === 'aal2' && currentLevel === 'aal1') {
+        setMfaRequired(true);
+      } else if (!hasVerifiedTotp) {
+        // No factor enrolled — needs to enroll
+        setMfaRequired(true);
+      } else {
+        setMfaRequired(false);
+      }
+    } catch (err) {
+      console.error('MFA status check error:', err);
+    }
+  };
+
+  const refreshMfaStatus = async () => {
+    await checkMfaStatus();
+  };
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -74,10 +110,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
 
-        // Defer Supabase calls with setTimeout to avoid deadlock
         if (session?.user) {
           setTimeout(() => {
             fetchUserData(session.user.id);
+            checkMfaStatus();
           }, 0);
         } else {
           clearUserData();
@@ -91,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       if (session?.user) {
         fetchUserData(session.user.id);
+        checkMfaStatus();
       } else {
         setLoading(false);
       }
@@ -103,6 +140,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     setRole(null);
     setPermissions(defaultPermissions);
+    setMfaRequired(false);
+    setMfaEnrolled(false);
     setLoading(false);
     lastFetchedUserIdRef.current = null;
   };
@@ -112,11 +151,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const cached = sessionStorage.getItem(`${CACHE_KEY_PREFIX}${userId}`);
       if (cached) {
         const parsed: CachedUserData = JSON.parse(cached);
-        // Check if cache is still valid
         if (Date.now() - parsed.timestamp < CACHE_TTL) {
           return parsed;
         }
-        // Remove stale cache
         sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${userId}`);
       }
     } catch {
@@ -133,17 +170,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       sessionStorage.setItem(`${CACHE_KEY_PREFIX}${userId}`, JSON.stringify(cacheData));
     } catch {
-      // Ignore cache errors (e.g., quota exceeded)
+      // Ignore cache errors
     }
   };
 
   const fetchUserData = async (userId: string) => {
-    // Prevent duplicate fetches for the same user
     if (fetchingRef.current && lastFetchedUserIdRef.current === userId) {
       return;
     }
     
-    // Check cache first
     const cached = getCachedData(userId);
     if (cached) {
       setProfile(cached.profile);
@@ -158,7 +193,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     lastFetchedUserIdRef.current = userId;
 
     try {
-      // Fetch all data in parallel
       const [profileResult, roleResult, permissionsResult] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', userId).single(),
         supabase.from('user_roles').select('role').eq('user_id', userId).single(),
@@ -186,7 +220,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setPermissions(perms);
 
-      // Cache the data
       if (profileData) {
         setCachedData(userId, {
           profile: profileData,
@@ -221,7 +254,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    // Clear cache on sign out
     if (user?.id) {
       sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${user.id}`);
     }
@@ -250,12 +282,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role,
         permissions,
         loading,
+        mfaRequired,
+        mfaEnrolled,
         signIn,
         signUp,
         signOut,
         hasPermission,
         isAdmin,
         isSuperAdmin,
+        refreshMfaStatus,
       }}
     >
       {children}

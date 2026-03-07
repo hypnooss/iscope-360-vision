@@ -1,75 +1,27 @@
 
 
-## Implementação de MFA Obrigatório (TOTP) + Logout Global
+## Problem
 
-### Visão Geral
-Implementar MFA obrigatório usando TOTP nativo do Supabase. Após o login com senha, o sistema verificará se o usuário tem MFA configurado. Se não, exibirá tela de enrollment (QR code). Se sim, pedirá o código de 6 dígitos. Uma edge function será criada para deslogar todos os usuários.
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-### Arquivos a criar
+## Solution
 
-**1. `src/pages/MfaEnrollPage.tsx`** — Tela de registro do MFA
-- Chama `supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'iScope 360' })`
-- Exibe QR code (`factor.totp.qr_code`) para o usuário escanear com Google Authenticator / Microsoft Authenticator
-- Campo de 6 dígitos (usando o componente `InputOTP` já existente) para verificar o código
-- Chama `challengeAndVerify` para validar e ativar o fator
-- Redireciona para `/dashboard` após sucesso
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-**2. `src/pages/MfaChallengePage.tsx`** — Tela de desafio MFA (login com fator já registrado)
-- Lista os fatores TOTP do usuário via `supabase.auth.mfa.listFactors()`
-- Cria challenge via `supabase.auth.mfa.challenge({ factorId })`
-- Campo de 6 dígitos para o código
-- Verifica via `supabase.auth.mfa.verify({ factorId, challengeId, code })`
-- Redireciona para `/dashboard` após sucesso
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-**3. `supabase/functions/force-logout-all/index.ts`** — Edge function para deslogar todos
-- Protegida: só super_admin pode chamar
-- Lista todos os usuários via `auth.admin.listUsers()`
-- Chama `auth.admin.signOut(userId, 'global')` para cada um
-- Retorna contagem de sessões encerradas
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-### Arquivos a modificar
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-**4. `src/contexts/AuthContext.tsx`**
-- Adicionar estado `mfaRequired: boolean` e `mfaEnrolled: boolean`
-- Após login com sucesso, verificar AAL:
-  - `supabase.auth.mfa.getAuthenticatorAssuranceLevel()` retorna `currentLevel` e `nextLevel`
-  - Se `nextLevel === 'aal2'` e `currentLevel === 'aal1'` → MFA necessário
-- Expor `mfaRequired` e `mfaEnrolled` no contexto
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-**5. `src/pages/Auth.tsx`**
-- Após `signIn` com sucesso, verificar fatores MFA:
-  - Se não tem fator TOTP → redirecionar para `/mfa/enroll`
-  - Se tem fator TOTP mas está em `aal1` → redirecionar para `/mfa/challenge`
-  - Se já está em `aal2` → redirecionar para `/dashboard`
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
 
-**6. `src/App.tsx`**
-- Adicionar rotas `/mfa/enroll` e `/mfa/challenge`
-- Proteger rotas autenticadas: se `mfaRequired === true`, redirecionar para a tela MFA correspondente
-
-**7. `supabase/config.toml`**
-- Adicionar `[functions.force-logout-all]` com `verify_jwt = false`
-
-### Fluxo do Usuário
-
-```text
-Login (senha) 
-  → Verificar fatores MFA
-    → Sem fator TOTP → /mfa/enroll (QR code + verificação)
-    → Com fator TOTP → /mfa/challenge (código 6 dígitos)
-  → Sessão aal2 → /dashboard
-```
-
-### Logout global
-Após implementar, executarei a edge function `force-logout-all` para encerrar todas as sessões ativas, forçando todos os usuários a passarem pelo novo fluxo MFA no próximo login.
-
-### Resumo de arquivos
-| Arquivo | Ação |
-|---------|------|
-| `src/pages/MfaEnrollPage.tsx` | Criar |
-| `src/pages/MfaChallengePage.tsx` | Criar |
-| `supabase/functions/force-logout-all/index.ts` | Criar |
-| `src/contexts/AuthContext.tsx` | Modificar — adicionar verificação AAL |
-| `src/pages/Auth.tsx` | Modificar — redirecionar para MFA após login |
-| `src/App.tsx` | Modificar — adicionar rotas MFA + guard |
-| `supabase/config.toml` | Modificar — adicionar config da nova function |
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 

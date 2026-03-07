@@ -10,6 +10,8 @@ import { PreviewProvider } from "@/contexts/PreviewContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+const MfaEnrollPage = lazy(() => import("./pages/MfaEnrollPage"));
+const MfaChallengePage = lazy(() => import("./pages/MfaChallengePage"));
 
 // Lazy loaded pages - loaded on demand
 const ModuleSelectionPage = lazy(() => import("./pages/ModuleSelectionPage"));
@@ -103,6 +105,8 @@ const App = () => (
                   {/* Public routes */}
                   <Route path="/" element={<Index />} />
                   <Route path="/auth" element={<Auth />} />
+                  <Route path="/mfa/enroll" element={<MfaEnrollPage />} />
+                  <Route path="/mfa/challenge" element={<MfaChallengePage />} />
 
                   {/* Module Selection */}
                   <Route path="/modules" element={<ModuleSelectionPage />} />

@@ -5,14 +5,18 @@ import { Header } from '@/components/Header';
 import { CheckCircle2, AlertTriangle, TrendingUp } from 'lucide-react';
 
 const Index = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, mfaRequired, mfaEnrolled } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!loading && user) {
-      navigate('/dashboard');
+      if (mfaRequired) {
+        navigate(mfaEnrolled ? '/mfa/challenge' : '/mfa/enroll');
+      } else {
+        navigate('/dashboard');
+      }
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, navigate, mfaRequired, mfaEnrolled]);
 
   if (loading) {
     return (
