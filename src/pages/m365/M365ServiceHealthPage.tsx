@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
-  ResponsiveContainer,
+  ResponsiveContainer, Cell,
 } from 'recharts';
 import {
   HeartPulse, RefreshCw, Loader2, CheckCircle2, AlertTriangle, XCircle, Info,
@@ -436,7 +436,7 @@ function M365ServiceHealthPage() {
                           onClick={(entry: any) => toggleFilter('service', entry.name)}
                         >
                           {serviceChartData.map((_, i) => (
-                            <rect key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
+                            <Cell key={`bar-${i}`} fill={BAR_COLORS[i % BAR_COLORS.length]} />
                           ))}
                         </Bar>
                       </BarChart>
