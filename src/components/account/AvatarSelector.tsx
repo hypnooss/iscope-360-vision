@@ -4,13 +4,12 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { RefreshCw, X } from 'lucide-react';
 
-// Notion-style & modern 3D styles from DiceBear v9
 const STYLES = [
-  'notionists',
-  'notionists-neutral',
-  'lorelei',
-  'lorelei-neutral',
-  'thumbs',
+  'adventurer',
+  'avataaars',
+  'fun-emoji',
+  'pixel-art',
+  'big-ears',
   'shapes',
 ] as const;
 
@@ -18,6 +17,7 @@ const SEEDS = [
   'felix', 'aneka', 'jade', 'leo', 'mia', 'zara',
   'kira', 'sam', 'nova', 'rio', 'luna', 'kai',
   'aria', 'max', 'sky', 'neo', 'ava', 'eli',
+  'finn', 'lux', 'cleo', 'ryu', 'hana', 'zen',
 ];
 
 function avatarUrl(style: string, seed: string) {
@@ -48,14 +48,14 @@ export function AvatarSelector({ currentUrl, userName, onSelect }: AvatarSelecto
     });
   }, [baseName, round, activeStyle]);
 
-  const displayUrl = currentUrl || avatarUrl('notionists', baseName);
+  const displayUrl = currentUrl || avatarUrl('adventurer', baseName);
 
   const styleLabels: Record<string, string> = {
-    'notionists': 'Notion',
-    'notionists-neutral': 'Neutral',
-    'lorelei': 'Lorelei',
-    'lorelei-neutral': 'Minimal',
-    'thumbs': 'Thumbs',
+    'adventurer': 'Anime',
+    'avataaars': 'Cartoon',
+    'fun-emoji': 'Fun',
+    'pixel-art': 'Pixel',
+    'big-ears': 'Cute',
     'shapes': 'Shapes',
   };
 
