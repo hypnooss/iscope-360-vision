@@ -2,25 +2,26 @@ import { useState, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, X } from 'lucide-react';
 
+// Notion-style & modern 3D styles from DiceBear v9
 const STYLES = [
-  'adventurer',
-  'avataaars',
-  'fun-emoji',
-  'lorelei',
   'notionists',
-  'big-ears',
-  'micah',
-  'open-peeps',
-  'personas',
-  'bottts',
+  'notionists-neutral',
+  'lorelei',
+  'lorelei-neutral',
+  'thumbs',
+  'shapes',
 ] as const;
 
-const SEED_VARIANTS = ['alpha', 'beta', 'gamma', 'delta'];
+const SEEDS = [
+  'felix', 'aneka', 'jade', 'leo', 'mia', 'zara',
+  'kira', 'sam', 'nova', 'rio', 'luna', 'kai',
+  'aria', 'max', 'sky', 'neo', 'ava', 'eli',
+];
 
-function generateAvatarUrl(style: string, seed: string) {
-  return `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(seed)}`;
+function avatarUrl(style: string, seed: string) {
+  return `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(seed)}&backgroundColor=transparent`;
 }
 
 interface AvatarSelectorProps {
@@ -32,38 +33,44 @@ interface AvatarSelectorProps {
 export function AvatarSelector({ currentUrl, userName, onSelect }: AvatarSelectorProps) {
   const [round, setRound] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const [activeStyle, setActiveStyle] = useState<string>(STYLES[0]);
 
   const baseName = userName || 'user';
 
+  // Generate avatar grid for the active style tab
   const avatarOptions = useMemo(() => {
-    const options: { key: string; url: string; label: string }[] = [];
-    for (const style of STYLES) {
-      for (const variant of SEED_VARIANTS) {
-        const seed = round === 0
-          ? `${baseName}-${variant}`
-          : `${baseName}-${variant}-${round}`;
-        options.push({
-          key: `${style}-${variant}-${round}`,
-          url: generateAvatarUrl(style, seed),
-          label: style,
-        });
-      }
-    }
-    return options;
-  }, [baseName, round]);
+    return SEEDS.map((seed) => {
+      const finalSeed = round === 0 ? `${baseName}-${seed}` : `${baseName}-${seed}-r${round}`;
+      return {
+        key: `${activeStyle}-${seed}-${round}`,
+        url: avatarUrl(activeStyle, finalSeed),
+      };
+    });
+  }, [baseName, round, activeStyle]);
 
-  const displayUrl = currentUrl || generateAvatarUrl('adventurer', baseName);
+  const displayUrl = currentUrl || avatarUrl('notionists', baseName);
+
+  const styleLabels: Record<string, string> = {
+    'notionists': 'Notion',
+    'notionists-neutral': 'Neutral',
+    'lorelei': 'Lorelei',
+    'lorelei-neutral': 'Minimal',
+    'thumbs': 'Thumbs',
+    'shapes': 'Shapes',
+  };
 
   return (
     <div className="space-y-3">
       <Label>Avatar</Label>
 
       <div className="flex items-center gap-4">
-        <img
-          src={displayUrl}
-          alt="Avatar atual"
-          className="w-16 h-16 rounded-full border-2 border-primary/30 bg-muted object-cover"
-        />
+        <div className="relative group">
+          <img
+            src={displayUrl}
+            alt="Avatar atual"
+            className="w-16 h-16 rounded-full border-2 border-primary/30 bg-muted object-cover"
+          />
+        </div>
         <div className="flex flex-col gap-1.5">
           <Button
             type="button"
@@ -78,9 +85,10 @@ export function AvatarSelector({ currentUrl, userName, onSelect }: AvatarSelecto
               type="button"
               variant="ghost"
               size="sm"
-              className="text-destructive hover:text-destructive"
+              className="text-destructive hover:text-destructive gap-1"
               onClick={() => onSelect('')}
             >
+              <X className="w-3 h-3" />
               Remover avatar
             </Button>
           )}
@@ -88,32 +96,56 @@ export function AvatarSelector({ currentUrl, userName, onSelect }: AvatarSelecto
       </div>
 
       {expanded && (
-        <div className="space-y-3 rounded-lg border border-border p-4 bg-muted/30">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-muted-foreground">Escolha um avatar</p>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setRound(r => r + 1)} className="gap-1.5 h-7 text-xs">
+        <div className="space-y-3 rounded-xl border border-border p-4 bg-card/80 backdrop-blur-sm">
+          {/* Style tabs */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex gap-1 flex-wrap">
+              {STYLES.map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => setActiveStyle(style)}
+                  className={cn(
+                    'px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                    activeStyle === style
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  {styleLabels[style] || style}
+                </button>
+              ))}
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setRound((r) => r + 1)}
+              className="gap-1.5 h-7 text-xs shrink-0"
+            >
               <RefreshCw className="w-3 h-3" />
               Randomizar
             </Button>
           </div>
-          <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">
-            {avatarOptions.map(({ key, url, label }) => (
+
+          {/* Avatar grid */}
+          <div className="grid grid-cols-6 sm:grid-cols-9 gap-2">
+            {avatarOptions.map(({ key, url }) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => onSelect(url)}
                 className={cn(
-                  'rounded-lg border-2 p-1 transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-ring',
+                  'rounded-xl border-2 p-1.5 transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-ring',
                   currentUrl === url
-                    ? 'border-primary bg-primary/10 shadow-sm'
-                    : 'border-transparent hover:border-border'
+                    ? 'border-primary bg-primary/10 shadow-md ring-1 ring-primary/30'
+                    : 'border-transparent hover:border-border hover:shadow-sm'
                 )}
-                title={label}
               >
                 <img
                   src={url}
-                  alt={label}
-                  className="w-full aspect-square rounded-md bg-background"
+                  alt="Avatar option"
+                  className="w-full aspect-square rounded-lg bg-muted/50"
                   loading="lazy"
                 />
               </button>
