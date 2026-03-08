@@ -163,6 +163,9 @@ const App = () => (
                   <Route path="/firewalls/:id/analysis" element={<Navigate to="/scope-firewall/firewalls/:id/analysis" replace />} />
                   <Route path="/reports" element={<Navigate to="/scope-firewall/reports" replace />} />
 
+                  {/* Account */}
+                  <Route path="/account" element={<AccountPage />} />
+
                   {/* Licensing Hub */}
                   <Route path="/licensing-hub" element={<LicensingHubPage />} />
 
