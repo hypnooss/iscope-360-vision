@@ -81,6 +81,7 @@ const M365TenantEditPage = lazy(() => import("./pages/environment/M365TenantEdit
 const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPreview"));
 const FirewallReportPreview = lazy(() => import("./pages/preview/FirewallReportPreview"));
 const LicensingHubPage = lazy(() => import("./pages/LicensingHubPage"));
+const AccountPage = lazy(() => import("./pages/AccountPage"));
 
 const queryClient = new QueryClient();
 
@@ -161,6 +162,9 @@ const App = () => (
                   <Route path="/firewalls" element={<Navigate to="/scope-firewall/firewalls" replace />} />
                   <Route path="/firewalls/:id/analysis" element={<Navigate to="/scope-firewall/firewalls/:id/analysis" replace />} />
                   <Route path="/reports" element={<Navigate to="/scope-firewall/reports" replace />} />
+
+                  {/* Account */}
+                  <Route path="/account" element={<AccountPage />} />
 
                   {/* Licensing Hub */}
                   <Route path="/licensing-hub" element={<LicensingHubPage />} />
