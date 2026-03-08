@@ -8,7 +8,7 @@ import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useEffectiveModules } from '@/hooks/useEffectiveModules';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
