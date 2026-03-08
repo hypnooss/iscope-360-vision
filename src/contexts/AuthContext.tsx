@@ -43,6 +43,7 @@ interface AuthContextType {
   isAdmin: () => boolean;
   isSuperAdmin: () => boolean;
   refreshMfaStatus: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const defaultPermissions: ModulePermissions = {
@@ -263,6 +264,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearUserData();
   };
 
+  const refreshProfile = async () => {
+    if (!user?.id) return;
+    try {
+      const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      if (data) {
+        setProfile(data as UserProfile);
+        sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${user.id}`);
+        lastFetchedUserIdRef.current = null;
+      }
+    } catch (err) {
+      console.error('Error refreshing profile:', err);
+    }
+  };
+
   const hasPermission = (module: keyof ModulePermissions, required: ModulePermission): boolean => {
     if (role === 'super_admin') return true;
     const current = permissions[module];
@@ -291,6 +306,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin,
         isSuperAdmin,
         refreshMfaStatus,
+        refreshProfile,
       }}
     >
       {children}

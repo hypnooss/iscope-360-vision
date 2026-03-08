@@ -1,23 +1,27 @@
 
 
-## Plano: Corrigir salvamento e exibição do avatar
+## Problem
 
-### Problemas identificados
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-1. **Avatar não persiste após salvar**: O `handleSaveProfile` salva no banco mas não atualiza o `profile` no `AuthContext`. Além disso, o cache em `sessionStorage` mantém os dados antigos — na próxima carga, o perfil cacheado (sem avatar) é usado.
+## Solution
 
-2. **Avatar não aparece no menu lateral**: O componente `Avatar` no rodapé do `AppLayout.tsx` (linha 839-843) só renderiza `AvatarFallback` com iniciais. Não há `AvatarImage` para exibir a URL do avatar quando ela existe.
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-### Alterações
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-**1. `src/contexts/AuthContext.tsx`** — Expor função `refreshProfile` no contexto
-- Adicionar método `refreshProfile()` que busca o perfil do banco, atualiza o state e invalida o cache do `sessionStorage`
-- Exportar no `AuthContextType`
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-**2. `src/pages/AccountPage.tsx`** — Chamar `refreshProfile` após salvar
-- Após o `supabase.from('profiles').update(...)` com sucesso, chamar `refreshProfile()` para que o AuthContext e o cache reflitam o avatar salvo
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-**3. `src/components/layout/AppLayout.tsx`** — Exibir avatar no menu
-- Importar `AvatarImage` do Radix
-- Na linha ~839, adicionar `<AvatarImage src={effectiveProfile?.avatar_url} />` antes do `AvatarFallback`, para que o avatar seja exibido quando houver URL (o Radix fallback cuida automaticamente do caso sem imagem)
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 

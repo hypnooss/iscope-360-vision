@@ -27,7 +27,7 @@ interface MfaFactor {
 }
 
 export default function AccountPage() {
-  const { profile, user } = useAuth();
+  const { profile, user, refreshProfile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -74,6 +74,7 @@ export default function AccountPage() {
     if (error) {
       toast({ title: 'Erro ao salvar perfil', description: error.message, variant: 'destructive' });
     } else {
+      await refreshProfile();
       toast({ title: 'Perfil atualizado com sucesso' });
     }
   };
