@@ -1,16 +1,27 @@
 
 
-## Plano: Melhorar galeria de avatares + remover Status MFA
+## Problem
 
-### Alterações
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-**1. `src/components/account/AvatarSelector.tsx`** — Substituir DiceBear por **Multiavatar API**
+## Solution
 
-A API Multiavatar (`https://api.multiavatar.com/{seed}.svg`) gera avatares SVG coloridos com visual mais moderno, incluindo estilos que remetem a anime e cartoon. Em vez de 16 "estilos" fixos, gerar uma grade de ~20 avatares com seeds variados (baseados no nome do usuário + sufixos). O botão "Randomizar" troca todos os seeds de uma vez.
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-- URL base: `https://api.multiavatar.com/${seed}.svg`
-- Seeds: combinações do nome do usuário com sufixos como `hero`, `ninja`, `cyber`, `dragon`, etc.
-- Manter a mesma UX de galeria expansível com seleção e remoção
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-**2. `src/pages/AccountPage.tsx`** — Remover o bloco "Status MFA" da seção de informações read-only do card de Perfil (o MFA já tem seu próprio card dedicado à direita).
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 

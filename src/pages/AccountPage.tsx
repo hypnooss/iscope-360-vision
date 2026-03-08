@@ -174,20 +174,6 @@ export default function AccountPage() {
                       <p className="text-sm font-medium text-foreground">{memberSince}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Shield className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Status MFA</p>
-                      <Badge
-                        variant={hasActiveMfa ? 'default' : 'secondary'}
-                        className={hasActiveMfa
-                          ? 'bg-green-500/10 text-green-500 border-green-500/20'
-                          : 'text-muted-foreground'}
-                      >
-                        {hasActiveMfa ? 'Ativo' : 'Inativo'}
-                      </Badge>
-                    </div>
-                  </div>
                 </div>
 
                 <Button type="submit" disabled={savingProfile} className="w-full">
