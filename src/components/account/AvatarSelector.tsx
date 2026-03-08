@@ -51,11 +51,11 @@ export function AvatarSelector({ currentUrl, userName, onSelect }: AvatarSelecto
   const displayUrl = currentUrl || avatarUrl('notionists', baseName);
 
   const styleLabels: Record<string, string> = {
-    'notionists': 'Notion',
-    'notionists-neutral': 'Neutral',
-    'lorelei': 'Lorelei',
-    'lorelei-neutral': 'Minimal',
-    'thumbs': 'Thumbs',
+    'adventurer': 'Anime',
+    'avataaars': 'Cartoon',
+    'fun-emoji': 'Fun',
+    'pixel-art': 'Pixel',
+    'big-ears': 'Cute',
     'shapes': 'Shapes',
   };
 
