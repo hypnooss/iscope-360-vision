@@ -1,27 +1,43 @@
 
 
-## Problem
+## Plano: Tela de Configurações do Usuário (Minha Conta)
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+### Contexto
+Atualmente, o menu "Minha Conta" no dropdown do sidebar tem dois itens: "Configurações" (sem ação) e "Trocar Senha" (abre dialog). Precisamos criar uma página dedicada `/account` onde o usuário gerencia suas informações pessoais e MFA.
 
-## Solution
+### O que será criado
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+**Nova página: `src/pages/AccountPage.tsx`**
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+Página com 3 seções em tabs:
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+1. **Perfil** — Editar nome completo e visualizar email (readonly)
+   - Campo `full_name` editável com save via `supabase.from('profiles').update()`
+   - Email exibido como readonly (não editável pelo usuário)
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+2. **Segurança / Senha** — Trocar senha inline (reutilizando a lógica do `ChangePasswordDialog`)
+   - Campos nova senha + confirmação com validação forte (12+ chars)
+   - Indicadores visuais dos requisitos de senha (checklist)
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+3. **MFA (Autenticação em dois fatores)** — Gerenciar fatores TOTP
+   - Mostrar status atual (ativo/inativo)
+   - Se ativo: mostrar nome do fator, data de criação, botão para resetar (unenroll + re-enroll)
+   - Se inativo: botão para configurar (redireciona para `/mfa/enroll`)
 
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+### Alterações em arquivos existentes
 
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+- **`src/App.tsx`**: Adicionar rota `/account` → `AccountPage`
+- **`src/components/layout/AppLayout.tsx`**: 
+  - Item "Configurações" no dropdown → `navigate('/account')`
+  - Manter "Trocar Senha" apontando para a mesma página com tab ativa de segurança
+- **`src/components/ChangePasswordDialog.tsx`**: Sem alteração (mantido para uso em outros contextos)
+
+### Detalhes técnicos
+
+- Layout usando `AppLayout` com `PageBreadcrumb`
+- Tabs via Radix `Tabs` component existente
+- MFA status via `supabase.auth.mfa.listFactors()` 
+- Reset MFA: `unenroll` fator verificado → redireciona para `/mfa/enroll`
+- Profile update: `supabase.from('profiles').update({ full_name }).eq('id', user.id)`
+- Validação de senha usando `passwordRequirements` de `src/lib/passwordValidation.ts` com checklist visual
 
