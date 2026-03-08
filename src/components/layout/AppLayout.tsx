@@ -837,6 +837,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <DropdownMenuTrigger asChild>
                   <button className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors">
                     <Avatar className="h-9 w-9">
+                      <AvatarImage src={effectiveProfile?.avatar_url || undefined} alt={effectiveProfile?.full_name || ''} />
                       <AvatarFallback className="bg-primary/10 text-primary text-sm">
                         {getInitials(effectiveProfile?.full_name ?? effectiveProfile?.email ?? null)}
                       </AvatarFallback>

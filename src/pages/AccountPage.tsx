@@ -27,7 +27,7 @@ interface MfaFactor {
 }
 
 export default function AccountPage() {
-  const { profile, user } = useAuth();
+  const { profile, user, refreshProfile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 

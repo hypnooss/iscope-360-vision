@@ -43,6 +43,7 @@ interface AuthContextType {
   isAdmin: () => boolean;
   isSuperAdmin: () => boolean;
   refreshMfaStatus: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const defaultPermissions: ModulePermissions = {
