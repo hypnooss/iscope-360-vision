@@ -4,15 +4,23 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { RefreshCw } from 'lucide-react';
 
-const SEED_SUFFIXES = [
-  'hero', 'ninja', 'cyber', 'dragon', 'phoenix',
-  'storm', 'blaze', 'frost', 'shadow', 'titan',
-  'nova', 'viper', 'spark', 'wolf', 'hawk',
-  'sage', 'rune', 'echo', 'flux', 'apex',
-];
+const STYLES = [
+  'adventurer',
+  'avataaars',
+  'fun-emoji',
+  'lorelei',
+  'notionists',
+  'big-ears',
+  'micah',
+  'open-peeps',
+  'personas',
+  'bottts',
+] as const;
 
-function generateAvatarUrl(seed: string) {
-  return `https://api.multiavatar.com/${encodeURIComponent(seed)}.svg`;
+const SEED_VARIANTS = ['alpha', 'beta', 'gamma', 'delta'];
+
+function generateAvatarUrl(style: string, seed: string) {
+  return `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(seed)}`;
 }
 
 interface AvatarSelectorProps {
@@ -27,15 +35,24 @@ export function AvatarSelector({ currentUrl, userName, onSelect }: AvatarSelecto
 
   const baseName = userName || 'user';
 
-  const avatarOptions = useMemo(() =>
-    SEED_SUFFIXES.map((suffix) => {
-      const seed = round === 0 ? `${baseName}-${suffix}` : `${baseName}-${suffix}-${round}`;
-      return { seed, url: generateAvatarUrl(seed) };
-    }),
-    [baseName, round]
-  );
+  const avatarOptions = useMemo(() => {
+    const options: { key: string; url: string; label: string }[] = [];
+    for (const style of STYLES) {
+      for (const variant of SEED_VARIANTS) {
+        const seed = round === 0
+          ? `${baseName}-${variant}`
+          : `${baseName}-${variant}-${round}`;
+        options.push({
+          key: `${style}-${variant}-${round}`,
+          url: generateAvatarUrl(style, seed),
+          label: style,
+        });
+      }
+    }
+    return options;
+  }, [baseName, round]);
 
-  const displayUrl = currentUrl || generateAvatarUrl(baseName);
+  const displayUrl = currentUrl || generateAvatarUrl('adventurer', baseName);
 
   return (
     <div className="space-y-3">
@@ -79,23 +96,23 @@ export function AvatarSelector({ currentUrl, userName, onSelect }: AvatarSelecto
               Randomizar
             </Button>
           </div>
-          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2">
-            {avatarOptions.map(({ seed, url }) => (
+          <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2 max-h-[320px] overflow-y-auto pr-1">
+            {avatarOptions.map(({ key, url, label }) => (
               <button
-                key={seed}
+                key={key}
                 type="button"
                 onClick={() => onSelect(url)}
                 className={cn(
-                  'rounded-lg border-2 p-1.5 transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-ring',
+                  'rounded-lg border-2 p-1 transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-ring',
                   currentUrl === url
                     ? 'border-primary bg-primary/10 shadow-sm'
                     : 'border-transparent hover:border-border'
                 )}
-                title={seed}
+                title={label}
               >
                 <img
                   src={url}
-                  alt={seed}
+                  alt={label}
                   className="w-full aspect-square rounded-md bg-background"
                   loading="lazy"
                 />
