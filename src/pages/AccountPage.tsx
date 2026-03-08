@@ -107,8 +107,8 @@ export default function AccountPage() {
     } finally { setRemovingMfa(false); }
   };
 
-  const memberSince = profile?.created_at
-    ? format(new Date(profile.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+  const memberSince = user?.created_at
+    ? format(new Date(user.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
     : '—';
 
   return (
