@@ -48,7 +48,7 @@ export function AvatarSelector({ currentUrl, userName, onSelect }: AvatarSelecto
     });
   }, [baseName, round, activeStyle]);
 
-  const displayUrl = currentUrl || avatarUrl('notionists', baseName);
+  const displayUrl = currentUrl || avatarUrl('adventurer', baseName);
 
   const styleLabels: Record<string, string> = {
     'adventurer': 'Anime',
