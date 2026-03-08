@@ -81,6 +81,7 @@ const M365TenantEditPage = lazy(() => import("./pages/environment/M365TenantEdit
 const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPreview"));
 const FirewallReportPreview = lazy(() => import("./pages/preview/FirewallReportPreview"));
 const LicensingHubPage = lazy(() => import("./pages/LicensingHubPage"));
+const AccountPage = lazy(() => import("./pages/AccountPage"));
 
 const queryClient = new QueryClient();
 

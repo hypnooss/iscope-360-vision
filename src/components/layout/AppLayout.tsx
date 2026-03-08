@@ -852,11 +852,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => navigate('/account')} className="cursor-pointer">
                     <Settings className="w-4 h-4 mr-2" />
                     Configurações
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setChangePasswordOpen(true); }} className="cursor-pointer">
+                  <DropdownMenuItem onSelect={() => navigate('/account?tab=security')} className="cursor-pointer">
                     <Lock className="w-4 h-4 mr-2" />
                     Trocar Senha
                   </DropdownMenuItem>
