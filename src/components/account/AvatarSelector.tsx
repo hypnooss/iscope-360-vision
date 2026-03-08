@@ -96,7 +96,7 @@ export function AvatarSelector({ currentUrl, userName, onSelect }: AvatarSelecto
               Randomizar
             </Button>
           </div>
-          <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2 max-h-[320px] overflow-y-auto pr-1">
+          <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">
             {avatarOptions.map(({ key, url, label }) => (
               <button
                 key={key}
