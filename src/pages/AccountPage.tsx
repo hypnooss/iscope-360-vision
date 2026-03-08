@@ -74,6 +74,7 @@ export default function AccountPage() {
     if (error) {
       toast({ title: 'Erro ao salvar perfil', description: error.message, variant: 'destructive' });
     } else {
+      await refreshProfile();
       toast({ title: 'Perfil atualizado com sucesso' });
     }
   };

@@ -306,6 +306,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin,
         isSuperAdmin,
         refreshMfaStatus,
+        refreshProfile,
       }}
     >
       {children}
