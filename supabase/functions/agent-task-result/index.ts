@@ -4841,6 +4841,39 @@ serve(async (req: Request) => {
     }
 
     // ========================================================
+    // External Domain: Extract WHOIS data from agent step result
+    // and update the external_domains table
+    // ========================================================
+    if (rawData && rawData['domain_whois']) {
+      const whoisStep = rawData['domain_whois'] as Record<string, unknown>;
+      const whoisData = (whoisStep?.data || whoisStep) as Record<string, unknown>;
+      
+      if (whoisData?.registrar || whoisData?.expires_at || whoisData?.owner) {
+        console.log(`[external_domain] Updating WHOIS data: registrar=${whoisData.registrar}, expires=${whoisData.expires_at}`);
+        
+        const updateFields: Record<string, unknown> = {
+          whois_checked_at: new Date().toISOString(),
+        };
+        if (whoisData.registrar) updateFields.whois_registrar = whoisData.registrar;
+        if (whoisData.expires_at) updateFields.whois_expires_at = whoisData.expires_at;
+        if (whoisData.created_at) updateFields.whois_created_at = whoisData.created_at;
+        
+        const { error: whoisUpdateError } = await supabase
+          .from('external_domains')
+          .update(updateFields)
+          .eq('id', task.target_id);
+        
+        if (whoisUpdateError) {
+          console.error(`[external_domain] Failed to update WHOIS data:`, whoisUpdateError);
+        } else {
+          console.log(`[external_domain] WHOIS data saved successfully for domain ${task.target_id}`);
+        }
+      } else {
+        console.log(`[external_domain] domain_whois step returned no usable data`);
+      }
+    }
+
+    // ========================================================
     // Firewall Analyzer: Process log data into security insights
     // ========================================================
     if ((body.status === 'completed' || body.status === 'partial') && task.task_type === 'fortigate_analyzer' && rawData) {

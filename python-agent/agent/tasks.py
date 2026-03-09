@@ -20,6 +20,7 @@ from agent.executors.nmap import NmapExecutor
 from agent.executors.nmap_discovery import NmapDiscoveryExecutor
 from agent.executors.httpx_executor import HttpxExecutor
 from agent.executors.asn_classifier import AsnClassifierExecutor
+from agent.executors.domain_whois import DomainWhoisExecutor
 
 
 class TaskExecutor:
@@ -64,6 +65,7 @@ class TaskExecutor:
             'nmap_discovery': NmapDiscoveryExecutor(logger),
             'httpx': HttpxExecutor(logger),
             'asn_classifier': AsnClassifierExecutor(logger),
+            'domain_whois': DomainWhoisExecutor(logger),
         }
         # Feature flag: use progressive streaming if available
         self._use_progressive = True
