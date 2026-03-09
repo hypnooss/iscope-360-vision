@@ -244,6 +244,11 @@ export default function LicensingHubPage() {
     return m365Licenses.filter(lic => matchesFilter(lic.daysLeft, activeFilter));
   }, [m365Licenses, activeFilter]);
 
+  const filteredDomains = useMemo(() => {
+    if (!activeFilter) return domainWhois;
+    return domainWhois.filter(d => matchesFilter(d.daysLeft, activeFilter));
+  }, [domainWhois, activeFilter]);
+
   const shouldHideM365 = (lic: { daysLeft: number | null; capabilityStatus: string }) =>
     lic.capabilityStatus === 'Suspended' ||
     (lic.daysLeft !== null && lic.daysLeft < -60);
