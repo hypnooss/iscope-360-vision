@@ -456,20 +456,40 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[], ipCountryMap: Re
   };
 }
 
-function analyzeIPS(logs: any[]): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
+function analyzeIPS(logs: any[], ipCountryMap: Record<string, string> = {}): { insights: AnalyzerInsight[]; metrics: Partial<Record<string, any>> } {
   const insights: AnalyzerInsight[] = [];
-  if (!Array.isArray(logs) || logs.length === 0) return { insights, metrics: { ipsEvents: 0 } };
+  if (!Array.isArray(logs) || logs.length === 0) {
+    return { insights, metrics: { ipsEvents: 0, topIpsAttackTypes: [], topIpsSrcIPs: [], topIpsSrcCountries: [], topIpsDstIPs: [] } };
+  }
 
   const attackMap: Record<string, { count: number; severity: string; srcIPs: Set<string>; dstIPs: Set<string> }> = {};
+  const srcIPMap: Record<string, { count: number; country?: string }> = {};
+  const dstIPMap: Record<string, { count: number }> = {};
+  const srcCountryMap: Record<string, number> = {};
 
   for (const log of logs) {
     const attack = log.attack || log.msg || log.logdesc || 'unknown';
     const severity = (log.severity || log.crseverity || '').toString();
-    
+    const srcip = log.srcip || log.src || '';
+    const dstip = log.dstip || log.dst || '';
+    const country = log.srccountry || log.src_country || (srcip ? ipCountryMap[srcip] : undefined) || undefined;
+
     if (!attackMap[attack]) attackMap[attack] = { count: 0, severity, srcIPs: new Set(), dstIPs: new Set() };
     attackMap[attack].count++;
-    if (log.srcip) attackMap[attack].srcIPs.add(log.srcip);
-    if (log.dstip) attackMap[attack].dstIPs.add(log.dstip);
+    if (srcip) attackMap[attack].srcIPs.add(srcip);
+    if (dstip) attackMap[attack].dstIPs.add(dstip);
+
+    // Aggregate srcip for rankings
+    if (srcip) {
+      if (!srcIPMap[srcip]) srcIPMap[srcip] = { count: 0, country };
+      srcIPMap[srcip].count++;
+      if (country) srcCountryMap[country] = (srcCountryMap[country] || 0) + 1;
+    }
+    // Aggregate dstip for rankings
+    if (dstip) {
+      if (!dstIPMap[dstip]) dstIPMap[dstip] = { count: 0 };
+      dstIPMap[dstip].count++;
+    }
   }
 
   // C2 patterns
@@ -489,7 +509,7 @@ function analyzeIPS(logs: any[]): { insights: AnalyzerInsight[]; metrics: Partia
     }
   }
 
-  // Per attack type
+  // Per attack type insight
   for (const [attack, data] of Object.entries(attackMap)) {
     const sevNum = parseInt(data.severity);
     const mappedSeverity: AnalyzerInsight['severity'] = 
@@ -506,9 +526,36 @@ function analyzeIPS(logs: any[]): { insights: AnalyzerInsight[]; metrics: Partia
     });
   }
 
+  // Build ranking arrays
+  const topIpsAttackTypes = Object.entries(attackMap)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 20)
+    .map(([category, data]) => ({ category, count: data.count }));
+
+  const topIpsSrcIPs = Object.entries(srcIPMap)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 20)
+    .map(([ip, data]) => ({ ip, country: data.country, count: data.count, targetPorts: [] }));
+
+  const topIpsSrcCountries = Object.entries(srcCountryMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(([country, count]) => ({ country, count }));
+
+  const topIpsDstIPs = Object.entries(dstIPMap)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 20)
+    .map(([ip, data]) => ({ ip, count: data.count, targetPorts: [] }));
+
   return {
     insights,
-    metrics: { ipsEvents: logs.length },
+    metrics: {
+      ipsEvents: logs.length,
+      topIpsAttackTypes,
+      topIpsSrcIPs,
+      topIpsSrcCountries,
+      topIpsDstIPs,
+    },
   };
 }
 

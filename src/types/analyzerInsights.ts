@@ -120,6 +120,11 @@ export interface AnalyzerMetrics {
   anomalyDropped: number;
   topAnomalySources: TopBlockedIP[];
   topAnomalyTypes: TopCategory[];
+  // IPS metrics
+  topIpsAttackTypes: TopCategory[];
+  topIpsSrcIPs: TopBlockedIP[];
+  topIpsSrcCountries: TopCountry[];
+  topIpsDstIPs: TopBlockedIP[];
   // Inbound traffic (blocked)
   topInboundBlockedIPs: TopBlockedIP[];
   topInboundBlockedCountries: TopCountry[];
