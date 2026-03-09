@@ -86,7 +86,7 @@ interface AnalyzerCategorySheetProps {
 }
 
 export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }: AnalyzerCategorySheetProps) {
-  if (!category) return null;
+  if (!category || !snapshot?.metrics) return null;
 
   const info = ANALYZER_CATEGORY_INFO[category];
   const metrics = snapshot.metrics;
