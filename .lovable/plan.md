@@ -1,17 +1,26 @@
-# Status: ✅ Implementado
 
-## Fix: WHOIS data not being saved + parsing issues
 
-### Mudanças realizadas
+# Adicionar cards de Postura de Segurança e Tráfego de Email
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/agent-task-result/index.ts` | Force redeploy (comment timestamp) para ativar extração domain_whois |
-| `supabase/functions/trigger-external-domain-analysis/index.ts` | Removida chamada duplicada ao `domain-whois-lookup` edge function |
-| `python-agent/agent/executors/domain_whois.py` | `.br`: registrar fixo "Registro.br (NIC.br)", busca events em entities aninhadas |
-| `python-agent/agent/executors/domain_whois.py` | `.io`: RDAP endpoint corrigido para `rdap.identitydigital.services` |
-| `python-agent/agent/executors/domain_whois.py` | Owner: extrai registrant separado do registrar (evita confundir dono com registrar) |
+## O que fazer
 
-### Próximos passos
-- Deploy do Agent com `domain_whois.py` atualizado
-- Re-executar análise nos domínios .br e precisio.io para validar
+Inserir os dois cards existentes (`EmailSecurityPostureCard` e `EmailTrafficCard`) entre o Panorama por Categoria e os Insights de Segurança na página Exchange Analyzer.
+
+## Alteração
+
+### `src/pages/m365/ExchangeAnalyzerPage.tsx`
+
+1. Importar `EmailSecurityPostureCard` e `EmailTrafficCard`
+2. Entre a seção `{/* Category Grid */}` e `{/* Security Insights */}`, adicionar um grid 2 colunas com os dois cards:
+
+```tsx
+{selectedTenantId && !loading && (
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <EmailSecurityPostureCard data={effectiveDashboard} />
+    <EmailTrafficCard data={effectiveDashboard} />
+  </div>
+)}
+```
+
+Apenas 1 arquivo modificado, ~5 linhas adicionadas.
+
