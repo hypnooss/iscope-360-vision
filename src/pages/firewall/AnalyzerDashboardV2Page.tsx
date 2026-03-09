@@ -521,13 +521,7 @@ export default function AnalyzerDashboardV2Page() {
 
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-foreground">Firewall Analyzer</h1>
-              <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
-                <Sparkles className="w-3 h-3 mr-1" />
-                v2 Beta
-              </Badge>
-            </div>
+            <h1 className="text-2xl font-bold text-foreground">Firewall Analyzer</h1>
             <p className="text-muted-foreground">Inteligência de segurança baseada em logs</p>
           </div>
           <div className="flex items-center gap-3">
