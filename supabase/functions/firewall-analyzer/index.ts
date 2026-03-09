@@ -295,11 +295,18 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[], ipCountryMap: Re
   const vpnSuccesses = safeVpn.filter(isSuccess);
 
   // Helper to collect IP and country rankings from a set of logs
+  // Extract IP from FortiOS 'ui' field (e.g. "https(10.0.0.1)" or "ssh(1.2.3.4)")
+  const extractIpFromUi = (ui: string): string | null => {
+    if (!ui) return null;
+    const match = ui.match(/\(([^)]+)\)/);
+    return match?.[1] || null;
+  };
+
   const collectRankings = (logs: any[]) => {
     const ipMap: Record<string, { count: number; country?: string; ports: Set<number> }> = {};
     const countryMap: Record<string, number> = {};
     for (const log of logs) {
-      const ip = log.srcip || log.remip || log.src;
+      const ip = log.srcip || log.remip || log.src || extractIpFromUi(log.ui);
       const country = log.srccountry || log.src_country || (ip ? ipCountryMap[ip] : undefined) || undefined;
       if (!ip) continue;
       if (!ipMap[ip]) ipMap[ip] = { count: 0, country, ports: new Set() };
@@ -1362,7 +1369,20 @@ Deno.serve(async (req) => {
 
     // Apply time-based filtering to all log types
     const deniedData = deduplicateLogs(filterLogsByTime(Array.isArray(rawDeniedData) ? rawDeniedData : rawDeniedData?.results || [], periodStart, periodEnd));
-    const authData = deduplicateLogs(filterLogsByTime(Array.isArray(rawAuthData) ? rawAuthData : rawAuthData?.results || [], periodStart, periodEnd));
+    const authDataAll = deduplicateLogs(filterLogsByTime(Array.isArray(rawAuthData) ? rawAuthData : rawAuthData?.results || [], periodStart, periodEnd));
+
+    // Filter auth logs to actual admin login events only (exclude DHCP, SNMP, threat feed, perf-stats etc.)
+    const AUTH_LOGIDS = new Set(['0100032001', '0100032002', '0100032003']);
+    const authData = authDataAll.filter((l: any) => {
+      // Match by logid (most reliable — covers all FortiOS versions)
+      if (l.logid && AUTH_LOGIDS.has(l.logid)) return true;
+      // Match by action=login (fallback for non-standard logid)
+      if ((l.action || '').toLowerCase() === 'login') return true;
+      // Match by logdesc containing "Admin login"
+      if ((l.logdesc || '').toLowerCase().includes('admin login')) return true;
+      return false;
+    });
+    console.log(`[firewall-analyzer] Auth filter: ${authDataAll.length} raw → ${authData.length} real admin login events`);
     const vpnData = deduplicateLogs(filterLogsByTime(Array.isArray(rawVpnData) ? rawVpnData : rawVpnData?.results || [], periodStart, periodEnd));
     const ipsData = deduplicateLogs(filterLogsByTime(Array.isArray(rawIpsData) ? rawIpsData : rawIpsData?.results || [], periodStart, periodEnd));
     const configData = deduplicateLogs(filterLogsByTime(Array.isArray(rawConfigData) ? rawConfigData : rawConfigData?.results || [], periodStart, periodEnd));
@@ -1386,8 +1406,15 @@ Deno.serve(async (req) => {
     // Enrich from auth and VPN logs (they often have srccountry for external IPs)
     const authLogs = authData;
     const vpnLogs = vpnData;
+    // Helper to extract IP from FortiOS 'ui' field (e.g. "https(10.0.0.1)")
+    const extractIpFromUiField = (ui: string): string | null => {
+      if (!ui) return null;
+      const match = ui.match(/\(([^)]+)\)/);
+      return match?.[1] || null;
+    };
+
     for (const log of [...authLogs, ...vpnLogs]) {
-      const ip = log.srcip || log.remip || log.src;
+      const ip = log.srcip || log.remip || log.src || extractIpFromUiField(log.ui);
       const country = log.srccountry || log.src_country;
     if (ip && country && !ipCountryMap[ip]) ipCountryMap[ip] = country;
     }
@@ -1396,7 +1423,7 @@ Deno.serve(async (req) => {
     // GeoIP fallback: resolve countries for auth/vpn IPs missing from ipCountryMap
     const authIPsWithoutCountry = new Set<string>();
     for (const log of [...authLogs, ...vpnLogs]) {
-      const ip = log.srcip || log.remip || log.src;
+      const ip = log.srcip || log.remip || log.src || extractIpFromUiField(log.ui);
       if (ip && !ipCountryMap[ip]) authIPsWithoutCountry.add(ip);
     }
     if (authIPsWithoutCountry.size > 0) {
