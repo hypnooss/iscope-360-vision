@@ -341,7 +341,7 @@ function SchedulesTab() {
 
   const { data: analyzerSchedules, isLoading: loadingAn, refetch: refetchAn } = useQuery({
     queryKey: ['admin-schedules-an'],
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('analyzer_schedules')
