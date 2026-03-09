@@ -79,138 +79,115 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
   const isTrafficCategory = category === 'inbound_traffic' || category === 'outbound_traffic';
   const defaultTab = category === 'outbound_traffic' ? 'saida' : 'entrada';
 
-  const renderTrafficContent = () => (
-    <Tabs defaultValue={defaultTab} className="flex flex-col flex-1 min-h-0">
-      <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-6 h-auto py-0 shrink-0">
-        <TabsTrigger
-          value="entrada"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5"
-        >
-          <ArrowDownToLine className="w-3.5 h-3.5" />
-          Tráfego de Entrada
-        </TabsTrigger>
-        <TabsTrigger
-          value="saida"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5"
-        >
-          <ArrowUpFromLine className="w-3.5 h-3.5" />
-          Tráfego de Saída
-        </TabsTrigger>
-      </TabsList>
+  // Get the correct data based on category
+  const getTrafficData = () => {
+    if (category === 'inbound_traffic') {
+      return {
+        blockedCount: metrics.inboundBlocked || 0,
+        allowedCount: metrics.inboundAllowed || 0,
+        blockedIPs: metrics.topInboundBlockedIPs,
+        blockedCountries: metrics.topInboundBlockedCountries,
+        allowedIPs: metrics.topInboundAllowedIPs,
+        allowedCountries: metrics.topInboundAllowedCountries,
+      };
+    }
+    return {
+      blockedCount: metrics.outboundBlocked || 0,
+      allowedCount: metrics.outboundConnections || 0,
+      blockedIPs: metrics.topOutboundBlockedIPs,
+      blockedCountries: metrics.topOutboundBlockedCountries,
+      allowedIPs: metrics.topOutboundIPs,
+      allowedCountries: metrics.topOutboundCountries,
+    };
+  };
 
-      {/* Entrada tab */}
-      <TabsContent value="entrada" className="flex-1 mt-0 min-h-0">
-        <ScrollArea className="h-full">
-          <div className="p-6 space-y-4">
-            <div className="flex items-center gap-2 flex-wrap">
-              {(metrics.inboundBlocked || 0) > 0 && (
-                <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/30">
-                  {(metrics.inboundBlocked || 0).toLocaleString()} Negado
+  const renderTrafficContent = () => {
+    const data = getTrafficData();
+    
+    return (
+      <Tabs defaultValue="bloqueado" className="flex flex-col flex-1 min-h-0">
+        <div className="border-b border-border shrink-0" />
+        <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-6 h-auto py-0 shrink-0">
+          <TabsTrigger
+            value="bloqueado"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5"
+          >
+            <ShieldX className="w-3.5 h-3.5" />
+            Bloqueado
+          </TabsTrigger>
+          <TabsTrigger
+            value="permitido"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            Permitido
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Bloqueado tab */}
+        <TabsContent value="bloqueado" className="flex-1 mt-0 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="p-6 space-y-4">
+              {data.blockedCount > 0 && (
+                <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">
+                  {data.blockedCount.toLocaleString()} eventos bloqueados
                 </Badge>
               )}
-              {(metrics.inboundAllowed || 0) > 0 && (
-                <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/30">
-                  {(metrics.inboundAllowed || 0).toLocaleString()} Permitido
-                </Badge>
-              )}
+
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top IPs Bloqueados</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <IPList items={data.blockedIPs} colorClass="text-destructive" />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top Países Bloqueados</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CountryList items={data.blockedCountries} colorClass="text-destructive" />
+                </CardContent>
+              </Card>
             </div>
+          </ScrollArea>
+        </TabsContent>
 
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top IPs Bloqueados</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <IPList items={metrics.topInboundBlockedIPs} colorClass="text-red-500" />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top Países Bloqueados</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CountryList items={metrics.topInboundBlockedCountries} colorClass="text-red-500" />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top IPs Permitidos</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <IPList items={metrics.topInboundAllowedIPs} colorClass="text-green-500" />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top Países Permitidos</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CountryList items={metrics.topInboundAllowedCountries} colorClass="text-green-500" />
-              </CardContent>
-            </Card>
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
-      {/* Saída tab */}
-      <TabsContent value="saida" className="flex-1 mt-0 min-h-0">
-        <ScrollArea className="h-full">
-          <div className="p-6 space-y-4">
-            <div className="flex items-center gap-2 flex-wrap">
-              {(metrics.outboundBlocked || 0) > 0 && (
-                <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/30">
-                  {(metrics.outboundBlocked || 0).toLocaleString()} Negado
+        {/* Permitido tab */}
+        <TabsContent value="permitido" className="flex-1 mt-0 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="p-6 space-y-4">
+              {data.allowedCount > 0 && (
+                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
+                  {data.allowedCount.toLocaleString()} eventos permitidos
                 </Badge>
               )}
-              {(metrics.outboundConnections || 0) > 0 && (
-                <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/30">
-                  {(metrics.outboundConnections || 0).toLocaleString()} Permitido
-                </Badge>
-              )}
+
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top IPs Permitidos</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <IPList items={data.allowedIPs} colorClass="text-emerald-600 dark:text-emerald-400" />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top Países Permitidos</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CountryList items={data.allowedCountries} colorClass="text-emerald-600 dark:text-emerald-400" />
+                </CardContent>
+              </Card>
             </div>
-
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top IPs Bloqueados</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <IPList items={metrics.topOutboundBlockedIPs} colorClass="text-red-500" />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top Países Bloqueados</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CountryList items={metrics.topOutboundBlockedCountries} colorClass="text-red-500" />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top IPs Permitidos</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <IPList items={metrics.topOutboundIPs} colorClass="text-green-500" />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top Países Permitidos</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CountryList items={metrics.topOutboundCountries} colorClass="text-green-500" />
-              </CardContent>
-            </Card>
-          </div>
-        </ScrollArea>
-      </TabsContent>
-    </Tabs>
-  );
+          </ScrollArea>
+        </TabsContent>
+      </Tabs>
+    );
+  };
 
   const renderCategoryContent = () => {
     switch (category) {
