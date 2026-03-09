@@ -6,7 +6,7 @@ import { usePreview } from '@/contexts/PreviewContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
-import { useExchangeDashboard } from '@/hooks/useExchangeDashboard';
+import { useExchangeDashboard, type ExchangeDashboardData } from '@/hooks/useExchangeDashboard';
 import { useExchangeOnlineInsights } from '@/hooks/useExchangeOnlineInsights';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -96,6 +96,14 @@ export default function ExchangeAnalyzerPage() {
   if (authLoading) return null;
 
   const loading = dashboardLoading || insightsLoading;
+
+  const DEFAULT_DASHBOARD_DATA: ExchangeDashboardData = {
+    mailboxes: { total: 0, overQuota: 0, forwardingEnabled: 0, autoReplyExternal: 0, newLast30d: 0, notLoggedIn30d: 0 },
+    traffic: { sent: 0, received: 0 },
+    security: { maliciousInbound: 0, phishing: 0, malware: 0, spam: 0 },
+    analyzedAt: '',
+  };
+  const effectiveDashboard = dashboardData ?? DEFAULT_DASHBOARD_DATA;
 
   // No tenant
   if (!tenantsLoading && tenants.length === 0) {
@@ -190,15 +198,15 @@ export default function ExchangeAnalyzerPage() {
         )}
 
         {/* Stats Cards */}
-        {dashboardData && !dashboardLoading && (
+        {selectedTenantId && !loading && (
           <div className="mb-2">
-            <ExchangeAnalyzerStatsCards data={dashboardData} />
+            <ExchangeAnalyzerStatsCards data={effectiveDashboard} />
           </div>
         )}
 
         {/* Category Grid */}
-        {dashboardData && !dashboardLoading && (
-          <ExchangeAnalyzerCategoryGrid data={dashboardData} />
+        {selectedTenantId && !loading && (
+          <ExchangeAnalyzerCategoryGrid data={effectiveDashboard} />
         )}
 
         {/* Security Insights */}

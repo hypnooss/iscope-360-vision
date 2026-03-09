@@ -1,20 +1,17 @@
+# Status: ✅ Implementado
 
+## Fix: WHOIS data not being saved + parsing issues
 
-# Fix: Stats Cards e Category Grid não renderizam
+### Mudanças realizadas
 
-## Causa raiz
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/agent-task-result/index.ts` | Force redeploy (comment timestamp) para ativar extração domain_whois |
+| `supabase/functions/trigger-external-domain-analysis/index.ts` | Removida chamada duplicada ao `domain-whois-lookup` edge function |
+| `python-agent/agent/executors/domain_whois.py` | `.br`: registrar fixo "Registro.br (NIC.br)", busca events em entities aninhadas |
+| `python-agent/agent/executors/domain_whois.py` | `.io`: RDAP endpoint corrigido para `rdap.identitydigital.services` |
+| `python-agent/agent/executors/domain_whois.py` | Owner: extrai registrant separado do registrar (evita confundir dono com registrar) |
 
-Na `ExchangeAnalyzerPage.tsx`, linhas 193-202, os Stats Cards e Category Grid estão condicionados a `dashboardData` ser non-null. O hook `useExchangeDashboard` retorna `null` quando não há `exchange_dashboard_cache` no tenant — o que é o caso para tenants que só têm dados de insights (compliance) mas nunca executaram a coleta operacional do dashboard.
-
-## Solução
-
-Fornecer um **fallback com valores zerados** quando `dashboardData` é null, para que os cards e grid sempre renderizem (com zeros quando não há dados operacionais). Isso mantém a estrutura visual da página consistente.
-
-### Arquivo: `src/pages/m365/ExchangeAnalyzerPage.tsx`
-
-1. Criar um objeto `DEFAULT_DASHBOARD_DATA` com todos os valores zerados
-2. Usar `const effectiveDashboard = dashboardData ?? DEFAULT_DASHBOARD_DATA` 
-3. Remover os guards `dashboardData &&` das seções de Stats Cards e Category Grid — renderizar sempre que `selectedTenantId` existir e não estiver carregando
-
-Isso é uma mudança de ~10 linhas no arquivo da página, sem alterar os componentes.
-
+### Próximos passos
+- Deploy do Agent com `domain_whois.py` atualizado
+- Re-executar análise nos domínios .br e precisio.io para validar
