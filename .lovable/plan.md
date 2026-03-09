@@ -1,40 +1,19 @@
+# Status: ✅ Implementado
 
+## Alteração: Divisão do Card "Tráfego Negado" em Entrada/Saída
 
-# Card de Detecções de Botnet — Sugestão
+### O que foi feito
 
-## Dados disponíveis
+1. **Tipos atualizados** (`src/types/analyzerInsights.ts`):
+   - Substituído `denied_traffic` por `inbound_traffic` e `outbound_traffic` em `AnalyzerEventCategory`
+   - Adicionadas novas entradas em `ANALYZER_CATEGORY_INFO` com labels, ícones e descrições apropriados
 
-O sistema já coleta:
-- **Total de detecções** (`botnetDetections`)
-- **Top domínios C&C** (`botnetDomains[]` com domain + count)
+2. **Grid de categorias** (`src/components/firewall/AnalyzerCategoryGrid.tsx`):
+   - Dois cards separados: "Tráfego de Entrada" e "Tráfego de Saída"
+   - Barra bicolor proporcional: vermelho (negado) + verde (permitido)
+   - Badges com contagem de Negado/Permitido
 
-## Proposta para o card
-
-Aplicar o **mesmo padrão** dos cards de Filtragem Web, Controle de Apps e Anomalias:
-
-1. **Barra proporcional** — segmentos coloridos representando os top 3 domínios de botnet detectados
-2. **Badges coloridas individuais** — cada badge mostra o domínio C&C e a contagem (ex: "12 malware-c2.example.com", "5 botnet-relay.net")
-3. Se não houver domínios mas houver detecções, mostrar badge "Critical" vermelha (como já faz)
-
-## Alteração
-
-**Arquivo:** `src/components/firewall/AnalyzerCategoryGrid.tsx`
-
-No case `'botnet'` do `getCategoryStats`, popular `topItems` com os top 3 de `metrics.botnetDomains`:
-
-```ts
-case 'botnet': {
-  const botnet = metrics.botnetDetections || 0;
-  const topItems = (metrics.botnetDomains || [])
-    .slice(0, 3)
-    .map(d => ({ label: d.domain, count: d.count }));
-  return {
-    total: botnet,
-    severity: botnet > 0 ? 'critical' : 'none',
-    topItems,
-  };
-}
-```
-
-Nenhuma outra alteração necessária — a renderização de barra proporcional e badges coloridas já funciona automaticamente quando `topItems` está presente.
-
+3. **Sheet padronizado** (`src/components/firewall/AnalyzerCategorySheet.tsx`):
+   - Largura: 50vw
+   - Abas inline (Entrada/Saída) no padrão M365
+   - Conteúdo organizado por tab com Top IPs/Países Bloqueados e Permitidos
