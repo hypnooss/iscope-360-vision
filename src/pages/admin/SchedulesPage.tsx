@@ -23,7 +23,7 @@ function renderNextRunShared(nextRunAt: string | null) {
   const next = new Date(nextRunAt);
   const now = new Date();
   const diffMin = differenceInMinutes(next, now);
-  if (diffMin < -10) return <span className="text-destructive font-medium">Atrasado ({Math.abs(diffMin)} min)</span>;
+  if (diffMin < -5) return <span className="text-destructive font-medium">Atrasado ({Math.abs(diffMin)} min)</span>;
   if (diffMin < 0) {
     const relative = formatDistanceToNow(next, { addSuffix: true, locale: ptBR });
     return (
