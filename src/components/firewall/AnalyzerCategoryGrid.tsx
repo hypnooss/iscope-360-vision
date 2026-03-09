@@ -55,11 +55,13 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
       const denied = metrics.inboundBlocked || 0;
       const allowed = metrics.inboundAllowed || 0;
       const total = denied + allowed;
+      const topIPs = (metrics.topInboundAllowedIPs || []).slice(0, 3).map(ip => ({ ip: ip.ip, count: ip.count }));
       return {
         total,
         denied,
         allowed,
         severity: denied > 1000 ? 'critical' : denied > 500 ? 'high' : denied > 100 ? 'medium' : denied > 0 ? 'low' : 'none',
+        topIPs,
       };
     }
 
