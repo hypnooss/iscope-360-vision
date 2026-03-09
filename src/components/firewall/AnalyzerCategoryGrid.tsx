@@ -41,6 +41,7 @@ interface CategoryStats {
   denied?: number;
   allowed?: number;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'none';
+  topLabels?: string[];
 }
 
 function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSnapshot): CategoryStats {
