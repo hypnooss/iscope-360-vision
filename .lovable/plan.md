@@ -1,14 +1,13 @@
 # Status: ✅ Implementado
 
-## Alteração: Contagem real de config changes (30 dias) no card do Analyzer
+## Fix: Rankings de Autenticação vazios e contagem incorreta
 
 ### O que foi feito
 
-1. **Query de contagem** (`src/pages/firewall/AnalyzerDashboardV2Page.tsx`):
-   - Nova query `configChangesCount30d` usando `select('id', { count: 'exact', head: true })` na tabela `analyzer_config_changes` com filtro de 30 dias
-   - Passada como prop `configChangesTotal30d` ao `AnalyzerCategoryGrid`
+1. **Filtro de logs de autenticação real** (`supabase/functions/firewall-analyzer/index.ts`):
+   - Pré-filtro por `logid` (`0100032001`, `0100032002`, `0100032003`), `action=login` ou `logdesc` contendo "Admin login"
+   - Elimina falsos positivos (DHCP, SNMP, threat feeds, perf-stats) que inflavam contagens
 
-2. **Grid de categorias** (`src/components/firewall/AnalyzerCategoryGrid.tsx`):
-   - Nova prop opcional `configChangesTotal30d`
-   - No `case 'config_changes'`, prioriza o valor de 30 dias (prop) sobre o `metrics.configChanges` (snapshot)
-   - Fallback para o valor do snapshot se a prop não estiver disponível
+2. **Fallback de IP via campo `ui`** (`supabase/functions/firewall-analyzer/index.ts`):
+   - `collectRankings` agora extrai IP do campo `ui` (formato `"https(10.0.0.1)"`) quando `srcip`/`remip`/`src` não existem
+   - Mesma lógica aplicada no enriquecimento GeoIP
