@@ -308,8 +308,8 @@ export function useAnalyzerProgress(firewallId?: string) {
       return { status: snap.status as string, elapsed, snapshotId: snap.id as string };
     },
     enabled: !!firewallId,
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
 }
 

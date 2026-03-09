@@ -273,7 +273,7 @@ export default function FirewallCompliancePage() {
       return data;
     },
     enabled: !!activeTaskId,
-    refetchInterval: 5000,
+    refetchInterval: 15000,
   });
 
   // Detect in-progress task on mount
