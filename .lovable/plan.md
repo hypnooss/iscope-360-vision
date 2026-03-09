@@ -1,26 +1,19 @@
+# Status: ✅ Implementado
 
+## Alteração: Divisão do Card "Tráfego Negado" em Entrada/Saída
 
-# Adicionar Top IPs nos Cards de Tráfego
+### O que foi feito
 
-## O que será feito
+1. **Tipos atualizados** (`src/types/analyzerInsights.ts`):
+   - Substituído `denied_traffic` por `inbound_traffic` e `outbound_traffic` em `AnalyzerEventCategory`
+   - Adicionadas novas entradas em `ANALYZER_CATEGORY_INFO` com labels, ícones e descrições apropriados
 
-Adicionar uma seção compacta de **Top IPs de Origem** no card **Tráfego de Saída** e **Top IPs de Destino** no card **Tráfego de Entrada**, diretamente no grid de categorias (`AnalyzerCategoryGrid.tsx`).
+2. **Grid de categorias** (`src/components/firewall/AnalyzerCategoryGrid.tsx`):
+   - Dois cards separados: "Tráfego de Entrada" e "Tráfego de Saída"
+   - Barra bicolor proporcional: vermelho (negado) + verde (permitido)
+   - Badges com contagem de Negado/Permitido
 
-## Dados disponíveis
-
-Os dados já existem nas métricas do snapshot:
-- **Saída (Top IPs de Origem)**: `metrics.topOutboundIPs` + `metrics.topOutboundBlockedIPs` — IPs internos que mais geraram tráfego de saída
-- **Entrada (Top IPs de Destino)**: `metrics.topInboundBlockedIPs` + `metrics.topInboundAllowedIPs` — IPs de destino mais acessados no tráfego de entrada
-
-Tipo `TopBlockedIP`: `{ ip, country?, count, targetPorts[] }`
-
-## Alteração
-
-**Arquivo**: `src/components/firewall/AnalyzerCategoryGrid.tsx`
-
-1. No `getCategoryStats`, para `inbound_traffic` retornar também `topIPs: metrics.topInboundAllowedIPs?.slice(0, 3)` e para `outbound_traffic` retornar `topIPs: metrics.topOutboundIPs?.slice(0, 3)`
-
-2. No render do card, para as categorias `inbound_traffic` e `outbound_traffic`, adicionar após os badges uma mini-lista dos top 3 IPs com contagem, exibidos como pequenos itens compactos (IP + count) com label "Top IPs de Destino" ou "Top IPs de Origem" conforme a categoria
-
-3. Estilo: texto `text-[10px]` monospace para IPs, contagem à direita, fundo `bg-secondary/30` com padding mínimo — mantendo o card compacto
-
+3. **Sheet padronizado** (`src/components/firewall/AnalyzerCategorySheet.tsx`):
+   - Largura: 50vw
+   - Abas inline (Entrada/Saída) no padrão M365
+   - Conteúdo organizado por tab com Top IPs/Países Bloqueados e Permitidos

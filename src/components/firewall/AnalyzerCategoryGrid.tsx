@@ -42,6 +42,7 @@ interface CategoryStats {
   allowed?: number;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'none';
   topItems?: { label: string; count: number }[];
+  topIPs?: { ip: string; count: number }[];
 }
 
 const SEGMENT_COLORS = ['#f97316', '#a855f7', '#10b981', '#3b82f6', '#eab308'];
@@ -54,11 +55,13 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
       const denied = metrics.inboundBlocked || 0;
       const allowed = metrics.inboundAllowed || 0;
       const total = denied + allowed;
+      const topIPs = (metrics.topInboundAllowedIPs || []).slice(0, 3).map(ip => ({ ip: ip.ip, count: ip.count }));
       return {
         total,
         denied,
         allowed,
         severity: denied > 1000 ? 'critical' : denied > 500 ? 'high' : denied > 100 ? 'medium' : denied > 0 ? 'low' : 'none',
+        topIPs,
       };
     }
 
@@ -66,11 +69,13 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
       const denied = metrics.outboundBlocked || 0;
       const allowed = metrics.outboundConnections || 0;
       const total = denied + allowed;
+      const topIPs = (metrics.topOutboundIPs || []).slice(0, 3).map(ip => ({ ip: ip.ip, count: ip.count }));
       return {
         total,
         denied,
         allowed,
         severity: denied > 500 ? 'high' : denied > 100 ? 'medium' : denied > 0 ? 'low' : 'none',
+        topIPs,
       };
     }
 
@@ -317,6 +322,23 @@ export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCate
                         {stats.severity.charAt(0).toUpperCase() + stats.severity.slice(1)}
                       </Badge>
                     )}
+                  </div>
+                )}
+
+                {/* Top IPs for traffic cards */}
+                {hasData && stats.topIPs && stats.topIPs.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      {catKey === 'inbound_traffic' ? 'Top IPs de Destino' : 'Top IPs de Origem'}
+                    </p>
+                    <div className="rounded bg-secondary/30 px-2 py-1.5 space-y-0.5">
+                      {stats.topIPs.map(entry => (
+                        <div key={entry.ip} className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-mono text-foreground truncate">{entry.ip}</span>
+                          <span className="text-[10px] text-muted-foreground shrink-0">{entry.count.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
