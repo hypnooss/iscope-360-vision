@@ -630,7 +630,7 @@ export default function AnalyzerDashboardPage() {
         {/* Attack Map - Always visible */
         {snapshot && (
           <>
-          <Card
+            <Card
               className="glass-card mb-6 cursor-pointer hover:border-primary/50 transition-colors group"
               onClick={() => setShowAttackMap(true)}
             >
