@@ -323,7 +323,7 @@ function SchedulesTab() {
 
   const { data: attackSurfaceSchedules, isLoading: loadingAs, refetch: refetchAs } = useQuery({
     queryKey: ['admin-schedules-as'],
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('attack_surface_schedules')
