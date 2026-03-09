@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +11,7 @@ import logoIscope from '@/assets/logo-iscope.png';
 
 export default function MfaChallengePage() {
   const navigate = useNavigate();
+  const { refreshMfaStatus } = useAuth();
   const [code, setCode] = useState('');
   const [factorId, setFactorId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -65,6 +67,7 @@ export default function MfaChallengePage() {
       if (verifyError) throw verifyError;
 
       toast.success('Autenticação MFA concluída!');
+      await refreshMfaStatus();
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
       console.error('MFA challenge error:', err);
