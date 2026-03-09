@@ -1,8 +1,15 @@
 # Status: ✅ Implementado
 
-## Otimização Round 2: Redução adicional de carga no Supabase Nano
+## Otimização Round 3: Anti-retry storm
 
 ### Mudanças aplicadas
+
+| Arquivo | Mudança |
+|---|---|
+| App.tsx | `retryDelay` exponencial (1s → 2s → 4s → ... → 30s max) |
+| SystemAlertBanner.tsx | Reescrito: `useQuery` com staleTime 60s, refetchInterval 120s, 1 subscription Realtime com debounce 2s |
+
+### Otimizações Round 2 (anterior)
 
 | Arquivo | Mudança |
 |---|---|
