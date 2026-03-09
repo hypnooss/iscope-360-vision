@@ -191,6 +191,14 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                   <CountryList items={data.blockedCountries} colorClass="text-destructive" />
                 </CardContent>
               </Card>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top IPs {data.internalLabel}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <IPList items={data.blockedInternalIPs} colorClass="text-destructive" />
+                </CardContent>
+              </Card>
             </div>
           </ScrollArea>
         </TabsContent>
