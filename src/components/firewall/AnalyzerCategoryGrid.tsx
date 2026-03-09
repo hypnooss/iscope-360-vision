@@ -110,7 +110,7 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
     }
 
     case 'config_changes': {
-      const config = metrics.configChanges || 0;
+      const config = overrides?.configChangesTotal30d ?? metrics.configChanges ?? 0;
       return {
         total: config,
         severity: config > 20 ? 'high' : config > 10 ? 'medium' : config > 0 ? 'low' : 'none',
