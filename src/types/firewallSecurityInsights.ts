@@ -7,6 +7,8 @@ export interface FirewallInsightMetric {
   value: string | number;
 }
 
+export type FirewallInsightSource = 'traffic' | 'compliance_correlation';
+
 export interface FirewallSecurityInsight {
   id: string;
   title: string;
@@ -17,6 +19,22 @@ export interface FirewallSecurityInsight {
   bestPractice: string[];
   businessImpact: string;
   metrics: FirewallInsightMetric[];
+  source?: FirewallInsightSource;
+  complianceCode?: string;
+}
+
+// Correlation rule definition
+export interface ComplianceCorrelationRule {
+  complianceCode: string;
+  metricCondition: (metrics: Record<string, unknown>) => boolean;
+  severity: FirewallInsightSeverity;
+  icon: string;
+  title: string;
+  what: (metrics: Record<string, unknown>) => string;
+  why: string;
+  bestPractice: string[];
+  businessImpact: string;
+  metricExtractor: (metrics: Record<string, unknown>) => FirewallInsightMetric[];
 }
 
 // Severity colors and labels using semantic tokens
