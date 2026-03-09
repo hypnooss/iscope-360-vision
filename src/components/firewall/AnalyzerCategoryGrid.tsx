@@ -41,8 +41,10 @@ interface CategoryStats {
   denied?: number;
   allowed?: number;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'none';
-  topLabels?: string[];
+  topItems?: { label: string; count: number }[];
 }
+
+const SEGMENT_COLORS = ['#f97316', '#a855f7', '#10b981', '#3b82f6', '#eab308'];
 
 function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSnapshot): CategoryStats {
   const metrics = snapshot.metrics;
@@ -116,31 +118,31 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
 
     case 'web_filter': {
       const webFilter = metrics.webFilterBlocked || 0;
-      const topLabels = (metrics.topWebFilterCategories || []).slice(0, 3).map(c => c.category);
+      const topItems = (metrics.topWebFilterCategories || []).slice(0, 3).map(c => ({ label: c.category, count: c.count }));
       return {
         total: webFilter,
         severity: webFilter > 1000 ? 'high' : webFilter > 500 ? 'medium' : webFilter > 0 ? 'low' : 'none',
-        topLabels,
+        topItems,
       };
     }
 
     case 'app_control': {
       const appControl = metrics.appControlBlocked || 0;
-      const topLabels = (metrics.topAppControlApps || []).slice(0, 3).map(c => c.category);
+      const topItems = (metrics.topAppControlApps || []).slice(0, 3).map(c => ({ label: c.category, count: c.count }));
       return {
         total: appControl,
         severity: appControl > 1000 ? 'high' : appControl > 500 ? 'medium' : appControl > 0 ? 'low' : 'none',
-        topLabels,
+        topItems,
       };
     }
 
     case 'anomalies': {
       const anomaly = metrics.anomalyEvents || 0;
-      const topLabels = (metrics.topAnomalyTypes || []).slice(0, 3).map(c => c.category);
+      const topItems = (metrics.topAnomalyTypes || []).slice(0, 3).map(c => ({ label: c.category, count: c.count }));
       return {
         total: anomaly,
         severity: anomaly > 50 ? 'critical' : anomaly > 20 ? 'high' : anomaly > 5 ? 'medium' : anomaly > 0 ? 'low' : 'none',
-        topLabels,
+        topItems,
       };
     }
 
@@ -225,6 +227,19 @@ export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCate
                       style={{ width: `${(stats.allowed! / stats.total) * 100}%` }}
                     />
                   </div>
+                ) : hasData && stats.topItems && stats.topItems.length > 0 ? (
+                  <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden flex">
+                    {stats.topItems.map((item, idx) => (
+                      <div
+                        key={item.label}
+                        className="h-full transition-all"
+                        style={{
+                          width: `${(item.count / stats.total) * 100}%`,
+                          backgroundColor: SEGMENT_COLORS[idx % SEGMENT_COLORS.length],
+                        }}
+                      />
+                    ))}
+                  </div>
                 ) : (
                   <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden">
                     {hasData && (
@@ -269,21 +284,24 @@ export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCate
 
                 {hasData && !hasTrafficSplit && stats.success === undefined && stats.failed === undefined && (
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {stats.topLabels && stats.topLabels.length > 0 ? (
-                      stats.topLabels.map((label) => (
-                        <Badge
-                          key={label}
-                          variant="outline"
-                          className="text-[10px] px-1.5 py-0"
-                          style={{
-                            backgroundColor: `${info.colorHex}15`,
-                            color: info.colorHex,
-                            borderColor: `${info.colorHex}30`,
-                          }}
-                        >
-                          {label}
-                        </Badge>
-                      ))
+                    {stats.topItems && stats.topItems.length > 0 ? (
+                      stats.topItems.map((item, idx) => {
+                        const color = SEGMENT_COLORS[idx % SEGMENT_COLORS.length];
+                        return (
+                          <Badge
+                            key={item.label}
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0"
+                            style={{
+                              backgroundColor: `${color}20`,
+                              color,
+                              borderColor: `${color}40`,
+                            }}
+                          >
+                            {item.count.toLocaleString()} {item.label}
+                          </Badge>
+                        );
+                      })
                     ) : (
                       <Badge variant="outline" className={cn(
                         "text-[10px] px-1.5 py-0",
