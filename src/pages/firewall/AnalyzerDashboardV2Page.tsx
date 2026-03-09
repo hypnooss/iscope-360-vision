@@ -34,7 +34,7 @@ import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
   Globe, Wifi, Eye, Server, Lock, KeyRound, ExternalLink,
   Filter, AppWindow, Building2, Zap, Clock, Maximize2, Settings, Calendar, Loader2,
-  Activity, Radio, Bug, Sparkles,
+  Activity, Radio, Bug,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -517,17 +517,11 @@ export default function AnalyzerDashboardV2Page() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb items={[{ label: 'Firewall' }, { label: 'Analyzer v2' }]} />
+        <PageBreadcrumb items={[{ label: 'Firewall' }, { label: 'Analyzer' }]} />
 
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-foreground">Firewall Analyzer</h1>
-              <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
-                <Sparkles className="w-3 h-3 mr-1" />
-                v2 Beta
-              </Badge>
-            </div>
+            <h1 className="text-2xl font-bold text-foreground">Firewall Analyzer</h1>
             <p className="text-muted-foreground">Inteligência de segurança baseada em logs</p>
           </div>
           <div className="flex items-center gap-3">
