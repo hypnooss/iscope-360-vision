@@ -687,6 +687,11 @@ export default function AnalyzerDashboardV2Page() {
           </>
         )}
 
+        {/* Security Insights - Educational Cards */}
+        {snapshot && !isLoading && (
+          <SecurityInsightCards snapshot={snapshot} />
+        )}
+
         {!selectedFirewall && (
           <Alert>
             <Info className="h-4 w-4" />
