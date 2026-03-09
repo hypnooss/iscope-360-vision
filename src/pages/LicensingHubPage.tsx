@@ -357,6 +357,9 @@ export default function LicensingHubPage() {
             <TabsTrigger value="tls" className="gap-2">
               <Globe className="w-4 h-4" /> Certificados TLS
             </TabsTrigger>
+            <TabsTrigger value="domains" className="gap-2">
+              <Globe className="w-4 h-4" /> Domínios Externos
+            </TabsTrigger>
             <TabsTrigger value="m365" className="gap-2">
               <Cloud className="w-4 h-4" /> Microsoft 365
             </TabsTrigger>
