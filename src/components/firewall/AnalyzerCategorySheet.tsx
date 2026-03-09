@@ -125,6 +125,7 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
         blockedCountries: metrics.topInboundBlockedCountries,
         allowedIPs: metrics.topInboundAllowedIPs,
         allowedCountries: metrics.topInboundAllowedCountries,
+        ipLabel: 'de Destino',
       };
     }
     return {
@@ -134,6 +135,7 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
       blockedCountries: metrics.topOutboundBlockedCountries,
       allowedIPs: metrics.topOutboundIPs,
       allowedCountries: metrics.topOutboundCountries,
+      ipLabel: 'de Origem',
     };
   };
 
@@ -169,7 +171,7 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
               )}
               <Card>
                 <CardHeader className="pb-2 pt-4">
-                  <CardTitle className="text-sm font-medium">Top IPs Bloqueados</CardTitle>
+                  <CardTitle className="text-sm font-medium">Top IPs {data.ipLabel} (Bloqueados)</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <IPList items={data.blockedIPs} colorClass="text-destructive" />
@@ -197,7 +199,7 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
               )}
               <Card>
                 <CardHeader className="pb-2 pt-4">
-                  <CardTitle className="text-sm font-medium">Top IPs Permitidos</CardTitle>
+                  <CardTitle className="text-sm font-medium">Top IPs {data.ipLabel} (Permitidos)</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <IPList items={data.allowedIPs} colorClass="text-emerald-600 dark:text-emerald-400" />
