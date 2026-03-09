@@ -148,9 +148,13 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
 
     case 'botnet': {
       const botnet = metrics.botnetDetections || 0;
+      const topItems = (metrics.botnetDomains || [])
+        .slice(0, 3)
+        .map((d: { domain: string; count: number }) => ({ label: d.domain, count: d.count }));
       return {
         total: botnet,
         severity: botnet > 0 ? 'critical' : 'none',
+        topItems,
       };
     }
 
