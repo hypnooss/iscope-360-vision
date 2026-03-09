@@ -41,6 +41,7 @@ const FirewallCompliancePage = lazy(() => import("./pages/firewall/FirewallCompl
 const TaskExecutionsPage = lazy(() => import("./pages/firewall/TaskExecutionsPage"));
 const FirewallAnalysis = lazy(() => import("./pages/FirewallAnalysis"));
 const AnalyzerDashboardPage = lazy(() => import("./pages/firewall/AnalyzerDashboardPage"));
+const AnalyzerDashboardV2Page = lazy(() => import("./pages/firewall/AnalyzerDashboardV2Page"));
 const AnalyzerInsightsPage = lazy(() => import("./pages/firewall/AnalyzerInsightsPage"));
 const AnalyzerCriticalPage = lazy(() => import("./pages/firewall/AnalyzerCriticalPage"));
 const AnalyzerConfigChangesPage = lazy(() => import("./pages/firewall/AnalyzerConfigChangesPage"));
