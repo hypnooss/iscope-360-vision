@@ -20,8 +20,8 @@ import { ExchangeAnalyzerStatsCards } from '@/components/m365/exchange/ExchangeA
 import { ExchangeAnalyzerCategoryGrid } from '@/components/m365/exchange/ExchangeAnalyzerCategoryGrid';
 import { ExchangeAnalyzerCategorySheet } from '@/components/m365/exchange/ExchangeAnalyzerCategorySheet';
 import { ExchangeSecurityInsightCards } from '@/components/m365/exchange/ExchangeSecurityInsightCards';
-import { EmailSecurityPostureCard } from '@/components/m365/exchange/EmailSecurityPostureCard';
-import { EmailTrafficCard } from '@/components/m365/exchange/EmailTrafficCard';
+import { ExchangeThreatProtectionSection } from '@/components/m365/exchange/ExchangeThreatProtectionSection';
+import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
@@ -63,6 +63,7 @@ export default function ExchangeAnalyzerPage() {
 
   // Data hooks
   const { data: dashboardData, loading: dashboardLoading } = useExchangeDashboard({ tenantRecordId: selectedTenantId });
+  const { data: analyzerSnapshot, isLoading: analyzerLoading } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
   const {
     insights,
     summary,
@@ -195,12 +196,12 @@ export default function ExchangeAnalyzerPage() {
           <ExchangeAnalyzerCategoryGrid data={effectiveDashboard} />
         )}
 
-        {/* Email Security Posture & Traffic */}
+        {/* Threat Protection */}
         {selectedTenantId && !loading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <EmailSecurityPostureCard data={effectiveDashboard} />
-            <EmailTrafficCard data={effectiveDashboard} />
-          </div>
+          <ExchangeThreatProtectionSection
+            data={analyzerSnapshot?.metrics?.threatProtection ?? null}
+            loading={analyzerLoading}
+          />
         )}
 
         {/* Security Insights */}
