@@ -123,32 +123,54 @@ export default function CollaborationPage() {
           </Card>
         )}
 
-        {/* SEÇÃO 2: Collaboration Security Score */}
-        <CollaborationScoreCard data={d} loading={loading} />
+        {/* Empty state — no recent collection */}
+        {!loading && !d && !error && (
+          <Card className="border-muted bg-muted/5">
+            <CardContent className="py-12 text-center">
+              <RefreshCw className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Nenhuma coleta recente disponível</h3>
+              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                Clique em Atualizar para iniciar a primeira coleta de dados de colaboração.
+              </p>
+              <Button className="gap-2" onClick={refresh} disabled={refreshing}>
+                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                {refreshing ? 'Atualizando...' : 'Atualizar agora'}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* SEÇÃO 3: Microsoft Teams Overview */}
-        <div>
-          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-            <MessageSquare className="w-5 h-5 text-primary" />
-            Microsoft Teams Overview
-          </h2>
-          <TeamsOverviewCards data={d} loading={loading} />
-        </div>
+        {/* Dashboard sections — only when data exists */}
+        {(d || loading) && (
+          <>
+            {/* SEÇÃO 2: Collaboration Security Score */}
+            <CollaborationScoreCard data={d} loading={loading} />
 
-        {/* SEÇÃO 4: Teams Governance */}
-        <TeamsGovernanceCard data={d} loading={loading} />
+            {/* SEÇÃO 3: Microsoft Teams Overview */}
+            <div>
+              <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-primary" />
+                Microsoft Teams Overview
+              </h2>
+              <TeamsOverviewCards data={d} loading={loading} />
+            </div>
 
-        {/* SEÇÃO 5 + 6: SharePoint Overview + Governance */}
-        <div>
-          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-            <HardDrive className="w-5 h-5 text-primary" />
-            SharePoint Online
-          </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <SharePointOverviewCard data={d} loading={loading} />
-            <SharePointGovernanceCard data={d} loading={loading} />
-          </div>
-        </div>
+            {/* SEÇÃO 4: Teams Governance */}
+            <TeamsGovernanceCard data={d} loading={loading} />
+
+            {/* SEÇÃO 5 + 6: SharePoint Overview + Governance */}
+            <div>
+              <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <HardDrive className="w-5 h-5 text-primary" />
+                SharePoint Online
+              </h2>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <SharePointOverviewCard data={d} loading={loading} />
+                <SharePointGovernanceCard data={d} loading={loading} />
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </AppLayout>
   );
