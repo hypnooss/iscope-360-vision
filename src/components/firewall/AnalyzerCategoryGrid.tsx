@@ -182,7 +182,7 @@ export function AnalyzerCategoryGrid({ snapshot, configChangesTotal30d, onCatego
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {CATEGORY_ORDER.map(catKey => {
           const info = ANALYZER_CATEGORY_INFO[catKey];
-          const stats = getCategoryStats(catKey, snapshot);
+          const stats = getCategoryStats(catKey, snapshot, { configChangesTotal30d });
           const hasData = stats.total > 0;
           const hasTrafficSplit = stats.denied !== undefined && stats.allowed !== undefined;
 

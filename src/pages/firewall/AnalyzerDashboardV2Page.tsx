@@ -637,6 +637,7 @@ export default function AnalyzerDashboardV2Page() {
           <div className="mb-6">
             <AnalyzerCategoryGrid 
               snapshot={snapshot} 
+              configChangesTotal30d={configChangesCount30d ?? undefined}
               onCategoryClick={(category) => {
                 if (category === 'config_changes') {
                   navigate('/scope-firewall/analyzer/config-changes');
