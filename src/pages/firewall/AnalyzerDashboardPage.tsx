@@ -25,6 +25,9 @@ import { Progress } from '@/components/ui/progress';
 import { getCountryCode } from '@/lib/countryUtils';
 import { AttackMap } from '@/components/firewall/AttackMap';
 import { AttackMapFullscreen } from '@/components/firewall/AttackMapFullscreen';
+import { AnalyzerStatsCards } from '@/components/firewall/AnalyzerStatsCards';
+import { AnalyzerCategoryGrid } from '@/components/firewall/AnalyzerCategoryGrid';
+import { AnalyzerCategorySheet } from '@/components/firewall/AnalyzerCategorySheet';
 import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
@@ -36,7 +39,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast as sonnerToast } from 'sonner';
 import 'flag-icons/css/flag-icons.min.css';
-import type { TopBlockedIP, TopCountry, TopCategory, TopUserIP, InterfaceBandwidth, BotnetDomain } from '@/types/analyzerInsights';
+import type { TopBlockedIP, TopCountry, TopCategory, TopUserIP, InterfaceBandwidth, BotnetDomain, AnalyzerEventCategory } from '@/types/analyzerInsights';
 
 interface FirewallOption { id: string; name: string; client_id: string; }
 
