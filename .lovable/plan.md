@@ -1,35 +1,35 @@
 # Status: ✅ Implementado
 
-## Otimização Round 3: Anti-retry storm
+## WHOIS via Agent (TCP Socket) — Fix para domínios .br
 
-### Mudanças aplicadas
+### Problema
+- `rdap.registro.br` retorna 403 para IPs de cloud (Edge Functions)
+- Apenas domínios GoDaddy funcionavam via RDAP
 
-| Arquivo | Mudança |
-|---|---|
-| App.tsx | `retryDelay` exponencial (1s → 2s → 4s → ... → 30s max) |
-| SystemAlertBanner.tsx | Reescrito: `useQuery` com staleTime 60s, refetchInterval 120s, 1 subscription Realtime com debounce 2s |
-
-### Otimizações Round 2 (anterior)
+### Solução
+Coleta WHOIS via TCP socket (porta 43) executada pelo Agent on-premise.
 
 | Arquivo | Mudança |
 |---|---|
-| App.tsx | QueryClient: `refetchOnWindowFocus: false`, `retry: 1`, `staleTime: 30s` |
-| AuthContext.tsx | Removido `getSession()` redundante no `checkMfaStatus` |
-| useDashboardStats.ts | Queries serializadas em batches de 2-3 (era 4+6 paralelas) |
-| Migration SQL | Índices em `agents`, `system_alerts`, `user_roles`, `user_module_permissions` — **PENDENTE** (Supabase timeout) |
+| `python-agent/agent/executors/domain_whois.py` | **Novo** — executor WHOIS via socket TCP com suporte a .br, .com, .net, .org, etc. |
+| `python-agent/agent/executors/__init__.py` | Registrado `DomainWhoisExecutor` |
+| `python-agent/agent/tasks.py` | Adicionado `domain_whois` no mapeamento de executors |
+| Blueprint `external_domain` (DB) | Adicionado step `domain_whois` com servidores configuráveis |
+| `supabase/functions/agent-task-result/index.ts` | Extrai dados WHOIS do step result e atualiza `external_domains` |
 
-### Otimizações Round 1 (anterior)
+### Como funciona
+1. Agent recebe task `external_domain_analysis` com step `domain_whois`
+2. Executor consulta `whois.registro.br` (para .br) via TCP socket porta 43
+3. Extrai registrar, expires, created, owner via regex
+4. Resultado é enviado como step result progressivo
+5. `agent-task-result` recebe e faz UPDATE em `external_domains` (whois_registrar, whois_expires_at, etc.)
 
-| Arquivo | Antes | Depois |
-|---|---|---|
-| AgentDetailPage.tsx | 5s | 15s |
-| FirewallCompliancePage.tsx | 5s | 15s |
-| M365PosturePage.tsx | 5s | 15s |
-| ExternalDomainCompliancePage.tsx | 5s | 15s |
-| useAnalyzerData.ts | 10s | 30s |
-| useM365AnalyzerData.ts | 10s | 30s |
-| useAttackSurfaceData.ts | 15s | 30s |
-| SuperAgentsPage.tsx | 15s | 30s |
-| SurfaceAnalyzerV3Page.tsx | 10s | 30s |
-| SchedulesPage.tsx (×6 queries) | 30s | 60s |
-| SchedulesPage.tsx (executions) | 15s | 30s |
+### Próximos passos
+- Deploy do Agent com novo executor
+- Re-executar Domain Compliance nos domínios .br
+
+---
+
+## Otimizações anteriores
+
+(ver histórico no git)
