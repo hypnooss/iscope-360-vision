@@ -518,9 +518,10 @@ export function useLicensingHub() {
     }
     for (const cert of tlsCertificates) countItem(cert.daysLeft);
     for (const lic of m365Licenses) countItem(lic.daysLeft);
+    for (const d of domainWhois) countItem(d.daysLeft);
 
     return { expired, expiring, active, total: expired + expiring + active };
-  }, [firewallLicenses, tlsCertificates, m365Licenses]);
+  }, [firewallLicenses, tlsCertificates, m365Licenses, domainWhois]);
 
   return {
     workspaces,
