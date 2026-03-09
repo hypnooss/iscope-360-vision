@@ -133,10 +133,12 @@ export interface AnalyzerMetrics {
   // Inbound traffic (blocked)
   topInboundBlockedIPs: TopBlockedIP[];
   topInboundBlockedCountries: TopCountry[];
+  topInboundBlockedDestIPs?: TopBlockedIP[];
   inboundBlocked: number;
   // Inbound traffic (allowed)
   topInboundAllowedIPs: TopBlockedIP[];
   topInboundAllowedCountries: TopCountry[];
+  topInboundAllowedDestIPs?: TopBlockedIP[];
   inboundAllowed: number;
   // Fase 2: Active Sessions
   activeSessions: number;
