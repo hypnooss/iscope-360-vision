@@ -271,21 +271,24 @@ export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCate
 
                 {hasData && !hasTrafficSplit && stats.success === undefined && stats.failed === undefined && (
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {stats.topLabels && stats.topLabels.length > 0 ? (
-                      stats.topLabels.map((label) => (
-                        <Badge
-                          key={label}
-                          variant="outline"
-                          className="text-[10px] px-1.5 py-0"
-                          style={{
-                            backgroundColor: `${info.colorHex}15`,
-                            color: info.colorHex,
-                            borderColor: `${info.colorHex}30`,
-                          }}
-                        >
-                          {label}
-                        </Badge>
-                      ))
+                    {stats.topItems && stats.topItems.length > 0 ? (
+                      stats.topItems.map((item, idx) => {
+                        const color = SEGMENT_COLORS[idx % SEGMENT_COLORS.length];
+                        return (
+                          <Badge
+                            key={item.label}
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0"
+                            style={{
+                              backgroundColor: `${color}20`,
+                              color,
+                              borderColor: `${color}40`,
+                            }}
+                          >
+                            {item.count.toLocaleString()} {item.label}
+                          </Badge>
+                        );
+                      })
                     ) : (
                       <Badge variant="outline" className={cn(
                         "text-[10px] px-1.5 py-0",
