@@ -227,6 +227,19 @@ export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCate
                       style={{ width: `${(stats.allowed! / stats.total) * 100}%` }}
                     />
                   </div>
+                ) : hasData && stats.topItems && stats.topItems.length > 0 ? (
+                  <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden flex">
+                    {stats.topItems.map((item, idx) => (
+                      <div
+                        key={item.label}
+                        className="h-full transition-all"
+                        style={{
+                          width: `${(item.count / stats.total) * 100}%`,
+                          backgroundColor: SEGMENT_COLORS[idx % SEGMENT_COLORS.length],
+                        }}
+                      />
+                    ))}
+                  </div>
                 ) : (
                   <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden">
                     {hasData && (
