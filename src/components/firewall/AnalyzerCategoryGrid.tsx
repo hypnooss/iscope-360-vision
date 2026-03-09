@@ -195,15 +195,26 @@ export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCate
                   </div>
                 </div>
 
-                {/* Bicolor bar for traffic split, regular severity bar otherwise */}
-                {hasTrafficSplit && hasData ? (
+                {/* Bicolor bar for auth/traffic split, regular severity bar otherwise */}
+                {hasData && (stats.success !== undefined && stats.failed !== undefined) ? (
                   <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden flex">
                     <div
-                      className="h-full bg-red-500 transition-all"
+                      className="h-full bg-destructive transition-all"
+                      style={{ width: `${(stats.failed! / stats.total) * 100}%` }}
+                    />
+                    <div
+                      className="h-full bg-emerald-500 transition-all"
+                      style={{ width: `${(stats.success! / stats.total) * 100}%` }}
+                    />
+                  </div>
+                ) : hasTrafficSplit && hasData ? (
+                  <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden flex">
+                    <div
+                      className="h-full bg-destructive transition-all"
                       style={{ width: `${(stats.denied! / stats.total) * 100}%` }}
                     />
                     <div
-                      className="h-full bg-green-500 transition-all"
+                      className="h-full bg-emerald-500 transition-all"
                       style={{ width: `${(stats.allowed! / stats.total) * 100}%` }}
                     />
                   </div>

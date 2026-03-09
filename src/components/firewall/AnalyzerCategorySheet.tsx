@@ -45,7 +45,9 @@ function IPList({ items, colorClass }: { items?: TopBlockedIP[]; colorClass?: st
             {item.country ? (
               <span className={`fi fi-${getCountryCode(item.country) || 'xx'} text-base shrink-0`} title={item.country} />
             ) : isPrivateIP(item.ip) ? (
-              <Server className="w-3.5 h-3.5 text-muted-foreground shrink-0" title="IP Privado (LAN)" />
+              <span title="IP Privado (LAN)">
+                <Server className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              </span>
             ) : null}
           </div>
           <span className={cn('text-sm font-semibold shrink-0 ml-2', colorClass ?? 'text-foreground')}>
