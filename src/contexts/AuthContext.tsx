@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { isDeviceTrusted, clearTrustedDevice } from '@/lib/trustedDevice';
 
 type AppRole = 'super_admin' | 'super_suporte' | 'workspace_admin' | 'user';
 type ModulePermission = 'view' | 'edit' | 'full';
