@@ -716,7 +716,7 @@ function ExecutionsTab() {
   // Fetch executions
   const { data: executions, isLoading, refetch } = useQuery({
     queryKey: ['admin-executions', timeCutoff],
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')
