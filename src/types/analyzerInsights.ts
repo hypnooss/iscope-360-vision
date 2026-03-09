@@ -171,12 +171,19 @@ export interface AnalyzerCategoryInfo {
 }
 
 export const ANALYZER_CATEGORY_INFO: Record<AnalyzerEventCategory, AnalyzerCategoryInfo> = {
-  denied_traffic: {
-    key: 'denied_traffic',
-    label: 'Tráfego Negado',
-    icon: 'shield',
+  inbound_traffic: {
+    key: 'inbound_traffic',
+    label: 'Tráfego de Entrada',
+    icon: 'arrow-down-to-line',
     colorHex: '#ef4444',
-    description: 'Eventos de tráfego bloqueado pelo firewall',
+    description: 'Tráfego externo tentando acessar o firewall',
+  },
+  outbound_traffic: {
+    key: 'outbound_traffic',
+    label: 'Tráfego de Saída',
+    icon: 'arrow-up-from-line',
+    colorHex: '#f97316',
+    description: 'Tráfego interno acessando recursos externos',
   },
   fw_authentication: {
     key: 'fw_authentication',
