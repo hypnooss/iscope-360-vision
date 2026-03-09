@@ -517,7 +517,7 @@ export default function AnalyzerDashboardV2Page() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        <PageBreadcrumb items={[{ label: 'Firewall' }, { label: 'Analyzer v2' }]} />
+        <PageBreadcrumb items={[{ label: 'Firewall' }, { label: 'Analyzer' }]} />
 
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
