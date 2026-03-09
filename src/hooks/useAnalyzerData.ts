@@ -333,24 +333,32 @@ export function useLatestAnalyzerSnapshot(firewallId?: string) {
       const rows = (lightRows as any[]) || [];
       if (rows.length === 0) return null;
 
-      // 2) Fetch heavy columns (insights + metrics) only for the latest snapshot
+      // 2a) Fetch insights only for the latest snapshot
       const latestId = rows[0].id;
-      const { data: heavyData, error: heavyError } = await supabase
-        .from('analyzer_snapshots' as any)
-        .select('insights, metrics')
-        .eq('id', latestId)
-        .single() as any;
+      const ids = rows.map((r: any) => r.id);
 
-      if (heavyError) throw heavyError;
+      const [insightsRes, metricsRes] = await Promise.all([
+        supabase
+          .from('analyzer_snapshots' as any)
+          .select('insights')
+          .eq('id', latestId)
+          .single() as any,
+        // 2b) Fetch metrics for ALL snapshots (no insights = much lighter, avoids timeout)
+        supabase
+          .from('analyzer_snapshots' as any)
+          .select('id, metrics')
+          .in('id', ids) as any,
+      ]);
 
-      // 3) Build snapshots: latest has full data, rest have empty metrics/insights
-      const snapshots = rows.map((r, idx) => {
-        if (idx === 0) {
-          // Merge heavy data into the latest row
-          return parseSnapshot({ ...r, insights: heavyData?.insights, metrics: heavyData?.metrics } as Record<string, unknown>);
-        }
-        // Light rows: only summary is used for severity aggregation
-        return parseSnapshot({ ...r, insights: [], metrics: {} } as Record<string, unknown>);
+      if (insightsRes.error) throw insightsRes.error;
+      if (metricsRes.error) throw metricsRes.error;
+
+      // 3) Build snapshots merging metrics from all rows, insights only for latest
+      const metricsMap = new Map((metricsRes.data as any[] || []).map((r: any) => [r.id, r.metrics]));
+      const snapshots = rows.map((r: any, idx: number) => {
+        const m = metricsMap.get(r.id) ?? {};
+        const ins = idx === 0 ? insightsRes.data?.insights : [];
+        return parseSnapshot({ ...r, insights: ins, metrics: m } as Record<string, unknown>);
       });
 
       return aggregateSnapshots(snapshots);
