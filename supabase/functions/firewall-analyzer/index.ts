@@ -295,11 +295,18 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[], ipCountryMap: Re
   const vpnSuccesses = safeVpn.filter(isSuccess);
 
   // Helper to collect IP and country rankings from a set of logs
+  // Extract IP from FortiOS 'ui' field (e.g. "https(10.0.0.1)" or "ssh(1.2.3.4)")
+  const extractIpFromUi = (ui: string): string | null => {
+    if (!ui) return null;
+    const match = ui.match(/\(([^)]+)\)/);
+    return match?.[1] || null;
+  };
+
   const collectRankings = (logs: any[]) => {
     const ipMap: Record<string, { count: number; country?: string; ports: Set<number> }> = {};
     const countryMap: Record<string, number> = {};
     for (const log of logs) {
-      const ip = log.srcip || log.remip || log.src;
+      const ip = log.srcip || log.remip || log.src || extractIpFromUi(log.ui);
       const country = log.srccountry || log.src_country || (ip ? ipCountryMap[ip] : undefined) || undefined;
       if (!ip) continue;
       if (!ipMap[ip]) ipMap[ip] = { count: 0, country, ports: new Set() };
