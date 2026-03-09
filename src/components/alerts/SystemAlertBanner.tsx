@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AlertTriangle, X, Settings, Info, AlertCircle, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,19 +20,68 @@ interface SystemAlert {
   dismissed_by?: string[];
 }
 
+async function fetchActiveAlerts(userId: string, role: string | null): Promise<SystemAlert[]> {
+  const { data, error } = await supabase
+    .from('system_alerts')
+    .select('id, alert_type, title, message, severity, metadata, created_at, dismissed_by')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching alerts:', error);
+    return [];
+  }
+
+  // Filter dismissed by current user
+  const filteredData = (data || []).filter(alert => {
+    const dismissedBy = alert.dismissed_by || [];
+    return !dismissedBy.includes(userId);
+  });
+
+  // Role-based filtering
+  const canSeeM365 = ['super_admin', 'super_suporte'].includes(role || '');
+  const roleFiltered = filteredData.filter((alert) => {
+    if (alert.alert_type?.startsWith('m365_')) return canSeeM365;
+    if (alert.alert_type?.startsWith('attack_surface_')) return canSeeM365;
+    return true;
+  });
+
+  // Filter expired alerts by UI lifetime
+  const nowMs = Date.now();
+  const notExpired = roleFiltered.filter((alert) => {
+    const ageMs = getAlertAgeMs(alert.created_at, nowMs);
+    const lifetimeMs = getAlertLifetimeMs(alert.alert_type);
+    return ageMs < lifetimeMs;
+  });
+
+  // Sort by severity (error > warning > success > info)
+  const severityOrder: Record<string, number> = { error: 0, warning: 1, success: 2, info: 3 };
+  return notExpired.sort((a, b) =>
+    (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4)
+  ) as SystemAlert[];
+}
+
+const ALERT_QUERY_KEY = ['system-alerts-active'];
+
 export function SystemAlertBanner() {
   const { role, user } = useAuth();
   const navigate = useNavigate();
-  const [alerts, setAlerts] = useState<SystemAlert[]>([]);
+  const queryClient = useQueryClient();
   const [dismissedLocally, setDismissedLocally] = useState<string[]>([]);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    if (user?.id) {
-      fetchActiveAlerts();
-    }
-  }, [user?.id, role]);
+  // Single useQuery replaces manual fetching + polling
+  const { data: alerts = [] } = useQuery({
+    queryKey: ALERT_QUERY_KEY,
+    queryFn: () => fetchActiveAlerts(user!.id, role),
+    enabled: !!user?.id,
+    staleTime: 60_000,        // 1 min — won't re-fetch within this window
+    refetchInterval: 120_000, // 2 min passive polling (backup)
+    retry: 1,
+    retryDelay: (attempt) => Math.min(2000 * 2 ** attempt, 30_000),
+  });
 
-  // Subscription para alertas em tempo real via Supabase Realtime
+  // Single Realtime subscription with debounced invalidation
   useEffect(() => {
     if (!user?.id) return;
 
@@ -39,115 +89,29 @@ export function SystemAlertBanner() {
       .channel('system-alerts-realtime')
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'system_alerts'
-        },
-        (payload) => {
-          console.log('New alert created:', payload);
-          fetchActiveAlerts();
+        { event: '*', schema: 'public', table: 'system_alerts' },
+        () => {
+          // Debounce: only invalidate once per 2s window
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          debounceRef.current = setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ALERT_QUERY_KEY });
+          }, 2000);
         }
       )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'system_alerts'
-        },
-        (payload) => {
-          console.log('Alert updated:', payload);
-          fetchActiveAlerts();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'system_alerts'
-        },
-        (payload) => {
-          console.log('Alert deleted:', payload);
-          fetchActiveAlerts();
-        }
-      )
-      .subscribe((status) => {
-        console.log('Realtime subscription status:', status);
-      });
+      .subscribe();
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
-  }, [role, user?.id]);
-
-  // Polling fallback - verificar a cada 10 segundos como backup do realtime
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const interval = setInterval(() => {
-      fetchActiveAlerts();
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [user?.id]);
-
-  const fetchActiveAlerts = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('system_alerts')
-        .select('id, alert_type, title, message, severity, metadata, created_at, dismissed_by')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching alerts:', error);
-        return;
-      }
-
-      // Filtrar alertas já dispensados pelo usuário atual
-      const filteredData = (data || []).filter(alert => {
-        const dismissedBy = alert.dismissed_by || [];
-        return !dismissedBy.includes(user?.id || '');
-      });
-
-      // Regra de negócio:
-      // - Alertas M365*: apenas super_admin e super_suporte
-      // - Alertas attack_surface_*: apenas super_admin e super_suporte
-      // - Demais alertas: qualquer usuário autenticado
-      const canSeeM365 = ['super_admin', 'super_suporte'].includes(role || '');
-      const roleFiltered = filteredData.filter((alert) => {
-        if (alert.alert_type?.startsWith('m365_')) return canSeeM365;
-        if (alert.alert_type?.startsWith('attack_surface_')) return canSeeM365;
-        return true;
-      });
-
-      // Filtrar alertas expirados pelo “lifetime” do banner (UI lifetime)
-      const nowMs = Date.now();
-      const notExpired = roleFiltered.filter((alert) => {
-        const ageMs = getAlertAgeMs(alert.created_at, nowMs);
-        const lifetimeMs = getAlertLifetimeMs(alert.alert_type);
-        return ageMs < lifetimeMs;
-      });
-
-      // Ordenar por severidade (error > warning > success > info)
-      const sortedData = notExpired.sort((a, b) => {
-        const severityOrder: Record<string, number> = { error: 0, warning: 1, success: 2, info: 3 };
-        return (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4);
-      });
-
-      setAlerts(sortedData as SystemAlert[]);
-    } catch (error) {
-      console.error('Error fetching alerts:', error);
-    }
-  };
+  }, [user?.id, queryClient]);
 
   const dismissAlert = async (alertId: string) => {
     if (!user?.id) return;
+    // Optimistic local dismiss
+    setDismissedLocally(prev => [...prev, alertId]);
 
     try {
-      // Buscar o alerta atual para adicionar o usuário ao array
       const { data: currentAlert } = await supabase
         .from('system_alerts')
         .select('dismissed_by')
@@ -158,24 +122,18 @@ export function SystemAlertBanner() {
         const dismissedBy = currentAlert.dismissed_by || [];
         if (!dismissedBy.includes(user.id)) {
           dismissedBy.push(user.id);
-          
           await supabase
             .from('system_alerts')
             .update({ dismissed_by: dismissedBy })
             .eq('id', alertId);
         }
       }
-
-      // Remover da lista local imediatamente
-      setDismissedLocally(prev => [...prev, alertId]);
     } catch (error) {
       console.error('Error dismissing alert:', error);
-      // Fallback: remover localmente
-      setDismissedLocally(prev => [...prev, alertId]);
     }
   };
 
-  const handleViewAnalysis = async (alertId: string, firewallId: string) => {
+  const handleViewAnalysis = async (alertId: string) => {
     await dismissAlert(alertId);
     navigate(`/scope-firewall/compliance`);
   };
@@ -195,43 +153,36 @@ export function SystemAlertBanner() {
     navigate('/settings');
   };
 
-  // Filtrar alertas dispensados localmente
+  // Filter locally dismissed
   const visibleAlerts = alerts.filter(alert => !dismissedLocally.includes(alert.id));
-
-  // Mostrar apenas o alerta mais importante (primeiro da lista ordenada)
-  // Importante: hooks abaixo NÃO podem ser condicionais (Rules of Hooks).
   const primaryAlert = visibleAlerts[0] ?? null;
 
   const getSeverityStyles = (severity: string) => {
     switch (severity) {
       case 'error':
         return {
-          border: 'border-destructive/50',
-          text: 'text-destructive',
+          border: 'border-destructive/50', text: 'text-destructive',
           iconBg: 'bg-gradient-to-br from-destructive/20 to-destructive/5 border-destructive/30',
           buttonClass: 'border-destructive/50 text-destructive hover:bg-destructive/10',
           Icon: AlertCircle,
         };
       case 'warning':
         return {
-          border: 'border-yellow-500/50',
-          text: 'text-yellow-400',
+          border: 'border-yellow-500/50', text: 'text-yellow-400',
           iconBg: 'bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 border-yellow-500/30',
           buttonClass: 'border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10',
           Icon: AlertTriangle,
         };
       case 'success':
         return {
-          border: 'border-teal-500/50',
-          text: 'text-teal-400',
+          border: 'border-teal-500/50', text: 'text-teal-400',
           iconBg: 'bg-gradient-to-br from-teal-500/20 to-teal-500/5 border-teal-500/30',
           buttonClass: 'border-teal-500/50 text-teal-400 hover:bg-teal-500/10',
           Icon: Shield,
         };
-      default: // info
+      default:
         return {
-          border: 'border-blue-500/50',
-          text: 'text-blue-400',
+          border: 'border-blue-500/50', text: 'text-blue-400',
           iconBg: 'bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/30',
           buttonClass: 'border-blue-500/50 text-blue-400 hover:bg-blue-500/10',
           Icon: Info,
@@ -242,127 +193,73 @@ export function SystemAlertBanner() {
   const expireAlertLocally = useCallback(
     (alertId: string) => {
       setDismissedLocally((prev) => (prev.includes(alertId) ? prev : [...prev, alertId]));
-      // Reavaliar e promover o próximo alerta, se existir
-      fetchActiveAlerts();
     },
-    // fetchActiveAlerts é estável o suficiente aqui (não depende de props); evita refatoração ampla.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
   useAlertAutoHide(primaryAlert, expireAlertLocally);
 
-  if (!user?.id || !primaryAlert) {
-    return null;
-  }
+  if (!user?.id || !primaryAlert) return null;
 
   const styles = getSeverityStyles(primaryAlert.severity);
   const IconComponent = styles.Icon;
 
   return (
     <div className="w-full animate-in slide-in-from-top duration-300">
-      <div className={cn(
-        "border-b shadow-lg",
-        "bg-[hsl(222,47%,8%)]",
-        styles.border
-      )}>
+      <div className={cn("border-b shadow-lg", "bg-[hsl(222,47%,8%)]", styles.border)}>
         <div className="flex items-center justify-between gap-4 px-6 py-3">
-          {/* Ícone com círculo gradiente */}
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className={cn(
-              "flex items-center justify-center w-10 h-10 rounded-full border",
-              styles.iconBg
-            )}>
+            <div className={cn("flex items-center justify-center w-10 h-10 rounded-full border", styles.iconBg)}>
               <IconComponent className={cn("h-5 w-5", styles.text)} />
             </div>
-            
             <div className="flex flex-col min-w-0">
-              <span className={cn("font-semibold text-sm", styles.text)}>
-                {primaryAlert.title}
-              </span>
-              <span className="text-xs text-muted-foreground truncate">
-                {primaryAlert.message}
-              </span>
+              <span className={cn("font-semibold text-sm", styles.text)}>{primaryAlert.title}</span>
+              <span className="text-xs text-muted-foreground truncate">{primaryAlert.message}</span>
             </div>
           </div>
-          
-          {/* Ações */}
+
           <div className="flex items-center gap-2 flex-shrink-0">
             {primaryAlert.alert_type.startsWith('m365_') && primaryAlert.alert_type !== 'm365_analyzer_critical' && (
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
-                onClick={() => handleViewSettings(primaryAlert.id)}
-              >
-                <Settings className="h-3.5 w-3.5 mr-1.5" />
-                Ver Configurações
+              <Button variant="outline" size="sm" className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
+                onClick={() => handleViewSettings(primaryAlert.id)}>
+                <Settings className="h-3.5 w-3.5 mr-1.5" />Ver Configurações
               </Button>
             )}
-
             {primaryAlert.alert_type === 'm365_analyzer_critical' && (
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
-                onClick={() => handleViewAnalyzer(primaryAlert.id)}
-              >
-                <AlertCircle className="h-3.5 w-3.5 mr-1.5" />
-                Ver Analyzer
+              <Button variant="outline" size="sm" className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
+                onClick={() => handleViewAnalyzer(primaryAlert.id)}>
+                <AlertCircle className="h-3.5 w-3.5 mr-1.5" />Ver Analyzer
               </Button>
             )}
-            
-            {primaryAlert.alert_type === 'firewall_analysis_completed' && 
-             (primaryAlert.metadata as Record<string, unknown>)?.firewall_id && (
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
-                onClick={() => handleViewAnalysis(
-                  primaryAlert.id,
-                  (primaryAlert.metadata as Record<string, unknown>).firewall_id as string
-                )}
-              >
+            {primaryAlert.alert_type === 'firewall_analysis_completed' &&
+              (primaryAlert.metadata as Record<string, unknown>)?.firewall_id && (
+              <Button variant="outline" size="sm" className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
+                onClick={() => handleViewAnalysis(primaryAlert.id)}>
                 Ver Análise
               </Button>
             )}
-
             {primaryAlert.alert_type === 'external_domain_analysis_completed' &&
               (primaryAlert.metadata as Record<string, unknown>)?.domain_id &&
               (primaryAlert.metadata as Record<string, unknown>)?.report_id && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
-                  onClick={() => handleViewExternalDomainReport(
-                    primaryAlert.id,
-                    (primaryAlert.metadata as Record<string, unknown>).domain_id as string,
-                    (primaryAlert.metadata as Record<string, unknown>).report_id as string
-                  )}
-                >
-                  Ver Relatório
-                </Button>
-              )}
-            
-            {/* Botão X para dispensar */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("h-8 w-8", styles.text)}
-              onClick={() => dismissAlert(primaryAlert.id)}
-              title="Dispensar alerta"
-            >
+              <Button variant="outline" size="sm" className={cn("h-8 px-4 text-xs font-medium", styles.buttonClass)}
+                onClick={() => handleViewExternalDomainReport(
+                  primaryAlert.id,
+                  (primaryAlert.metadata as Record<string, unknown>).domain_id as string,
+                  (primaryAlert.metadata as Record<string, unknown>).report_id as string
+                )}>
+                Ver Relatório
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" className={cn("h-8 w-8", styles.text)}
+              onClick={() => dismissAlert(primaryAlert.id)} title="Dispensar alerta">
               <X className="h-4 w-4" />
             </Button>
           </div>
         </div>
-        
-        {/* Contador de alertas adicionais */}
+
         {visibleAlerts.length > 1 && (
           <div className="border-t border-border/50 px-6 py-1.5 text-center">
-            <span className="text-xs text-muted-foreground">
-              +{visibleAlerts.length - 1} outro(s) alerta(s)
-            </span>
+            <span className="text-xs text-muted-foreground">+{visibleAlerts.length - 1} outro(s) alerta(s)</span>
           </div>
         )}
       </div>
