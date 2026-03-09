@@ -47,7 +47,7 @@ interface CategoryStats {
 
 const SEGMENT_COLORS = ['#f97316', '#a855f7', '#10b981', '#3b82f6', '#eab308'];
 
-function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSnapshot): CategoryStats {
+function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSnapshot, overrides?: { configChangesTotal30d?: number }): CategoryStats {
   const metrics = snapshot.metrics;
 
   switch (category) {
