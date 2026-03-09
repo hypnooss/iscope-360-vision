@@ -151,6 +151,10 @@ export default function ExchangeAnalyzerPage() {
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
                 : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
             </Button>
+            <Button variant="outline" size="icon" title="Configurar agendamento"
+              disabled={!selectedTenantId} onClick={() => setScheduleDialogOpen(true)}>
+              <Settings className="w-4 h-4" />
+            </Button>
           </div>
         </div>
 
