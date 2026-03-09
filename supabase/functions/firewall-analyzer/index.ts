@@ -1406,8 +1406,15 @@ Deno.serve(async (req) => {
     // Enrich from auth and VPN logs (they often have srccountry for external IPs)
     const authLogs = authData;
     const vpnLogs = vpnData;
+    // Helper to extract IP from FortiOS 'ui' field (e.g. "https(10.0.0.1)")
+    const extractIpFromUiField = (ui: string): string | null => {
+      if (!ui) return null;
+      const match = ui.match(/\(([^)]+)\)/);
+      return match?.[1] || null;
+    };
+
     for (const log of [...authLogs, ...vpnLogs]) {
-      const ip = log.srcip || log.remip || log.src;
+      const ip = log.srcip || log.remip || log.src || extractIpFromUiField(log.ui);
       const country = log.srccountry || log.src_country;
     if (ip && country && !ipCountryMap[ip]) ipCountryMap[ip] = country;
     }
@@ -1416,7 +1423,7 @@ Deno.serve(async (req) => {
     // GeoIP fallback: resolve countries for auth/vpn IPs missing from ipCountryMap
     const authIPsWithoutCountry = new Set<string>();
     for (const log of [...authLogs, ...vpnLogs]) {
-      const ip = log.srcip || log.remip || log.src;
+      const ip = log.srcip || log.remip || log.src || extractIpFromUiField(log.ui);
       if (ip && !ipCountryMap[ip]) authIPsWithoutCountry.add(ip);
     }
     if (authIPsWithoutCountry.size > 0) {
