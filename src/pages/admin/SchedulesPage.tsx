@@ -287,7 +287,7 @@ function SchedulesTab() {
   // ── Fetch firewall schedules ──
   const { data: firewallSchedules, isLoading: loadingFw, refetch: refetchFw } = useQuery({
     queryKey: ['admin-schedules-fw'],
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('analysis_schedules')
