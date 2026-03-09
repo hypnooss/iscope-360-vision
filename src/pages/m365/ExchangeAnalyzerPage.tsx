@@ -211,6 +211,14 @@ export default function ExchangeAnalyzerPage() {
           <ExchangeAnalyzerCategoryGrid data={effectiveDashboard} />
         )}
 
+        {/* Email Security Posture & Traffic */}
+        {selectedTenantId && !loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <EmailSecurityPostureCard data={effectiveDashboard} />
+            <EmailTrafficCard data={effectiveDashboard} />
+          </div>
+        )}
+
         {/* Security Insights */}
         {insights.length > 0 && !insightsLoading && (
           <ExchangeSecurityInsightCards insights={insights} />
