@@ -28,6 +28,7 @@ import { AttackMapFullscreen } from '@/components/firewall/AttackMapFullscreen';
 import { AnalyzerStatsCards } from '@/components/firewall/AnalyzerStatsCards';
 import { AnalyzerCategoryGrid } from '@/components/firewall/AnalyzerCategoryGrid';
 import { AnalyzerCategorySheet } from '@/components/firewall/AnalyzerCategorySheet';
+import { SecurityInsightCards } from '@/components/firewall/SecurityInsightCards';
 import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
@@ -611,6 +612,11 @@ export default function AnalyzerDashboardV2Page() {
           <div className="mb-6">
             <AnalyzerStatsCards snapshot={snapshot} />
           </div>
+        )}
+
+        {/* Security Insights - Educational Cards */}
+        {snapshot && !isLoading && (
+          <SecurityInsightCards snapshot={snapshot} />
         )}
 
         {/* Category Grid */}
