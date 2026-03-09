@@ -199,7 +199,7 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
               )}
               <Card>
                 <CardHeader className="pb-2 pt-4">
-                  <CardTitle className="text-sm font-medium">Top IPs Permitidos</CardTitle>
+                  <CardTitle className="text-sm font-medium">Top IPs {data.ipLabel} (Permitidos)</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <IPList items={data.allowedIPs} colorClass="text-emerald-600 dark:text-emerald-400" />
