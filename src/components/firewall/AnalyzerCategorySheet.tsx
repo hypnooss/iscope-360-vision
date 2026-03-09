@@ -1,5 +1,7 @@
 import * as LucideIcons from 'lucide-react';
 import { ShieldX, ShieldCheck } from 'lucide-react';
+import { getCountryCode } from '@/lib/countryUtils';
+import 'flag-icons/css/flag-icons.min.css';
 import {
   Sheet,
   SheetContent,
@@ -37,7 +39,9 @@ function IPList({ items, colorClass }: { items?: TopBlockedIP[]; colorClass?: st
         <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-sm font-mono truncate">{item.ip}</span>
-            {item.country && <Badge variant="outline" className="text-xs shrink-0">{item.country}</Badge>}
+            {item.country && (
+              <span className={`fi fi-${getCountryCode(item.country) || 'xx'} text-base shrink-0`} title={item.country} />
+            )}
           </div>
           <span className={cn('text-sm font-semibold shrink-0 ml-2', colorClass ?? 'text-foreground')}>
             {item.count.toLocaleString()}
@@ -54,7 +58,10 @@ function CountryList({ items, colorClass }: { items?: TopCountry[]; colorClass?:
     <>
       {items.slice(0, 10).map((item, idx) => (
         <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
-          <span className="text-sm">{item.country}</span>
+          <span className="flex items-center gap-2">
+            <span className={`fi fi-${getCountryCode(item.country) || 'xx'} text-base`} title={item.country} />
+            <span className="text-sm">{item.country}</span>
+          </span>
           <span className={cn('text-sm font-semibold', colorClass ?? 'text-foreground')}>
             {item.count.toLocaleString()}
           </span>
