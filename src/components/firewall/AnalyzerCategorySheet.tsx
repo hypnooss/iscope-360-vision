@@ -1,5 +1,5 @@
 import * as LucideIcons from 'lucide-react';
-import { ShieldX, ShieldCheck, XCircle, CheckCircle2, Server } from 'lucide-react';
+import { ShieldX, ShieldCheck, XCircle, CheckCircle2, Server, Target, Crosshair } from 'lucide-react';
 import { getCountryCode } from '@/lib/countryUtils';
 import 'flag-icons/css/flag-icons.min.css';
 import {
@@ -92,6 +92,7 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
   const metrics = snapshot.metrics;
   const isTrafficCategory = category === 'inbound_traffic' || category === 'outbound_traffic';
   const isAuthCategory = category === 'fw_authentication' || category === 'vpn_authentication';
+  const isIPSCategory = category === 'ips_events';
 
   const getTrafficData = () => {
     if (category === 'inbound_traffic') {
@@ -283,6 +284,104 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
     );
   };
 
+  const renderIPSContent = () => {
+    const attackTypes = metrics.topIpsAttackTypes || [];
+    const srcIPs = metrics.topIpsSrcIPs || [];
+    const srcCountries = metrics.topIpsSrcCountries || [];
+    const dstIPs = metrics.topIpsDstIPs || [];
+    const ipsCount = metrics.ipsEvents || 0;
+
+    return (
+      <div className="flex flex-col flex-1 min-h-0">
+        {/* Top Ataques - always visible */}
+        <div className="px-6 pt-4 pb-2 shrink-0">
+          {ipsCount > 0 && (
+            <Badge variant="outline" className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 mb-3">
+              {ipsCount.toLocaleString()} eventos IPS
+            </Badge>
+          )}
+          <Card>
+            <CardHeader className="pb-2 pt-4">
+              <CardTitle className="text-sm font-medium">Top Ataques (por tipo)</CardTitle>
+            </CardHeader>
+            <CardContent className="max-h-40 overflow-y-auto">
+              {attackTypes.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">Sem dados</p>
+              ) : (
+                attackTypes.slice(0, 10).map((item: TopCategory, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
+                    <span className="text-sm truncate max-w-[70%]">{item.category}</span>
+                    <span className="text-sm font-semibold text-rose-600 dark:text-rose-400 shrink-0 ml-2">
+                      {item.count.toLocaleString()}
+                    </span>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <Tabs defaultValue="atacantes" className="flex flex-col flex-1 min-h-0">
+          <div className="border-b border-border shrink-0" />
+          <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-6 h-auto py-0 shrink-0">
+            <TabsTrigger
+              value="atacantes"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-rose-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5"
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+              Atacantes
+            </TabsTrigger>
+            <TabsTrigger
+              value="alvos"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-amber-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5"
+            >
+              <Target className="w-3.5 h-3.5" />
+              Alvos
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="atacantes" className="flex-1 mt-0 min-h-0">
+            <ScrollArea className="h-full">
+              <div className="p-6 space-y-4">
+                <Card>
+                  <CardHeader className="pb-2 pt-4">
+                    <CardTitle className="text-sm font-medium">Top IPs Atacantes</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <IPList items={srcIPs} colorClass="text-rose-600 dark:text-rose-400" />
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2 pt-4">
+                    <CardTitle className="text-sm font-medium">Top Países de Origem</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <CountryList items={srcCountries} colorClass="text-rose-600 dark:text-rose-400" />
+                  </CardContent>
+                </Card>
+              </div>
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="alvos" className="flex-1 mt-0 min-h-0">
+            <ScrollArea className="h-full">
+              <div className="p-6 space-y-4">
+                <Card>
+                  <CardHeader className="pb-2 pt-4">
+                    <CardTitle className="text-sm font-medium">Top IPs Alvo</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <IPList items={dstIPs} colorClass="text-amber-600 dark:text-amber-400" />
+                  </CardContent>
+                </Card>
+              </div>
+            </ScrollArea>
+          </TabsContent>
+        </Tabs>
+      </div>
+    );
+  };
+
   const renderCategoryContent = () => {
     switch (category) {
       case 'inbound_traffic':
@@ -292,6 +391,9 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
       case 'fw_authentication':
       case 'vpn_authentication':
         return renderAuthContent();
+
+      case 'ips_events':
+        return renderIPSContent();
 
       case 'web_filter':
         return (
@@ -415,7 +517,7 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
     }
   };
 
-  const isFullHeightCategory = isTrafficCategory || isAuthCategory;
+  const isFullHeightCategory = isTrafficCategory || isAuthCategory || isIPSCategory;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

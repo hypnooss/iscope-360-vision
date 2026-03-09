@@ -64,6 +64,11 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
       anomalyDropped: (metrics.anomalyDropped as number) ?? 0,
       topAnomalySources: (metrics.topAnomalySources as AnalyzerMetrics['topAnomalySources']) ?? [],
       topAnomalyTypes: (metrics.topAnomalyTypes as AnalyzerMetrics['topAnomalyTypes']) ?? [],
+      // IPS metrics
+      topIpsAttackTypes: (metrics.topIpsAttackTypes as AnalyzerMetrics['topIpsAttackTypes']) ?? [],
+      topIpsSrcIPs: (metrics.topIpsSrcIPs as AnalyzerMetrics['topIpsSrcIPs']) ?? [],
+      topIpsSrcCountries: (metrics.topIpsSrcCountries as AnalyzerMetrics['topIpsSrcCountries']) ?? [],
+      topIpsDstIPs: (metrics.topIpsDstIPs as AnalyzerMetrics['topIpsDstIPs']) ?? [],
       // Inbound traffic
       topInboundBlockedIPs: (metrics.topInboundBlockedIPs as AnalyzerMetrics['topInboundBlockedIPs']) ?? [],
       topInboundBlockedCountries: (metrics.topInboundBlockedCountries as AnalyzerMetrics['topInboundBlockedCountries']) ?? [],
@@ -221,6 +226,11 @@ function aggregateSnapshots(snapshots: AnalyzerSnapshot[]): AnalyzerSnapshot & {
     topAnomalySources: mergeIPRankings(snapshots.flatMap(s => s.metrics.topAnomalySources ?? [])),
     topAnomalyTypes: mergeCategoryRankings(snapshots.flatMap(s => s.metrics.topAnomalyTypes ?? [])),
     configChangeDetails: snapshots.flatMap(s => s.metrics.configChangeDetails ?? []).slice(0, 50),
+    // IPS metrics
+    topIpsAttackTypes: mergeCategoryRankings(snapshots.flatMap(s => s.metrics.topIpsAttackTypes ?? [])),
+    topIpsSrcIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topIpsSrcIPs ?? [])),
+    topIpsSrcCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topIpsSrcCountries ?? [])),
+    topIpsDstIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topIpsDstIPs ?? [])),
     // Inbound traffic
     topInboundBlockedIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topInboundBlockedIPs ?? [])),
     topInboundBlockedCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topInboundBlockedCountries ?? [])),
