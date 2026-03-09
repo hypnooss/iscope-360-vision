@@ -198,15 +198,15 @@ export default function ExchangeAnalyzerPage() {
         )}
 
         {/* Stats Cards */}
-        {dashboardData && !dashboardLoading && (
+        {selectedTenantId && !loading && (
           <div className="mb-2">
-            <ExchangeAnalyzerStatsCards data={dashboardData} />
+            <ExchangeAnalyzerStatsCards data={effectiveDashboard} />
           </div>
         )}
 
         {/* Category Grid */}
-        {dashboardData && !dashboardLoading && (
-          <ExchangeAnalyzerCategoryGrid data={dashboardData} />
+        {selectedTenantId && !loading && (
+          <ExchangeAnalyzerCategoryGrid data={effectiveDashboard} />
         )}
 
         {/* Security Insights */}
