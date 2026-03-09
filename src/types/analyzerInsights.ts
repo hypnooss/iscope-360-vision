@@ -103,10 +103,12 @@ export interface AnalyzerMetrics {
   // Outbound connections (allowed)
   topOutboundIPs: TopBlockedIP[];
   topOutboundCountries: TopCountry[];
+  topOutboundSourceIPs?: TopBlockedIP[];
   outboundConnections: number;
   // Outbound connections (blocked)
   topOutboundBlockedIPs: TopBlockedIP[];
   topOutboundBlockedCountries: TopCountry[];
+  topOutboundBlockedSourceIPs?: TopBlockedIP[];
   outboundBlocked: number;
   ipsEvents: number;
   configChanges: number;
