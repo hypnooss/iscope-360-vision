@@ -264,7 +264,7 @@ export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCate
                       </Badge>
                     )}
                     {stats.allowed! > 0 && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-500/20 text-green-500 border-green-500/30">
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-500/20 text-emerald-500 border-emerald-500/30">
                         {stats.allowed!.toLocaleString()} Permitido
                       </Badge>
                     )}
@@ -279,7 +279,7 @@ export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCate
                       </Badge>
                     )}
                     {stats.success !== undefined && stats.success > 0 && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-500/20 text-green-500 border-green-500/30">
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-500/20 text-emerald-500 border-emerald-500/30">
                         {stats.success} OK
                       </Badge>
                     )}
