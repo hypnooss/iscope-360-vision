@@ -107,29 +107,7 @@ export default function ExchangeAnalyzerPage() {
   };
   const effectiveDashboard = dashboardData ?? DEFAULT_DASHBOARD_DATA;
 
-  // No tenant
-  if (!tenantsLoading && tenants.length === 0) {
-    return (
-      <AppLayout>
-        <div className="p-6 lg:p-8 space-y-6">
-          <PageBreadcrumb items={[{ label: 'Microsoft 365' }, { label: 'Exchange Analyzer' }]} />
-          <h1 className="text-2xl font-bold text-foreground">Exchange Analyzer</h1>
-          <Card className="border-warning/30 bg-warning/5">
-            <CardContent className="py-12 text-center">
-              <AlertTriangle className="w-12 h-12 text-warning mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Tenant Microsoft 365 não conectado</h3>
-              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                Para visualizar o Exchange Analyzer, primeiro conecte um tenant Microsoft 365.
-              </p>
-              <Button asChild className="gap-2">
-                <Link to="/environment/new/m365"><LinkIcon className="w-4 h-4" />Conectar Tenant</Link>
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </AppLayout>
-    );
-  }
+  const noTenants = !tenantsLoading && tenants.length === 0;
 
   return (
     <AppLayout>
@@ -224,8 +202,24 @@ export default function ExchangeAnalyzerPage() {
           <ExchangeSecurityInsightCards insights={insights} />
         )}
 
+        {/* No tenant connected */}
+        {noTenants && (
+          <Card className="border-warning/30 bg-warning/5">
+            <CardContent className="py-12 text-center">
+              <AlertTriangle className="w-12 h-12 text-warning mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Tenant Microsoft 365 não conectado</h3>
+              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                Para visualizar o Exchange Analyzer, primeiro conecte um tenant Microsoft 365.
+              </p>
+              <Button asChild className="gap-2">
+                <Link to="/environment/new/m365"><LinkIcon className="w-4 h-4" />Conectar Tenant</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Empty states */}
-        {!selectedTenantId && (
+        {!noTenants && !selectedTenantId && (
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>Selecione um tenant para visualizar a análise do Exchange.</AlertDescription>
