@@ -305,7 +305,7 @@ function SchedulesTab() {
 
   const { data: domainSchedules, isLoading: loadingDom, refetch: refetchDom } = useQuery({
     queryKey: ['admin-schedules-dom'],
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('external_domain_schedules')
