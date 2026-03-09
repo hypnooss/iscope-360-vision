@@ -1,35 +1,19 @@
+# Status: ✅ Implementado
 
-# Plano: Redirecionar Card "Alterações de Config" para Página Dedicada
+## Alteração: Divisão do Card "Tráfego Negado" em Entrada/Saída
 
-## Situação Atual
-- O card "Alterações de Config" abre o Sheet genérico (`AnalyzerCategorySheet`) que mostra "Nenhum detalhe disponível" 
-- Já existe uma página completa para visualização de config changes: `/scope-firewall/analyzer/config-changes` (`AnalyzerConfigChangesPage.tsx`) com ~1000 linhas de formatadores especializados
+### O que foi feito
 
-## Solução
-Interceptar o clique na categoria `config_changes` e redirecionar para a página existente em vez de abrir o Sheet.
+1. **Tipos atualizados** (`src/types/analyzerInsights.ts`):
+   - Substituído `denied_traffic` por `inbound_traffic` e `outbound_traffic` em `AnalyzerEventCategory`
+   - Adicionadas novas entradas em `ANALYZER_CATEGORY_INFO` com labels, ícones e descrições apropriados
 
-## Mudança
+2. **Grid de categorias** (`src/components/firewall/AnalyzerCategoryGrid.tsx`):
+   - Dois cards separados: "Tráfego de Entrada" e "Tráfego de Saída"
+   - Barra bicolor proporcional: vermelho (negado) + verde (permitido)
+   - Badges com contagem de Negado/Permitido
 
-### `src/pages/firewall/AnalyzerDashboardV2Page.tsx`
-
-Modificar o handler `onCategoryClick`:
-
-```tsx
-import { useNavigate } from 'react-router-dom';
-
-// No componente:
-const navigate = useNavigate();
-
-// No handler:
-onCategoryClick={(category) => {
-  if (category === 'config_changes') {
-    navigate('/scope-firewall/analyzer/config-changes');
-    return;
-  }
-  setSelectedCategory(category);
-  setCategorySheetOpen(true);
-}}
-```
-
-## Arquivos Modificados
-- `src/pages/firewall/AnalyzerDashboardV2Page.tsx`
+3. **Sheet padronizado** (`src/components/firewall/AnalyzerCategorySheet.tsx`):
+   - Largura: 50vw
+   - Abas inline (Entrada/Saída) no padrão M365
+   - Conteúdo organizado por tab com Top IPs/Países Bloqueados e Permitidos
