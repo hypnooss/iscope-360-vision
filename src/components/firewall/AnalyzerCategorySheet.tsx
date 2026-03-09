@@ -92,6 +92,7 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
   const metrics = snapshot.metrics;
   const isTrafficCategory = category === 'inbound_traffic' || category === 'outbound_traffic';
   const isAuthCategory = category === 'fw_authentication' || category === 'vpn_authentication';
+  const isIPSCategory = category === 'ips_events';
 
   const getTrafficData = () => {
     if (category === 'inbound_traffic') {
