@@ -64,6 +64,7 @@ class TaskExecutor:
             'nmap_discovery': NmapDiscoveryExecutor(logger),
             'httpx': HttpxExecutor(logger),
             'asn_classifier': AsnClassifierExecutor(logger),
+            'domain_whois': DomainWhoisExecutor(logger),
         }
         # Feature flag: use progressive streaming if available
         self._use_progressive = True
