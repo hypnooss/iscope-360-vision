@@ -1369,7 +1369,20 @@ Deno.serve(async (req) => {
 
     // Apply time-based filtering to all log types
     const deniedData = deduplicateLogs(filterLogsByTime(Array.isArray(rawDeniedData) ? rawDeniedData : rawDeniedData?.results || [], periodStart, periodEnd));
-    const authData = deduplicateLogs(filterLogsByTime(Array.isArray(rawAuthData) ? rawAuthData : rawAuthData?.results || [], periodStart, periodEnd));
+    const authDataAll = deduplicateLogs(filterLogsByTime(Array.isArray(rawAuthData) ? rawAuthData : rawAuthData?.results || [], periodStart, periodEnd));
+
+    // Filter auth logs to actual admin login events only (exclude DHCP, SNMP, threat feed, perf-stats etc.)
+    const AUTH_LOGIDS = new Set(['0100032001', '0100032002', '0100032003']);
+    const authData = authDataAll.filter((l: any) => {
+      // Match by logid (most reliable — covers all FortiOS versions)
+      if (l.logid && AUTH_LOGIDS.has(l.logid)) return true;
+      // Match by action=login (fallback for non-standard logid)
+      if ((l.action || '').toLowerCase() === 'login') return true;
+      // Match by logdesc containing "Admin login"
+      if ((l.logdesc || '').toLowerCase().includes('admin login')) return true;
+      return false;
+    });
+    console.log(`[firewall-analyzer] Auth filter: ${authDataAll.length} raw → ${authData.length} real admin login events`);
     const vpnData = deduplicateLogs(filterLogsByTime(Array.isArray(rawVpnData) ? rawVpnData : rawVpnData?.results || [], periodStart, periodEnd));
     const ipsData = deduplicateLogs(filterLogsByTime(Array.isArray(rawIpsData) ? rawIpsData : rawIpsData?.results || [], periodStart, periodEnd));
     const configData = deduplicateLogs(filterLogsByTime(Array.isArray(rawConfigData) ? rawConfigData : rawConfigData?.results || [], periodStart, periodEnd));
