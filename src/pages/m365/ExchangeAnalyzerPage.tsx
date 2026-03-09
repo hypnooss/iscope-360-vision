@@ -27,8 +27,9 @@ import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { M365RiskCategory } from '@/types/m365Insights';
 import {
-  Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Globe, Mail,
+  Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Globe, Mail, Settings,
 } from 'lucide-react';
+import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -73,6 +74,7 @@ export default function ExchangeAnalyzerPage() {
   } = useExchangeOnlineInsights({ tenantRecordId: selectedTenantId });
 
   const [triggering, setTriggering] = useState(false);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
   // Category sheet state
   const [categorySheetOpen, setCategorySheetOpen] = useState(false);
@@ -149,6 +151,10 @@ export default function ExchangeAnalyzerPage() {
               {triggering || loading
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
                 : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
+            </Button>
+            <Button variant="outline" size="icon" title="Configurar agendamento"
+              disabled={!selectedTenantId} onClick={() => setScheduleDialogOpen(true)}>
+              <Settings className="w-4 h-4" />
             </Button>
           </div>
         </div>
@@ -249,6 +255,16 @@ export default function ExchangeAnalyzerPage() {
         onOpenChange={setCategorySheetOpen}
         category={selectedCategory}
         insights={insights}
+      />
+      <ScheduleDialog
+        open={scheduleDialogOpen}
+        onOpenChange={setScheduleDialogOpen}
+        entityId={selectedTenantId ?? ''}
+        table="m365_analyzer_schedules"
+        entityColumn="tenant_record_id"
+        title="Agendamento do Exchange Analyzer"
+        description="Configure a frequência de execução automática da análise do Exchange Online."
+        recommendation="Recomendamos agendar a execução 1 vez ao dia para manter a postura atualizada."
       />
     </AppLayout>
   );
