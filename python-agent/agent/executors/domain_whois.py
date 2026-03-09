@@ -205,7 +205,7 @@ class DomainWhoisExecutor(BaseExecutor):
         created_at = None
         owner = None
 
-        # Extract events (expiration, registration)
+        # Extract events (expiration, registration) from top-level
         for event in data.get('events', []):
             action = event.get('eventAction', '')
             date = event.get('eventDate', '')
@@ -213,6 +213,17 @@ class DomainWhoisExecutor(BaseExecutor):
                 expires_at = date
             elif action == 'registration' and date:
                 created_at = date
+
+        # If no events at top level, search inside entities (registro.br nests them)
+        if not expires_at and not created_at:
+            for entity in data.get('entities', []):
+                for event in entity.get('events', []):
+                    action = event.get('eventAction', '')
+                    date = event.get('eventDate', '')
+                    if action == 'expiration' and date and not expires_at:
+                        expires_at = date
+                    elif action == 'registration' and date and not created_at:
+                        created_at = date
 
         # Extract entities (registrar, registrant)
         for entity in data.get('entities', []):
@@ -225,6 +236,24 @@ class DomainWhoisExecutor(BaseExecutor):
                 registrar = name or handle or entity.get('publicIds', [{}])[0].get('identifier')
             if 'registrant' in roles:
                 owner = name or handle
+
+        # .br domains: registro.br RDAP has no "registrar" role entity.
+        # The registrar for all .br domains is always Registro.br (NIC.br).
+        # Without this fix, the parser falls back to the first entity name,
+        # which is the registrant (owner), not the registrar.
+        if not registrar and domain.endswith('.br'):
+            registrar = 'Registro.br (NIC.br)'
+
+        # If no explicit registrant found, try first entity with a vCard name as owner
+        if not owner:
+            for entity in data.get('entities', []):
+                roles = entity.get('roles', [])
+                if 'registrar' in roles:
+                    continue
+                name = self._extract_vcard_name(entity)
+                if name:
+                    owner = name
+                    break
 
         # Fallback: some RDAP responses put registrar at top level
         if not registrar:
