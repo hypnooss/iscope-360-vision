@@ -1,19 +1,58 @@
-# Status: ✅ Implementado
 
-## Alteração: Divisão do Card "Tráfego Negado" em Entrada/Saída
 
-### O que foi feito
+# Por que todos os agendamentos estão "Atrasado"
 
-1. **Tipos atualizados** (`src/types/analyzerInsights.ts`):
-   - Substituído `denied_traffic` por `inbound_traffic` e `outbound_traffic` em `AnalyzerEventCategory`
-   - Adicionadas novas entradas em `ANALYZER_CATEGORY_INFO` com labels, ícones e descrições apropriados
+## Diagnóstico
 
-2. **Grid de categorias** (`src/components/firewall/AnalyzerCategoryGrid.tsx`):
-   - Dois cards separados: "Tráfego de Entrada" e "Tráfego de Saída"
-   - Barra bicolor proporcional: vermelho (negado) + verde (permitido)
-   - Badges com contagem de Negado/Permitido
+O problema **não é de código frontend**. A causa raiz é que a Edge Function `run-scheduled-analyses` está rejeitando as chamadas do cron job com **"Unauthorized call attempt"**.
 
-3. **Sheet padronizado** (`src/components/firewall/AnalyzerCategorySheet.tsx`):
-   - Largura: 50vw
-   - Abas inline (Entrada/Saída) no padrão M365
-   - Conteúdo organizado por tab com Top IPs/Países Bloqueados e Permitidos
+Nos logs da função (02:00:02 UTC de hoje):
+```
+WARNING [run-scheduled-analyses] Unauthorized call attempt
+```
+
+A função exige autenticação com o **service role key**:
+```typescript
+if (!authHeader || authHeader !== `Bearer ${supabaseServiceKey}`) {
+  console.warn('[run-scheduled-analyses] Unauthorized call attempt');
+  return 401;
+}
+```
+
+Porém, o cron job no `pg_cron` provavelmente está configurado com o **anon key** no header `Authorization`. Como resultado:
+
+1. O cron dispara a cada minuto
+2. A função rejeita a chamada (401)
+3. O `next_run_at` nunca é atualizado
+4. Todos os agendamentos ficam permanentemente "Atrasado"
+
+## Solução
+
+Atualizar o cron job no Supabase para usar o **service role key** em vez do anon key. Isso precisa ser feito diretamente no banco de dados:
+
+```sql
+-- Primeiro, verificar o cron existente:
+SELECT * FROM cron.job WHERE jobname LIKE '%scheduled%';
+
+-- Depois atualizar com o service role key correto:
+SELECT cron.unschedule('nome-do-job-atual');
+
+SELECT cron.schedule(
+  'run-scheduled-analyses',
+  '* * * * *',
+  $$
+  SELECT net.http_post(
+    url := 'https://akbosdbyheezghieiefz.supabase.co/functions/v1/run-scheduled-analyses',
+    headers := '{"Content-Type": "application/json", "Authorization": "Bearer SERVICE_ROLE_KEY_AQUI"}'::jsonb,
+    body := '{}'::jsonb
+  ) AS request_id;
+  $$
+);
+```
+
+Substitua `SERVICE_ROLE_KEY_AQUI` pelo service role key do projeto Supabase (disponível em Settings > API no dashboard do Supabase).
+
+## Alternativa
+
+Se preferir não mexer no cron agora, posso alterar a função para aceitar também o anon key (menos seguro, pois qualquer pessoa com o anon key poderia disparar as análises).
+
