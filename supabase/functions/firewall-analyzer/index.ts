@@ -430,6 +430,15 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[], ipCountryMap: Re
   const vpnFailedRank = collectRankings(vpnOnlyFailures);
   const vpnSuccessRank = collectRankings(vpnSuccesses);
 
+  // VPN user rankings (fallback when IP data is unavailable)
+  const vpnSuccessUsers = groupByUser(vpnSuccesses);
+  const topVpnUsersFailed = Object.entries(vpnUserFailures)
+    .sort((a, b) => b[1].count - a[1].count).slice(0, 20)
+    .map(([user, data]) => ({ user, ip: [...data.ips][0], count: data.count }));
+  const topVpnUsersSuccess = Object.entries(vpnSuccessUsers)
+    .sort((a, b) => b[1].count - a[1].count).slice(0, 20)
+    .map(([user, data]) => ({ user, ip: [...data.ips][0], count: data.count }));
+
   return {
     insights,
     metrics: {
@@ -452,6 +461,8 @@ function analyzeAuthentication(authLogs: any[], vpnLogs: any[], ipCountryMap: Re
       topVpnAuthIPsSuccess: vpnSuccessRank.topIPs,
       topVpnAuthCountriesFailed: vpnFailedRank.topCountries,
       topVpnAuthCountriesSuccess: vpnSuccessRank.topCountries,
+      topVpnUsersFailed,
+      topVpnUsersSuccess,
     },
   };
 }
