@@ -1328,6 +1328,10 @@ export type Database = {
           name: string
           status: string
           updated_at: string
+          whois_checked_at: string | null
+          whois_created_at: string | null
+          whois_expires_at: string | null
+          whois_registrar: string | null
         }
         Insert: {
           agent_id?: string | null
@@ -1342,6 +1346,10 @@ export type Database = {
           name: string
           status?: string
           updated_at?: string
+          whois_checked_at?: string | null
+          whois_created_at?: string | null
+          whois_expires_at?: string | null
+          whois_registrar?: string | null
         }
         Update: {
           agent_id?: string | null
@@ -1356,6 +1364,10 @@ export type Database = {
           name?: string
           status?: string
           updated_at?: string
+          whois_checked_at?: string | null
+          whois_created_at?: string | null
+          whois_expires_at?: string | null
+          whois_registrar?: string | null
         }
         Relationships: [
           {
