@@ -34,7 +34,7 @@ import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
   Globe, Wifi, Eye, Server, Lock, KeyRound, ExternalLink,
   Filter, AppWindow, Building2, Zap, Clock, Maximize2, Settings, Calendar, Loader2,
-  Activity, Radio, Bug, Sparkles,
+  Activity, Radio, Bug,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
