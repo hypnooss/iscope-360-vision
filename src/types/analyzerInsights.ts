@@ -150,6 +150,91 @@ export interface BotnetDomain {
   count: number;
 }
 
+export type AnalyzerEventCategory =
+  | 'denied_traffic'
+  | 'fw_authentication'
+  | 'vpn_authentication'
+  | 'ips_events'
+  | 'config_changes'
+  | 'web_filter'
+  | 'app_control'
+  | 'anomalies'
+  | 'botnet';
+
+export interface AnalyzerCategoryInfo {
+  key: AnalyzerEventCategory;
+  label: string;
+  icon: string;
+  colorHex: string;
+  description: string;
+}
+
+export const ANALYZER_CATEGORY_INFO: Record<AnalyzerEventCategory, AnalyzerCategoryInfo> = {
+  denied_traffic: {
+    key: 'denied_traffic',
+    label: 'Tráfego Negado',
+    icon: 'shield',
+    colorHex: '#ef4444',
+    description: 'Eventos de tráfego bloqueado pelo firewall',
+  },
+  fw_authentication: {
+    key: 'fw_authentication',
+    label: 'Autenticação Firewall',
+    icon: 'lock',
+    colorHex: '#f97316',
+    description: 'Tentativas de autenticação administrativa no firewall',
+  },
+  vpn_authentication: {
+    key: 'vpn_authentication',
+    label: 'Autenticação VPN',
+    icon: 'wifi',
+    colorHex: '#f59e0b',
+    description: 'Tentativas de conexão VPN',
+  },
+  ips_events: {
+    key: 'ips_events',
+    label: 'Eventos IPS',
+    icon: 'alert-triangle',
+    colorHex: '#f43f5e',
+    description: 'Eventos detectados pelo sistema de prevenção de intrusão',
+  },
+  config_changes: {
+    key: 'config_changes',
+    label: 'Alterações de Config',
+    icon: 'server',
+    colorHex: '#a855f7',
+    description: 'Mudanças na configuração do dispositivo',
+  },
+  web_filter: {
+    key: 'web_filter',
+    label: 'Filtragem Web',
+    icon: 'filter',
+    colorHex: '#3b82f6',
+    description: 'Sites bloqueados por políticas de web filtering',
+  },
+  app_control: {
+    key: 'app_control',
+    label: 'Controle de Apps',
+    icon: 'app-window',
+    colorHex: '#06b6d4',
+    description: 'Aplicações bloqueadas por políticas de controle',
+  },
+  anomalies: {
+    key: 'anomalies',
+    label: 'Anomalias',
+    icon: 'zap',
+    colorHex: '#eab308',
+    description: 'Padrões anômalos de tráfego (DoS, DDoS, Port Scans)',
+  },
+  botnet: {
+    key: 'botnet',
+    label: 'Detecções Botnet',
+    icon: 'bug',
+    colorHex: '#dc2626',
+    description: 'Comunicações com C&C de botnets conhecidos',
+  },
+};
+
 export interface AnalyzerSnapshot {
   id: string;
   firewall_id: string;
