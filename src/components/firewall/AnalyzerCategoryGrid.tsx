@@ -320,22 +320,6 @@ export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCate
                   </div>
                 )}
 
-                {/* Top IPs for traffic cards */}
-                {hasData && stats.topIPs && stats.topIPs.length > 0 && (
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                      {catKey === 'inbound_traffic' ? 'Top IPs de Destino' : 'Top IPs de Origem'}
-                    </p>
-                    <div className="rounded bg-secondary/30 px-2 py-1.5 space-y-0.5">
-                      {stats.topIPs.map(entry => (
-                        <div key={entry.ip} className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-mono text-foreground truncate">{entry.ip}</span>
-                          <span className="text-[10px] text-muted-foreground shrink-0">{entry.count.toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 {/* Click indicator */}
                 <div className="flex justify-end mt-1">
