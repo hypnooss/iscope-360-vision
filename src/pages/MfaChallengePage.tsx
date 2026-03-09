@@ -67,6 +67,7 @@ export default function MfaChallengePage() {
       if (verifyError) throw verifyError;
 
       toast.success('Autenticação MFA concluída!');
+      await refreshMfaStatus();
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
       console.error('MFA challenge error:', err);
