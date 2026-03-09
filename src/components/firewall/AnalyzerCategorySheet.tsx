@@ -77,7 +77,6 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
   const info = ANALYZER_CATEGORY_INFO[category];
   const metrics = snapshot.metrics;
   const isTrafficCategory = category === 'inbound_traffic' || category === 'outbound_traffic';
-  const defaultTab = category === 'outbound_traffic' ? 'saida' : 'entrada';
 
   // Get the correct data based on category
   const getTrafficData = () => {
