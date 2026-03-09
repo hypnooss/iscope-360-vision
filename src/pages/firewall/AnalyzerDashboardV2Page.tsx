@@ -706,6 +706,7 @@ export default function AnalyzerDashboardV2Page() {
         open={categorySheetOpen}
         onOpenChange={setCategorySheetOpen}
         category={selectedCategory}
+        snapshot={snapshot!}
       />
 
       {/* Schedule Dialog */}
