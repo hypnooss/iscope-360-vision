@@ -6,7 +6,7 @@ import { usePreview } from '@/contexts/PreviewContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
-import { useExchangeDashboard } from '@/hooks/useExchangeDashboard';
+import { useExchangeDashboard, type ExchangeDashboardData } from '@/hooks/useExchangeDashboard';
 import { useExchangeOnlineInsights } from '@/hooks/useExchangeOnlineInsights';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
