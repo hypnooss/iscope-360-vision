@@ -39,7 +39,9 @@ function IPList({ items, colorClass }: { items?: TopBlockedIP[]; colorClass?: st
         <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-sm font-mono truncate">{item.ip}</span>
-            {item.country && <Badge variant="outline" className="text-xs shrink-0">{item.country}</Badge>}
+            {item.country && (
+              <span className={`fi fi-${getCountryCode(item.country) || 'xx'} text-base shrink-0`} title={item.country} />
+            )}
           </div>
           <span className={cn('text-sm font-semibold shrink-0 ml-2', colorClass ?? 'text-foreground')}>
             {item.count.toLocaleString()}
