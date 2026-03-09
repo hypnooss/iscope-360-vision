@@ -74,6 +74,7 @@ export default function ExchangeAnalyzerPage() {
   } = useExchangeOnlineInsights({ tenantRecordId: selectedTenantId });
 
   const [triggering, setTriggering] = useState(false);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
   // Category sheet state
   const [categorySheetOpen, setCategorySheetOpen] = useState(false);
