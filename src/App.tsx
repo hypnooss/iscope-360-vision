@@ -40,8 +40,7 @@ const FirewallReportsPage = lazy(() => import("./pages/firewall/FirewallReportsP
 const FirewallCompliancePage = lazy(() => import("./pages/firewall/FirewallCompliancePage"));
 const TaskExecutionsPage = lazy(() => import("./pages/firewall/TaskExecutionsPage"));
 const FirewallAnalysis = lazy(() => import("./pages/FirewallAnalysis"));
-const AnalyzerDashboardPage = lazy(() => import("./pages/firewall/AnalyzerDashboardPage"));
-const AnalyzerDashboardV2Page = lazy(() => import("./pages/firewall/AnalyzerDashboardV2Page"));
+const AnalyzerDashboardPage = lazy(() => import("./pages/firewall/AnalyzerDashboardV2Page"));
 const AnalyzerInsightsPage = lazy(() => import("./pages/firewall/AnalyzerInsightsPage"));
 const AnalyzerCriticalPage = lazy(() => import("./pages/firewall/AnalyzerCriticalPage"));
 const AnalyzerConfigChangesPage = lazy(() => import("./pages/firewall/AnalyzerConfigChangesPage"));
@@ -124,7 +123,6 @@ const App = () => (
                   <Route path="/scope-firewall/executions" element={<TaskExecutionsPage />} />
                   <Route path="/scope-firewall/reports" element={<FirewallReportsPage />} />
                   <Route path="/scope-firewall/analyzer" element={<AnalyzerDashboardPage />} />
-                  <Route path="/scope-firewall/analyzer-v2" element={<AnalyzerDashboardV2Page />} />
                   <Route path="/scope-firewall/analyzer/insights" element={<AnalyzerInsightsPage />} />
                   <Route path="/scope-firewall/analyzer/critical" element={<AnalyzerCriticalPage />} />
                   <Route path="/scope-firewall/analyzer/config-changes" element={<AnalyzerConfigChangesPage />} />
