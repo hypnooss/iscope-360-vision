@@ -1,5 +1,7 @@
 import * as LucideIcons from 'lucide-react';
 import { ShieldX, ShieldCheck } from 'lucide-react';
+import { getCountryCode } from '@/lib/countryUtils';
+import 'flag-icons/css/flag-icons.min.css';
 import {
   Sheet,
   SheetContent,
