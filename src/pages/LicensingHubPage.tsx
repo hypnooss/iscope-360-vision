@@ -484,6 +484,46 @@ export default function LicensingHubPage() {
             )}
           </TabsContent>
 
+          {/* External Domains Tab */}
+          <TabsContent value="domains">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : filteredDomains.length === 0 ? (
+              <EmptyState message={activeFilter ? 'Nenhum domínio corresponde ao filtro selecionado' : 'Nenhum domínio externo cadastrado ou sem dados WHOIS coletados'} />
+            ) : (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Domínio</TableHead>
+                      <TableHead>Workspace</TableHead>
+                      <TableHead>Registrar</TableHead>
+                      <TableHead>Registro</TableHead>
+                      <TableHead>Expiração</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredDomains.map(d => (
+                      <TableRow key={d.domainId}>
+                        <TableCell className="font-medium">{d.domain}</TableCell>
+                        <TableCell className="text-muted-foreground">{d.clientName}</TableCell>
+                        <TableCell className="text-muted-foreground">{d.registrar || '—'}</TableCell>
+                        <TableCell className="text-sm">{d.whoisCreatedAt ? formatDate(d.whoisCreatedAt) : '—'}</TableCell>
+                        <TableCell className="text-sm">{d.expiresAt ? formatDate(d.expiresAt) : '—'}</TableCell>
+                        <TableCell>
+                          <ExpiryBadge daysLeft={d.daysLeft} expiresAt={d.expiresAt} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </TabsContent>
+
           {/* M365 Tab */}
           <TabsContent value="m365">
             <div className="flex items-center justify-between mb-4">
