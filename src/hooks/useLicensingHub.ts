@@ -437,6 +437,41 @@ export function useLicensingHub() {
     enabled: activeClientIds.length > 0,
   });
 
+  // ====== EXTERNAL DOMAINS (WHOIS) ======
+  const { data: domainWhois = [], isLoading: loadingDomains } = useQuery({
+    queryKey: ['licensing-hub-domains', activeClientIds],
+    queryFn: async () => {
+      if (!activeClientIds.length) return [];
+
+      const { data: clients } = await supabase
+        .from('clients')
+        .select('id, name')
+        .in('id', activeClientIds);
+      const clientMap = new Map(clients?.map(c => [c.id, c.name]) || []);
+
+      const { data: domains } = await supabase
+        .from('external_domains')
+        .select('id, domain, name, client_id, whois_registrar, whois_expires_at, whois_created_at, whois_checked_at')
+        .in('client_id', activeClientIds)
+        .order('domain');
+
+      if (!domains?.length) return [];
+
+      return domains.map((d: any): DomainWhois => ({
+        domainId: d.id,
+        domain: d.domain,
+        name: d.name,
+        registrar: d.whois_registrar,
+        expiresAt: d.whois_expires_at,
+        daysLeft: getDaysLeft(d.whois_expires_at),
+        whoisCreatedAt: d.whois_created_at,
+        whoisCheckedAt: d.whois_checked_at,
+        clientName: clientMap.get(d.client_id) || '',
+      }));
+    },
+    enabled: activeClientIds.length > 0,
+  });
+
   // ====== REFRESH M365 LICENSES ======
   const [refreshingM365, setRefreshingM365] = useState(false);
 
