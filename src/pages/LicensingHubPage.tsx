@@ -210,13 +210,16 @@ export default function LicensingHubPage() {
     if (activeTab === 'tls') {
       return countStatus(tlsCertificates);
     }
+    if (activeTab === 'domains') {
+      return countStatus(domainWhois);
+    }
     // m365 — exclude suspended and long-expired from summary
     const relevantM365 = m365Licenses.filter(lic =>
       lic.capabilityStatus !== 'Suspended' &&
       (lic.daysLeft === null || lic.daysLeft >= -60)
     );
     return countStatus(relevantM365);
-  }, [activeTab, firewallLicenses, tlsCertificates, m365Licenses]);
+  }, [activeTab, firewallLicenses, tlsCertificates, m365Licenses, domainWhois]);
 
   const toggleFilter = (status: LicenseStatus) => {
     setActiveFilter(prev => (prev === status ? null : status));
