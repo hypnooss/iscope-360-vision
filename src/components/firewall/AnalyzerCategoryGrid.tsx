@@ -116,25 +116,31 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
 
     case 'web_filter': {
       const webFilter = metrics.webFilterBlocked || 0;
+      const topLabels = (metrics.topWebFilterCategories || []).slice(0, 3).map(c => c.category);
       return {
         total: webFilter,
         severity: webFilter > 1000 ? 'high' : webFilter > 500 ? 'medium' : webFilter > 0 ? 'low' : 'none',
+        topLabels,
       };
     }
 
     case 'app_control': {
       const appControl = metrics.appControlBlocked || 0;
+      const topLabels = (metrics.topAppControlApps || []).slice(0, 3).map(c => c.category);
       return {
         total: appControl,
         severity: appControl > 1000 ? 'high' : appControl > 500 ? 'medium' : appControl > 0 ? 'low' : 'none',
+        topLabels,
       };
     }
 
     case 'anomalies': {
       const anomaly = metrics.anomalyEvents || 0;
+      const topLabels = (metrics.topAnomalyTypes || []).slice(0, 3).map(c => c.category);
       return {
         total: anomaly,
         severity: anomaly > 50 ? 'critical' : anomaly > 20 ? 'high' : anomaly > 5 ? 'medium' : anomaly > 0 ? 'low' : 'none',
+        topLabels,
       };
     }
 
