@@ -99,10 +99,7 @@ export function ExchangeThreatProtectionSection({ data, loading }: ExchangeThrea
     <div className="space-y-4">
       {/* Policy Status */}
       <div>
-        <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-muted-foreground" />
-          Status das Políticas de Proteção
-        </h3>
+        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Status das Políticas de Proteção</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
           <PolicyCard name="Anti-Spam" status={data.policyStatus.antiSpam} />
           <PolicyCard name="Anti-Phishing" status={data.policyStatus.antiPhish} />
