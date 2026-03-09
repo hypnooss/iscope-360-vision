@@ -44,6 +44,18 @@ export interface M365License {
   collectedAt: string;
 }
 
+export interface DomainWhois {
+  domainId: string;
+  domain: string;
+  name: string;
+  registrar: string | null;
+  expiresAt: string | null;
+  daysLeft: number | null;
+  whoisCreatedAt: string | null;
+  whoisCheckedAt: string | null;
+  clientName: string;
+}
+
 export type LicenseStatus = 'expired' | 'expiring' | 'active' | 'unknown';
 
 export function getLicenseStatus(daysLeft: number | null): LicenseStatus {
