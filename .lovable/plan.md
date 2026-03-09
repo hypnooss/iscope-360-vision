@@ -1,35 +1,29 @@
+# Status: ✅ Implementado
 
+## WHOIS via Agent — RDAP/HTTPS primário + TCP fallback
 
-# Fix: WHOIS via Agent usando HTTPS em vez de TCP porta 43
+### Problema
+- `rdap.registro.br` retorna 403 para IPs de cloud (Edge Functions)
+- TCP porta 43 bloqueada em muitos ambientes corporativos
 
-## Problema
+### Solução
+Executor `domain_whois.py` usa **RDAP via HTTPS (porta 443)** como método primário, com fallback para TCP socket (porta 43). O Agent roda on-premise com IP corporativo, contornando ambos os bloqueios.
 
-A abordagem atual de WHOIS via TCP socket (porta 43) não funciona em muitos ambientes de clientes porque firewalls corporativos bloqueiam tráfego de saída na porta 43. Apenas portas comuns (80, 443) costumam estar liberadas.
+| Método | Porta | Quando usa |
+|--------|-------|------------|
+| RDAP/HTTPS | 443 | Primário — funciona em qualquer rede |
+| WHOIS/TCP | 43 | Fallback — quando RDAP falha |
 
-## Solução
-
-Modificar o executor `domain_whois.py` para usar **RDAP via HTTPS (porta 443)** como método primário, com fallback para TCP socket apenas se RDAP falhar. O Agent roda on-premise, então não sofre o bloqueio de IP do registro.br (diferente da Edge Function que roda em cloud). O RDAP do registro.br bloqueia IPs de **cloud/datacenter**, não IPs corporativos/residenciais.
-
-### Estratégia de consulta (ordem):
-
-1. **RDAP via HTTPS** (porta 443) -- funciona em qualquer rede
-   - `.br`: `https://rdap.registro.br/domain/{domain}`
-   - Genérico: `https://rdap.org/domain/{domain}`
-   - Parsear JSON RDAP (events, entities)
-
-2. **TCP socket porta 43** (fallback) -- caso RDAP falhe
-   - Manter lógica atual como fallback para cenários onde RDAP não retorna dados
-
-### Arquivo alterado
+### Arquivos
 
 | Arquivo | Mudança |
-|---------|---------|
-| `python-agent/agent/executors/domain_whois.py` | Adicionar RDAP/HTTPS como método primário, mover TCP socket para fallback |
+|---|---|
+| `python-agent/agent/executors/domain_whois.py` | Executor com RDAP primário + TCP fallback |
+| `python-agent/agent/executors/__init__.py` | Registrado `DomainWhoisExecutor` |
+| `python-agent/agent/tasks.py` | Mapeamento `domain_whois` |
+| Blueprint `external_domain` (DB) | Step `domain_whois` configurável |
+| `supabase/functions/agent-task-result/index.ts` | Extrai WHOIS e atualiza `external_domains` |
 
-### Detalhes técnicos
-
-- Usar `urllib.request` (stdlib Python, sem dependências extras) para fazer GET HTTPS
-- Parsear resposta JSON RDAP para extrair registrar, expires, created, owner
-- Se RDAP falhar (timeout, 403, erro de parse), cair no TCP socket existente
-- Manter compatibilidade Python 3.9 (`Optional` em vez de `X | None`)
-
+### Próximos passos
+- Deploy do Agent com novo executor
+- Re-executar Domain Compliance nos domínios .br
