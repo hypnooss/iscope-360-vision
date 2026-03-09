@@ -41,8 +41,10 @@ interface CategoryStats {
   denied?: number;
   allowed?: number;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'none';
-  topLabels?: string[];
+  topItems?: { label: string; count: number }[];
 }
+
+const SEGMENT_COLORS = ['#f97316', '#a855f7', '#10b981', '#3b82f6', '#eab308'];
 
 function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSnapshot): CategoryStats {
   const metrics = snapshot.metrics;
