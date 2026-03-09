@@ -71,7 +71,7 @@ async function fetchDashboardStats(
 ): Promise<DashboardStats> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  // ── 1. Asset counts + IDs (parallel) ──────────────────────────────
+  // ── 1. Asset counts + IDs (sequential to reduce connection pool pressure) ──
   let fwQuery = supabase.from('firewalls').select('id, client_id', { count: 'exact' });
   let m365Query = supabase.from('m365_tenants').select('id, client_id', { count: 'exact' })
     .in('connection_status', ['connected', 'partial']);
@@ -91,9 +91,9 @@ async function fetchDashboardStats(
     agentsQuery = agentsQuery.in('client_id', workspaceIds);
   }
 
-  const [fwRes, m365Res, extRes, agentsRes] = await Promise.all([
-    fwQuery, m365Query, extQuery, agentsQuery,
-  ]);
+  // Stage 1: assets + agents (max 2 parallel)
+  const [fwRes, agentsRes] = await Promise.all([fwQuery, agentsQuery]);
+  const [m365Res, extRes] = await Promise.all([m365Query, extQuery]);
 
   const agents = agentsRes.data || [];
   const agentsTotal = agents.length;

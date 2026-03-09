@@ -89,9 +89,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // MFA is required if: user has a factor but hasn't completed aal2, OR user doesn't have a factor yet (needs to enroll)
       if (nextLevel === 'aal2' && currentLevel === 'aal1') {
-        // Check if device is trusted (MFA verified within 24h)
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        const userId = currentSession?.user?.id;
+      // Check if device is trusted (MFA verified within 24h)
+        const userId = user?.id;
         if (userId && isDeviceTrusted(userId)) {
           setMfaRequired(false);
         } else {

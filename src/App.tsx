@@ -83,7 +83,15 @@ const FirewallReportPreview = lazy(() => import("./pages/preview/FirewallReportP
 const LicensingHubPage = lazy(() => import("./pages/LicensingHubPage"));
 const AccountPage = lazy(() => import("./pages/AccountPage"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 30_000,
+    },
+  },
+});
 
 // Loading fallback component
 const PageLoader = () => (
