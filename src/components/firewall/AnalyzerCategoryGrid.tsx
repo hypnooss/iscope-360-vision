@@ -42,6 +42,7 @@ interface CategoryStats {
   allowed?: number;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'none';
   topItems?: { label: string; count: number }[];
+  topIPs?: { ip: string; count: number }[];
 }
 
 const SEGMENT_COLORS = ['#f97316', '#a855f7', '#10b981', '#3b82f6', '#eab308'];
