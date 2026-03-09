@@ -1,51 +1,19 @@
+# Status: ✅ Implementado
 
-# Plano: Barra Bicolor e Sheet com Abas para Autenticação Firewall
+## Alteração: Divisão do Card "Tráfego Negado" em Entrada/Saída
 
-## Mudanças
+### O que foi feito
 
-### 1. Grid - Barra Bicolor para Autenticação (`AnalyzerCategoryGrid.tsx`)
+1. **Tipos atualizados** (`src/types/analyzerInsights.ts`):
+   - Substituído `denied_traffic` por `inbound_traffic` e `outbound_traffic` em `AnalyzerEventCategory`
+   - Adicionadas novas entradas em `ANALYZER_CATEGORY_INFO` com labels, ícones e descrições apropriados
 
-Adicionar lógica para renderizar barra bicolor quando categoria tiver `success`/`failed`:
+2. **Grid de categorias** (`src/components/firewall/AnalyzerCategoryGrid.tsx`):
+   - Dois cards separados: "Tráfego de Entrada" e "Tráfego de Saída"
+   - Barra bicolor proporcional: vermelho (negado) + verde (permitido)
+   - Badges com contagem de Negado/Permitido
 
-```tsx
-const hasAuthSplit = stats.success !== undefined && stats.failed !== undefined;
-
-// Na renderização da barra:
-{hasAuthSplit && hasData ? (
-  <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden flex">
-    <div className="h-full bg-red-500" style={{ width: `${(stats.failed! / stats.total) * 100}%` }} />
-    <div className="h-full bg-green-500" style={{ width: `${(stats.success! / stats.total) * 100}%` }} />
-  </div>
-) : hasTrafficSplit && hasData ? (
-  // ... barra de tráfego existente
-) : (
-  // ... barra de severidade existente
-)}
-```
-
-### 2. Sheet - Tabs "Sucesso/Falha" com Bandeiras e IPs Privados (`AnalyzerCategorySheet.tsx`)
-
-**Helper para detectar IP privado:**
-```typescript
-const isPrivateIP = (ip: string) =>
-  /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)/.test(ip);
-```
-
-**Atualizar `IPList` para mostrar ícone de LAN para IPs privados:**
-```tsx
-{item.country ? (
-  <span className={`fi fi-${getCountryCode(item.country)}`} title={item.country} />
-) : isPrivateIP(item.ip) ? (
-  <Server className="w-4 h-4 text-muted-foreground" title="IP Privado (LAN)" />
-) : null}
-```
-
-**Criar `renderFwAuthContent()` com estrutura de Tabs:**
-- Aba "Falha" (default): `topFwAuthIPsFailed`, `topFwAuthCountriesFailed`
-- Aba "Sucesso": `topFwAuthIPsSuccess`, `topFwAuthCountriesSuccess`
-
-Usar mesmo padrão visual do tráfego (Separator + TabsList + TabsContent com ScrollArea).
-
-## Arquivos Modificados
-- `src/components/firewall/AnalyzerCategoryGrid.tsx` - Barra bicolor para auth
-- `src/components/firewall/AnalyzerCategorySheet.tsx` - Tabs + bandeiras + IPs privados
+3. **Sheet padronizado** (`src/components/firewall/AnalyzerCategorySheet.tsx`):
+   - Largura: 50vw
+   - Abas inline (Entrada/Saída) no padrão M365
+   - Conteúdo organizado por tab com Top IPs/Países Bloqueados e Permitidos
