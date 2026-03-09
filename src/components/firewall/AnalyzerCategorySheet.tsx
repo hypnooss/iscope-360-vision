@@ -125,7 +125,10 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
         blockedCountries: metrics.topInboundBlockedCountries,
         allowedIPs: metrics.topInboundAllowedIPs,
         allowedCountries: metrics.topInboundAllowedCountries,
-        ipLabel: 'de Destino',
+        ipLabel: 'de Origem',
+        internalLabel: 'de Destino',
+        blockedInternalIPs: metrics.topInboundBlockedDestIPs,
+        allowedInternalIPs: metrics.topInboundAllowedDestIPs,
       };
     }
     return {
@@ -135,7 +138,10 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
       blockedCountries: metrics.topOutboundBlockedCountries,
       allowedIPs: metrics.topOutboundIPs,
       allowedCountries: metrics.topOutboundCountries,
-      ipLabel: 'de Origem',
+      ipLabel: 'de Destino',
+      internalLabel: 'de Origem',
+      blockedInternalIPs: metrics.topOutboundBlockedSourceIPs,
+      allowedInternalIPs: metrics.topOutboundSourceIPs,
     };
   };
 
@@ -185,6 +191,14 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                   <CountryList items={data.blockedCountries} colorClass="text-destructive" />
                 </CardContent>
               </Card>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top IPs {data.internalLabel}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <IPList items={data.blockedInternalIPs} colorClass="text-destructive" />
+                </CardContent>
+              </Card>
             </div>
           </ScrollArea>
         </TabsContent>
@@ -211,6 +225,14 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                 </CardHeader>
                 <CardContent>
                   <CountryList items={data.allowedCountries} colorClass="text-emerald-600 dark:text-emerald-400" />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top IPs {data.internalLabel}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <IPList items={data.allowedInternalIPs} colorClass="text-emerald-600 dark:text-emerald-400" />
                 </CardContent>
               </Card>
             </div>

@@ -103,10 +103,12 @@ export interface AnalyzerMetrics {
   // Outbound connections (allowed)
   topOutboundIPs: TopBlockedIP[];
   topOutboundCountries: TopCountry[];
+  topOutboundSourceIPs?: TopBlockedIP[];
   outboundConnections: number;
   // Outbound connections (blocked)
   topOutboundBlockedIPs: TopBlockedIP[];
   topOutboundBlockedCountries: TopCountry[];
+  topOutboundBlockedSourceIPs?: TopBlockedIP[];
   outboundBlocked: number;
   ipsEvents: number;
   configChanges: number;
@@ -131,10 +133,12 @@ export interface AnalyzerMetrics {
   // Inbound traffic (blocked)
   topInboundBlockedIPs: TopBlockedIP[];
   topInboundBlockedCountries: TopCountry[];
+  topInboundBlockedDestIPs?: TopBlockedIP[];
   inboundBlocked: number;
   // Inbound traffic (allowed)
   topInboundAllowedIPs: TopBlockedIP[];
   topInboundAllowedCountries: TopCountry[];
+  topInboundAllowedDestIPs?: TopBlockedIP[];
   inboundAllowed: number;
   // Fase 2: Active Sessions
   activeSessions: number;
