@@ -23,7 +23,19 @@ function renderNextRunShared(nextRunAt: string | null) {
   const next = new Date(nextRunAt);
   const now = new Date();
   const diffMin = differenceInMinutes(next, now);
-  if (diffMin < 0) return <span className="text-muted-foreground">Atrasado</span>;
+  if (diffMin < -10) return <span className="text-destructive font-medium">Atrasado ({Math.abs(diffMin)} min)</span>;
+  if (diffMin < 0) {
+    const relative = formatDistanceToNow(next, { addSuffix: true, locale: ptBR });
+    return (
+      <div className="flex items-center gap-2">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+        </span>
+        <span className="text-amber-400 font-medium">Executando...</span>
+      </div>
+    );
+  }
   const relative = formatDistanceToNow(next, { addSuffix: true, locale: ptBR });
   if (diffMin < 60) {
     return (
