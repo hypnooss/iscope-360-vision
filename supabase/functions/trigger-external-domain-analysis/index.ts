@@ -330,6 +330,33 @@ Deno.serve(async (req) => {
       analysisId = existingApiAnalysis.id;
     }
 
+    // =========================================================
+    // 3. Run WHOIS/RDAP lookup in background
+    // =========================================================
+    const runWhoisLookup = async () => {
+      try {
+        console.log(`[trigger-external-domain-analysis] Starting WHOIS lookup for ${domain.domain}...`);
+        const res = await fetch(`${supabaseUrl}/functions/v1/domain-whois-lookup`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({ domain: domain.domain, domain_id: domain_id }),
+        });
+        const result = await res.json();
+        console.log(`[trigger-external-domain-analysis] WHOIS lookup result:`, result.success ? `registrar=${result.registrar}, expires=${result.expiresAt}` : result.error);
+      } catch (e) {
+        console.error(`[trigger-external-domain-analysis] WHOIS lookup error:`, e);
+      }
+    };
+
+    EdgeRuntime.waitUntil(runWhoisLookup());
+    } else {
+      console.log(`[trigger-external-domain-analysis] API analysis already in progress: ${existingApiAnalysis.id}`);
+      analysisId = existingApiAnalysis.id;
+    }
+
     const response: TriggerResponse = {
       success: true,
       task_id: newTask.id,
