@@ -1130,6 +1130,14 @@ export default function AnalyzerDashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Category Detail Sheet */}
+      <AnalyzerCategorySheet 
+        open={categorySheetOpen}
+        onOpenChange={setCategorySheetOpen}
+        category={selectedCategory}
+        snapshot={snapshot!}
+      />
     </AppLayout>
   );
 }
