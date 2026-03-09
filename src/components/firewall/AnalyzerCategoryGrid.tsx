@@ -118,11 +118,11 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
 
     case 'web_filter': {
       const webFilter = metrics.webFilterBlocked || 0;
-      const topLabels = (metrics.topWebFilterCategories || []).slice(0, 3).map(c => c.category);
+      const topItems = (metrics.topWebFilterCategories || []).slice(0, 3).map(c => ({ label: c.category, count: c.count }));
       return {
         total: webFilter,
         severity: webFilter > 1000 ? 'high' : webFilter > 500 ? 'medium' : webFilter > 0 ? 'low' : 'none',
-        topLabels,
+        topItems,
       };
     }
 
