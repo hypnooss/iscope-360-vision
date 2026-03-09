@@ -41,6 +41,9 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
       topVpnAuthIPsSuccess: (metrics.topVpnAuthIPsSuccess as AnalyzerMetrics['topVpnAuthIPsSuccess']) ?? [],
       topVpnAuthCountriesFailed: (metrics.topVpnAuthCountriesFailed as AnalyzerMetrics['topVpnAuthCountriesFailed']) ?? [],
       topVpnAuthCountriesSuccess: (metrics.topVpnAuthCountriesSuccess as AnalyzerMetrics['topVpnAuthCountriesSuccess']) ?? [],
+      // VPN user rankings
+      topVpnUsersFailed: (metrics.topVpnUsersFailed as AnalyzerMetrics['topVpnUsersFailed']) ?? [],
+      topVpnUsersSuccess: (metrics.topVpnUsersSuccess as AnalyzerMetrics['topVpnUsersSuccess']) ?? [],
       // Outbound (allowed)
       topOutboundIPs: (metrics.topOutboundIPs as AnalyzerMetrics['topOutboundIPs']) ?? [],
       topOutboundCountries: (metrics.topOutboundCountries as AnalyzerMetrics['topOutboundCountries']) ?? [],
