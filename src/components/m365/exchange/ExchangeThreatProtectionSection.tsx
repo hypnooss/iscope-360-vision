@@ -115,7 +115,7 @@ export function ExchangeThreatProtectionSection({ data, loading }: ExchangeThrea
       {/* Rankings */}
       {hasRankings && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <RankingList title="Top Domínios de SPAM" icon={Globe} items={data.topSpamSenderDomains} labelKey="domain" />
+          <RankingList title="Top Origem de SPAM" icon={Globe} items={data.topSpamSenderDomains} labelKey="domain" />
           <RankingList title="Top Alvos de Phishing" icon={Users} items={data.topPhishingTargets} labelKey="user" />
           <RankingList title="Top Fontes de Malware" icon={Bug} items={data.topMalwareSenders} labelKey="domain" />
         </div>
