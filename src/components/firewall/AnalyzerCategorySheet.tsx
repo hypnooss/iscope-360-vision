@@ -1,5 +1,5 @@
 import * as LucideIcons from 'lucide-react';
-import { ShieldX, ShieldCheck } from 'lucide-react';
+import { ShieldX, ShieldCheck, XCircle, CheckCircle2, Server } from 'lucide-react';
 import { getCountryCode } from '@/lib/countryUtils';
 import 'flag-icons/css/flag-icons.min.css';
 import {
@@ -31,6 +31,9 @@ function DynamicIcon({ name, className, style }: { name: string; className?: str
   return <IconComponent className={className} style={style} />;
 }
 
+const isPrivateIP = (ip: string) =>
+  /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)/.test(ip);
+
 function IPList({ items, colorClass }: { items?: TopBlockedIP[]; colorClass?: string }) {
   if (!items?.length) return <p className="text-xs text-muted-foreground py-2">Sem dados</p>;
   return (
@@ -39,9 +42,11 @@ function IPList({ items, colorClass }: { items?: TopBlockedIP[]; colorClass?: st
         <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-sm font-mono truncate">{item.ip}</span>
-            {item.country && (
+            {item.country ? (
               <span className={`fi fi-${getCountryCode(item.country) || 'xx'} text-base shrink-0`} title={item.country} />
-            )}
+            ) : isPrivateIP(item.ip) ? (
+              <Server className="w-3.5 h-3.5 text-muted-foreground shrink-0" title="IP Privado (LAN)" />
+            ) : null}
           </div>
           <span className={cn('text-sm font-semibold shrink-0 ml-2', colorClass ?? 'text-foreground')}>
             {item.count.toLocaleString()}
@@ -84,8 +89,8 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
   const info = ANALYZER_CATEGORY_INFO[category];
   const metrics = snapshot.metrics;
   const isTrafficCategory = category === 'inbound_traffic' || category === 'outbound_traffic';
+  const isAuthCategory = category === 'fw_authentication' || category === 'vpn_authentication';
 
-  // Get the correct data based on category
   const getTrafficData = () => {
     if (category === 'inbound_traffic') {
       return {
@@ -109,7 +114,6 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
 
   const renderTrafficContent = () => {
     const data = getTrafficData();
-    
     return (
       <Tabs defaultValue="bloqueado" className="flex flex-col flex-1 min-h-0">
         <div className="border-b border-border shrink-0" />
@@ -130,7 +134,6 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
           </TabsTrigger>
         </TabsList>
 
-        {/* Bloqueado tab */}
         <TabsContent value="bloqueado" className="flex-1 mt-0 min-h-0">
           <ScrollArea className="h-full">
             <div className="p-6 space-y-4">
@@ -139,7 +142,6 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                   {data.blockedCount.toLocaleString()} eventos bloqueados
                 </Badge>
               )}
-
               <Card>
                 <CardHeader className="pb-2 pt-4">
                   <CardTitle className="text-sm font-medium">Top IPs Bloqueados</CardTitle>
@@ -148,7 +150,6 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                   <IPList items={data.blockedIPs} colorClass="text-destructive" />
                 </CardContent>
               </Card>
-
               <Card>
                 <CardHeader className="pb-2 pt-4">
                   <CardTitle className="text-sm font-medium">Top Países Bloqueados</CardTitle>
@@ -161,7 +162,6 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
           </ScrollArea>
         </TabsContent>
 
-        {/* Permitido tab */}
         <TabsContent value="permitido" className="flex-1 mt-0 min-h-0">
           <ScrollArea className="h-full">
             <div className="p-6 space-y-4">
@@ -170,7 +170,6 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                   {data.allowedCount.toLocaleString()} eventos permitidos
                 </Badge>
               )}
-
               <Card>
                 <CardHeader className="pb-2 pt-4">
                   <CardTitle className="text-sm font-medium">Top IPs Permitidos</CardTitle>
@@ -179,13 +178,100 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                   <IPList items={data.allowedIPs} colorClass="text-emerald-600 dark:text-emerald-400" />
                 </CardContent>
               </Card>
-
               <Card>
                 <CardHeader className="pb-2 pt-4">
                   <CardTitle className="text-sm font-medium">Top Países Permitidos</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <CountryList items={data.allowedCountries} colorClass="text-emerald-600 dark:text-emerald-400" />
+                </CardContent>
+              </Card>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+      </Tabs>
+    );
+  };
+
+  const renderAuthContent = () => {
+    const isFw = category === 'fw_authentication';
+    const failedIPs = isFw ? metrics.topFwAuthIPsFailed : metrics.topVpnAuthIPsFailed;
+    const failedCountries = isFw ? metrics.topFwAuthCountriesFailed : metrics.topVpnAuthCountriesFailed;
+    const successIPs = isFw ? metrics.topFwAuthIPsSuccess : metrics.topVpnAuthIPsSuccess;
+    const successCountries = isFw ? metrics.topFwAuthCountriesSuccess : metrics.topVpnAuthCountriesSuccess;
+    const failCount = isFw ? (metrics.firewallAuthFailures || 0) : (metrics.vpnFailures || 0);
+    const successCount = isFw ? (metrics.firewallAuthSuccesses || 0) : (metrics.vpnSuccesses || 0);
+
+    return (
+      <Tabs defaultValue="falha" className="flex flex-col flex-1 min-h-0">
+        <div className="border-b border-border shrink-0" />
+        <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-6 h-auto py-0 shrink-0">
+          <TabsTrigger
+            value="falha"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-destructive data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5"
+          >
+            <XCircle className="w-3.5 h-3.5" />
+            Falha
+          </TabsTrigger>
+          <TabsTrigger
+            value="sucesso"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-emerald-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Sucesso
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="falha" className="flex-1 mt-0 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="p-6 space-y-4">
+              {failCount > 0 && (
+                <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">
+                  {failCount.toLocaleString()} autenticações falhas
+                </Badge>
+              )}
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top IPs (Falha)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <IPList items={failedIPs} colorClass="text-destructive" />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top Países (Falha)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CountryList items={failedCountries} colorClass="text-destructive" />
+                </CardContent>
+              </Card>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="sucesso" className="flex-1 mt-0 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="p-6 space-y-4">
+              {successCount > 0 && (
+                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
+                  {successCount.toLocaleString()} autenticações bem-sucedidas
+                </Badge>
+              )}
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top IPs (Sucesso)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <IPList items={successIPs} colorClass="text-emerald-600 dark:text-emerald-400" />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top Países (Sucesso)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CountryList items={successCountries} colorClass="text-emerald-600 dark:text-emerald-400" />
                 </CardContent>
               </Card>
             </div>
@@ -202,68 +288,8 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
         return renderTrafficContent();
 
       case 'fw_authentication':
-        return (
-          <div className="space-y-4">
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top IPs (Falhas)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {metrics.topFwAuthIPsFailed?.slice(0, 10).map((item: TopBlockedIP, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
-                    <span className="text-sm font-mono">{item.ip}</span>
-                    <span className="text-sm font-semibold text-red-500">{item.count}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top Países (Falhas)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {metrics.topFwAuthCountriesFailed?.slice(0, 10).map((item: TopCountry, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
-                    <span className="text-sm">{item.country}</span>
-                    <span className="text-sm font-semibold text-red-500">{item.count}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-        );
-
       case 'vpn_authentication':
-        return (
-          <div className="space-y-4">
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top IPs (Falhas)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {metrics.topVpnAuthIPsFailed?.slice(0, 10).map((item: TopBlockedIP, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
-                    <span className="text-sm font-mono">{item.ip}</span>
-                    <span className="text-sm font-semibold text-red-500">{item.count}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top Países (Falhas)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {metrics.topVpnAuthCountriesFailed?.slice(0, 10).map((item: TopCountry, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
-                    <span className="text-sm">{item.country}</span>
-                    <span className="text-sm font-semibold text-red-500">{item.count}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-        );
+        return renderAuthContent();
 
       case 'web_filter':
         return (
@@ -387,15 +413,17 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
     }
   };
 
+  const isFullHeightCategory = isTrafficCategory || isAuthCategory;
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         className={cn(
           'w-full sm:max-w-[50vw]',
-          isTrafficCategory ? 'p-0 flex flex-col' : ''
+          isFullHeightCategory ? 'p-0 flex flex-col' : ''
         )}
       >
-        <SheetHeader className={cn(isTrafficCategory ? 'px-6 pt-6 pb-0 shrink-0' : 'mb-2')}>
+        <SheetHeader className={cn(isFullHeightCategory ? 'px-6 pt-6 pb-0 shrink-0' : 'mb-2')}>
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg" style={{ backgroundColor: `${info.colorHex}15` }}>
               <DynamicIcon name={info.icon} className="w-5 h-5" style={{ color: info.colorHex }} />
@@ -405,7 +433,7 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
           <SheetDescription>{info.description}</SheetDescription>
         </SheetHeader>
 
-        {isTrafficCategory ? (
+        {isFullHeightCategory ? (
           renderCategoryContent()
         ) : (
           <ScrollArea className="h-[calc(100vh-12rem)] mt-6">
