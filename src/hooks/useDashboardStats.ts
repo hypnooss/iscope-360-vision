@@ -71,7 +71,7 @@ async function fetchDashboardStats(
 ): Promise<DashboardStats> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  // ── 1. Asset counts + IDs (parallel) ──────────────────────────────
+  // ── 1. Asset counts + IDs (sequential to reduce connection pool pressure) ──
   let fwQuery = supabase.from('firewalls').select('id, client_id', { count: 'exact' });
   let m365Query = supabase.from('m365_tenants').select('id, client_id', { count: 'exact' })
     .in('connection_status', ['connected', 'partial']);
@@ -91,9 +91,9 @@ async function fetchDashboardStats(
     agentsQuery = agentsQuery.in('client_id', workspaceIds);
   }
 
-  const [fwRes, m365Res, extRes, agentsRes] = await Promise.all([
-    fwQuery, m365Query, extQuery, agentsQuery,
-  ]);
+  // Stage 1: assets + agents (max 2 parallel)
+  const [fwRes, agentsRes] = await Promise.all([fwQuery, agentsQuery]);
+  const [m365Res, extRes] = await Promise.all([m365Query, extQuery]);
 
   const agents = agentsRes.data || [];
   const agentsTotal = agents.length;
@@ -104,16 +104,9 @@ async function fetchDashboardStats(
   const tenantIds = (m365Res.data || []).map(t => t.id);
   const extDomainIds = (extRes.data || []).map(d => d.id);
 
-  // ── 2. ALL data queries in parallel ───────────────────────────────
-  const [
-    fwScoreHistoryRes,
-    fwSummaryRes,
-    m365HistoryRes,
-    extScoreHistoryRes,
-    extSummaryRes,
-    cveCacheRes,
-  ] = await Promise.all([
-    // Firewall score history (lightweight: no report_data, 30 days)
+  // ── 2. Data queries in batches of 3 to reduce connection pool pressure ──
+  // Batch A: Firewall + M365 history
+  const [fwScoreHistoryRes, fwSummaryRes, m365HistoryRes] = await Promise.all([
     firewallIds.length > 0
       ? supabase
           .from('analysis_history')
@@ -122,13 +115,9 @@ async function fetchDashboardStats(
           .gte('created_at', thirtyDaysAgo)
           .order('created_at', { ascending: true })
       : Promise.resolve({ data: [] as any[] }),
-
-    // Firewall severities via RPC (server-side extraction, zero report_data transfer)
     firewallIds.length > 0
       ? supabase.rpc('get_fw_dashboard_summary' as any, { p_firewall_ids: firewallIds })
       : Promise.resolve({ data: [] as any[] }),
-
-    // M365 history (already uses summary field, no heavy data)
     tenantIds.length > 0
       ? supabase
           .from('m365_posture_history')
@@ -138,8 +127,10 @@ async function fetchDashboardStats(
           .gte('created_at', thirtyDaysAgo)
           .order('created_at', { ascending: true })
       : Promise.resolve({ data: [] as any[] }),
+  ]);
 
-    // External domain score history (lightweight)
+  // Batch B: External domain + CVE cache
+  const [extScoreHistoryRes, extSummaryRes, cveCacheRes] = await Promise.all([
     extDomainIds.length > 0
       ? supabase
           .from('external_domain_analysis_history')
@@ -149,13 +140,9 @@ async function fetchDashboardStats(
           .gte('created_at', thirtyDaysAgo)
           .order('created_at', { ascending: true })
       : Promise.resolve({ data: [] as any[] }),
-
-    // External domain severities via RPC
     extDomainIds.length > 0
       ? supabase.rpc('get_ext_domain_dashboard_summary' as any, { p_domain_ids: extDomainIds })
       : Promise.resolve({ data: [] as any[] }),
-
-    // CVE cache
     supabase.from('cve_severity_cache').select('module_code, client_id, critical, high, medium, low'),
   ]);
 
