@@ -197,14 +197,8 @@ export default function ExchangeAnalyzerPage() {
         )}
 
         {/* Category Grid */}
-        {insights.length > 0 && !insightsLoading && (
-          <ExchangeAnalyzerCategoryGrid
-            insights={insights}
-            onCategoryClick={(category) => {
-              setSelectedCategory(category);
-              setCategorySheetOpen(true);
-            }}
-          />
+        {dashboardData && !dashboardLoading && (
+          <ExchangeAnalyzerCategoryGrid data={dashboardData} />
         )}
 
         {/* Security Insights */}
