@@ -138,11 +138,11 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
 
     case 'anomalies': {
       const anomaly = metrics.anomalyEvents || 0;
-      const topLabels = (metrics.topAnomalyTypes || []).slice(0, 3).map(c => c.category);
+      const topItems = (metrics.topAnomalyTypes || []).slice(0, 3).map(c => ({ label: c.category, count: c.count }));
       return {
         total: anomaly,
         severity: anomaly > 50 ? 'critical' : anomaly > 20 ? 'high' : anomaly > 5 ? 'medium' : anomaly > 0 ? 'low' : 'none',
-        topLabels,
+        topItems,
       };
     }
 
