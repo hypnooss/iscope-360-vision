@@ -128,11 +128,11 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
 
     case 'app_control': {
       const appControl = metrics.appControlBlocked || 0;
-      const topLabels = (metrics.topAppControlApps || []).slice(0, 3).map(c => c.category);
+      const topItems = (metrics.topAppControlApps || []).slice(0, 3).map(c => ({ label: c.category, count: c.count }));
       return {
         total: appControl,
         severity: appControl > 1000 ? 'high' : appControl > 500 ? 'medium' : appControl > 0 ? 'low' : 'none',
-        topLabels,
+        topItems,
       };
     }
 
