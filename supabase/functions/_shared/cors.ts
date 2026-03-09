@@ -1,6 +1,7 @@
 const ALLOWED_ORIGINS = [
   'https://iscope-teste.lovable.app',
   'https://id-preview--80ef3bd6-10e0-4873-8dfe-c2c72619d60b.lovable.app',
+  'https://80ef3bd6-10e0-4873-8dfe-c2c72619d60b.lovableproject.com',
 ];
 
 export function getCorsHeaders(req: Request): Record<string, string> {
