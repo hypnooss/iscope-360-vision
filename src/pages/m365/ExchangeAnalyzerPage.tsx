@@ -27,8 +27,9 @@ import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { M365RiskCategory } from '@/types/m365Insights';
 import {
-  Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Globe, Mail,
+  Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Globe, Mail, Settings,
 } from 'lucide-react';
+import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
