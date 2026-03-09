@@ -64,6 +64,11 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
       anomalyDropped: (metrics.anomalyDropped as number) ?? 0,
       topAnomalySources: (metrics.topAnomalySources as AnalyzerMetrics['topAnomalySources']) ?? [],
       topAnomalyTypes: (metrics.topAnomalyTypes as AnalyzerMetrics['topAnomalyTypes']) ?? [],
+      // IPS metrics
+      topIpsAttackTypes: (metrics.topIpsAttackTypes as AnalyzerMetrics['topIpsAttackTypes']) ?? [],
+      topIpsSrcIPs: (metrics.topIpsSrcIPs as AnalyzerMetrics['topIpsSrcIPs']) ?? [],
+      topIpsSrcCountries: (metrics.topIpsSrcCountries as AnalyzerMetrics['topIpsSrcCountries']) ?? [],
+      topIpsDstIPs: (metrics.topIpsDstIPs as AnalyzerMetrics['topIpsDstIPs']) ?? [],
       // Inbound traffic
       topInboundBlockedIPs: (metrics.topInboundBlockedIPs as AnalyzerMetrics['topInboundBlockedIPs']) ?? [],
       topInboundBlockedCountries: (metrics.topInboundBlockedCountries as AnalyzerMetrics['topInboundBlockedCountries']) ?? [],
