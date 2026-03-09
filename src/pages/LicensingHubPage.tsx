@@ -172,6 +172,7 @@ export default function LicensingHubPage() {
     firewallLicenses,
     tlsCertificates,
     m365Licenses,
+    domainWhois,
     summary,
     loading,
     refreshM365Licenses,
