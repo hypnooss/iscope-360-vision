@@ -6,7 +6,8 @@ const AGENT_OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Deterministic stagger offset based on schedule ID.
- * Returns 0-29 minutes to spread schedules across the hour.
+ * Returns 0-14 minutes to stay within the 15-minute cron window.
+ * This prevents schedules from falling between cron cycles.
  */
 function getStaggerOffsetMinutes(scheduleId: string): number {
   let hash = 0;
@@ -14,7 +15,7 @@ function getStaggerOffsetMinutes(scheduleId: string): number {
     hash = ((hash << 5) - hash) + scheduleId.charCodeAt(i);
     hash |= 0;
   }
-  return Math.abs(hash) % 30;
+  return Math.abs(hash) % 15;
 }
 
 function calculateNextRunAt(
