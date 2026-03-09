@@ -614,11 +614,6 @@ export default function AnalyzerDashboardV2Page() {
           </div>
         )}
 
-        {/* Security Insights - Educational Cards */}
-        {snapshot && !isLoading && (
-          <SecurityInsightCards snapshot={snapshot} />
-        )}
-
         {/* Category Grid */}
         {snapshot && !isLoading && (
           <div className="mb-6">
@@ -690,6 +685,11 @@ export default function AnalyzerDashboardV2Page() {
               />
             )}
           </>
+        )}
+
+        {/* Security Insights - Educational Cards */}
+        {snapshot && !isLoading && (
+          <SecurityInsightCards snapshot={snapshot} />
         )}
 
         {!selectedFirewall && (
