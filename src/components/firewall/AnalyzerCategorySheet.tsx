@@ -227,6 +227,14 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                   <CountryList items={data.allowedCountries} colorClass="text-emerald-600 dark:text-emerald-400" />
                 </CardContent>
               </Card>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top IPs {data.internalLabel}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <IPList items={data.allowedInternalIPs} colorClass="text-emerald-600 dark:text-emerald-400" />
+                </CardContent>
+              </Card>
             </div>
           </ScrollArea>
         </TabsContent>
