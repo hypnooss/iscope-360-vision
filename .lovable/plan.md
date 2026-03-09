@@ -1,73 +1,27 @@
 
 
-# Plano: Criar Firewall Analyzer v2
+## Problem
 
-## Objetivo
+The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
 
-Criar uma **versão v2** do Firewall Analyzer em uma rota separada (`/scope-firewall/analyzer-v2`) que permite experimentar novos enriquecimentos sem impactar a versão atual.
+## Solution
 
-## Estrutura Proposta
+Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
 
-### 1. Nova Rota
-- **URL**: `/scope-firewall/analyzer-v2`
-- **Componente**: `AnalyzerDashboardV2Page.tsx`
-- Mantém toda a funcionalidade da v1 como base
-- Permite adicionar novos recursos experimentais
+- **Green** — objects added to the policy
+- **Red + strikethrough** — objects removed
+- **Neutral** — unchanged objects
 
-### 2. Arquivos a Criar
+### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
 
-```
-src/pages/firewall/
-  ├── AnalyzerDashboardV2Page.tsx    (nova página v2)
-  
-src/components/firewall/
-  ├── AnalyzerStatsCardsV2.tsx       (opcional - se houver mudanças)
-  ├── AnalyzerCategoryGridV2.tsx     (opcional - se houver mudanças)
-```
+1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
+   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
+   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
+   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
 
-### 3. Registro de Rota
+2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
 
-No `App.tsx`, adicionar:
-```tsx
-<Route path="/scope-firewall/analyzer-v2" element={<AnalyzerDashboardV2Page />} />
-```
+3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
 
-### 4. Estratégia de Implementação
-
-**Fase 1 - Duplicação Base:**
-- Copiar `AnalyzerDashboardPage.tsx` → `AnalyzerDashboardV2Page.tsx`
-- Adicionar badge "v2" no título da página
-- Registrar rota no App.tsx
-- Reutilizar componentes existentes inicialmente
-
-**Fase 2 - Enriquecimentos (a definir):**
-Baseado na sua necessidade, podemos adicionar:
-- Análise temporal (comparação com períodos anteriores)
-- Inteligência de ameaças (contexto sobre IPs)
-- Drill-down detalhado (timelines, flows)
-- Recomendações baseadas em padrões observados
-- Outros recursos conforme feedback
-
-### 5. Navegação
-
-Adicionar link no menu lateral ou na página principal do Analyzer para acessar a v2:
-```tsx
-<Button variant="outline" onClick={() => navigate('/scope-firewall/analyzer-v2')}>
-  Experimentar v2 <Badge>Beta</Badge>
-</Button>
-```
-
-## Benefícios
-
-1. **Segurança**: Versão atual permanece intacta
-2. **Experimentação**: Liberdade para testar novas ideias
-3. **Comparação**: Possibilidade de A/B testing
-4. **Migração gradual**: Pode mover recursos da v2 para v1 depois de validados
-
-## Próximos Passos
-
-Após aprovação:
-1. Criar estrutura base da v2
-2. Definir quais enriquecimentos implementar primeiro
-3. Implementar funcionalidades incrementalmente
+4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
 
