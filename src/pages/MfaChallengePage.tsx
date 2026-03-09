@@ -67,6 +67,12 @@ export default function MfaChallengePage() {
 
       if (verifyError) throw verifyError;
 
+      // Mark device as trusted for 24h
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (currentSession?.user?.id) {
+        markDeviceAsTrusted(currentSession.user.id);
+      }
+
       toast.success('Autenticação MFA concluída!');
       await refreshMfaStatus();
       navigate('/dashboard', { replace: true });

@@ -265,6 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     if (user?.id) {
       sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${user.id}`);
+      clearTrustedDevice(user.id);
     }
     await supabase.auth.signOut();
     setUser(null);
