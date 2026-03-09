@@ -204,6 +204,8 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
     const successCountries = isFw ? metrics.topFwAuthCountriesSuccess : metrics.topVpnAuthCountriesSuccess;
     const failCount = isFw ? (metrics.firewallAuthFailures || 0) : (metrics.vpnFailures || 0);
     const successCount = isFw ? (metrics.firewallAuthSuccesses || 0) : (metrics.vpnSuccesses || 0);
+    const failedUsers = !isFw ? (metrics.topVpnUsersFailed || []) : [];
+    const successUsers = !isFw ? (metrics.topVpnUsersSuccess || []) : [];
 
     return (
       <Tabs defaultValue="falha" className="flex flex-col flex-1 min-h-0">
@@ -233,6 +235,16 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                   {failCount.toLocaleString()} autenticações falhas
                 </Badge>
               )}
+              {failedUsers.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2 pt-4">
+                    <CardTitle className="text-sm font-medium">Top Usuários (Falha)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <UserList items={failedUsers} colorClass="text-destructive" />
+                  </CardContent>
+                </Card>
+              )}
               <Card>
                 <CardHeader className="pb-2 pt-4">
                   <CardTitle className="text-sm font-medium">Top IPs (Falha)</CardTitle>
@@ -260,6 +272,16 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                 <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
                   {successCount.toLocaleString()} autenticações bem-sucedidas
                 </Badge>
+              )}
+              {successUsers.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2 pt-4">
+                    <CardTitle className="text-sm font-medium">Top Usuários (Sucesso)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <UserList items={successUsers} colorClass="text-emerald-600 dark:text-emerald-400" />
+                  </CardContent>
+                </Card>
               )}
               <Card>
                 <CardHeader className="pb-2 pt-4">
