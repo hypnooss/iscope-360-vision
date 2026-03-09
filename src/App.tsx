@@ -123,7 +123,6 @@ const App = () => (
                   <Route path="/scope-firewall/executions" element={<TaskExecutionsPage />} />
                   <Route path="/scope-firewall/reports" element={<FirewallReportsPage />} />
                   <Route path="/scope-firewall/analyzer" element={<AnalyzerDashboardPage />} />
-                  <Route path="/scope-firewall/analyzer-v2" element={<AnalyzerDashboardV2Page />} />
                   <Route path="/scope-firewall/analyzer/insights" element={<AnalyzerInsightsPage />} />
                   <Route path="/scope-firewall/analyzer/critical" element={<AnalyzerCriticalPage />} />
                   <Route path="/scope-firewall/analyzer/config-changes" element={<AnalyzerConfigChangesPage />} />
