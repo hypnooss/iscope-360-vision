@@ -58,7 +58,10 @@ function CountryList({ items, colorClass }: { items?: TopCountry[]; colorClass?:
     <>
       {items.slice(0, 10).map((item, idx) => (
         <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
-          <span className="text-sm">{item.country}</span>
+          <span className="flex items-center gap-2">
+            <span className={`fi fi-${getCountryCode(item.country) || 'xx'} text-base`} title={item.country} />
+            <span className="text-sm">{item.country}</span>
+          </span>
           <span className={cn('text-sm font-semibold', colorClass ?? 'text-foreground')}>
             {item.count.toLocaleString()}
           </span>
