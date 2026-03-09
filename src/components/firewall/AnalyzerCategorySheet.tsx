@@ -1,5 +1,5 @@
 import * as LucideIcons from 'lucide-react';
-import { ShieldX, ShieldCheck, XCircle, CheckCircle2, Server, Target, Crosshair } from 'lucide-react';
+import { ShieldX, ShieldCheck, XCircle, CheckCircle2, Server, Target, Crosshair, User } from 'lucide-react';
 import { getCountryCode } from '@/lib/countryUtils';
 import 'flag-icons/css/flag-icons.min.css';
 import {
