@@ -18,6 +18,7 @@ function DynamicIcon({ name, className, style }: { name: string; className?: str
 
 interface AnalyzerCategoryGridProps {
   snapshot: AnalyzerSnapshot;
+  configChangesTotal30d?: number;
   onCategoryClick: (category: AnalyzerEventCategory) => void;
 }
 
@@ -46,7 +47,7 @@ interface CategoryStats {
 
 const SEGMENT_COLORS = ['#f97316', '#a855f7', '#10b981', '#3b82f6', '#eab308'];
 
-function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSnapshot): CategoryStats {
+function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSnapshot, overrides?: { configChangesTotal30d?: number }): CategoryStats {
   const metrics = snapshot.metrics;
 
   switch (category) {
@@ -109,7 +110,7 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
     }
 
     case 'config_changes': {
-      const config = metrics.configChanges || 0;
+      const config = overrides?.configChangesTotal30d ?? metrics.configChanges ?? 0;
       return {
         total: config,
         severity: config > 20 ? 'high' : config > 10 ? 'medium' : config > 0 ? 'low' : 'none',
@@ -171,7 +172,7 @@ const SEVERITY_COLORS = {
   none: 'bg-muted/30',
 };
 
-export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCategoryGridProps) {
+export function AnalyzerCategoryGrid({ snapshot, configChangesTotal30d, onCategoryClick }: AnalyzerCategoryGridProps) {
   return (
     <div>
       <div className="mb-4">
@@ -181,7 +182,7 @@ export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCate
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {CATEGORY_ORDER.map(catKey => {
           const info = ANALYZER_CATEGORY_INFO[catKey];
-          const stats = getCategoryStats(catKey, snapshot);
+          const stats = getCategoryStats(catKey, snapshot, { configChangesTotal30d });
           const hasData = stats.total > 0;
           const hasTrafficSplit = stats.denied !== undefined && stats.allowed !== undefined;
 
