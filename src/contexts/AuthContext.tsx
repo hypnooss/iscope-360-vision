@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { isDeviceTrusted, clearTrustedDevice } from '@/lib/trustedDevice';
 
 type AppRole = 'super_admin' | 'super_suporte' | 'workspace_admin' | 'user';
 type ModulePermission = 'view' | 'edit' | 'full';
@@ -88,7 +89,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // MFA is required if: user has a factor but hasn't completed aal2, OR user doesn't have a factor yet (needs to enroll)
       if (nextLevel === 'aal2' && currentLevel === 'aal1') {
-        setMfaRequired(true);
+        // Check if device is trusted (MFA verified within 24h)
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const userId = currentSession?.user?.id;
+        if (userId && isDeviceTrusted(userId)) {
+          setMfaRequired(false);
+        } else {
+          setMfaRequired(true);
+        }
       } else if (!hasVerifiedTotp) {
         // No factor enrolled — needs to enroll
         setMfaRequired(true);
@@ -257,6 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     if (user?.id) {
       sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${user.id}`);
+      clearTrustedDevice(user.id);
     }
     await supabase.auth.signOut();
     setUser(null);

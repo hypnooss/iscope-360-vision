@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { Loader2, ShieldCheck, Smartphone } from 'lucide-react';
 import { toast } from 'sonner';
+import { markDeviceAsTrusted } from '@/lib/trustedDevice';
 import logoIscope from '@/assets/logo-iscope.png';
 
 export default function MfaChallengePage() {
@@ -65,6 +66,12 @@ export default function MfaChallengePage() {
       });
 
       if (verifyError) throw verifyError;
+
+      // Mark device as trusted for 24h
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (currentSession?.user?.id) {
+        markDeviceAsTrusted(currentSession.user.id);
+      }
 
       toast.success('Autenticação MFA concluída!');
       await refreshMfaStatus();
