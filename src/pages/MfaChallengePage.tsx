@@ -11,6 +11,7 @@ import logoIscope from '@/assets/logo-iscope.png';
 
 export default function MfaChallengePage() {
   const navigate = useNavigate();
+  const { refreshMfaStatus } = useAuth();
   const [code, setCode] = useState('');
   const [factorId, setFactorId] = useState('');
   const [loading, setLoading] = useState(true);
