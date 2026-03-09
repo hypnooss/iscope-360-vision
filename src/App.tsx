@@ -163,6 +163,7 @@ const App = () => (
                   <Route path="/scope-m365/entra-id/audit-logs" element={<Navigate to="/scope-m365/entra-id/security-insights" replace />} />
                   <Route path="/scope-m365/entra-id/analysis" element={<EntraIdAnalysisPage />} />
                   <Route path="/scope-m365/exchange-online" element={<ExchangeOnlinePage />} />
+                  <Route path="/scope-m365/exchange-analyzer" element={<ExchangeAnalyzerPage />} />
                   <Route path="/scope-m365/collaboration" element={<CollaborationPage />} />
                   <Route path="/scope-m365/cves" element={<M365CVEsPage />} />
                   <Route path="/scope-m365/analyzer" element={<M365AnalyzerDashboardPage />} />
