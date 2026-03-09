@@ -319,20 +319,40 @@ export function useLatestAnalyzerSnapshot(firewallId?: string) {
     queryFn: async () => {
       if (!firewallId) return null;
 
-      // Fetch last 24 completed snapshots to aggregate a 24h window
-      const { data, error } = await supabase
+      // 1) Fetch light columns (no insights/metrics) for last 24 snapshots
+      const lightCols = 'id, firewall_id, client_id, agent_task_id, status, period_start, period_end, score, summary, created_at';
+      const { data: lightRows, error: lightError } = await supabase
         .from('analyzer_snapshots' as any)
-        .select('*')
+        .select(lightCols)
         .eq('firewall_id', firewallId)
         .eq('status', 'completed')
         .order('created_at', { ascending: false })
         .limit(24) as any;
 
-      if (error) throw error;
-      const rows = (data as any[]) || [];
+      if (lightError) throw lightError;
+      const rows = (lightRows as any[]) || [];
       if (rows.length === 0) return null;
 
-      const snapshots = rows.map((r) => parseSnapshot(r as Record<string, unknown>));
+      // 2) Fetch heavy columns (insights + metrics) only for the latest snapshot
+      const latestId = rows[0].id;
+      const { data: heavyData, error: heavyError } = await supabase
+        .from('analyzer_snapshots' as any)
+        .select('insights, metrics')
+        .eq('id', latestId)
+        .single() as any;
+
+      if (heavyError) throw heavyError;
+
+      // 3) Build snapshots: latest has full data, rest have empty metrics/insights
+      const snapshots = rows.map((r, idx) => {
+        if (idx === 0) {
+          // Merge heavy data into the latest row
+          return parseSnapshot({ ...r, insights: heavyData?.insights, metrics: heavyData?.metrics } as Record<string, unknown>);
+        }
+        // Light rows: only summary is used for severity aggregation
+        return parseSnapshot({ ...r, insights: [], metrics: {} } as Record<string, unknown>);
+      });
+
       return aggregateSnapshots(snapshots);
     },
     enabled: !!firewallId,
