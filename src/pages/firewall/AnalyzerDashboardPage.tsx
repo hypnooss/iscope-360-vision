@@ -164,6 +164,10 @@ export default function AnalyzerDashboardPage() {
   const [triggering, setTriggering] = useState(false);
   const [showAttackMap, setShowAttackMap] = useState(false);
 
+  // Category sheet state
+  const [categorySheetOpen, setCategorySheetOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<AnalyzerEventCategory | null>(null);
+
   // Schedule dialog state
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [scheduleFreq, setScheduleFreq] = useState<string>('daily');
