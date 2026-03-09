@@ -287,7 +287,7 @@ function SchedulesTab() {
   // ── Fetch firewall schedules ──
   const { data: firewallSchedules, isLoading: loadingFw, refetch: refetchFw } = useQuery({
     queryKey: ['admin-schedules-fw'],
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('analysis_schedules')
@@ -305,7 +305,7 @@ function SchedulesTab() {
 
   const { data: domainSchedules, isLoading: loadingDom, refetch: refetchDom } = useQuery({
     queryKey: ['admin-schedules-dom'],
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('external_domain_schedules')
@@ -323,7 +323,7 @@ function SchedulesTab() {
 
   const { data: attackSurfaceSchedules, isLoading: loadingAs, refetch: refetchAs } = useQuery({
     queryKey: ['admin-schedules-as'],
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('attack_surface_schedules')
@@ -341,7 +341,7 @@ function SchedulesTab() {
 
   const { data: analyzerSchedules, isLoading: loadingAn, refetch: refetchAn } = useQuery({
     queryKey: ['admin-schedules-an'],
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('analyzer_schedules')
@@ -359,7 +359,7 @@ function SchedulesTab() {
 
   const { data: m365Schedules, isLoading: loadingM365, refetch: refetchM365 } = useQuery({
     queryKey: ['admin-schedules-m365'],
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('m365_analyzer_schedules')
@@ -392,7 +392,7 @@ function SchedulesTab() {
   const { data: latestTasks } = useQuery({
     queryKey: ['admin-schedule-tasks', targetIds],
     enabled: targetIds.length > 0,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')
@@ -716,7 +716,7 @@ function ExecutionsTab() {
   // Fetch executions
   const { data: executions, isLoading, refetch } = useQuery({
     queryKey: ['admin-executions', timeCutoff],
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')

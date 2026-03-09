@@ -125,7 +125,7 @@ export default function SuperAgentsPage() {
       };
     },
     staleTime: 10000,
-    refetchInterval: 15000,
+    refetchInterval: 30000,
   });
 
   const fetchAgents = useCallback(async () => {

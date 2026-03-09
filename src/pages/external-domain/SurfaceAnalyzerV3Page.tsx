@@ -80,8 +80,8 @@ function useAttackSurfaceProgress(clientId?: string) {
       return { status: snapshot.status as string, percent: total > 0 ? Math.round(done / total * 100) : 0, total, done };
     },
     enabled: !!clientId,
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
 }
 

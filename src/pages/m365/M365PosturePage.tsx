@@ -190,7 +190,7 @@ export default function M365PosturePage() {
       return data;
     },
     enabled: !!activeAnalysisId,
-    refetchInterval: 5000,
+    refetchInterval: 15000,
   });
 
   // Restore active analysis state on mount

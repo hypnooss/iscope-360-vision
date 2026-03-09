@@ -181,8 +181,8 @@ export function useRunningAttackSurfaceSnapshot(clientId?: string, enabled = tru
       return snap;
     },
     enabled: !!clientId && enabled,
-    refetchInterval: 15000,
-    staleTime: 10000,
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
 }
 

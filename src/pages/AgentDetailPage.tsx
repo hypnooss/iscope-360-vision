@@ -122,7 +122,7 @@ export default function AgentDetailPage() {
       return agentData as Agent;
     },
     enabled: !!id && !!user && canAccessPage,
-    refetchInterval: 5000, // Poll every 5 seconds
+    refetchInterval: 15000, // Poll every 15 seconds
   });
 
   useEffect(() => {
