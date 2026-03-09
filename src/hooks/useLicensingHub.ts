@@ -44,6 +44,18 @@ export interface M365License {
   collectedAt: string;
 }
 
+export interface DomainWhois {
+  domainId: string;
+  domain: string;
+  name: string;
+  registrar: string | null;
+  expiresAt: string | null;
+  daysLeft: number | null;
+  whoisCreatedAt: string | null;
+  whoisCheckedAt: string | null;
+  clientName: string;
+}
+
 export type LicenseStatus = 'expired' | 'expiring' | 'active' | 'unknown';
 
 export function getLicenseStatus(daysLeft: number | null): LicenseStatus {
@@ -425,6 +437,41 @@ export function useLicensingHub() {
     enabled: activeClientIds.length > 0,
   });
 
+  // ====== EXTERNAL DOMAINS (WHOIS) ======
+  const { data: domainWhois = [], isLoading: loadingDomains } = useQuery({
+    queryKey: ['licensing-hub-domains', activeClientIds],
+    queryFn: async () => {
+      if (!activeClientIds.length) return [];
+
+      const { data: clients } = await supabase
+        .from('clients')
+        .select('id, name')
+        .in('id', activeClientIds);
+      const clientMap = new Map(clients?.map(c => [c.id, c.name]) || []);
+
+      const { data: domains } = await supabase
+        .from('external_domains')
+        .select('id, domain, name, client_id, whois_registrar, whois_expires_at, whois_created_at, whois_checked_at')
+        .in('client_id', activeClientIds)
+        .order('domain');
+
+      if (!domains?.length) return [];
+
+      return domains.map((d: any): DomainWhois => ({
+        domainId: d.id,
+        domain: d.domain,
+        name: d.name,
+        registrar: d.whois_registrar,
+        expiresAt: d.whois_expires_at,
+        daysLeft: getDaysLeft(d.whois_expires_at),
+        whoisCreatedAt: d.whois_created_at,
+        whoisCheckedAt: d.whois_checked_at,
+        clientName: clientMap.get(d.client_id) || '',
+      }));
+    },
+    enabled: activeClientIds.length > 0,
+  });
+
   // ====== REFRESH M365 LICENSES ======
   const [refreshingM365, setRefreshingM365] = useState(false);
 
@@ -471,9 +518,10 @@ export function useLicensingHub() {
     }
     for (const cert of tlsCertificates) countItem(cert.daysLeft);
     for (const lic of m365Licenses) countItem(lic.daysLeft);
+    for (const d of domainWhois) countItem(d.daysLeft);
 
     return { expired, expiring, active, total: expired + expiring + active };
-  }, [firewallLicenses, tlsCertificates, m365Licenses]);
+  }, [firewallLicenses, tlsCertificates, m365Licenses, domainWhois]);
 
   return {
     workspaces,
@@ -483,8 +531,9 @@ export function useLicensingHub() {
     firewallLicenses,
     tlsCertificates,
     m365Licenses,
+    domainWhois,
     summary,
-    loading: loadingFirewalls || loadingTls || loadingM365,
+    loading: loadingFirewalls || loadingTls || loadingM365 || loadingDomains,
     refreshM365Licenses,
     refreshingM365,
   };

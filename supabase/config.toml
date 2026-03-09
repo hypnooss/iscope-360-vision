@@ -164,3 +164,6 @@ verify_jwt = false
 
 [functions.force-logout-all]
 verify_jwt = false
+
+[functions.domain-whois-lookup]
+verify_jwt = false

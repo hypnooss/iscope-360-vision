@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { useLicensingHub, getLicenseStatus, LicenseStatus, FirewallLicense } from '@/hooks/useLicensingHub';
+import { useLicensingHub, getLicenseStatus, LicenseStatus, FirewallLicense, DomainWhois } from '@/hooks/useLicensingHub';
 import { supabase } from '@/integrations/supabase/client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -172,6 +172,7 @@ export default function LicensingHubPage() {
     firewallLicenses,
     tlsCertificates,
     m365Licenses,
+    domainWhois,
     summary,
     loading,
     refreshM365Licenses,
@@ -209,13 +210,16 @@ export default function LicensingHubPage() {
     if (activeTab === 'tls') {
       return countStatus(tlsCertificates);
     }
+    if (activeTab === 'domains') {
+      return countStatus(domainWhois);
+    }
     // m365 — exclude suspended and long-expired from summary
     const relevantM365 = m365Licenses.filter(lic =>
       lic.capabilityStatus !== 'Suspended' &&
       (lic.daysLeft === null || lic.daysLeft >= -60)
     );
     return countStatus(relevantM365);
-  }, [activeTab, firewallLicenses, tlsCertificates, m365Licenses]);
+  }, [activeTab, firewallLicenses, tlsCertificates, m365Licenses, domainWhois]);
 
   const toggleFilter = (status: LicenseStatus) => {
     setActiveFilter(prev => (prev === status ? null : status));
@@ -239,6 +243,11 @@ export default function LicensingHubPage() {
     if (!activeFilter) return m365Licenses;
     return m365Licenses.filter(lic => matchesFilter(lic.daysLeft, activeFilter));
   }, [m365Licenses, activeFilter]);
+
+  const filteredDomains = useMemo(() => {
+    if (!activeFilter) return domainWhois;
+    return domainWhois.filter(d => matchesFilter(d.daysLeft, activeFilter));
+  }, [domainWhois, activeFilter]);
 
   const shouldHideM365 = (lic: { daysLeft: number | null; capabilityStatus: string }) =>
     lic.capabilityStatus === 'Suspended' ||
@@ -347,6 +356,9 @@ export default function LicensingHubPage() {
             </TabsTrigger>
             <TabsTrigger value="tls" className="gap-2">
               <Globe className="w-4 h-4" /> Certificados TLS
+            </TabsTrigger>
+            <TabsTrigger value="domains" className="gap-2">
+              <Globe className="w-4 h-4" /> Domínios Externos
             </TabsTrigger>
             <TabsTrigger value="m365" className="gap-2">
               <Cloud className="w-4 h-4" /> Microsoft 365
@@ -463,6 +475,46 @@ export default function LicensingHubPage() {
                         </TableCell>
                         <TableCell>
                           <ExpiryBadge daysLeft={cert.daysLeft} expiresAt={cert.expiresAt} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* External Domains Tab */}
+          <TabsContent value="domains">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : filteredDomains.length === 0 ? (
+              <EmptyState message={activeFilter ? 'Nenhum domínio corresponde ao filtro selecionado' : 'Nenhum domínio externo cadastrado ou sem dados WHOIS coletados'} />
+            ) : (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Domínio</TableHead>
+                      <TableHead>Workspace</TableHead>
+                      <TableHead>Registrar</TableHead>
+                      <TableHead>Registro</TableHead>
+                      <TableHead>Expiração</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredDomains.map(d => (
+                      <TableRow key={d.domainId}>
+                        <TableCell className="font-medium">{d.domain}</TableCell>
+                        <TableCell className="text-muted-foreground">{d.clientName}</TableCell>
+                        <TableCell className="text-muted-foreground">{d.registrar || '—'}</TableCell>
+                        <TableCell className="text-sm">{d.whoisCreatedAt ? formatDate(d.whoisCreatedAt) : '—'}</TableCell>
+                        <TableCell className="text-sm">{d.expiresAt ? formatDate(d.expiresAt) : '—'}</TableCell>
+                        <TableCell>
+                          <ExpiryBadge daysLeft={d.daysLeft} expiresAt={d.expiresAt} />
                         </TableCell>
                       </TableRow>
                     ))}

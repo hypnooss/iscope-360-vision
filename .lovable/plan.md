@@ -1,46 +1,35 @@
+# Status: ✅ Implementado
 
+## Otimização Round 3: Anti-retry storm
 
-# Nova coleta: WHOIS de Domínio (com data de expiração)
+### Mudanças aplicadas
 
-## Contexto
+| Arquivo | Mudança |
+|---|---|
+| App.tsx | `retryDelay` exponencial (1s → 2s → 4s → ... → 30s max) |
+| SystemAlertBanner.tsx | Reescrito: `useQuery` com staleTime 60s, refetchInterval 120s, 1 subscription Realtime com debounce 2s |
 
-Os dados exibidos no tooltip do Surface Analyzer (Owner, OwnerID, Responsible) vêm do **WHOIS de IP** (`asn_classifier.py`). Isso retorna informações do bloco de rede, **não do registro do domínio**. Datas de expiração de domínio não são coletadas por nenhum componente atual.
+### Otimizações Round 2 (anterior)
 
-## O que precisa ser feito
+| Arquivo | Mudança |
+|---|---|
+| App.tsx | QueryClient: `refetchOnWindowFocus: false`, `retry: 1`, `staleTime: 30s` |
+| AuthContext.tsx | Removido `getSession()` redundante no `checkMfaStatus` |
+| useDashboardStats.ts | Queries serializadas em batches de 2-3 (era 4+6 paralelas) |
+| Migration SQL | Índices em `agents`, `system_alerts`, `user_roles`, `user_module_permissions` — **PENDENTE** (Supabase timeout) |
 
-### 1. Criar Edge Function `domain-whois-lookup`
+### Otimizações Round 1 (anterior)
 
-Consultar RDAP por **domínio** (não por IP). Endpoints:
-- `.br`: `https://rdap.registro.br/domain/{domain}`
-- Genérico: `https://rdap.org/domain/{domain}`
-
-Extrair do JSON RDAP:
-- `expirationDate` (campo `events` com `eventAction: "expiration"`)
-- `registrationDate` (evento `"registration"`)
-- `lastChanged` (evento `"last changed"`)
-- Registrar name (entidade com role `"registrar"`)
-
-### 2. Migration: adicionar colunas na tabela `external_domains`
-
-```sql
-ALTER TABLE external_domains ADD COLUMN IF NOT EXISTS whois_registrar text;
-ALTER TABLE external_domains ADD COLUMN IF NOT EXISTS whois_expires_at timestamptz;
-ALTER TABLE external_domains ADD COLUMN IF NOT EXISTS whois_created_at timestamptz;
-ALTER TABLE external_domains ADD COLUMN IF NOT EXISTS whois_checked_at timestamptz;
-```
-
-### 3. Integrar no pipeline de análise
-
-Chamar a edge function durante `trigger-external-domain-analysis` para cada domínio, salvando os dados WHOIS na tabela.
-
-### 4. Nova aba "Domínios Externos" na Gestão de Ativos (`LicensingHubPage`)
-
-Tabela com: Domínio | Registrar | Expiração | Status (badge com cores: expirado/expirando em 30d/ativo). Reutilizar o componente `ExpiryBadge` existente.
-
-### Arquivos envolvidos
-- **Novo**: `supabase/functions/domain-whois-lookup/index.ts`
-- **Migration**: colunas WHOIS em `external_domains`
-- **Alterar**: `supabase/functions/trigger-external-domain-analysis/index.ts` — invocar WHOIS
-- **Alterar**: `src/pages/LicensingHubPage.tsx` — nova aba
-- **Alterar**: `src/hooks/useLicensingHub.ts` — query de domínios
-
+| Arquivo | Antes | Depois |
+|---|---|---|
+| AgentDetailPage.tsx | 5s | 15s |
+| FirewallCompliancePage.tsx | 5s | 15s |
+| M365PosturePage.tsx | 5s | 15s |
+| ExternalDomainCompliancePage.tsx | 5s | 15s |
+| useAnalyzerData.ts | 10s | 30s |
+| useM365AnalyzerData.ts | 10s | 30s |
+| useAttackSurfaceData.ts | 15s | 30s |
+| SuperAgentsPage.tsx | 15s | 30s |
+| SurfaceAnalyzerV3Page.tsx | 10s | 30s |
+| SchedulesPage.tsx (×6 queries) | 30s | 60s |
+| SchedulesPage.tsx (executions) | 15s | 30s |
