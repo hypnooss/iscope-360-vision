@@ -8,6 +8,8 @@ interface WhoisResult {
   updatedAt: string | null;
 }
 
+const UA = 'iScope/1.0 (https://iscope.com.br; contato@iscope.com.br)';
+
 function extractFromRdap(data: any): WhoisResult {
   const result: WhoisResult = {
     registrar: null,
@@ -16,19 +18,16 @@ function extractFromRdap(data: any): WhoisResult {
     updatedAt: null,
   };
 
-  // Extract dates from events
   const events = data.events || [];
   for (const event of events) {
     const action = event.eventAction;
     const date = event.eventDate;
     if (!date) continue;
-
     if (action === 'expiration') result.expiresAt = date;
     else if (action === 'registration') result.createdAt = date;
     else if (action === 'last changed') result.updatedAt = date;
   }
 
-  // Extract registrar from entities
   const entities = data.entities || [];
   for (const entity of entities) {
     const roles = entity.roles || [];
@@ -42,6 +41,88 @@ function extractFromRdap(data: any): WhoisResult {
   }
 
   return result;
+}
+
+function extractFromWhoisFreaks(data: any): WhoisResult {
+  const result: WhoisResult = {
+    registrar: null,
+    expiresAt: null,
+    createdAt: null,
+    updatedAt: null,
+  };
+
+  if (data.status === 'error' || !data.domain_name) return result;
+
+  result.registrar = data.registrar?.registrar_name || data.registrar?.name || null;
+  result.expiresAt = data.expiry_date?.date_time || data.registry_expiry_date || null;
+  result.createdAt = data.create_date?.date_time || data.creation_date || null;
+  result.updatedAt = data.update_date?.date_time || data.updated_date || null;
+
+  return result;
+}
+
+async function tryFetch(url: string, label: string, timeoutMs = 12000): Promise<Response | null> {
+  try {
+    console.log(`[domain-whois-lookup] Trying ${label}: ${url}`);
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': UA,
+        Accept: 'application/rdap+json, application/json',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (res.ok) {
+      console.log(`[domain-whois-lookup] ${label} succeeded (${res.status})`);
+      return res;
+    }
+    const errText = await res.text();
+    console.warn(`[domain-whois-lookup] ${label} failed (${res.status}): ${errText.slice(0, 200)}`);
+    return null;
+  } catch (err) {
+    console.warn(`[domain-whois-lookup] ${label} error: ${err}`);
+    return null;
+  }
+}
+
+async function lookupWhois(domain: string): Promise<WhoisResult> {
+  const isBr = domain.endsWith('.br');
+  const encoded = encodeURIComponent(domain);
+
+  // Attempt 1: primary RDAP
+  const primaryUrl = isBr
+    ? `https://rdap.registro.br/domain/${encoded}`
+    : `https://rdap.org/domain/${encoded}`;
+
+  let res = await tryFetch(primaryUrl, 'primary-rdap');
+  if (res) {
+    const data = await res.json();
+    const result = extractFromRdap(data);
+    if (result.expiresAt || result.registrar) return result;
+  }
+
+  // Attempt 2: rdap.org fallback (for .br — rdap.org does IANA bootstrap)
+  if (isBr) {
+    res = await tryFetch(`https://rdap.org/domain/${encoded}`, 'rdap-org-fallback');
+    if (res) {
+      const data = await res.json();
+      const result = extractFromRdap(data);
+      if (result.expiresAt || result.registrar) return result;
+    }
+  }
+
+  // Attempt 3: WhoisFreaks free API
+  res = await tryFetch(
+    `https://api.whoisfreaks.com/v1.0/whois?apiKey=free&domainName=${encoded}&whois=live`,
+    'whoisfreaks'
+  );
+  if (res) {
+    const data = await res.json();
+    const result = extractFromWhoisFreaks(data);
+    if (result.expiresAt || result.registrar) return result;
+  }
+
+  console.error(`[domain-whois-lookup] All attempts failed for ${domain}`);
+  return { registrar: null, expiresAt: null, createdAt: null, updatedAt: null };
 }
 
 Deno.serve(async (req) => {
@@ -97,34 +178,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[domain-whois-lookup] Looking up RDAP for: ${domain}`);
+    console.log(`[domain-whois-lookup] Looking up WHOIS for: ${domain}`);
 
-    // Determine RDAP endpoint
-    const isBr = domain.endsWith('.br');
-    const rdapUrl = isBr
-      ? `https://rdap.registro.br/domain/${encodeURIComponent(domain)}`
-      : `https://rdap.org/domain/${encodeURIComponent(domain)}`;
-
-    const rdapRes = await fetch(rdapUrl, {
-      headers: { Accept: 'application/rdap+json, application/json' },
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!rdapRes.ok) {
-      const errText = await rdapRes.text();
-      console.error(`[domain-whois-lookup] RDAP failed (${rdapRes.status}): ${errText}`);
-      return new Response(JSON.stringify({
-        success: false,
-        error: `RDAP lookup failed: ${rdapRes.status}`,
-        domain,
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const rdapData = await rdapRes.json();
-    const whois = extractFromRdap(rdapData);
+    const whois = await lookupWhois(domain);
 
     console.log(`[domain-whois-lookup] Result for ${domain}: registrar=${whois.registrar}, expires=${whois.expiresAt}`);
 
