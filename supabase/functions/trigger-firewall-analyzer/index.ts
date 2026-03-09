@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[trigger-firewall-analyzer] Starting for firewall: ${firewall_id}, user: ${user.id}`);
+    console.log(`[trigger-firewall-analyzer] Starting for firewall: ${firewall_id}, user: ${userId}`);
 
     // Fetch firewall
     const { data: firewall, error: fwError } = await supabase
@@ -76,18 +76,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 3. Check user has access to this client
-    const { data: hasAccess } = await supabase.rpc('has_client_access', {
-      _user_id: user.id,
-      _client_id: firewall.client_id,
-    });
+    // 3. Check user has access to this client (skip for service_role)
+    if (!isServiceRole) {
+      const { data: hasAccess } = await supabase.rpc('has_client_access', {
+        _user_id: userId,
+        _client_id: firewall.client_id,
+      });
 
-    if (!hasAccess) {
-      console.warn(`[trigger-firewall-analyzer] Access denied: user ${user.id} → client ${firewall.client_id}`);
-      return new Response(
-        JSON.stringify({ success: false, error: 'Acesso negado a este recurso' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      if (!hasAccess) {
+        console.warn(`[trigger-firewall-analyzer] Access denied: user ${userId} → client ${firewall.client_id}`);
+        return new Response(
+          JSON.stringify({ success: false, error: 'Acesso negado a este recurso' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     if (!firewall.agent_id) {

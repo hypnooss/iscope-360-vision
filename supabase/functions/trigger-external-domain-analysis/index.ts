@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[trigger-external-domain-analysis] Triggering analysis for domain: ${domain_id}, user: ${user.id}`);
+    console.log(`[trigger-external-domain-analysis] Triggering analysis for domain: ${domain_id}, user: ${userId}`);
 
     const { data: domain, error: domainError } = await supabase
       .from('external_domains')
@@ -89,18 +89,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 3. Check user has access to this client
-    const { data: hasAccess } = await supabase.rpc('has_client_access', {
-      _user_id: user.id,
-      _client_id: domain.client_id,
-    });
-
-    if (!hasAccess) {
-      console.warn(`[trigger-external-domain-analysis] Access denied: user ${user.id} → client ${domain.client_id}`);
-      return new Response(JSON.stringify({ success: false, error: 'Acesso negado a este recurso' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    // 3. Check user has access to this client (skip for service_role)
+    if (!isServiceRole) {
+      const { data: hasAccess } = await supabase.rpc('has_client_access', {
+        _user_id: userId,
+        _client_id: domain.client_id,
       });
+
+      if (!hasAccess) {
+        console.warn(`[trigger-external-domain-analysis] Access denied: user ${userId} → client ${domain.client_id}`);
+        return new Response(JSON.stringify({ success: false, error: 'Acesso negado a este recurso' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     if (!domain.agent_id) {
