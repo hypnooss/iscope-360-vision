@@ -78,6 +78,28 @@ function CountryList({ items, colorClass }: { items?: TopCountry[]; colorClass?:
   );
 }
 
+function UserList({ items, colorClass }: { items?: TopUserIP[]; colorClass?: string }) {
+  if (!items?.length) return <p className="text-xs text-muted-foreground py-2">Sem dados</p>;
+  return (
+    <>
+      {items.slice(0, 10).map((item, idx) => (
+        <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <span className="text-sm truncate">{item.user}</span>
+            {item.ip && (
+              <span className="text-xs text-muted-foreground font-mono">{item.ip}</span>
+            )}
+          </div>
+          <span className={cn('text-sm font-semibold shrink-0 ml-2', colorClass ?? 'text-foreground')}>
+            {item.count.toLocaleString()}
+          </span>
+        </div>
+      ))}
+    </>
+  );
+}
+
 interface AnalyzerCategorySheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
