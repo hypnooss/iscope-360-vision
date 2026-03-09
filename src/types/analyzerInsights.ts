@@ -151,7 +151,8 @@ export interface BotnetDomain {
 }
 
 export type AnalyzerEventCategory =
-  | 'denied_traffic'
+  | 'inbound_traffic'
+  | 'outbound_traffic'
   | 'fw_authentication'
   | 'vpn_authentication'
   | 'ips_events'
