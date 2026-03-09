@@ -1,5 +1,5 @@
 import * as LucideIcons from 'lucide-react';
-import { ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
+import { ShieldX, ShieldCheck } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
