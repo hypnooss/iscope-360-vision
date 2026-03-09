@@ -517,7 +517,7 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
     }
   };
 
-  const isFullHeightCategory = isTrafficCategory || isAuthCategory;
+  const isFullHeightCategory = isTrafficCategory || isAuthCategory || isIPSCategory;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
