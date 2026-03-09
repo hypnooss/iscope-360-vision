@@ -41,6 +41,7 @@ interface CategoryStats {
   denied?: number;
   allowed?: number;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'none';
+  topLabels?: string[];
 }
 
 function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSnapshot): CategoryStats {
@@ -115,25 +116,31 @@ function getCategoryStats(category: AnalyzerEventCategory, snapshot: AnalyzerSna
 
     case 'web_filter': {
       const webFilter = metrics.webFilterBlocked || 0;
+      const topLabels = (metrics.topWebFilterCategories || []).slice(0, 3).map(c => c.category);
       return {
         total: webFilter,
         severity: webFilter > 1000 ? 'high' : webFilter > 500 ? 'medium' : webFilter > 0 ? 'low' : 'none',
+        topLabels,
       };
     }
 
     case 'app_control': {
       const appControl = metrics.appControlBlocked || 0;
+      const topLabels = (metrics.topAppControlApps || []).slice(0, 3).map(c => c.category);
       return {
         total: appControl,
         severity: appControl > 1000 ? 'high' : appControl > 500 ? 'medium' : appControl > 0 ? 'low' : 'none',
+        topLabels,
       };
     }
 
     case 'anomalies': {
       const anomaly = metrics.anomalyEvents || 0;
+      const topLabels = (metrics.topAnomalyTypes || []).slice(0, 3).map(c => c.category);
       return {
         total: anomaly,
         severity: anomaly > 50 ? 'critical' : anomaly > 20 ? 'high' : anomaly > 5 ? 'medium' : anomaly > 0 ? 'low' : 'none',
+        topLabels,
       };
     }
 
@@ -262,15 +269,32 @@ export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCate
 
                 {hasData && !hasTrafficSplit && stats.success === undefined && stats.failed === undefined && (
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <Badge variant="outline" className={cn(
-                      "text-[10px] px-1.5 py-0",
-                      stats.severity === 'critical' && "bg-red-500/20 text-red-500 border-red-500/30",
-                      stats.severity === 'high' && "bg-orange-500/20 text-orange-500 border-orange-500/30",
-                      stats.severity === 'medium' && "bg-yellow-500/20 text-yellow-500 border-yellow-500/30",
-                      stats.severity === 'low' && "bg-blue-400/20 text-blue-400 border-blue-400/30",
-                    )}>
-                      {stats.severity.charAt(0).toUpperCase() + stats.severity.slice(1)}
-                    </Badge>
+                    {stats.topLabels && stats.topLabels.length > 0 ? (
+                      stats.topLabels.map((label) => (
+                        <Badge
+                          key={label}
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-0"
+                          style={{
+                            backgroundColor: `${info.colorHex}15`,
+                            color: info.colorHex,
+                            borderColor: `${info.colorHex}30`,
+                          }}
+                        >
+                          {label}
+                        </Badge>
+                      ))
+                    ) : (
+                      <Badge variant="outline" className={cn(
+                        "text-[10px] px-1.5 py-0",
+                        stats.severity === 'critical' && "bg-red-500/20 text-red-500 border-red-500/30",
+                        stats.severity === 'high' && "bg-orange-500/20 text-orange-500 border-orange-500/30",
+                        stats.severity === 'medium' && "bg-yellow-500/20 text-yellow-500 border-yellow-500/30",
+                        stats.severity === 'low' && "bg-blue-400/20 text-blue-400 border-blue-400/30",
+                      )}>
+                        {stats.severity.charAt(0).toUpperCase() + stats.severity.slice(1)}
+                      </Badge>
+                    )}
                   </div>
                 )}
 
