@@ -29,12 +29,13 @@ RDAP_SERVERS = {
     '.com': 'https://rdap.verisign.com/com/v1/domain/{}',
     '.net': 'https://rdap.verisign.com/net/v1/domain/{}',
     '.org': 'https://rdap.org/domain/{}',
-    '.io': 'https://rdap.org/domain/{}',
+    '.io': 'https://rdap.identitydigital.services/rdap/v1/domain/{}',
     '.dev': 'https://rdap.org/domain/{}',
     '.app': 'https://rdap.org/domain/{}',
     '.services': 'https://rdap.org/domain/{}',
     '.cloud': 'https://rdap.org/domain/{}',
     '.info': 'https://rdap.org/domain/{}',
+    '.global': 'https://rdap.org/domain/{}',
 }
 
 DEFAULT_RDAP = 'https://rdap.org/domain/{}'
