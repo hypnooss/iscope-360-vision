@@ -621,7 +621,7 @@ export default function AnalyzerDashboardPage() {
           </div>
         )}
 
-        {/* Attack Map - Always visible */
+        {/* Attack Map - Always visible */}
         {snapshot && (
           <>
             <Card
