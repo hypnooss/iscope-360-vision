@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { useLicensingHub, getLicenseStatus, LicenseStatus, FirewallLicense } from '@/hooks/useLicensingHub';
+import { useLicensingHub, getLicenseStatus, LicenseStatus, FirewallLicense, DomainWhois } from '@/hooks/useLicensingHub';
 import { supabase } from '@/integrations/supabase/client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
