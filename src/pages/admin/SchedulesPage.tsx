@@ -392,7 +392,7 @@ function SchedulesTab() {
   const { data: latestTasks } = useQuery({
     queryKey: ['admin-schedule-tasks', targetIds],
     enabled: targetIds.length > 0,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')
