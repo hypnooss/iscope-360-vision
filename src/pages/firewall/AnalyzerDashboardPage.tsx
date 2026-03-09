@@ -25,6 +25,9 @@ import { Progress } from '@/components/ui/progress';
 import { getCountryCode } from '@/lib/countryUtils';
 import { AttackMap } from '@/components/firewall/AttackMap';
 import { AttackMapFullscreen } from '@/components/firewall/AttackMapFullscreen';
+import { AnalyzerStatsCards } from '@/components/firewall/AnalyzerStatsCards';
+import { AnalyzerCategoryGrid } from '@/components/firewall/AnalyzerCategoryGrid';
+import { AnalyzerCategorySheet } from '@/components/firewall/AnalyzerCategorySheet';
 import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
@@ -36,7 +39,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast as sonnerToast } from 'sonner';
 import 'flag-icons/css/flag-icons.min.css';
-import type { TopBlockedIP, TopCountry, TopCategory, TopUserIP, InterfaceBandwidth, BotnetDomain } from '@/types/analyzerInsights';
+import type { TopBlockedIP, TopCountry, TopCategory, TopUserIP, InterfaceBandwidth, BotnetDomain, AnalyzerEventCategory } from '@/types/analyzerInsights';
 
 interface FirewallOption { id: string; name: string; client_id: string; }
 
@@ -160,6 +163,10 @@ export default function AnalyzerDashboardPage() {
   const queryClient = useQueryClient();
   const [triggering, setTriggering] = useState(false);
   const [showAttackMap, setShowAttackMap] = useState(false);
+
+  // Category sheet state
+  const [categorySheetOpen, setCategorySheetOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<AnalyzerEventCategory | null>(null);
 
   // Schedule dialog state
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -465,14 +472,8 @@ export default function AnalyzerDashboardPage() {
     }
   };
 
-  const severityCards = [
-    { label: 'Critical', value: snapshot?.summary?.critical ?? 0, color: 'text-rose-400 bg-rose-500/10 border-rose-500/30', icon: AlertOctagon },
-    { label: 'High', value: snapshot?.summary?.high ?? 0, color: 'text-orange-400 bg-orange-500/10 border-orange-500/30', icon: AlertTriangle },
-    { label: 'Medium', value: snapshot?.summary?.medium ?? 0, color: 'text-warning bg-warning/10 border-warning/30', icon: Shield },
-    { label: 'Low', value: snapshot?.summary?.low ?? 0, color: 'text-primary bg-primary/10 border-primary/30', icon: Info },
-  ];
-
   const m = snapshot?.metrics;
+
 
   // FW-specific auth rankings — no cross-fallbacks to avoid mixing FW and VPN data
   const fwAuthIPsFailed = m?.topFwAuthIPsFailed ?? [];
@@ -600,157 +601,30 @@ export default function AnalyzerDashboardPage() {
           </div>
         )}
 
-        {/* Severity Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {isLoading
-            ? Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
-            : severityCards.map(c => (
-                <Card key={c.label} className={cn('glass-card border', c.color)}>
-                  <CardContent className="flex items-center gap-4 p-5">
-                    <c.icon className="w-8 h-8" />
-                    <div>
-                      <div className="text-2xl font-bold">{c.value}</div>
-                      <div className="text-xs opacity-80">{c.label}</div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-        </div>
+        {/* Stats Cards */}
+        {snapshot && !isLoading && (
+          <div className="mb-6">
+            <AnalyzerStatsCards snapshot={snapshot} />
+          </div>
+        )}
 
-        {/* Resumo de Eventos - Full width, above map */}
-        {snapshot && (
-          <Card className="glass-card mb-6">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Wifi className="w-4 h-4 text-primary" />
-                Resumo de Eventos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {/* Tráfego Negado */}
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                  <Shield className="w-5 h-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-lg font-bold text-foreground">{m?.totalDenied ?? 0}</div>
-                    <div className="text-xs text-muted-foreground">Tráfego Negado</div>
-                  </div>
-                </div>
-
-                {/* Login Firewall — falhas + sucessos */}
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                  <Lock className="w-5 h-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-lg font-bold text-foreground">{(m?.firewallAuthFailures ?? 0) + (m?.firewallAuthSuccesses ?? 0)}</div>
-                    <div className="text-xs text-muted-foreground mb-1">Auth Firewall</div>
-                    <div className="flex gap-2 text-[10px]">
-                      <span className="text-destructive font-semibold">{m?.firewallAuthFailures ?? 0} falhas</span>
-                      <span className="text-success font-semibold">{m?.firewallAuthSuccesses ?? 0} ok</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* VPN Auth — falhas + sucessos */}
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                  <Wifi className="w-5 h-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-lg font-bold text-foreground">{(m?.vpnFailures ?? 0) + (m?.vpnSuccesses ?? 0)}</div>
-                    <div className="text-xs text-muted-foreground mb-1">Auth VPN</div>
-                    <div className="flex gap-2 text-[10px]">
-                      <span className="text-destructive font-semibold">{m?.vpnFailures ?? 0} falhas</span>
-                      <span className="text-success font-semibold">{m?.vpnSuccesses ?? 0} ok</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Conexões de Saída */}
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                  <ExternalLink className="w-5 h-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-lg font-bold text-foreground">{m?.outboundConnections ?? 0}</div>
-                    <div className="text-xs text-muted-foreground">Conexões de Saída</div>
-                  </div>
-                </div>
-
-                {/* Eventos IPS */}
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                  <AlertTriangle className="w-5 h-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-lg font-bold text-foreground">{m?.ipsEvents ?? 0}</div>
-                    <div className="text-xs text-muted-foreground">Eventos IPS</div>
-                  </div>
-                </div>
-
-                {/* Alterações Config */}
-                <div
-                  className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 cursor-pointer hover:bg-secondary/50 transition-colors"
-                  onClick={() => navigate('/scope-firewall/analyzer/config-changes')}
-                >
-                  <Server className="w-5 h-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-lg font-bold text-foreground">{m?.configChanges ?? 0}</div>
-                    <div className="text-xs text-muted-foreground">Alterações Config</div>
-                  </div>
-                  <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                </div>
-
-                {/* Web Filter */}
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                  <Filter className="w-5 h-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-lg font-bold text-foreground">{m?.webFilterBlocked ?? 0}</div>
-                    <div className="text-xs text-muted-foreground">Web Filter</div>
-                  </div>
-                </div>
-
-                {/* App Control */}
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                  <AppWindow className="w-5 h-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-lg font-bold text-foreground">{m?.appControlBlocked ?? 0}</div>
-                    <div className="text-xs text-muted-foreground">App Control</div>
-                  </div>
-                </div>
-
-                {/* Anomalias */}
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                  <Zap className="w-5 h-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-lg font-bold text-foreground">{m?.anomalyEvents ?? 0}</div>
-                    <div className="text-xs text-muted-foreground">Anomalias</div>
-                  </div>
-                </div>
-
-                {/* Sessões Ativas */}
-                {(m?.activeSessions ?? 0) > 0 && (
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                    <Activity className="w-5 h-5 text-muted-foreground shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-lg font-bold text-foreground">{(m?.activeSessions ?? 0).toLocaleString()}</div>
-                      <div className="text-xs text-muted-foreground">Sessões Ativas</div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Botnet */}
-                {(m?.botnetDetections ?? 0) > 0 && (
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 border border-destructive/30">
-                    <Bug className="w-5 h-5 text-destructive shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-lg font-bold text-destructive">{m?.botnetDetections ?? 0}</div>
-                      <div className="text-xs text-muted-foreground">Detecções Botnet</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+        {/* Category Grid */}
+        {snapshot && !isLoading && (
+          <div className="mb-6">
+            <AnalyzerCategoryGrid 
+              snapshot={snapshot} 
+              onCategoryClick={(category) => {
+                setSelectedCategory(category);
+                setCategorySheetOpen(true);
+              }} 
+            />
+          </div>
         )}
 
         {/* Attack Map - Always visible */}
         {snapshot && (
           <>
-          <Card
+            <Card
               className="glass-card mb-6 cursor-pointer hover:border-primary/50 transition-colors group"
               onClick={() => setShowAttackMap(true)}
             >
@@ -1250,6 +1124,14 @@ export default function AnalyzerDashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Category Detail Sheet */}
+      <AnalyzerCategorySheet 
+        open={categorySheetOpen}
+        onOpenChange={setCategorySheetOpen}
+        category={selectedCategory}
+        snapshot={snapshot!}
+      />
     </AppLayout>
   );
 }
