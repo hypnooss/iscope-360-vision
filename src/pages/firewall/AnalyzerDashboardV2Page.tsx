@@ -620,6 +620,10 @@ export default function AnalyzerDashboardV2Page() {
             <AnalyzerCategoryGrid 
               snapshot={snapshot} 
               onCategoryClick={(category) => {
+                if (category === 'config_changes') {
+                  navigate('/scope-firewall/analyzer/config-changes');
+                  return;
+                }
                 setSelectedCategory(category);
                 setCategorySheetOpen(true);
               }} 
