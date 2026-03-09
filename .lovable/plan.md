@@ -1,27 +1,53 @@
 
+## Ajustar Layout dos Cards de Estatísticas do Firewall Analyzer
 
-## Problem
+### Análise da Diferença Visual
 
-The `firewall.policy` Edit visualization shows "Objetos da Política" as a flat list of neutral chips, but gives **zero context** about what changed — the user can't tell if objects were added, removed, or just listed. Same problem we already solved for `user.group`.
+**Firewall Analyzer (atual):**
+- Cards verticais com layout `justify-between`
+- Ícone à direita
+- Texto/label acima do número
+- Padding `p-6`
 
-## Solution
+**Surface Analyzer (referência):**
+- Cards horizontais com layout `flex items-center gap-3`
+- Ícone à esquerda
+- Número acima do label
+- Padding compacto `p-4`
+- Classe `glass-card` para estilo visual
 
-Apply the same **diff-based comparison** approach used for `user.group`: when a `firewall.policy` Edit has a numbered member list, find the **previous entry** for the same policy (`cfgobj`) in the loaded rows, compare member lists, and display colored chips:
+### Mudanças Necessárias
 
-- **Green** — objects added to the policy
-- **Red + strikethrough** — objects removed
-- **Neutral** — unchanged objects
+Atualizar `src/components/firewall/AnalyzerStatsCards.tsx`:
 
-### Changes to `src/pages/firewall/AnalyzerConfigChangesPage.tsx`
+1. **Layout**: Mudar de vertical (`justify-between`) para horizontal (`flex items-center gap-3`)
+2. **Ordem**: Ícone primeiro, depois texto
+3. **Hierarquia do Texto**: Número em cima (`text-2xl`), label embaixo (`text-xs`)
+4. **Padding**: Reduzir de `p-6` para `p-4`
+5. **Estilo do Card**: Adicionar classe `glass-card` (mantendo `border-border/50`)
+6. **Ícone**: Remover background circular, deixar ícone direto com tamanho `w-8 h-8`
 
-1. **Update `parsePolicyMemberList`** to accept optional `previousMembers` and compute the diff (same pattern as `parseUserGroupFormat`):
-   - Added → `{ field: 'Objetos adicionados', colorHint: 'Add' }`
-   - Removed → `{ field: 'Objetos removidos', colorHint: 'Delete' }`
-   - Unchanged → `{ field: 'Objetos mantidos', colorHint: 'neutral' }`
+### Estrutura Alvo
 
-2. **Extract policy member tokens** into a helper `extractPolicyMembers(raw)` (strips numbered prefixes, splits, applies truncation fix).
+```tsx
+<Card className="glass-card">
+  <CardContent className="p-4 flex items-center gap-3">
+    <Activity className="w-8 h-8 text-teal-400" />
+    <div>
+      <p className="text-2xl font-bold">{totalEvents.toLocaleString()}</p>
+      <p className="text-xs text-muted-foreground">Eventos Totais</p>
+    </div>
+  </CardContent>
+</Card>
+```
 
-3. **Update the `firewall.policy` branch in `formatByPath`** to look back for the previous entry of the same `cfgobj` (same logic already used for `user.group`) and pass previous members to `parsePolicyMemberList`.
+### Cores dos Ícones (consistência visual)
 
-4. **When no previous entry exists** (first occurrence or Add/Delete action), fall back to current behavior with "Objetos da Política" label and action-colored chips.
+- **Eventos Totais**: `text-teal-400` (Activity)
+- **Taxa de Bloqueio**: `text-red-500` (ShieldAlert)
+- **Autenticações**: `text-amber-500` (Shield)
+- **Score de Segurança**: `text-green-500` (TrendingUp)
 
+### Arquivo Modificado
+
+- `src/components/firewall/AnalyzerStatsCards.tsx`
