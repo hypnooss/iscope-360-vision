@@ -97,6 +97,9 @@ export interface AnalyzerMetrics {
   topVpnAuthIPsSuccess: TopBlockedIP[];
   topVpnAuthCountriesFailed: TopCountry[];
   topVpnAuthCountriesSuccess: TopCountry[];
+  // VPN user rankings
+  topVpnUsersFailed: TopUserIP[];
+  topVpnUsersSuccess: TopUserIP[];
   // Outbound connections (allowed)
   topOutboundIPs: TopBlockedIP[];
   topOutboundCountries: TopCountry[];

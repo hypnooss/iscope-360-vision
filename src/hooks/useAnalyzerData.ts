@@ -41,6 +41,9 @@ function parseSnapshot(row: Record<string, unknown>): AnalyzerSnapshot {
       topVpnAuthIPsSuccess: (metrics.topVpnAuthIPsSuccess as AnalyzerMetrics['topVpnAuthIPsSuccess']) ?? [],
       topVpnAuthCountriesFailed: (metrics.topVpnAuthCountriesFailed as AnalyzerMetrics['topVpnAuthCountriesFailed']) ?? [],
       topVpnAuthCountriesSuccess: (metrics.topVpnAuthCountriesSuccess as AnalyzerMetrics['topVpnAuthCountriesSuccess']) ?? [],
+      // VPN user rankings
+      topVpnUsersFailed: (metrics.topVpnUsersFailed as AnalyzerMetrics['topVpnUsersFailed']) ?? [],
+      topVpnUsersSuccess: (metrics.topVpnUsersSuccess as AnalyzerMetrics['topVpnUsersSuccess']) ?? [],
       // Outbound (allowed)
       topOutboundIPs: (metrics.topOutboundIPs as AnalyzerMetrics['topOutboundIPs']) ?? [],
       topOutboundCountries: (metrics.topOutboundCountries as AnalyzerMetrics['topOutboundCountries']) ?? [],
@@ -215,6 +218,8 @@ function aggregateSnapshots(snapshots: AnalyzerSnapshot[]): AnalyzerSnapshot & {
     topVpnAuthIPsSuccess: mergeIPRankings(snapshots.flatMap(s => s.metrics.topVpnAuthIPsSuccess ?? [])),
     topVpnAuthCountriesFailed: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topVpnAuthCountriesFailed ?? [])),
     topVpnAuthCountriesSuccess: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topVpnAuthCountriesSuccess ?? [])),
+    topVpnUsersFailed: mergeUserRankings(snapshots.flatMap(s => s.metrics.topVpnUsersFailed ?? [])) as any,
+    topVpnUsersSuccess: mergeUserRankings(snapshots.flatMap(s => s.metrics.topVpnUsersSuccess ?? [])) as any,
     topOutboundIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topOutboundIPs ?? [])),
     topOutboundCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topOutboundCountries ?? [])),
     topOutboundBlockedIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topOutboundBlockedIPs ?? [])),

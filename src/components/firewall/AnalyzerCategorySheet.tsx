@@ -1,5 +1,5 @@
 import * as LucideIcons from 'lucide-react';
-import { ShieldX, ShieldCheck, XCircle, CheckCircle2, Server, Target, Crosshair } from 'lucide-react';
+import { ShieldX, ShieldCheck, XCircle, CheckCircle2, Server, Target, Crosshair, User } from 'lucide-react';
 import { getCountryCode } from '@/lib/countryUtils';
 import 'flag-icons/css/flag-icons.min.css';
 import {
@@ -70,6 +70,28 @@ function CountryList({ items, colorClass }: { items?: TopCountry[]; colorClass?:
             <span className="text-sm">{item.country}</span>
           </span>
           <span className={cn('text-sm font-semibold', colorClass ?? 'text-foreground')}>
+            {item.count.toLocaleString()}
+          </span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function UserList({ items, colorClass }: { items?: TopUserIP[]; colorClass?: string }) {
+  if (!items?.length) return <p className="text-xs text-muted-foreground py-2">Sem dados</p>;
+  return (
+    <>
+      {items.slice(0, 10).map((item, idx) => (
+        <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <span className="text-sm truncate">{item.user}</span>
+            {item.ip && (
+              <span className="text-xs text-muted-foreground font-mono">{item.ip}</span>
+            )}
+          </div>
+          <span className={cn('text-sm font-semibold shrink-0 ml-2', colorClass ?? 'text-foreground')}>
             {item.count.toLocaleString()}
           </span>
         </div>
@@ -204,6 +226,8 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
     const successCountries = isFw ? metrics.topFwAuthCountriesSuccess : metrics.topVpnAuthCountriesSuccess;
     const failCount = isFw ? (metrics.firewallAuthFailures || 0) : (metrics.vpnFailures || 0);
     const successCount = isFw ? (metrics.firewallAuthSuccesses || 0) : (metrics.vpnSuccesses || 0);
+    const failedUsers = !isFw ? (metrics.topVpnUsersFailed || []) : [];
+    const successUsers = !isFw ? (metrics.topVpnUsersSuccess || []) : [];
 
     return (
       <Tabs defaultValue="falha" className="flex flex-col flex-1 min-h-0">
@@ -233,6 +257,16 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                   {failCount.toLocaleString()} autenticações falhas
                 </Badge>
               )}
+              {failedUsers.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2 pt-4">
+                    <CardTitle className="text-sm font-medium">Top Usuários (Falha)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <UserList items={failedUsers} colorClass="text-destructive" />
+                  </CardContent>
+                </Card>
+              )}
               <Card>
                 <CardHeader className="pb-2 pt-4">
                   <CardTitle className="text-sm font-medium">Top IPs (Falha)</CardTitle>
@@ -260,6 +294,16 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
                 <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
                   {successCount.toLocaleString()} autenticações bem-sucedidas
                 </Badge>
+              )}
+              {successUsers.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2 pt-4">
+                    <CardTitle className="text-sm font-medium">Top Usuários (Sucesso)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <UserList items={successUsers} colorClass="text-emerald-600 dark:text-emerald-400" />
+                  </CardContent>
+                </Card>
               )}
               <Card>
                 <CardHeader className="pb-2 pt-4">
