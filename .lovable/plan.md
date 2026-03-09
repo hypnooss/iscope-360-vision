@@ -1,22 +1,17 @@
+# Status: ✅ Implementado
 
+## Fix: WHOIS data not being saved + parsing issues
 
-# Fix: "Failed to send a request to the Edge Function" for trigger-external-domain-analysis
+### Mudanças realizadas
 
-## Diagnosis
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/agent-task-result/index.ts` | Force redeploy (comment timestamp) para ativar extração domain_whois |
+| `supabase/functions/trigger-external-domain-analysis/index.ts` | Removida chamada duplicada ao `domain-whois-lookup` edge function |
+| `python-agent/agent/executors/domain_whois.py` | `.br`: registrar fixo "Registro.br (NIC.br)", busca events em entities aninhadas |
+| `python-agent/agent/executors/domain_whois.py` | `.io`: RDAP endpoint corrigido para `rdap.identitydigital.services` |
+| `python-agent/agent/executors/domain_whois.py` | Owner: extrai registrant separado do registrar (evita confundir dono com registrar) |
 
-The edge function `trigger-external-domain-analysis` shows repeated "booted" logs but zero request processing logs. This means the function deployment is broken after our recent edit (removing the WHOIS call). The function needs a forced redeploy.
-
-Additionally, `trigger-external-domain-analysis` is **missing from `supabase/config.toml`** — it should have `verify_jwt = false` since it handles auth internally (like all other functions in this project).
-
-## Fix
-
-1. **Add `trigger-external-domain-analysis` to `config.toml`** with `verify_jwt = false`
-2. **Force redeploy** the function by touching the file (add a timestamp comment)
-
-### Files to change
-
-| File | Change |
-|------|--------|
-| `supabase/config.toml` | Add `[functions.trigger-external-domain-analysis]` with `verify_jwt = false` |
-| `supabase/functions/trigger-external-domain-analysis/index.ts` | Add deploy timestamp comment to force redeploy |
-
+### Próximos passos
+- Deploy do Agent com `domain_whois.py` atualizado
+- Re-executar análise nos domínios .br e precisio.io para validar
