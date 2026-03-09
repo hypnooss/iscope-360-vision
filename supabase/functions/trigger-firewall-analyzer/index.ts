@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-    // 1. Validate auth
+    // 1. Validate auth (allow service_role for internal/cron calls)
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(
@@ -31,16 +31,22 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 2. Verify user
-    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
-    if (userError || !user) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const token = authHeader.replace('Bearer ', '');
+    const isServiceRole = token === supabaseServiceKey;
+    let userId = 'system';
+
+    if (!isServiceRole) {
+      const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
+      if (userError || !user) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      userId = user.id;
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -54,7 +60,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[trigger-firewall-analyzer] Starting for firewall: ${firewall_id}, user: ${user.id}`);
+    console.log(`[trigger-firewall-analyzer] Starting for firewall: ${firewall_id}, user: ${userId}`);
 
     // Fetch firewall
     const { data: firewall, error: fwError } = await supabase
@@ -70,18 +76,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 3. Check user has access to this client
-    const { data: hasAccess } = await supabase.rpc('has_client_access', {
-      _user_id: user.id,
-      _client_id: firewall.client_id,
-    });
+    // 3. Check user has access to this client (skip for service_role)
+    if (!isServiceRole) {
+      const { data: hasAccess } = await supabase.rpc('has_client_access', {
+        _user_id: userId,
+        _client_id: firewall.client_id,
+      });
 
-    if (!hasAccess) {
-      console.warn(`[trigger-firewall-analyzer] Access denied: user ${user.id} → client ${firewall.client_id}`);
-      return new Response(
-        JSON.stringify({ success: false, error: 'Acesso negado a este recurso' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      if (!hasAccess) {
+        console.warn(`[trigger-firewall-analyzer] Access denied: user ${userId} → client ${firewall.client_id}`);
+        return new Response(
+          JSON.stringify({ success: false, error: 'Acesso negado a este recurso' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     if (!firewall.agent_id) {
