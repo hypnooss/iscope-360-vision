@@ -614,6 +614,11 @@ export default function AnalyzerDashboardV2Page() {
           </div>
         )}
 
+        {/* Security Insights - Educational Cards */}
+        {snapshot && !isLoading && (
+          <SecurityInsightCards snapshot={snapshot} />
+        )}
+
         {/* Category Grid */}
         {snapshot && !isLoading && (
           <div className="mb-6">
