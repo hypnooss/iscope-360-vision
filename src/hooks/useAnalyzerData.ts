@@ -226,6 +226,11 @@ function aggregateSnapshots(snapshots: AnalyzerSnapshot[]): AnalyzerSnapshot & {
     topAnomalySources: mergeIPRankings(snapshots.flatMap(s => s.metrics.topAnomalySources ?? [])),
     topAnomalyTypes: mergeCategoryRankings(snapshots.flatMap(s => s.metrics.topAnomalyTypes ?? [])),
     configChangeDetails: snapshots.flatMap(s => s.metrics.configChangeDetails ?? []).slice(0, 50),
+    // IPS metrics
+    topIpsAttackTypes: mergeCategoryRankings(snapshots.flatMap(s => s.metrics.topIpsAttackTypes ?? [])),
+    topIpsSrcIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topIpsSrcIPs ?? [])),
+    topIpsSrcCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topIpsSrcCountries ?? [])),
+    topIpsDstIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topIpsDstIPs ?? [])),
     // Inbound traffic
     topInboundBlockedIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topInboundBlockedIPs ?? [])),
     topInboundBlockedCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topInboundBlockedCountries ?? [])),

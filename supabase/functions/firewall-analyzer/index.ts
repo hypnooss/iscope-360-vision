@@ -1398,7 +1398,7 @@ Deno.serve(async (req) => {
     }
 
     const authResult = analyzeAuthentication(authData, vpnData, ipCountryMap);
-    const ipsResult = analyzeIPS(ipsData);
+    const ipsResult = analyzeIPS(ipsData, ipCountryMap);
     const configResult = analyzeConfigChanges(configData);
     const webfilterResult = analyzeWebFilter(webfilterData);
     const appctrlResult = analyzeAppControl(appctrlData);
