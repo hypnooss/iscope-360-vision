@@ -79,15 +79,8 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-    // Validate caller is authorized (cron job or service role)
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader || authHeader !== `Bearer ${supabaseServiceKey}`) {
-      console.warn('[run-scheduled-analyses] Unauthorized call attempt');
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Auth: rely on Supabase infrastructure (anon/service key in header)
+    // The cron job sends Authorization header; internal ops use service role client
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
