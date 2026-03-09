@@ -1,8 +1,17 @@
 # Status: ✅ Implementado
 
-## Otimização: Redução de polling para aliviar Supabase Nano
+## Otimização Round 2: Redução adicional de carga no Supabase Nano
 
 ### Mudanças aplicadas
+
+| Arquivo | Mudança |
+|---|---|
+| App.tsx | QueryClient: `refetchOnWindowFocus: false`, `retry: 1`, `staleTime: 30s` |
+| AuthContext.tsx | Removido `getSession()` redundante no `checkMfaStatus` |
+| useDashboardStats.ts | Queries serializadas em batches de 2-3 (era 4+6 paralelas) |
+| Migration SQL | Índices em `agents`, `system_alerts`, `user_roles`, `user_module_permissions` — **PENDENTE** (Supabase timeout) |
+
+### Otimizações Round 1 (anterior)
 
 | Arquivo | Antes | Depois |
 |---|---|---|
@@ -17,5 +26,3 @@
 | SurfaceAnalyzerV3Page.tsx | 10s | 30s |
 | SchedulesPage.tsx (×6 queries) | 30s | 60s |
 | SchedulesPage.tsx (executions) | 15s | 30s |
-
-Estimativa: redução de ~60-70% das queries/min ao banco.
