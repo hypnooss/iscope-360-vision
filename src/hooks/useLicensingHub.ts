@@ -531,8 +531,9 @@ export function useLicensingHub() {
     firewallLicenses,
     tlsCertificates,
     m365Licenses,
+    domainWhois,
     summary,
-    loading: loadingFirewalls || loadingTls || loadingM365,
+    loading: loadingFirewalls || loadingTls || loadingM365 || loadingDomains,
     refreshM365Licenses,
     refreshingM365,
   };
