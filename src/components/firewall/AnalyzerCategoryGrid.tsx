@@ -18,6 +18,7 @@ function DynamicIcon({ name, className, style }: { name: string; className?: str
 
 interface AnalyzerCategoryGridProps {
   snapshot: AnalyzerSnapshot;
+  configChangesTotal30d?: number;
   onCategoryClick: (category: AnalyzerEventCategory) => void;
 }
 
