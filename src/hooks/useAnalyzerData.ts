@@ -218,6 +218,8 @@ function aggregateSnapshots(snapshots: AnalyzerSnapshot[]): AnalyzerSnapshot & {
     topVpnAuthIPsSuccess: mergeIPRankings(snapshots.flatMap(s => s.metrics.topVpnAuthIPsSuccess ?? [])),
     topVpnAuthCountriesFailed: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topVpnAuthCountriesFailed ?? [])),
     topVpnAuthCountriesSuccess: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topVpnAuthCountriesSuccess ?? [])),
+    topVpnUsersFailed: mergeUserRankings(snapshots.flatMap(s => s.metrics.topVpnUsersFailed ?? [])) as any,
+    topVpnUsersSuccess: mergeUserRankings(snapshots.flatMap(s => s.metrics.topVpnUsersSuccess ?? [])) as any,
     topOutboundIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topOutboundIPs ?? [])),
     topOutboundCountries: mergeCountryRankings(snapshots.flatMap(s => s.metrics.topOutboundCountries ?? [])),
     topOutboundBlockedIPs: mergeIPRankings(snapshots.flatMap(s => s.metrics.topOutboundBlockedIPs ?? [])),
