@@ -359,7 +359,7 @@ function SchedulesTab() {
 
   const { data: m365Schedules, isLoading: loadingM365, refetch: refetchM365 } = useQuery({
     queryKey: ['admin-schedules-m365'],
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('m365_analyzer_schedules')
