@@ -1496,6 +1496,8 @@ Deno.serve(async (req) => {
       topVpnAuthIPsSuccess: authResult.metrics.topVpnAuthIPsSuccess || [],
       topVpnAuthCountriesFailed: authResult.metrics.topVpnAuthCountriesFailed || [],
       topVpnAuthCountriesSuccess: authResult.metrics.topVpnAuthCountriesSuccess || [],
+      topVpnUsersFailed: authResult.metrics.topVpnUsersFailed || [],
+      topVpnUsersSuccess: authResult.metrics.topVpnUsersSuccess || [],
       // Outbound
       topOutboundIPs: outboundResult.metrics.topOutboundIPs || [],
       topOutboundCountries: outboundResult.metrics.topOutboundCountries || [],
