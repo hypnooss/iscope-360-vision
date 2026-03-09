@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useFirewallSecurityInsights } from '@/hooks/useFirewallSecurityInsights';
+import { useComplianceCorrelatedInsights } from '@/hooks/useComplianceCorrelatedInsights';
 import { FIREWALL_INSIGHT_SEVERITY_CONFIG } from '@/types/firewallSecurityInsights';
 import type { AnalyzerSnapshot } from '@/types/analyzerInsights';
+import type { FirewallSecurityInsight } from '@/types/firewallSecurityInsights';
 import * as LucideIcons from 'lucide-react';
 
 interface SecurityInsightCardsProps {
@@ -14,10 +16,21 @@ interface SecurityInsightCardsProps {
 }
 
 export function SecurityInsightCards({ snapshot }: SecurityInsightCardsProps) {
-  const insights = useFirewallSecurityInsights(snapshot);
+  const trafficInsights = useFirewallSecurityInsights(snapshot);
+  const { insights: complianceInsights } = useComplianceCorrelatedInsights(snapshot, snapshot.firewall_id);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  if (insights.length === 0) return null;
+  // Combine and sort by severity priority
+  const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  const allInsights: FirewallSecurityInsight[] = [
+    ...complianceInsights,
+    ...trafficInsights.map(i => ({ ...i, source: 'traffic' as const })),
+  ].sort((a, b) => (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4));
+
+  if (allInsights.length === 0) return null;
+
+  const complianceCount = complianceInsights.length;
+  const trafficCount = trafficInsights.length;
 
   return (
     <div className="space-y-4 mb-6">
@@ -25,16 +38,25 @@ export function SecurityInsightCards({ snapshot }: SecurityInsightCardsProps) {
         <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
           💡 Insights de Segurança
         </h2>
-        <Badge variant="outline" className="text-xs">
-          {insights.length} {insights.length === 1 ? 'insight' : 'insights'}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {complianceCount > 0 && (
+            <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-500 border-amber-500/30">
+              <Link2 className="w-3 h-3 mr-1" />
+              {complianceCount} correlação{complianceCount > 1 ? 'ões' : ''}
+            </Badge>
+          )}
+          <Badge variant="outline" className="text-xs">
+            {allInsights.length} {allInsights.length === 1 ? 'insight' : 'insights'}
+          </Badge>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {insights.map(insight => {
+        {allInsights.map(insight => {
           const severityConfig = FIREWALL_INSIGHT_SEVERITY_CONFIG[insight.severity];
           const IconComponent = (LucideIcons as any)[insight.icon] || LucideIcons.Shield;
           const isExpanded = expandedId === insight.id;
+          const isCorrelation = insight.source === 'compliance_correlation';
 
           return (
             <Collapsible
@@ -55,15 +77,26 @@ export function SecurityInsightCards({ snapshot }: SecurityInsightCardsProps) {
                         <IconComponent className="w-5 h-5 shrink-0" />
                         <CardTitle className="text-sm font-semibold">{insight.title}</CardTitle>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "text-[10px] px-1.5 py-0 shrink-0",
-                          severityConfig.badgeClass
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isCorrelation && (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] px-1 py-0 bg-amber-500/10 text-amber-500 border-amber-500/30"
+                          >
+                            <Link2 className="w-2.5 h-2.5 mr-0.5" />
+                            {insight.complianceCode?.toUpperCase()}
+                          </Badge>
                         )}
-                      >
-                        {severityConfig.label}
-                      </Badge>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[10px] px-1.5 py-0",
+                            severityConfig.badgeClass
+                          )}
+                        >
+                          {severityConfig.label}
+                        </Badge>
+                      </div>
                     </div>
                   </CardHeader>
                 </CollapsibleTrigger>
@@ -82,6 +115,14 @@ export function SecurityInsightCards({ snapshot }: SecurityInsightCardsProps) {
                   {/* Detalhes expandidos */}
                   <CollapsibleContent>
                     <div className="space-y-3 pt-2 border-t animate-in fade-in slide-in-from-top-2">
+                      {isCorrelation && (
+                        <div className="bg-amber-500/5 border border-amber-500/20 rounded-md p-2.5">
+                          <p className="text-xs text-amber-500 font-medium">
+                            🔗 Correlação: Configuração em falha ({insight.complianceCode?.toUpperCase()}) + evidência de tráfego do Analyzer
+                          </p>
+                        </div>
+                      )}
+
                       <div>
                         <p className="text-xs font-semibold text-muted-foreground mb-1">🎯 O que está acontecendo?</p>
                         <p className="text-sm">{insight.what}</p>
