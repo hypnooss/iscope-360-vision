@@ -352,10 +352,6 @@ Deno.serve(async (req) => {
     };
 
     EdgeRuntime.waitUntil(runWhoisLookup());
-    } else {
-      console.log(`[trigger-external-domain-analysis] API analysis already in progress: ${existingApiAnalysis.id}`);
-      analysisId = existingApiAnalysis.id;
-    }
 
     const response: TriggerResponse = {
       success: true,
