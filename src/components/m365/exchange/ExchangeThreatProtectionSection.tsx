@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
-  ShieldCheck, ShieldX, AlertTriangle, CheckCircle2,
+  ShieldX, AlertTriangle, CheckCircle2,
   Globe, Users, Bug,
 } from 'lucide-react';
 import type { M365AnalyzerMetrics } from '@/types/m365AnalyzerInsights';
@@ -99,10 +99,9 @@ export function ExchangeThreatProtectionSection({ data, loading }: ExchangeThrea
     <div className="space-y-4">
       {/* Policy Status */}
       <div>
-        <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-muted-foreground" />
-          Status das Políticas de Proteção
-        </h3>
+        <div className="mb-4">
+          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Status das Políticas de Proteção</h2>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
           <PolicyCard name="Anti-Spam" status={data.policyStatus.antiSpam} />
           <PolicyCard name="Anti-Phishing" status={data.policyStatus.antiPhish} />
