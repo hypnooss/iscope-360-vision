@@ -215,6 +215,24 @@ export default function AnalyzerDashboardV2Page() {
 
   const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
 
+  // Count config changes from last 30 days (matches the dedicated page)
+  const { data: configChangesCount30d } = useQuery({
+    queryKey: ['analyzer-config-changes-count-30d', selectedFirewall],
+    queryFn: async () => {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const { count, error } = await supabase
+        .from('analyzer_config_changes')
+        .select('id', { count: 'exact', head: true })
+        .eq('firewall_id', selectedFirewall!)
+        .gte('changed_at', thirtyDaysAgo.toISOString());
+      if (error) throw error;
+      return count ?? 0;
+    },
+    enabled: !!selectedFirewall,
+    staleTime: 1000 * 60 * 5,
+  });
+
   const { data: progress, refetch: refetchProgress, isFetching: isRefetchingProgress } = useAnalyzerProgress(selectedFirewall || undefined);
   const isRunning = progress?.status === 'pending' || progress?.status === 'processing';
 
