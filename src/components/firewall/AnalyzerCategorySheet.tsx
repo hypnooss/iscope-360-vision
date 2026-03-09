@@ -125,7 +125,10 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
         blockedCountries: metrics.topInboundBlockedCountries,
         allowedIPs: metrics.topInboundAllowedIPs,
         allowedCountries: metrics.topInboundAllowedCountries,
-        ipLabel: 'de Destino',
+        ipLabel: 'de Origem',
+        internalLabel: 'de Destino',
+        blockedInternalIPs: metrics.topInboundBlockedDestIPs,
+        allowedInternalIPs: metrics.topInboundAllowedDestIPs,
       };
     }
     return {
@@ -135,7 +138,10 @@ export function AnalyzerCategorySheet({ open, onOpenChange, category, snapshot }
       blockedCountries: metrics.topOutboundBlockedCountries,
       allowedIPs: metrics.topOutboundIPs,
       allowedCountries: metrics.topOutboundCountries,
-      ipLabel: 'de Origem',
+      ipLabel: 'de Destino',
+      internalLabel: 'de Origem',
+      blockedInternalIPs: metrics.topOutboundBlockedSourceIPs,
+      allowedInternalIPs: metrics.topOutboundSourceIPs,
     };
   };
 
