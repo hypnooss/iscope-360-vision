@@ -472,14 +472,8 @@ export default function AnalyzerDashboardPage() {
     }
   };
 
-  const severityCards = [
-    { label: 'Critical', value: snapshot?.summary?.critical ?? 0, color: 'text-rose-400 bg-rose-500/10 border-rose-500/30', icon: AlertOctagon },
-    { label: 'High', value: snapshot?.summary?.high ?? 0, color: 'text-orange-400 bg-orange-500/10 border-orange-500/30', icon: AlertTriangle },
-    { label: 'Medium', value: snapshot?.summary?.medium ?? 0, color: 'text-warning bg-warning/10 border-warning/30', icon: Shield },
-    { label: 'Low', value: snapshot?.summary?.low ?? 0, color: 'text-primary bg-primary/10 border-primary/30', icon: Info },
-  ];
-
   const m = snapshot?.metrics;
+
 
   // FW-specific auth rankings — no cross-fallbacks to avoid mixing FW and VPN data
   const fwAuthIPsFailed = m?.topFwAuthIPsFailed ?? [];
