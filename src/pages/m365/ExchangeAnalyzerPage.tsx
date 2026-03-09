@@ -255,6 +255,16 @@ export default function ExchangeAnalyzerPage() {
         category={selectedCategory}
         insights={insights}
       />
+      <ScheduleDialog
+        open={scheduleDialogOpen}
+        onOpenChange={setScheduleDialogOpen}
+        entityId={selectedTenantId ?? ''}
+        table="m365_analyzer_schedules"
+        entityColumn="tenant_record_id"
+        title="Agendamento do Exchange Analyzer"
+        description="Configure a frequência de execução automática da análise do Exchange Online."
+        recommendation="Recomendamos agendar a execução 1 vez ao dia para manter a postura atualizada."
+      />
     </AppLayout>
   );
 }
