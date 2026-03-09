@@ -172,7 +172,7 @@ const SEVERITY_COLORS = {
   none: 'bg-muted/30',
 };
 
-export function AnalyzerCategoryGrid({ snapshot, onCategoryClick }: AnalyzerCategoryGridProps) {
+export function AnalyzerCategoryGrid({ snapshot, configChangesTotal30d, onCategoryClick }: AnalyzerCategoryGridProps) {
   return (
     <div>
       <div className="mb-4">
