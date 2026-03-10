@@ -62,6 +62,24 @@ async function fetchActiveAlerts(userId: string, role: string | null): Promise<S
 }
 
 const ALERT_QUERY_KEY = ['system-alerts-active'];
+const PREFS_QUERY_KEY = ['notification-preferences'];
+
+interface NotifPrefs {
+  m365_analyzer_critical: boolean;
+  m365_general: boolean;
+  firewall_analysis: boolean;
+  external_domain_analysis: boolean;
+  attack_surface: boolean;
+}
+
+function alertMatchesPrefs(alertType: string, prefs: NotifPrefs): boolean {
+  if (alertType === 'm365_analyzer_critical') return prefs.m365_analyzer_critical;
+  if (alertType.startsWith('m365_')) return prefs.m365_general;
+  if (alertType.startsWith('firewall_')) return prefs.firewall_analysis;
+  if (alertType.startsWith('external_domain_')) return prefs.external_domain_analysis;
+  if (alertType.startsWith('attack_surface_')) return prefs.attack_surface;
+  return true; // unknown types always shown
+}
 
 export function SystemAlertBanner() {
   const { role, user } = useAuth();
@@ -69,6 +87,21 @@ export function SystemAlertBanner() {
   const queryClient = useQueryClient();
   const [dismissedLocally, setDismissedLocally] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch notification preferences
+  const { data: notifPrefs } = useQuery({
+    queryKey: PREFS_QUERY_KEY,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('notification_preferences')
+        .select('m365_analyzer_critical, m365_general, firewall_analysis, external_domain_analysis, attack_surface')
+        .eq('user_id', user!.id)
+        .maybeSingle();
+      return (data as NotifPrefs | null) ?? null;
+    },
+    enabled: !!user?.id,
+    staleTime: 120_000,
+  });
 
   // Single useQuery replaces manual fetching + polling
   const { data: alerts = [] } = useQuery({
@@ -153,8 +186,12 @@ export function SystemAlertBanner() {
     navigate('/settings');
   };
 
-  // Filter locally dismissed
-  const visibleAlerts = alerts.filter(alert => !dismissedLocally.includes(alert.id));
+  // Filter locally dismissed + user preferences
+  const visibleAlerts = alerts.filter(alert => {
+    if (dismissedLocally.includes(alert.id)) return false;
+    if (notifPrefs && !alertMatchesPrefs(alert.alert_type, notifPrefs)) return false;
+    return true;
+  });
   const primaryAlert = visibleAlerts[0] ?? null;
 
   const getSeverityStyles = (severity: string) => {

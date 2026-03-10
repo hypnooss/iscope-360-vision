@@ -16,6 +16,7 @@ import { User, Shield, Lock, Check, X, Loader2, KeyRound, Trash2, Calendar, Mail
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AvatarSelector } from '@/components/account/AvatarSelector';
+import { NotificationPreferences } from '@/components/account/NotificationPreferences';
 
 interface MfaFactor {
   id: string;
@@ -279,6 +280,8 @@ export default function AccountPage() {
             </Card>
           </div>
         </div>
+
+        <NotificationPreferences />
       </div>
     </AppLayout>
   );
