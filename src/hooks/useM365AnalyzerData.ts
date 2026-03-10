@@ -232,6 +232,64 @@ export interface ScoreHistoryPoint {
   score: number;
 }
 
+function mergeRankingArrays(
+  snapshots: M365AnalyzerSnapshot[],
+  path: string[],
+  labelField: string,
+  top = 10,
+): any[] {
+  const map = new Map<string, any>();
+  for (const s of snapshots) {
+    let obj: any = s.metrics;
+    for (const k of path) obj = obj?.[k];
+    if (!Array.isArray(obj)) continue;
+    for (const item of obj) {
+      const key = String(item[labelField] ?? '').toLowerCase();
+      if (!key) continue;
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, { ...item, count: item.count ?? 1 });
+      } else {
+        existing.count = (existing.count ?? 0) + (item.count ?? 1);
+      }
+    }
+  }
+  return Array.from(map.values())
+    .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
+    .slice(0, top);
+}
+
+function aggregateThreatProtection(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerMetrics['threatProtection'] {
+  const base = snapshots[0]?.metrics?.threatProtection ?? defaultMetrics.threatProtection;
+
+  let spamBlocked = 0, phishingDetected = 0, malwareBlocked = 0, quarantined = 0, totalDelivered = 0, totalFiltered = 0;
+  for (const s of snapshots) {
+    const tp = s.metrics?.threatProtection;
+    if (!tp) continue;
+    spamBlocked += tp.spamBlocked ?? 0;
+    phishingDetected += tp.phishingDetected ?? 0;
+    malwareBlocked += tp.malwareBlocked ?? 0;
+    quarantined += tp.quarantined ?? 0;
+    totalDelivered += tp.totalDelivered ?? 0;
+    totalFiltered += tp.totalFiltered ?? 0;
+  }
+
+  return {
+    spamBlocked,
+    phishingDetected,
+    malwareBlocked,
+    quarantined,
+    totalDelivered,
+    totalFiltered,
+    topSpamSenderDomains: mergeRankingArrays(snapshots, ['threatProtection', 'topSpamSenderDomains'], 'domain'),
+    topPhishingTargets: mergeRankingArrays(snapshots, ['threatProtection', 'topPhishingTargets'], 'user'),
+    topMalwareSenders: mergeRankingArrays(snapshots, ['threatProtection', 'topMalwareSenders'], 'sender'),
+    topSpamRecipients: mergeRankingArrays(snapshots, ['threatProtection', 'topSpamRecipients'], 'user'),
+    deliveryBreakdown: base.deliveryBreakdown,
+    policyStatus: base.policyStatus,
+  };
+}
+
 function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnapshot & { snapshotCount: number; scoreHistory: ScoreHistoryPoint[] } | null {
   if (!snapshots.length) return null;
 
@@ -249,7 +307,11 @@ function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnap
     { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
   );
 
-  const metrics = latest.metrics;
+  // Use latest metrics as base but aggregate threatProtection across all snapshots
+  const metrics: M365AnalyzerMetrics = {
+    ...latest.metrics,
+    threatProtection: aggregateThreatProtection(snapshots),
+  };
 
   const scoreHistory: ScoreHistoryPoint[] = snapshots
     .filter(s => s.score != null)
@@ -280,7 +342,7 @@ export function useLatestM365AnalyzerSnapshot(tenantRecordId?: string) {
         .eq('tenant_record_id', tenantRecordId)
         .eq('status', 'completed')
         .order('created_at', { ascending: false })
-        .limit(24) as any;
+        .limit(720) as any;
 
       if (error) throw error;
       const rows = (data as any[]) || [];
