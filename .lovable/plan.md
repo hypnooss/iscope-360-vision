@@ -1,24 +1,18 @@
+# Status: ✅ Confirmado
 
+## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-## Ajustar tooltips dos pontos no mapa e bandeiras no fullscreen
+### Confirmação
 
-### Problema
-1. Os tooltips nos pontos do mapa (ao passar o mouse) exibem "Falha Auth FW" e "Sucesso Auth FW" — termos de firewall — mesmo quando usado pelo Entra ID
-2. As bandeiras no painel lateral do fullscreen já funcionam (o código usa `getCountryCode` + `fi fi-{code}`), mas os tooltips dos pontos do mapa precisam refletir os labels corretos
+O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
 
-### Alterações
+| # | Edge Function | Fonte de dados | Tipo | Resultado |
+|---|--------------|----------------|------|-----------|
+| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
+| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
 
-**1. `src/components/firewall/AttackMap.tsx`**
-- Adicionar prop opcional `labelMap?: { authFailed?: string; authSuccess?: string; ... }` à interface `AttackMapProps`
-- Nas linhas 183-186, usar os labels do `labelMap` em vez dos hardcoded:
-  - `'Sucesso Auth FW'` → `labelMap?.authSuccess ?? 'Sucesso Auth FW'`
-  - `'Sucesso Auth VPN'` → `labelMap?.authSuccessVpn ?? 'Sucesso Auth VPN'`
-  - `'Falha Auth FW'` → `labelMap?.authFailed ?? 'Falha Auth FW'`
-  - `'Falha Auth VPN'` → `labelMap?.authFailedVpn ?? 'Falha Auth VPN'`
+### Fix já aplicado
+- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
 
-**2. `src/components/m365/entra-id/EntraIdLoginMap.tsx`**
-- Passar `labelMap={ENTRA_LABEL_MAP}` ao `AttackMap` (tanto no inline quanto no fullscreen já passa)
-
-**3. `src/components/firewall/AttackMapFullscreen.tsx`**
-- Passar `labelMap` ao `AttackMap` interno para que os tooltips no fullscreen também usem os labels corretos
-
+### Melhoria futura sugerida
+- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`

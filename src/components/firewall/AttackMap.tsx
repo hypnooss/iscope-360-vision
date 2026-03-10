@@ -6,16 +6,24 @@ import { getCountryCoords } from '@/lib/countryUtils';
 import type { TopCountry } from '@/types/analyzerInsights';
 import { supabase } from '@/integrations/supabase/client';
 
+interface AttackMapLabelMap {
+  authFailed?: string;
+  authFailedVpn?: string;
+  authSuccess?: string;
+  authSuccessVpn?: string;
+}
+
 interface AttackMapProps {
-  authFailedCountries: TopCountry[];       // FW auth failures (vermelho escuro)
-  authFailedVpnCountries?: TopCountry[];   // VPN auth failures (laranja)
-  authSuccessCountries: TopCountry[];      // FW Auth success (verde)
-  authSuccessVpnCountries?: TopCountry[];  // VPN Auth success (verde)
-  outboundCountries?: TopCountry[];        // Saída com sucesso (azul) — FW → destino
-  outboundBlockedCountries?: TopCountry[]; // Saída bloqueada (vermelho) — FW → destino
+  authFailedCountries: TopCountry[];
+  authFailedVpnCountries?: TopCountry[];
+  authSuccessCountries: TopCountry[];
+  authSuccessVpnCountries?: TopCountry[];
+  outboundCountries?: TopCountry[];
+  outboundBlockedCountries?: TopCountry[];
   firewallLocation?: { lat: number; lng: number; label: string };
   fullscreen?: boolean;
   hideLegend?: boolean;
+  labelMap?: AttackMapLabelMap;
 }
 
 const FALLBACK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
@@ -154,6 +162,7 @@ export function AttackMap({
   firewallLocation,
   fullscreen,
   hideLegend,
+  labelMap,
 }: AttackMapProps) {
   const [tileUrl, setTileUrl] = useState(FALLBACK_TILE_URL);
   const [tileAttribution, setTileAttribution] = useState(FALLBACK_ATTRIBUTION);
@@ -180,10 +189,10 @@ export function AttackMap({
       }
     };
 
-    addPoints(authSuccessCountries, COLORS.auth_success, 'Sucesso Auth FW');
-    addPoints(authSuccessVpnCountries, COLORS.auth_success, 'Sucesso Auth VPN');
-    addPoints(authFailedCountries, COLORS.fw_fail, 'Falha Auth FW');
-    addPoints(authFailedVpnCountries, COLORS.vpn_fail, 'Falha Auth VPN');
+    addPoints(authSuccessCountries, COLORS.auth_success, labelMap?.authSuccess ?? 'Sucesso Auth FW');
+    addPoints(authSuccessVpnCountries, COLORS.auth_success, labelMap?.authSuccessVpn ?? 'Sucesso Auth VPN');
+    addPoints(authFailedCountries, COLORS.fw_fail, labelMap?.authFailed ?? 'Falha Auth FW');
+    addPoints(authFailedVpnCountries, COLORS.vpn_fail, labelMap?.authFailedVpn ?? 'Falha Auth VPN');
 
     return result;
   }, [authFailedCountries, authFailedVpnCountries, authSuccessCountries, authSuccessVpnCountries]);
