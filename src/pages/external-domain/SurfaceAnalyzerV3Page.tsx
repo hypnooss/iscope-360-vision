@@ -484,7 +484,7 @@ export default function SurfaceAnalyzerV3Page() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-10">
               {/* 1. Summary Stats Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Card className="glass-card">
@@ -536,17 +536,22 @@ export default function SurfaceAnalyzerV3Page() {
               </div>
 
               {/* 3. Top Findings + Donut side by side */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Exposição dos Serviços</h2>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <TopFindingsList
                   findings={findings}
                   onViewAll={() => {}}
                   onFindingClick={(f) => setSheetFindingId(f.id)}
                 />
                 <SeverityTechDonut findings={findings} assets={assets} />
+                </div>
               </div>
 
               {/* 4. Asset Health (full-width) */}
-              <AssetHealthGrid
+              <div>
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Detalhamento da Exposição</h2>
+                <AssetHealthGrid
                 assets={assets}
                 findings={findings}
                 onAssetClick={(ip) => setSheetAssetIp(ip)}
@@ -561,6 +566,7 @@ export default function SurfaceAnalyzerV3Page() {
                   );
                 }}
               />
+              </div>
             </div>
           )}
 

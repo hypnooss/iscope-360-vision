@@ -1,19 +1,18 @@
+# Status: ✅ Confirmado
 
+## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-## Padronizar espaçamentos e subtítulos no Surface Analyzer
+### Confirmação
 
-### Alterações
+O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
 
-**1. Espaçamento vertical** (`SurfaceAnalyzerV3Page.tsx`, linha 487)
-- Trocar `space-y-6` por `space-y-10` para alinhar com Exchange e Firewall Analyzers.
+| # | Edge Function | Fonte de dados | Tipo | Resultado |
+|---|--------------|----------------|------|-----------|
+| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
+| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
 
-**2. Subtítulo "Exposição dos Serviços"** (`SurfaceAnalyzerV3Page.tsx`, antes da linha 539)
-- Adicionar `<h2>` com classes `text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3` (mesmo padrão do "Panorama por Categoria" na linha 530) antes do grid de `TopFindingsList` + `SeverityTechDonut`.
+### Fix já aplicado
+- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
 
-**3. Subtítulo "Detalhamento da Exposição"** (`SurfaceAnalyzerV3Page.tsx`, antes da linha 549)
-- Adicionar `<h2>` externo ao card com as mesmas classes de subtítulo.
-
-**4. Remover título interno do AssetHealthGrid** (`AssetHealthGrid.tsx`, linhas 258-267)
-- Remover o `<CardHeader>` com "Saúde dos Ativos" e o Badge de contagem.
-- Manter apenas o `<Card>` com `<CardContent>` direto (o grid de assets).
-
+### Melhoria futura sugerida
+- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
