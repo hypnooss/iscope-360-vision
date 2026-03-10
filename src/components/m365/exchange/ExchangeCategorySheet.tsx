@@ -12,6 +12,11 @@ import {
 import type { ExchangeDashboardData } from '@/hooks/useExchangeDashboard';
 import type { ExchangeOperationalCategory } from './ExchangeAnalyzerCategoryGrid';
 
+interface CategoryIconProps {
+  className?: string;
+  style?: React.CSSProperties;
+}
+
 interface ExchangeCategorySheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
