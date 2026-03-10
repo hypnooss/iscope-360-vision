@@ -78,19 +78,30 @@ export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecu
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
-                <p className="text-xs text-muted-foreground line-clamp-2">{insight.description}</p>
-                <div className="flex items-center gap-3 mt-2">
+                <div className="grid grid-cols-2 gap-2">
                   {insight.count != null && insight.count > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      {insight.count} ocorrência(s)
-                    </span>
+                    <div className="bg-secondary/30 p-2 rounded text-xs">
+                      <div className="text-muted-foreground">Ocorrências</div>
+                      <div className="font-bold text-sm">{insight.count}</div>
+                    </div>
                   )}
                   {insight.affectedUsers && insight.affectedUsers.length > 0 && (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Users className="w-3 h-3" />
-                      {insight.affectedUsers.length} usuário(s)
-                    </span>
+                    <div className="bg-secondary/30 p-2 rounded text-xs">
+                      <div className="text-muted-foreground">Usuários Afetados</div>
+                      <div className="font-bold text-sm">{insight.affectedUsers.length}</div>
+                    </div>
                   )}
+                  {insight.metadata && Object.entries(insight.metadata).map(([key, value]) => {
+                    if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)))) {
+                      return (
+                        <div key={key} className="bg-secondary/30 p-2 rounded text-xs">
+                          <div className="text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</div>
+                          <div className="font-bold text-sm">{String(value)}</div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
                 </div>
               </CardContent>
             </Card>
