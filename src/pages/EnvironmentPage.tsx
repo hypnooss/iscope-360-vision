@@ -92,7 +92,7 @@ export default function EnvironmentPage() {
       let clientsQuery = supabase.from('clients').select('id, name');
       let fwScheduleQuery = supabase.from('analysis_schedules').select('firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month').eq('is_active', true);
       let edScheduleQuery = supabase.from('external_domain_schedules').select('domain_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month').eq('is_active', true);
-      const m365ScheduleQuery = supabase.from('m365_analyzer_schedules').select('tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month').eq('is_active', true);
+      const m365ScheduleQuery = supabase.from('m365_compliance_schedules').select('tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month').eq('is_active', true);
 
       if (workspaceFilter && workspaceFilter.length > 0) {
         fwQuery = fwQuery.in('client_id', workspaceFilter);
