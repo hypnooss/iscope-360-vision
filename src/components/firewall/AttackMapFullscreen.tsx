@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AttackMap } from './AttackMap';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
@@ -99,7 +100,7 @@ export function AttackMapFullscreen({
     { label: L.outboundBlocked, color: '#ef4444', countries: topOutboundBlockedCountries, total: totalOutboundBlocked, showPrivate: false },
   ].filter(s => s.total > 0);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[9999] animate-fade-in flex flex-col" style={{ background: '#222222' }}>
       {/* Top bar */}
       <div className="absolute top-0 left-0 right-0 z-[1000] flex items-center justify-between px-6 py-4">
@@ -227,6 +228,7 @@ export function AttackMapFullscreen({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
