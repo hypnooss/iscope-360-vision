@@ -208,14 +208,19 @@ export default function ExchangeAnalyzerPage() {
         </div>
 
         {/* Progress card */}
-        {triggering && (
+        {(triggering || isAnalysisRunning) && (
           <Card className="glass-card border-primary/30">
             <CardContent className="p-4">
               <div className="flex items-center gap-3 mb-2">
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                <span className="text-sm font-medium">Análise em andamento...</span>
+                <span className="text-sm font-medium">
+                  {triggering ? 'Iniciando análise...' : progress?.status === 'pending' ? 'Aguardando agente...' : 'Análise em andamento...'}
+                </span>
+                {progress?.elapsed && (
+                  <span className="text-xs text-muted-foreground">({Math.floor(progress.elapsed / 60)}min {progress.elapsed % 60}s)</span>
+                )}
               </div>
-              <Progress value={40} className="h-2" />
+              <Progress value={triggering ? 10 : progress?.status === 'pending' ? 25 : 60} className="h-2" />
             </CardContent>
           </Card>
         )}
