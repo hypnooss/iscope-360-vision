@@ -1,18 +1,35 @@
-# Status: ✅ Confirmado
 
-## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-### Confirmação
+## Correção: Drill-down de Detecção de Phishing sem dados
 
-O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
+### Causa raiz
 
-| # | Edge Function | Fonte de dados | Tipo | Resultado |
-|---|--------------|----------------|------|-----------|
-| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
-| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
+O drill-down de Phishing lê de `analyzerMetrics.phishing` (campos `topSenderDomains` e `topAttackedUsers`), que estão vazios no snapshot. Os dados reais de phishing estão em `analyzerMetrics.threatProtection`:
 
-### Fix já aplicado
-- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
+- **Alvos**: `threatProtection.topPhishingTargets` — 10 registros com users, counts e senders
+- **Origens**: Não há campo dedicado a domínios de phishing, mas cada `topPhishingTargets[].senders` contém os domínios atacantes
 
-### Melhoria futura sugerida
-- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
+### Correção
+
+**`src/components/m365/exchange/ExchangeCategorySheet.tsx` (~linhas 295-303)**
+
+1. **Domínios (Origens)**: Para `cat === 'phishing'`, extrair domínios únicos agregados de `threatData?.topPhishingTargets[].senders`, contando ocorrências por domínio, em vez de ler `phishingData?.topSenderDomains`
+
+2. **Usuários (Alvos)**: Para `cat === 'phishing'`, usar `threatData?.topPhishingTargets` como fonte primária (já é fallback na linha 302, basta tornar primário)
+
+Lógica de extração de domínios:
+```typescript
+// Agregar senders de todos os targets em um mapa domain → count
+const phishSenderMap: Record<string, number> = {};
+(threatData?.topPhishingTargets || []).forEach((t: any) => {
+  (t.senders || []).forEach((s: string) => {
+    phishSenderMap[s] = (phishSenderMap[s] || 0) + 1;
+  });
+});
+const phishDomains = Object.entries(phishSenderMap)
+  .sort((a, b) => b[1] - a[1])
+  .map(([name, count]) => ({ name, count }));
+```
+
+Uma única alteração em um arquivo.
+
