@@ -8,6 +8,14 @@ interface EntraIdLoginMapProps {
   loginCountriesFailed: { country: string; count: number }[];
 }
 
+const ENTRA_LOCATION = { lat: -15.8, lng: -47.9, label: 'Entra ID' };
+
+const ENTRA_LABEL_MAP = {
+  authFailed: 'Login com Falha',
+  authSuccess: 'Login com Sucesso',
+  centerPoint: 'Entra ID',
+};
+
 export function EntraIdLoginMap({ loginCountriesSuccess, loginCountriesFailed }: EntraIdLoginMapProps) {
   const [fullscreen, setFullscreen] = useState(false);
 
@@ -40,6 +48,7 @@ export function EntraIdLoginMap({ loginCountriesSuccess, loginCountriesFailed }:
           <AttackMap
             authFailedCountries={loginCountriesFailed}
             authSuccessCountries={loginCountriesSuccess}
+            firewallLocation={ENTRA_LOCATION}
             hideLegend
           />
         </div>
@@ -62,7 +71,9 @@ export function EntraIdLoginMap({ loginCountriesSuccess, loginCountriesFailed }:
           authSuccessCountries={loginCountriesSuccess}
           totalFwAuthFailed={totalFailed}
           totalFwAuthSuccess={totalSuccess}
+          firewallLocation={ENTRA_LOCATION}
           firewallName="Entra ID — Origens de Login"
+          labelMap={ENTRA_LABEL_MAP}
           onClose={() => setFullscreen(false)}
         />
       )}

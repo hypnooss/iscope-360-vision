@@ -6,6 +6,26 @@ import { getCountryCode } from '@/lib/countryUtils';
 import type { TopCountry, TopBlockedIP } from '@/types/analyzerInsights';
 import 'flag-icons/css/flag-icons.min.css';
 
+interface LabelMap {
+  authFailed?: string;
+  authFailedVpn?: string;
+  authSuccess?: string;
+  authSuccessVpn?: string;
+  outbound?: string;
+  outboundBlocked?: string;
+  centerPoint?: string;
+}
+
+const DEFAULT_LABELS: Required<LabelMap> = {
+  authFailed: 'Falha Auth FW',
+  authFailedVpn: 'Falha Auth VPN',
+  authSuccess: 'Sucesso Auth FW',
+  authSuccessVpn: 'Sucesso Auth VPN',
+  outbound: 'Saída Permitida',
+  outboundBlocked: 'Saída Bloqueada',
+  centerPoint: 'Firewall',
+};
+
 interface AttackMapFullscreenProps {
   authFailedCountries: TopCountry[];
   authFailedVpnCountries?: TopCountry[];
@@ -25,6 +45,7 @@ interface AttackMapFullscreenProps {
   topBlockedIPs?: TopBlockedIP[];
   topOutboundCountries?: TopCountry[];
   topOutboundBlockedCountries?: TopCountry[];
+  labelMap?: LabelMap;
   onClose: () => void;
 }
 
@@ -47,8 +68,10 @@ export function AttackMapFullscreen({
   topBlockedIPs = [],
   topOutboundCountries = [],
   topOutboundBlockedCountries = [],
+  labelMap: labelMapProp,
   onClose,
 }: AttackMapFullscreenProps) {
+  const L = { ...DEFAULT_LABELS, ...labelMapProp };
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
@@ -68,12 +91,12 @@ export function AttackMapFullscreen({
 
   // Build sections config
   const sections = [
-    { label: 'Falha Auth FW', color: '#dc2626', countries: authFailedCountries, total: totalFwAuthFailed, showPrivate: true },
-    { label: 'Falha Auth VPN', color: '#f97316', countries: authFailedVpnCountries, total: totalVpnAuthFailed, showPrivate: true },
-    { label: 'Sucesso Auth FW', color: '#22c55e', countries: authSuccessCountries, total: totalFwAuthSuccess, showPrivate: true },
-    { label: 'Sucesso Auth VPN', color: '#22c55e', countries: authSuccessVpnCountries, total: totalVpnAuthSuccess, showPrivate: true },
-    { label: 'Saída Permitida', color: '#38bdf8', countries: topOutboundCountries, total: totalOutbound, showPrivate: false },
-    { label: 'Saída Bloqueada', color: '#ef4444', countries: topOutboundBlockedCountries, total: totalOutboundBlocked, showPrivate: false },
+    { label: L.authFailed, color: '#dc2626', countries: authFailedCountries, total: totalFwAuthFailed, showPrivate: true },
+    { label: L.authFailedVpn, color: '#f97316', countries: authFailedVpnCountries, total: totalVpnAuthFailed, showPrivate: true },
+    { label: L.authSuccess, color: '#22c55e', countries: authSuccessCountries, total: totalFwAuthSuccess, showPrivate: true },
+    { label: L.authSuccessVpn, color: '#22c55e', countries: authSuccessVpnCountries, total: totalVpnAuthSuccess, showPrivate: true },
+    { label: L.outbound, color: '#38bdf8', countries: topOutboundCountries, total: totalOutbound, showPrivate: false },
+    { label: L.outboundBlocked, color: '#ef4444', countries: topOutboundBlockedCountries, total: totalOutboundBlocked, showPrivate: false },
   ].filter(s => s.total > 0);
 
   return (
@@ -155,45 +178,51 @@ export function AttackMapFullscreen({
       {/* Bottom stats bar */}
       <div className="absolute bottom-0 left-0 right-0 z-[1000] bg-black/70 backdrop-blur-md border-t border-white/10 px-6 py-3">
         <div className="flex items-center justify-center gap-6 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#dc2626', boxShadow: '0 0 8px rgba(220,38,38,0.6)' }} />
-            <span className="text-white/60 text-xs">Falha Auth FW</span>
-            <span className="text-white font-bold text-sm">{totalFwAuthFailed.toLocaleString()}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#f97316', boxShadow: '0 0 8px rgba(249,115,22,0.6)' }} />
-            <span className="text-white/60 text-xs">Falha Auth VPN</span>
-            <span className="text-white font-bold text-sm">{totalVpnAuthFailed.toLocaleString()}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.6)' }} />
-            <span className="text-white/60 text-xs">Sucesso Auth FW</span>
-            <span className="text-white font-bold text-sm">{totalFwAuthSuccess.toLocaleString()}</span>
-          </div>
+          {totalFwAuthFailed > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#dc2626', boxShadow: '0 0 8px rgba(220,38,38,0.6)' }} />
+              <span className="text-white/60 text-xs">{L.authFailed}</span>
+              <span className="text-white font-bold text-sm">{totalFwAuthFailed.toLocaleString()}</span>
+            </div>
+          )}
+          {totalVpnAuthFailed > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#f97316', boxShadow: '0 0 8px rgba(249,115,22,0.6)' }} />
+              <span className="text-white/60 text-xs">{L.authFailedVpn}</span>
+              <span className="text-white font-bold text-sm">{totalVpnAuthFailed.toLocaleString()}</span>
+            </div>
+          )}
+          {totalFwAuthSuccess > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.6)' }} />
+              <span className="text-white/60 text-xs">{L.authSuccess}</span>
+              <span className="text-white font-bold text-sm">{totalFwAuthSuccess.toLocaleString()}</span>
+            </div>
+          )}
           {totalVpnAuthSuccess > 0 && (
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.6)' }} />
-              <span className="text-white/60 text-xs">Sucesso Auth VPN</span>
+              <span className="text-white/60 text-xs">{L.authSuccessVpn}</span>
               <span className="text-white font-bold text-sm">{totalVpnAuthSuccess.toLocaleString()}</span>
             </div>
           )}
           {totalOutbound > 0 && (
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#38bdf8', boxShadow: '0 0 8px rgba(56,189,248,0.6)' }} />
-              <span className="text-white/60 text-xs">Saída Permitida</span>
+              <span className="text-white/60 text-xs">{L.outbound}</span>
               <span className="text-white font-bold text-sm">{totalOutbound.toLocaleString()}</span>
             </div>
           )}
           {totalOutboundBlocked > 0 && (
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#ef4444', boxShadow: '0 0 8px rgba(239,68,68,0.6)' }} />
-              <span className="text-white/60 text-xs">Saída Bloqueada</span>
+              <span className="text-white/60 text-xs">{L.outboundBlocked}</span>
               <span className="text-white font-bold text-sm">{totalOutboundBlocked.toLocaleString()}</span>
             </div>
           )}
           <div className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#06b6d4', boxShadow: '0 0 8px rgba(6,182,212,0.6)' }} />
-            <span className="text-white/60 text-xs">Firewall</span>
+            <span className="text-white/60 text-xs">{L.centerPoint}</span>
           </div>
         </div>
       </div>
