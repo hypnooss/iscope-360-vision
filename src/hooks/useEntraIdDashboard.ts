@@ -9,6 +9,8 @@ export interface EntraIdDashboardData {
   loginActivity: { total: number; success: number; failed: number; mfaRequired: number; blocked: number };
   userChanges: { updated: number; new: number; enabled: number; disabled: number; deleted: number };
   passwordActivity: { resets: number; forcedChanges: number; selfService: number };
+  loginCountriesSuccess: { country: string; count: number }[];
+  loginCountriesFailed: { country: string; count: number }[];
   analyzedAt: string;
 }
 
@@ -47,6 +49,8 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
           loginActivity: cache.loginActivity || { total: 0, success: 0, failed: 0, mfaRequired: 0, blocked: 0 },
           userChanges: cache.userChanges || { updated: 0, new: 0, enabled: 0, disabled: 0, deleted: 0 },
           passwordActivity: cache.passwordActivity || { resets: 0, forcedChanges: 0, selfService: 0 },
+          loginCountriesSuccess: cache.loginCountriesSuccess || [],
+          loginCountriesFailed: cache.loginCountriesFailed || [],
           analyzedAt: tenant.entra_dashboard_cached_at || '',
         });
       } else {
@@ -69,6 +73,8 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
     loginActivity: result.loginActivity || { total: 0, success: 0, failed: 0, mfaRequired: 0, blocked: 0 },
     userChanges: result.userChanges || { updated: 0, new: 0, enabled: 0, disabled: 0, deleted: 0 },
     passwordActivity: result.passwordActivity || { resets: 0, forcedChanges: 0, selfService: 0 },
+    loginCountriesSuccess: result.loginCountriesSuccess || [],
+    loginCountriesFailed: result.loginCountriesFailed || [],
     analyzedAt: result.analyzedAt || '',
   });
 

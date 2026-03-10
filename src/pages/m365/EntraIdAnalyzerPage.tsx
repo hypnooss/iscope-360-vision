@@ -20,6 +20,7 @@ import { EntraIdAnalyzerCategoryGrid } from '@/components/m365/entra-id/EntraIdA
 import { EntraIdCategorySheet } from '@/components/m365/entra-id/EntraIdCategorySheet';
 import type { EntraIdOperationalCategory } from '@/components/m365/entra-id/EntraIdAnalyzerCategoryGrid';
 import { EntraIdSecurityInsightCards } from '@/components/m365/entra-id/EntraIdSecurityInsightCards';
+import { EntraIdLoginMap } from '@/components/m365/entra-id/EntraIdLoginMap';
 import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -234,6 +235,16 @@ export default function EntraIdAnalyzerPage() {
                 setSelectedOpCategory(cat);
                 setOpCategorySheetOpen(true);
               }}
+            />
+          </div>
+        )}
+
+        {/* Login Origin Map */}
+        {selectedTenantId && !loading && dashboardData && (
+          <div className="mb-8">
+            <EntraIdLoginMap
+              loginCountriesSuccess={dashboardData.loginCountriesSuccess}
+              loginCountriesFailed={dashboardData.loginCountriesFailed}
             />
           </div>
         )}
