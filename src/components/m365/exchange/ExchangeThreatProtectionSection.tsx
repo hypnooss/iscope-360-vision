@@ -77,6 +77,18 @@ const POLICY_DETAILS: Record<PolicyKey, {
       disabled: 'Crie uma política Safe Links abrangente que cubra emails e aplicações Office. Configure para verificar URLs no momento do clique e registrar eventos para auditoria. Isso requer licença Microsoft Defender for Office 365 Plan 1 ou superior.',
     },
     microsoftUrl: 'https://learn.microsoft.com/en-us/defender-office-365/safe-links-policies-configure',
+    licensing: {
+      text: 'Safe Links faz parte do Microsoft Defender for Office 365 e requer licenciamento específico para funcionar.',
+      plans: [
+        { name: 'Defender for Office 365 Plan 1', included: true },
+        { name: 'Defender for Office 365 Plan 2', included: true },
+        { name: 'Microsoft 365 E5', included: true },
+        { name: 'Microsoft 365 E5 Security', included: true },
+        { name: 'Microsoft 365 Business Premium', included: true },
+      ],
+      note: 'O Plan 2 adiciona recursos avançados como Threat Explorer, Automated Investigation and Response, Campaign View e Attack Simulation. Mas Safe Links já está disponível no Plan 1.',
+      url: 'https://learn.microsoft.com/pt-br/defender-office-365/mdo-about',
+    },
   },
   safeAttach: {
     label: 'Safe Attachments',
