@@ -248,14 +248,14 @@ export default function ExchangeAnalyzerPage() {
           <Card className="border-warning/30 bg-warning/5">
             <CardContent className="py-10 text-center">
               <Mail className="w-10 h-10 text-warning mx-auto mb-3" />
-              <h3 className="text-base font-semibold mb-1">Dados do Exchange não sincronizados</h3>
+              <h3 className="text-base font-semibold mb-1">Nenhuma análise do Exchange encontrada</h3>
               <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
-                Este tenant ainda não possui dados coletados do Exchange Online. Clique abaixo para executar a primeira coleta.
+                Este tenant ainda não possui análises do Exchange Online. Execute a primeira análise para começar a monitorar a segurança do ambiente.
               </p>
               <Button onClick={refreshDashboard} disabled={dashboardRefreshing} className="gap-2">
                 {dashboardRefreshing
                   ? <><Loader2 className="w-4 h-4 animate-spin" />Coletando...</>
-                  : <><Play className="w-4 h-4" />Atualizar Dashboard</>}
+                  : <><Play className="w-4 h-4" />Executar Análise</>}
               </Button>
             </CardContent>
           </Card>
@@ -320,12 +320,6 @@ export default function ExchangeAnalyzerPage() {
           </Alert>
         )}
 
-        {selectedTenantId && !loading && exchangeInsights.length === 0 && !analyzerSnapshot && (
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>Nenhuma análise encontrada. Clique em "Executar Análise" para começar.</AlertDescription>
-          </Alert>
-        )}
       </div>
 
       {/* Category Sheet */}
