@@ -1,30 +1,17 @@
+# Status: ✅ Implementado
 
+## Fix: WHOIS data not being saved + parsing issues
 
-## Remover Card e manter mapa direto
+### Mudanças realizadas
 
-Concordo. O Card é desnecessário agora. Vou remover o wrapper `Card`/`CardContent` e manter o mapa diretamente abaixo do heading, com bordas arredondadas e overflow hidden aplicados diretamente na div do mapa.
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/agent-task-result/index.ts` | Force redeploy (comment timestamp) para ativar extração domain_whois |
+| `supabase/functions/trigger-external-domain-analysis/index.ts` | Removida chamada duplicada ao `domain-whois-lookup` edge function |
+| `python-agent/agent/executors/domain_whois.py` | `.br`: registrar fixo "Registro.br (NIC.br)", busca events em entities aninhadas |
+| `python-agent/agent/executors/domain_whois.py` | `.io`: RDAP endpoint corrigido para `rdap.identitydigital.services` |
+| `python-agent/agent/executors/domain_whois.py` | Owner: extrai registrant separado do registrar (evita confundir dono com registrar) |
 
-### Alteração em `AnalyzerDashboardPage.tsx` (linhas 661-678)
-
-Substituir:
-```tsx
-<Card className="glass-card cursor-pointer hover:border-primary/50 transition-colors" onClick={...}>
-  <CardContent className="p-4">
-    <div className="max-h-[200px] overflow-hidden rounded-md ...">
-      <AttackMap ... />
-    </div>
-  </CardContent>
-</Card>
-```
-
-Por:
-```tsx
-<div className="max-h-[200px] overflow-hidden rounded-lg border border-border/50 opacity-90 group-hover:opacity-100 transition-opacity cursor-pointer"
-  onClick={() => setShowAttackMap(true)}>
-  <AttackMap ... />
-</div>
-```
-
-### Arquivo
-- `src/pages/firewall/AnalyzerDashboardPage.tsx`
-
+### Próximos passos
+- Deploy do Agent com `domain_whois.py` atualizado
+- Re-executar análise nos domínios .br e precisio.io para validar
