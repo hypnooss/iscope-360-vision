@@ -6,25 +6,23 @@ interface EntraIdCountryMapProps {
   fullscreen?: boolean;
 }
 
-// Virtual destination point in Brazil to enable projectile animations
-const ENTRA_ID_LOCATION = { lat: -14, lng: -51, label: 'Entra ID' };
-
 export function EntraIdCountryMap({ loginCountriesSuccess, fullscreen = false }: EntraIdCountryMapProps) {
-  // Normalize country data to ensure ISO2 codes work with AttackMap
-  const normalizedCountries = loginCountriesSuccess.map(c => {
-    const raw = c.country?.trim().toLowerCase();
-    if (raw && raw.length === 2) {
-      return { country: raw, count: c.count };
-    }
-    const iso2 = getCountryCode(c.country);
-    return { country: iso2 || c.country, count: c.count };
+  const normalizedCountries = loginCountriesSuccess.map((countryItem) => {
+    const rawCountry = countryItem.country?.trim().toLowerCase();
+    const normalizedCountry = rawCountry && rawCountry.length === 2
+      ? rawCountry
+      : getCountryCode(countryItem.country) || countryItem.country;
+
+    return {
+      country: normalizedCountry,
+      count: countryItem.count,
+    };
   });
 
   return (
     <AttackMap
       authFailedCountries={[]}
       authSuccessCountries={normalizedCountries}
-      firewallLocation={ENTRA_ID_LOCATION}
       fullscreen={fullscreen}
       hideLegend
       labelMap={{
