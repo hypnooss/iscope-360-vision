@@ -1305,9 +1305,13 @@ function analyzeThreatProtection(
 
   // Policy status evaluation
   if (exoContentFilter.length > 0) {
+    // Evaluate SpamAction/HighConfidenceSpamAction instead of HighConfidencePhishAction
+    // because Microsoft "Secure by Default" overrides HCPhish to Quarantine automatically
+    const weakActions = ['movetojmf', 'addxheader', ''];
     const hasWeakAction = exoContentFilter.some((p: any) => {
-      const hcpa = (p.HighConfidencePhishAction || '').toLowerCase();
-      return hcpa === 'movetojmf' || hcpa === 'addxheader' || !hcpa;
+      const spam = (p.SpamAction || '').toLowerCase();
+      const hcSpam = (p.HighConfidenceSpamAction || '').toLowerCase();
+      return weakActions.includes(spam) || weakActions.includes(hcSpam);
     });
     metrics.policyStatus.antiSpam = hasWeakAction ? 'weak' : 'enabled';
   }
