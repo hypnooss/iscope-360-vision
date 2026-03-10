@@ -232,7 +232,7 @@ export default function ExchangeAnalyzerPage() {
         )}
 
         {/* Threat Protection */}
-        {selectedTenantId && !loading && (
+        {selectedTenantId && !loading && dashboardData && (
           <ExchangeThreatProtectionSection
             data={analyzerSnapshot?.metrics?.threatProtection ?? null}
             loading={analyzerLoading}
@@ -240,7 +240,7 @@ export default function ExchangeAnalyzerPage() {
         )}
 
         {/* Security Insights (operational only) */}
-        {selectedTenantId && !analyzerLoading && (
+        {selectedTenantId && !analyzerLoading && dashboardData && (
           <ExchangeSecurityInsightCards insights={exchangeInsights} loading={analyzerLoading} />
         )}
 
