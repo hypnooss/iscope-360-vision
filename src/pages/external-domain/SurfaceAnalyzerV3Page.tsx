@@ -566,6 +566,7 @@ export default function SurfaceAnalyzerV3Page() {
                   );
                 }}
               />
+              </div>
             </div>
           )}
 
