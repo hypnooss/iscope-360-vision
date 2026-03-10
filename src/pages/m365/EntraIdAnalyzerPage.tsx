@@ -278,12 +278,6 @@ export default function EntraIdAnalyzerPage() {
           </Alert>
         )}
 
-        {selectedTenantId && !loading && entraInsights.length === 0 && !analyzerSnapshot && (
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>Nenhuma análise encontrada. Clique em "Executar Análise" para começar.</AlertDescription>
-          </Alert>
-        )}
       </div>
 
       <EntraIdCategorySheet
