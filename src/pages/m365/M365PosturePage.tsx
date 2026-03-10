@@ -519,17 +519,21 @@ export default function M365PosturePage() {
           </div>
         )}
 
-        {/* Error State */}
-        {error && !data && (
-          <Card className="glass-card border-destructive/30">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3 text-destructive">
-                <AlertTriangle className="w-5 h-5" />
-                <div>
-                  <p className="font-semibold">Erro na análise</p>
-                  <p className="text-sm text-muted-foreground">{error}</p>
-                </div>
-              </div>
+        {/* Empty state — no compliance data */}
+        {selectedTenantId && !isLoading && !isAnalysisRunning && !data && (
+          <Card className="border-warning/30 bg-warning/5">
+            <CardContent className="py-12 text-center">
+              <AlertTriangle className="w-12 h-12 text-warning mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">
+                Nenhum relatório de compliance encontrado
+              </h3>
+              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                Este tenant ainda não possui análises de compliance. Execute a primeira análise para avaliar a postura de segurança do ambiente.
+              </p>
+              <Button onClick={handleRefresh} disabled={isBlocked} className="gap-2">
+                {isBlocked ? <Lock className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                Executar Análise
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -556,8 +560,8 @@ export default function M365PosturePage() {
           </Card>
         )}
 
-        {/* Main content - only show if tenants available */}
-        {tenants.length > 0 && (
+        {/* Main content - only show if tenants available AND data exists */}
+        {tenants.length > 0 && data && (
           <>
             {/* Command Central */}
             <CommandCentralLayout
