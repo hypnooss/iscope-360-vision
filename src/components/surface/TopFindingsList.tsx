@@ -48,7 +48,7 @@ export function TopFindingsList({ findings, maxItems = 7, onViewAll, onFindingCl
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 text-destructive" />
-          Serviços Expostos
+          Vulnerabilidades Encontradas
           {topFindings.length > 0 && (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-auto bg-red-500/10 text-red-500 border-red-500/20">
               {topFindings.length}
@@ -101,7 +101,7 @@ export function TopFindingsList({ findings, maxItems = 7, onViewAll, onFindingCl
               className="w-full text-xs text-muted-foreground hover:text-foreground mt-1"
               onClick={() => navigate('/scope-external-domain/analyzer/findings')}
             >
-              Ver todos os serviços expostos →
+              Ver todas as vulnerabilidades →
             </Button>
           </>
         )}
