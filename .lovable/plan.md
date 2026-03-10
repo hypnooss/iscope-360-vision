@@ -1,18 +1,18 @@
-# Status: ✅ Confirmado
 
-## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-### Confirmação
+## Remover submenu e página "Exchange Online"
 
-O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
+### Alterações
 
-| # | Edge Function | Fonte de dados | Tipo | Resultado |
-|---|--------------|----------------|------|-----------|
-| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
-| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
+**1. `src/components/layout/AppLayout.tsx`** (linha 146)
+- Remover o item de menu `{ label: 'Exchange Online', href: '/scope-m365/exchange-online', icon: Mail }`.
 
-### Fix já aplicado
-- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
+**2. `src/App.tsx`**
+- Remover o lazy import do `ExchangeOnlinePage` (linha 68).
+- Remover a rota `/scope-m365/exchange-online` (linha 165).
 
-### Melhoria futura sugerida
-- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
+**3. `src/pages/m365/ExchangeOnlinePage.tsx`**
+- Deletar o arquivo (o conteúdo foi absorvido pelo Exchange Analyzer).
+
+Os componentes de Exchange (`EmailSecurityScoreCard`, `ExchangeOverviewCards`, etc.) e o hook `useExchangeDashboard` continuam sendo usados pelo Exchange Analyzer, então serão mantidos.
+
