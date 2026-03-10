@@ -15,6 +15,7 @@ interface AttackMapProps {
   outboundBlockedCountries?: TopCountry[]; // Saída bloqueada (vermelho) — FW → destino
   firewallLocation?: { lat: number; lng: number; label: string };
   fullscreen?: boolean;
+  hideLegend?: boolean;
 }
 
 const FALLBACK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
