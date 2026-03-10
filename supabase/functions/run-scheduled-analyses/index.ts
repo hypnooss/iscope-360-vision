@@ -545,12 +545,12 @@ Deno.serve(async (req) => {
       console.error('[run-scheduled-analyses] CVE refresh error:', err);
     }
 
-    const totalTriggered = triggered + domainTriggered + analyzerTriggered + attackSurfaceTriggered + m365AnalyzerTriggered;
-    const totalErrors = errors + domainErrors + analyzerErrors + attackSurfaceErrors + m365AnalyzerErrors;
-    const totalSkipped = skippedOffline + domainSkipped + analyzerSkipped + m365AnalyzerSkipped;
+    const totalTriggered = triggered + domainTriggered + analyzerTriggered + attackSurfaceTriggered + m365AnalyzerTriggered + m365ComplianceTriggered;
+    const totalErrors = errors + domainErrors + analyzerErrors + attackSurfaceErrors + m365AnalyzerErrors + m365ComplianceErrors;
+    const totalSkipped = skippedOffline + domainSkipped + analyzerSkipped + m365AnalyzerSkipped + m365ComplianceSkipped;
 
     console.log(`[run-scheduled-analyses] Done. Triggered: ${totalTriggered}, Skipped (offline): ${totalSkipped}, Errors: ${totalErrors}`);
-    console.log(`[run-scheduled-analyses] Breakdown — Firewalls: ${triggered}/${skippedOffline}skip, Domains: ${domainTriggered}/${domainSkipped}skip, Analyzers: ${analyzerTriggered}/${analyzerSkipped}skip, AttackSurface: ${attackSurfaceTriggered}, M365: ${m365AnalyzerTriggered}/${m365AnalyzerSkipped}skip, CVE: ${cveRefreshSuccess}`);
+    console.log(`[run-scheduled-analyses] Breakdown — Firewalls: ${triggered}/${skippedOffline}skip, Domains: ${domainTriggered}/${domainSkipped}skip, Analyzers: ${analyzerTriggered}/${analyzerSkipped}skip, AttackSurface: ${attackSurfaceTriggered}, M365Analyzer: ${m365AnalyzerTriggered}/${m365AnalyzerSkipped}skip, M365Compliance: ${m365ComplianceTriggered}/${m365ComplianceSkipped}skip, CVE: ${cveRefreshSuccess}`);
 
     return new Response(
       JSON.stringify({

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Calendar } from 'lucide-react';
 
-type ScheduleTable = 'analysis_schedules' | 'external_domain_schedules' | 'm365_analyzer_schedules';
+type ScheduleTable = 'analysis_schedules' | 'external_domain_schedules' | 'm365_analyzer_schedules' | 'm365_compliance_schedules';
 
 interface ScheduleDialogProps {
   open: boolean;
