@@ -139,10 +139,17 @@ export default function ExchangeAnalyzerPage() {
       if (analyzerResult.error) throw analyzerResult.error;
       // Recarregar cache local com os novos dados do exchange-dashboard
       refreshDashboard();
-    } finally {
+      // Invalidar polling de progresso para detectar o novo snapshot imediatamente
+      queryClient.invalidateQueries({ queryKey: ['m365-analyzer-progress', selectedTenantId] });
+    } catch (e) {
       setTriggering(false);
     }
   };
+
+  // Resetar triggering quando polling assumir o controle
+  useEffect(() => {
+    if (isAnalysisRunning && triggering) setTriggering(false);
+  }, [isAnalysisRunning, triggering]);
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth');
@@ -195,8 +202,8 @@ export default function ExchangeAnalyzerPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={handleTriggerAnalysis} disabled={triggering || !selectedTenantId || loading}>
-              {triggering || loading
+            <Button onClick={handleTriggerAnalysis} disabled={triggering || isAnalysisRunning || !selectedTenantId || loading}>
+              {triggering || isAnalysisRunning || loading
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
                 : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
             </Button>
