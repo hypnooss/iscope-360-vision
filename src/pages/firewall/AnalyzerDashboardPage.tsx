@@ -658,24 +658,20 @@ export default function AnalyzerDashboardPage() {
                   Tela cheia
                 </div>
               </div>
-              <Card
-                className="glass-card cursor-pointer hover:border-primary/50 transition-colors"
+              <div
+                className="max-h-[200px] overflow-hidden rounded-lg border border-border/50 opacity-90 group-hover:opacity-100 transition-opacity cursor-pointer"
                 onClick={() => setShowAttackMap(true)}
               >
-                <CardContent className="p-4">
-                  <div className="max-h-[200px] overflow-hidden rounded-md opacity-90 group-hover:opacity-100 transition-opacity">
-                    <AttackMap
-                      authFailedCountries={fwAuthCountriesFailed}
-                      authFailedVpnCountries={vpnAuthCountriesFailed}
-                      authSuccessCountries={fwAuthCountriesSuccess}
-                      authSuccessVpnCountries={vpnAuthCountriesSuccess}
-                      outboundCountries={m?.topOutboundCountries ?? []}
-                      outboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}
-                      firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
+                <AttackMap
+                  authFailedCountries={fwAuthCountriesFailed}
+                  authFailedVpnCountries={vpnAuthCountriesFailed}
+                  authSuccessCountries={fwAuthCountriesSuccess}
+                  authSuccessVpnCountries={vpnAuthCountriesSuccess}
+                  outboundCountries={m?.topOutboundCountries ?? []}
+                  outboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}
+                  firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
+                />
+              </div>
             </div>
 
             {showAttackMap && (
