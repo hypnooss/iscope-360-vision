@@ -126,13 +126,6 @@ export default function ExchangeAnalyzerPage() {
 
   const loading = dashboardLoading || analyzerLoading;
 
-  const DEFAULT_DASHBOARD_DATA: ExchangeDashboardData = {
-    mailboxes: { total: 0, overQuota: 0, forwardingEnabled: 0, autoReplyExternal: 0, newLast30d: 0, notLoggedIn30d: 0 },
-    traffic: { sent: 0, received: 0 },
-    security: { maliciousInbound: 0, phishing: 0, malware: 0, spam: 0 },
-    analyzedAt: '',
-  };
-  const effectiveDashboard = dashboardData ?? DEFAULT_DASHBOARD_DATA;
 
   const noTenants = !tenantsLoading && tenants.length === 0;
 
