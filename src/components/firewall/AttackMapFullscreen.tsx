@@ -178,45 +178,51 @@ export function AttackMapFullscreen({
       {/* Bottom stats bar */}
       <div className="absolute bottom-0 left-0 right-0 z-[1000] bg-black/70 backdrop-blur-md border-t border-white/10 px-6 py-3">
         <div className="flex items-center justify-center gap-6 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#dc2626', boxShadow: '0 0 8px rgba(220,38,38,0.6)' }} />
-            <span className="text-white/60 text-xs">Falha Auth FW</span>
-            <span className="text-white font-bold text-sm">{totalFwAuthFailed.toLocaleString()}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#f97316', boxShadow: '0 0 8px rgba(249,115,22,0.6)' }} />
-            <span className="text-white/60 text-xs">Falha Auth VPN</span>
-            <span className="text-white font-bold text-sm">{totalVpnAuthFailed.toLocaleString()}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.6)' }} />
-            <span className="text-white/60 text-xs">Sucesso Auth FW</span>
-            <span className="text-white font-bold text-sm">{totalFwAuthSuccess.toLocaleString()}</span>
-          </div>
+          {totalFwAuthFailed > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#dc2626', boxShadow: '0 0 8px rgba(220,38,38,0.6)' }} />
+              <span className="text-white/60 text-xs">{L.authFailed}</span>
+              <span className="text-white font-bold text-sm">{totalFwAuthFailed.toLocaleString()}</span>
+            </div>
+          )}
+          {totalVpnAuthFailed > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#f97316', boxShadow: '0 0 8px rgba(249,115,22,0.6)' }} />
+              <span className="text-white/60 text-xs">{L.authFailedVpn}</span>
+              <span className="text-white font-bold text-sm">{totalVpnAuthFailed.toLocaleString()}</span>
+            </div>
+          )}
+          {totalFwAuthSuccess > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.6)' }} />
+              <span className="text-white/60 text-xs">{L.authSuccess}</span>
+              <span className="text-white font-bold text-sm">{totalFwAuthSuccess.toLocaleString()}</span>
+            </div>
+          )}
           {totalVpnAuthSuccess > 0 && (
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 8px rgba(34,197,94,0.6)' }} />
-              <span className="text-white/60 text-xs">Sucesso Auth VPN</span>
+              <span className="text-white/60 text-xs">{L.authSuccessVpn}</span>
               <span className="text-white font-bold text-sm">{totalVpnAuthSuccess.toLocaleString()}</span>
             </div>
           )}
           {totalOutbound > 0 && (
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#38bdf8', boxShadow: '0 0 8px rgba(56,189,248,0.6)' }} />
-              <span className="text-white/60 text-xs">Saída Permitida</span>
+              <span className="text-white/60 text-xs">{L.outbound}</span>
               <span className="text-white font-bold text-sm">{totalOutbound.toLocaleString()}</span>
             </div>
           )}
           {totalOutboundBlocked > 0 && (
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#ef4444', boxShadow: '0 0 8px rgba(239,68,68,0.6)' }} />
-              <span className="text-white/60 text-xs">Saída Bloqueada</span>
+              <span className="text-white/60 text-xs">{L.outboundBlocked}</span>
               <span className="text-white font-bold text-sm">{totalOutboundBlocked.toLocaleString()}</span>
             </div>
           )}
           <div className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#06b6d4', boxShadow: '0 0 8px rgba(6,182,212,0.6)' }} />
-            <span className="text-white/60 text-xs">Firewall</span>
+            <span className="text-white/60 text-xs">{L.centerPoint}</span>
           </div>
         </div>
       </div>
