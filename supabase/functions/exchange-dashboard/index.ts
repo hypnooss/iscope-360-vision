@@ -226,14 +226,18 @@ Deno.serve(async (req) => {
         if (row.createdDateTime) {
           if (new Date(row.createdDateTime) >= thirtyDaysAgo) newLast30d++;
         }
-        if (row.lastActivityDate) {
-          const la = new Date(row.lastActivityDate);
-          if (la < ninetyDaysAgo) { notLoggedIn90d++; inactiveUsers90.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
-          else if (la < sixtyDaysAgo) { notLoggedIn60d++; inactiveUsers60.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
-          else if (la < thirtyDaysAgo) { notLoggedIn30d++; inactiveUsers30.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
-        } else {
-          notLoggedIn90d++;
-          inactiveUsers90.push({ name: upnJ, lastActivity: 'Nunca' });
+        const recipientTypeJ = (row.recipientType || '').toLowerCase();
+        const isNonUserMailboxJ = ['shared', 'room', 'equipment'].includes(recipientTypeJ);
+        if (!isNonUserMailboxJ) {
+          if (row.lastActivityDate) {
+            const la = new Date(row.lastActivityDate);
+            if (la < ninetyDaysAgo) { notLoggedIn90d++; inactiveUsers90.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
+            else if (la < sixtyDaysAgo) { notLoggedIn60d++; inactiveUsers60.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
+            else if (la < thirtyDaysAgo) { notLoggedIn30d++; inactiveUsers30.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
+          } else {
+            notLoggedIn90d++;
+            inactiveUsers90.push({ name: upnJ, lastActivity: 'Nunca' });
+          }
         }
       });
     } else {
