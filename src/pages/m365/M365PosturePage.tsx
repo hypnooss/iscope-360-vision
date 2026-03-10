@@ -659,7 +659,7 @@ export default function M365PosturePage() {
           open={scheduleDialogOpen}
           onOpenChange={setScheduleDialogOpen}
           entityId={selectedTenantId || ''}
-          table="m365_analyzer_schedules"
+          table="m365_compliance_schedules"
           entityColumn="tenant_record_id"
           title="Agendamento do Compliance M365"
           description="Configure a frequência de execução automática da análise de compliance para este tenant."
