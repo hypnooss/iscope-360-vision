@@ -162,6 +162,7 @@ export function AttackMap({
   firewallLocation,
   fullscreen,
   hideLegend,
+  labelMap,
 }: AttackMapProps) {
   const [tileUrl, setTileUrl] = useState(FALLBACK_TILE_URL);
   const [tileAttribution, setTileAttribution] = useState(FALLBACK_ATTRIBUTION);
