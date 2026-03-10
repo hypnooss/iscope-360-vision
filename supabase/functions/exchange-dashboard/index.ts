@@ -224,8 +224,9 @@ Deno.serve(async (req) => {
     } else if (mailboxUsageResult?.value) {
       const rows = mailboxUsageResult.value || [];
       console.log(`Mailbox usage JSON: ${rows.length} rows`);
-      totalMailboxes = rows.length;
       rows.forEach((row: any) => {
+        if (row.isDeleted) return;
+        totalMailboxes++;
         const upnJ = row.userPrincipalName || row.displayName || '';
         const used = row.storageUsedInBytes || 0;
         const quota = row.prohibitSendReceiveQuotaInBytes || 0;
