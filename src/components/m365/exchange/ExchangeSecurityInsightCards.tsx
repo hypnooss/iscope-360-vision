@@ -180,7 +180,7 @@ export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecu
                   {selectedInsight.details && (
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground mb-1">❓ Por que isso é um risco?</p>
-                      <p className="text-sm bg-muted/50 rounded-lg p-3">{selectedInsight.details}</p>
+                      <p className="text-sm">{selectedInsight.details}</p>
                     </div>
                   )}
 
