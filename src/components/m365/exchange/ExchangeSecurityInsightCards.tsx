@@ -215,7 +215,7 @@ export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecu
                     return text ? (
                       <div>
                         <p className="text-xs font-semibold text-muted-foreground mb-1">💼 Impacto no negócio</p>
-                        <p className="text-sm bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">{text}</p>
+                        <p className="text-sm text-muted-foreground">{text}</p>
                       </div>
                     ) : null;
                   })()}
