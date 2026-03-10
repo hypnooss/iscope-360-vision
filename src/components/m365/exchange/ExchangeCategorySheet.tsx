@@ -527,6 +527,52 @@ export function ExchangeCategorySheet({
     );
   };
 
+  const renderOverQuotaContent = () => {
+    const totalMb = dashboardData?.mailboxes.total || 1;
+    const overQuotaCount = dashboardData?.mailboxes.overQuota || 0;
+    const overQuotaUsers = dashboardData?.mailboxes.overQuotaUsers || [];
+
+    return (
+      <ScrollArea className="h-[calc(100vh-12rem)] mt-4">
+        <div className="p-6 space-y-4">
+          <Badge variant="outline" className="bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30">
+            {overQuotaCount.toLocaleString()} de {totalMb.toLocaleString()} mailboxes ({totalMb > 0 ? ((overQuotaCount / totalMb) * 100).toFixed(1) : 0}%)
+          </Badge>
+          <Card>
+            <CardHeader className="pb-2 pt-4">
+              <CardTitle className="text-sm font-medium">Mailboxes Acima da Cota</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {overQuotaUsers.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">Sem dados disponíveis</p>
+              ) : (
+                overQuotaUsers.slice(0, 50).map((u, idx) => (
+                  <div key={idx} className="py-3 border-b border-border/40 last:border-0 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <HardDrive className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-sm truncate">{u.name}</span>
+                      </div>
+                      <span className={cn('text-xs font-semibold shrink-0 ml-2', u.usagePct >= 100 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400')}>
+                        {u.usagePct}%
+                      </span>
+                    </div>
+                    <div className="pl-6 space-y-1">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{u.usedGB} GB / {u.quotaGB} GB</span>
+                      </div>
+                      <Progress value={Math.min(u.usagePct, 100)} className="h-1.5" />
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </ScrollArea>
+    );
+  };
+
   const renderCategoryContent = () => {
     switch (category) {
       case 'email_traffic':

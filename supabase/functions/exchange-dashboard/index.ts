@@ -338,6 +338,7 @@ Deno.serve(async (req) => {
       mailboxes: {
         total: totalMailboxes,
         overQuota,
+        overQuotaUsers: overQuotaUsers.slice(0, 50),
         forwardingEnabled,
         autoReplyExternal,
         autoReplyUsers,
