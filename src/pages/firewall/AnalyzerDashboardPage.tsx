@@ -647,7 +647,8 @@ export default function AnalyzerDashboardPage() {
                   />
                 </div>
               </CardContent>
-            </Card>
+              </Card>
+            </div>
 
             {showAttackMap && (
               <AttackMapFullscreen
