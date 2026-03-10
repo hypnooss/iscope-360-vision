@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 export interface ExchangeDashboardData {
-  mailboxes: { total: number; overQuota: number; forwardingEnabled: number; autoReplyExternal: number; newLast30d: number; notLoggedIn30d: number };
+  mailboxes: { total: number; overQuota: number; forwardingEnabled: number; autoReplyExternal: number; newLast30d: number; notLoggedIn30d: number; notLoggedIn60d: number; notLoggedIn90d: number; inactiveUsers30?: { name: string; lastActivity: string }[]; inactiveUsers60?: { name: string; lastActivity: string }[]; inactiveUsers90?: { name: string; lastActivity: string }[] };
   traffic: { sent: number; received: number };
   security: { maliciousInbound: number; phishing: number; malware: number; spam: number };
   analyzedAt: string;
@@ -47,7 +47,7 @@ export function useExchangeDashboard({ tenantRecordId }: UseExchangeDashboardOpt
   }, [tenantRecordId]);
 
   const mapToData = (cache: any, cachedAt?: string): ExchangeDashboardData => ({
-    mailboxes: cache.mailboxes || { total: 0, overQuota: 0, forwardingEnabled: 0, autoReplyExternal: 0, newLast30d: 0, notLoggedIn30d: 0 },
+    mailboxes: cache.mailboxes || { total: 0, overQuota: 0, forwardingEnabled: 0, autoReplyExternal: 0, newLast30d: 0, notLoggedIn30d: 0, notLoggedIn60d: 0, notLoggedIn90d: 0 },
     traffic: cache.traffic || { sent: 0, received: 0 },
     security: cache.security || { maliciousInbound: 0, phishing: 0, malware: 0, spam: 0 },
     analyzedAt: cache.analyzedAt || cachedAt || '',

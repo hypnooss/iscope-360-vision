@@ -149,7 +149,14 @@ Deno.serve(async (req) => {
     let overQuota = 0;
     let newLast30d = 0;
     let notLoggedIn30d = 0;
+    let notLoggedIn60d = 0;
+    let notLoggedIn90d = 0;
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const inactiveUsers30: { name: string; lastActivity: string }[] = [];
+    const inactiveUsers60: { name: string; lastActivity: string }[] = [];
+    const inactiveUsers90: { name: string; lastActivity: string }[] = [];
 
     // Reports return CSV via _csv wrapper
     if (mailboxUsageResult?._csv) {
@@ -167,11 +174,29 @@ Deno.serve(async (req) => {
           const created = new Date(row['Created Date']);
           if (created >= thirtyDaysAgo) newLast30d++;
         }
+        const upn = row['User Principal Name'] || row['Display Name'] || '';
         if (row['Last Activity Date']) {
           const lastActivity = new Date(row['Last Activity Date']);
-          if (lastActivity < thirtyDaysAgo) notLoggedIn30d++;
+          const lastStr = row['Last Activity Date'];
+          if (lastActivity < thirtyDaysAgo) {
+            notLoggedIn30d++;
+            inactiveUsers30.push({ name: upn, lastActivity: lastStr });
+          }
+          if (lastActivity < sixtyDaysAgo) {
+            notLoggedIn60d++;
+            inactiveUsers60.push({ name: upn, lastActivity: lastStr });
+          }
+          if (lastActivity < ninetyDaysAgo) {
+            notLoggedIn90d++;
+            inactiveUsers90.push({ name: upn, lastActivity: lastStr });
+          }
         } else {
           notLoggedIn30d++;
+          notLoggedIn60d++;
+          notLoggedIn90d++;
+          inactiveUsers30.push({ name: upn, lastActivity: 'Nunca' });
+          inactiveUsers60.push({ name: upn, lastActivity: 'Nunca' });
+          inactiveUsers90.push({ name: upn, lastActivity: 'Nunca' });
         }
       });
     } else if (mailboxUsageResult?.value) {
@@ -185,10 +210,17 @@ Deno.serve(async (req) => {
         if (row.createdDateTime) {
           if (new Date(row.createdDateTime) >= thirtyDaysAgo) newLast30d++;
         }
+        const upnJ = row.userPrincipalName || row.displayName || '';
         if (row.lastActivityDate) {
-          if (new Date(row.lastActivityDate) < thirtyDaysAgo) notLoggedIn30d++;
+          const la = new Date(row.lastActivityDate);
+          if (la < thirtyDaysAgo) { notLoggedIn30d++; inactiveUsers30.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
+          if (la < sixtyDaysAgo) { notLoggedIn60d++; inactiveUsers60.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
+          if (la < ninetyDaysAgo) { notLoggedIn90d++; inactiveUsers90.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
         } else {
-          notLoggedIn30d++;
+          notLoggedIn30d++; notLoggedIn60d++; notLoggedIn90d++;
+          inactiveUsers30.push({ name: upnJ, lastActivity: 'Nunca' });
+          inactiveUsers60.push({ name: upnJ, lastActivity: 'Nunca' });
+          inactiveUsers90.push({ name: upnJ, lastActivity: 'Nunca' });
         }
       });
     } else {
@@ -294,6 +326,11 @@ Deno.serve(async (req) => {
         autoReplyUsers,
         newLast30d,
         notLoggedIn30d,
+        notLoggedIn60d,
+        notLoggedIn90d,
+        inactiveUsers30: inactiveUsers30.slice(0, 50),
+        inactiveUsers60: inactiveUsers60.slice(0, 50),
+        inactiveUsers90: inactiveUsers90.slice(0, 50),
       },
       traffic: { sent, received },
       security: {
