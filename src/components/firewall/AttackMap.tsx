@@ -311,7 +311,7 @@ export function AttackMap({
       </MapContainer>
 
       {/* Legend — inline mode only */}
-      {!fullscreen && (
+      {!fullscreen && !hideLegend && (
         <div className="flex items-center gap-3 mt-3 justify-center text-xs text-muted-foreground flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.outbound_blocked }} />

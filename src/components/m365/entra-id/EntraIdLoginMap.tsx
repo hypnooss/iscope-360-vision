@@ -1,9 +1,7 @@
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { AttackMap } from '@/components/firewall/AttackMap';
 import { AttackMapFullscreen } from '@/components/firewall/AttackMapFullscreen';
-import { Maximize2, MapPin } from 'lucide-react';
+import { Maximize2 } from 'lucide-react';
 
 interface EntraIdLoginMapProps {
   loginCountriesSuccess: { country: string; count: number }[];
@@ -21,33 +19,42 @@ export function EntraIdLoginMap({ loginCountriesSuccess, loginCountriesFailed }:
 
   return (
     <>
-      <Card className="glass-card overflow-hidden">
-        <CardHeader className="pb-2 flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-primary" />
-            <CardTitle className="text-base">Mapa de Origens de Login</CardTitle>
-          </div>
-          <Button variant="ghost" size="icon" onClick={() => setFullscreen(true)} title="Tela cheia">
-            <Maximize2 className="w-4 h-4" />
-          </Button>
-        </CardHeader>
-        <CardContent className="p-0">
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Mapa de Conexões
+          </h2>
+          <button
+            onClick={() => setFullscreen(true)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            Tela cheia
+          </button>
+        </div>
+
+        <div
+          className="max-h-[200px] overflow-hidden rounded-lg border border-border/50 cursor-pointer"
+          onClick={() => setFullscreen(true)}
+        >
           <AttackMap
             authFailedCountries={loginCountriesFailed}
             authSuccessCountries={loginCountriesSuccess}
+            hideLegend
           />
-          <div className="flex items-center gap-4 justify-center py-3 text-xs text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#22c55e' }} />
-              Login com Sucesso ({totalSuccess.toLocaleString()})
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: '#dc2626' }} />
-              Login com Falha ({totalFailed.toLocaleString()})
-            </div>
+        </div>
+
+        <div className="flex items-center gap-4 justify-center mt-3 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full inline-block bg-green-500" />
+            Login com Sucesso ({totalSuccess.toLocaleString()})
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full inline-block bg-red-600" />
+            Login com Falha ({totalFailed.toLocaleString()})
+          </div>
+        </div>
+      </div>
 
       {fullscreen && (
         <AttackMapFullscreen
