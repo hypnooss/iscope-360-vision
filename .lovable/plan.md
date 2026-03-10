@@ -1,31 +1,18 @@
+# Status: ✅ Confirmado
 
+## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-## Plan: Standardize Firewall Fullscreen Top Bar
+### Confirmação
 
-Replace the current "Voltar" ghost button + right-aligned info in `AttackMapFullscreen.tsx` with a header bar matching the Entra ID pattern:
+O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
 
-### Changes in `src/components/firewall/AttackMapFullscreen.tsx`
+| # | Edge Function | Fonte de dados | Tipo | Resultado |
+|---|--------------|----------------|------|-----------|
+| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
+| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
 
-1. **Replace the top bar** (lines 105-125) — swap the `absolute` overlay with a proper flex row with `border-b border-border`, matching Entra ID's style:
-   - Left side: Title **"Firewall — Mapa de Conexões"**
-   - Right side: X (close) button instead of "Voltar"
-   
-2. **Remove** the `ArrowLeft` import (no longer needed)
+### Fix já aplicado
+- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
 
-3. **Adjust layout**: Change from `absolute` top bar to a normal flow `div` with `p-4 border-b border-border` so the map sits below it (same as Entra ID). The map `flex-1` area will naturally fill below.
-
-4. **Keep** firewallName and lastAnalysis info — move them next to the title as subtitle text.
-
-### Visual result
-```text
-┌──────────────────────────────────────────────────┐
-│ Firewall — Mapa de Conexões  (name • date)   [X]│  ← border-b
-│                                                  │
-│                    MAP                           │
-│                                                  │
-│              [bottom stats bar]                  │
-└──────────────────────────────────────────────────┘
-```
-
-Single file change, no impact on map rendering or other components.
-
+### Melhoria futura sugerida
+- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AttackMap } from './AttackMap';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { X } from 'lucide-react';
 import { getCountryCode } from '@/lib/countryUtils';
 import type { TopCountry, TopBlockedIP } from '@/types/analyzerInsights';
 import 'flag-icons/css/flag-icons.min.css';
@@ -103,18 +103,14 @@ export function AttackMapFullscreen({
   return createPortal(
     <div className="fixed inset-0 z-[9999] animate-fade-in flex flex-col" style={{ background: '#222222' }}>
       {/* Top bar */}
-      <div className="absolute top-0 left-0 right-0 z-[1000] flex items-center justify-between px-6 py-4">
-        <Button
-          variant="ghost"
-          onClick={onClose}
-          className="text-white/80 hover:text-white hover:bg-white/10"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Voltar
-        </Button>
+      <div className="flex items-center justify-between px-6 py-3 border-b border-white/10 bg-black/40 backdrop-blur-md">
         <div className="flex items-center gap-3">
+          <h1 className="text-white text-base font-semibold">Firewall — Mapa de Conexões</h1>
           {firewallName && (
-            <span className="text-white/70 text-sm font-medium">{firewallName}</span>
+            <span className="text-white/50 text-sm">•</span>
+          )}
+          {firewallName && (
+            <span className="text-white/70 text-sm">{firewallName}</span>
           )}
           {lastAnalysis && (
             <span className="text-white/40 text-xs">
@@ -122,6 +118,14 @@ export function AttackMapFullscreen({
             </span>
           )}
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="text-white/60 hover:text-white hover:bg-white/10 h-8 w-8"
+        >
+          <X className="w-4 h-4" />
+        </Button>
       </div>
 
       {/* Map */}
