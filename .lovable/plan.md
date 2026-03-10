@@ -1,18 +1,12 @@
-# Status: ✅ Confirmado
 
-## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-### Confirmação
+## Renomear título do card "Serviços Expostos" → "Vulnerabilidades Encontradas"
 
-O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
+### Alteração
 
-| # | Edge Function | Fonte de dados | Tipo | Resultado |
-|---|--------------|----------------|------|-----------|
-| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
-| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
+**Arquivo: `src/components/surface/TopFindingsList.tsx`** (linha 57)
 
-### Fix já aplicado
-- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
+Trocar o texto `Serviços Expostos` por `Vulnerabilidades Encontradas` no `<CardTitle>`.
 
-### Melhoria futura sugerida
-- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
+Também atualizar o texto do botão "Ver todos os serviços expostos →" (linha 96) para "Ver todas as vulnerabilidades →".
+
