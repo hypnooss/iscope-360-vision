@@ -280,6 +280,8 @@ export default function AccountPage() {
             </Card>
           </div>
         </div>
+
+        <NotificationPreferences />
       </div>
     </AppLayout>
   );
