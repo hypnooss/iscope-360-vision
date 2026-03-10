@@ -197,6 +197,11 @@ export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
   'exfiltration',
   'operational_risks',
   'threat_protection',
+  'teams_governance',
+  'sharepoint_exposure',
+  'guest_access',
+  'external_sharing',
+  'collaboration_risk',
 ];
 
 export function groupM365AnalyzerInsightsByCategory(
