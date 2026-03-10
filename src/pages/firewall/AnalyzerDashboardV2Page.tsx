@@ -628,8 +628,8 @@ export default function AnalyzerDashboardV2Page() {
 
         {/* Category Grid */}
         {snapshot && !isLoading && (
-          <div className="mb-6">
-            <AnalyzerCategoryGrid 
+          <div>
+            <AnalyzerCategoryGrid
               snapshot={snapshot} 
               configChangesTotal30d={configChangesCount30d ?? undefined}
               onCategoryClick={(category) => {
