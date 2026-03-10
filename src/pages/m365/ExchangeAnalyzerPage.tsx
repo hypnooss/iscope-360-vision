@@ -105,7 +105,7 @@ export default function ExchangeAnalyzerPage() {
     if (!selectedTenantId) return;
     setTriggering(true);
     try {
-      const { error } = await supabase.functions.invoke('m365-exchange-analyze', {
+      const { error } = await supabase.functions.invoke('trigger-m365-analyzer', {
         body: { tenantRecordId: selectedTenantId },
       });
       if (error) throw error;
@@ -232,7 +232,7 @@ export default function ExchangeAnalyzerPage() {
         )}
 
         {/* Threat Protection */}
-        {selectedTenantId && !loading && (
+        {selectedTenantId && !loading && dashboardData && (
           <ExchangeThreatProtectionSection
             data={analyzerSnapshot?.metrics?.threatProtection ?? null}
             loading={analyzerLoading}
@@ -240,7 +240,7 @@ export default function ExchangeAnalyzerPage() {
         )}
 
         {/* Security Insights (operational only) */}
-        {selectedTenantId && !analyzerLoading && (
+        {selectedTenantId && !analyzerLoading && dashboardData && (
           <ExchangeSecurityInsightCards insights={exchangeInsights} loading={analyzerLoading} />
         )}
 
