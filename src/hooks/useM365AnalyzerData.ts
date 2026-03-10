@@ -232,7 +232,7 @@ export interface ScoreHistoryPoint {
   score: number;
 }
 
-function mergeRankingArrays<T extends Record<string, any>>(
+function mergeRankingArrays(
   snapshots: M365AnalyzerSnapshot[],
   path: string[],
   labelField: string,
