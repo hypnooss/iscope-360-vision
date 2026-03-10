@@ -68,8 +68,10 @@ export function AttackMapFullscreen({
   topBlockedIPs = [],
   topOutboundCountries = [],
   topOutboundBlockedCountries = [],
+  labelMap: labelMapProp,
   onClose,
 }: AttackMapFullscreenProps) {
+  const L = { ...DEFAULT_LABELS, ...labelMapProp };
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
