@@ -88,6 +88,21 @@ export function SystemAlertBanner() {
   const [dismissedLocally, setDismissedLocally] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Fetch notification preferences
+  const { data: notifPrefs } = useQuery({
+    queryKey: PREFS_QUERY_KEY,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('notification_preferences')
+        .select('m365_analyzer_critical, m365_general, firewall_analysis, external_domain_analysis, attack_surface')
+        .eq('user_id', user!.id)
+        .maybeSingle();
+      return (data as NotifPrefs | null) ?? null;
+    },
+    enabled: !!user?.id,
+    staleTime: 120_000,
+  });
+
   // Single useQuery replaces manual fetching + polling
   const { data: alerts = [] } = useQuery({
     queryKey: ALERT_QUERY_KEY,
