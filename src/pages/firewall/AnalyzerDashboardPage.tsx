@@ -610,8 +610,8 @@ export default function AnalyzerDashboardPage() {
 
         {/* Category Grid */}
         {snapshot && !isLoading && (
-          <div className="mb-6">
-            <AnalyzerCategoryGrid 
+          <div>
+            <AnalyzerCategoryGrid
               snapshot={snapshot} 
               onCategoryClick={(category) => {
                 setSelectedCategory(category);
