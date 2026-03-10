@@ -72,6 +72,7 @@ const M365AnalyzerDashboardPage = lazy(() => import("./pages/m365/M365AnalyzerDa
 const M365ServiceHealthPage = lazy(() => import("./pages/m365/M365ServiceHealthPage"));
 const ExchangeAnalyzerPage = lazy(() => import("./pages/m365/ExchangeAnalyzerPage"));
 const EntraIdAnalyzerPage = lazy(() => import("./pages/m365/EntraIdAnalyzerPage"));
+const TeamsAnalyzerPage = lazy(() => import("./pages/m365/TeamsAnalyzerPage"));
 
 // Preview pages (temporary)
 const EnvironmentPage = lazy(() => import("./pages/EnvironmentPage"));
