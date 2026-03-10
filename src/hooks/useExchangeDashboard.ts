@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 export interface ExchangeDashboardData {
-  mailboxes: { total: number; overQuota: number; forwardingEnabled: number; autoReplyExternal: number; newLast30d: number; notLoggedIn30d: number; notLoggedIn60d: number; notLoggedIn90d: number; inactiveUsers30?: { name: string; lastActivity: string }[]; inactiveUsers60?: { name: string; lastActivity: string }[]; inactiveUsers90?: { name: string; lastActivity: string }[] };
+  mailboxes: { total: number; overQuota: number; overQuotaUsers?: { name: string; usedGB: number; quotaGB: number; usagePct: number }[]; forwardingEnabled: number; autoReplyExternal: number; newLast30d: number; notLoggedIn30d: number; notLoggedIn60d: number; notLoggedIn90d: number; inactiveUsers30?: { name: string; lastActivity: string }[]; inactiveUsers60?: { name: string; lastActivity: string }[]; inactiveUsers90?: { name: string; lastActivity: string }[] };
   traffic: { sent: number; received: number };
   security: { maliciousInbound: number; phishing: number; malware: number; spam: number };
   analyzedAt: string;

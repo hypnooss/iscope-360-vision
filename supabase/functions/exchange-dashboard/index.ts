@@ -147,6 +147,7 @@ Deno.serve(async (req) => {
     // Parse mailbox usage data
     let totalMailboxes = 0;
     let overQuota = 0;
+    const overQuotaUsers: { name: string; usedGB: number; quotaGB: number; usagePct: number }[] = [];
     let newLast30d = 0;
     let notLoggedIn30d = 0;
     let notLoggedIn60d = 0;
@@ -168,7 +169,15 @@ Deno.serve(async (req) => {
         // Check storage quota (CSV field names)
         const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
         const quota = parseInt(row['Prohibit Send/Receive Quota (Byte)'] || '0', 10);
-        if (quota > 0 && used >= quota * 0.9) overQuota++;
+        if (quota > 0 && used >= quota * 0.9) {
+          overQuota++;
+          overQuotaUsers.push({
+            name: upn,
+            usedGB: Math.round(used / (1024**3) * 100) / 100,
+            quotaGB: Math.round(quota / (1024**3) * 100) / 100,
+            usagePct: Math.round((used / quota) * 1000) / 10,
+          });
+        }
         
         if (row['Created Date']) {
           const created = new Date(row['Created Date']);
@@ -206,7 +215,15 @@ Deno.serve(async (req) => {
       rows.forEach((row: any) => {
         const used = row.storageUsedInBytes || 0;
         const quota = row.prohibitSendReceiveQuotaInBytes || 0;
-        if (quota > 0 && used >= quota * 0.9) overQuota++;
+        if (quota > 0 && used >= quota * 0.9) {
+          overQuota++;
+          overQuotaUsers.push({
+            name: upnJ,
+            usedGB: Math.round(used / (1024**3) * 100) / 100,
+            quotaGB: Math.round(quota / (1024**3) * 100) / 100,
+            usagePct: Math.round((used / quota) * 1000) / 10,
+          });
+        }
         if (row.createdDateTime) {
           if (new Date(row.createdDateTime) >= thirtyDaysAgo) newLast30d++;
         }
@@ -321,6 +338,7 @@ Deno.serve(async (req) => {
       mailboxes: {
         total: totalMailboxes,
         overQuota,
+        overQuotaUsers: overQuotaUsers.slice(0, 50),
         forwardingEnabled,
         autoReplyExternal,
         autoReplyUsers,
