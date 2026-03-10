@@ -283,7 +283,7 @@ function aggregateThreatProtection(snapshots: M365AnalyzerSnapshot[]): M365Analy
     totalFiltered,
     topSpamSenderDomains: mergeRankingArrays(snapshots, ['threatProtection', 'topSpamSenderDomains'], 'domain'),
     topPhishingTargets: mergeRankingArrays(snapshots, ['threatProtection', 'topPhishingTargets'], 'user'),
-    topMalwareSenders: mergeRankingArrays(snapshots, ['threatProtection', 'topMalwareSenders'], 'sender'),
+    topMalwareSenders: mergeRankingArrays(snapshots, ['threatProtection', 'topMalwareSenders'], 'domain'),
     topSpamRecipients: mergeRankingArrays(snapshots, ['threatProtection', 'topSpamRecipients'], 'user'),
     deliveryBreakdown: base.deliveryBreakdown,
     policyStatus: base.policyStatus,
