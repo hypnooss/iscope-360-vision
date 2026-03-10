@@ -28,7 +28,6 @@ interface ExchangeCategorySheetProps {
 const CATEGORY_META: Record<ExchangeOperationalCategory, {
   label: string;
   icon: React.ComponentType<CategoryIconProps>;
-  icon: React.ComponentType<{ className?: string }>;
   colorHex: string;
   description: string;
 }> = {
