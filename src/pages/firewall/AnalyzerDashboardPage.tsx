@@ -28,6 +28,7 @@ import { AttackMapFullscreen } from '@/components/firewall/AttackMapFullscreen';
 import { AnalyzerStatsCards } from '@/components/firewall/AnalyzerStatsCards';
 import { AnalyzerCategoryGrid } from '@/components/firewall/AnalyzerCategoryGrid';
 import { AnalyzerCategorySheet } from '@/components/firewall/AnalyzerCategorySheet';
+import { SecurityInsightCards } from '@/components/firewall/SecurityInsightCards';
 import { cn } from '@/lib/utils';
 import {
   Shield, AlertTriangle, AlertOctagon, Info, Play,
@@ -214,6 +215,24 @@ export default function AnalyzerDashboardPage() {
 
   const { data: snapshot, isLoading, refetch } = useLatestAnalyzerSnapshot(selectedFirewall || undefined);
 
+  // Count config changes from last 30 days (matches the dedicated page)
+  const { data: configChangesCount30d } = useQuery({
+    queryKey: ['analyzer-config-changes-count-30d', selectedFirewall],
+    queryFn: async () => {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const { count, error } = await supabase
+        .from('analyzer_config_changes')
+        .select('id', { count: 'exact', head: true })
+        .eq('firewall_id', selectedFirewall!)
+        .gte('changed_at', thirtyDaysAgo.toISOString());
+      if (error) throw error;
+      return count ?? 0;
+    },
+    enabled: !!selectedFirewall,
+    staleTime: 1000 * 60 * 5,
+  });
+
   const { data: progress, refetch: refetchProgress, isFetching: isRefetchingProgress } = useAnalyzerProgress(selectedFirewall || undefined);
   const isRunning = progress?.status === 'pending' || progress?.status === 'processing';
 
@@ -235,7 +254,7 @@ export default function AnalyzerDashboardPage() {
 
   // Fetch firewall URL for geolocation
   const { data: firewallUrl } = useQuery({
-    queryKey: ['firewall-url', selectedFirewall],
+    queryKey: ['firewalls', selectedFirewall],
     queryFn: async () => {
       const { data } = await supabase.from('firewalls').select('fortigate_url, name, geo_latitude, geo_longitude').eq('id', selectedFirewall).single();
       return data as any;
@@ -474,7 +493,6 @@ export default function AnalyzerDashboardPage() {
 
   const m = snapshot?.metrics;
 
-
   // FW-specific auth rankings — no cross-fallbacks to avoid mixing FW and VPN data
   const fwAuthIPsFailed = m?.topFwAuthIPsFailed ?? [];
   const fwAuthIPsSuccess = m?.topFwAuthIPsSuccess ?? [];
@@ -613,7 +631,12 @@ export default function AnalyzerDashboardPage() {
           <div>
             <AnalyzerCategoryGrid
               snapshot={snapshot} 
+              configChangesTotal30d={configChangesCount30d ?? undefined}
               onCategoryClick={(category) => {
+                if (category === 'config_changes') {
+                  navigate('/scope-firewall/analyzer/config-changes');
+                  return;
+                }
                 setSelectedCategory(category);
                 setCategorySheetOpen(true);
               }} 
@@ -634,19 +657,19 @@ export default function AnalyzerDashboardPage() {
                   <Maximize2 className="w-3.5 h-3.5" />
                   Tela cheia
                 </div>
-              <CardContent className="p-4 pt-0">
-                <div className="max-h-[200px] overflow-hidden rounded-md opacity-90 group-hover:opacity-100 transition-opacity">
-                <AttackMap
-                    authFailedCountries={fwAuthCountriesFailed}
-                    authFailedVpnCountries={vpnAuthCountriesFailed}
-                    authSuccessCountries={fwAuthCountriesSuccess}
-                    authSuccessVpnCountries={vpnAuthCountriesSuccess}
-                    outboundCountries={m?.topOutboundCountries ?? []}
-                    outboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}
-                    firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
-                  />
-                </div>
-              </CardContent>
+                <CardContent className="p-4">
+                  <div className="max-h-[200px] overflow-hidden rounded-md opacity-90 group-hover:opacity-100 transition-opacity">
+                    <AttackMap
+                      authFailedCountries={fwAuthCountriesFailed}
+                      authFailedVpnCountries={vpnAuthCountriesFailed}
+                      authSuccessCountries={fwAuthCountriesSuccess}
+                      authSuccessVpnCountries={vpnAuthCountriesSuccess}
+                      outboundCountries={m?.topOutboundCountries ?? []}
+                      outboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}
+                      firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
+                    />
+                  </div>
+                </CardContent>
               </Card>
             </div>
 
@@ -676,441 +699,115 @@ export default function AnalyzerDashboardPage() {
           </>
         )}
 
-        {/* Widgets Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Top IPs - Tráfego - Saída Permitida / Bloqueada */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ExternalLink className="w-4 h-4 text-primary" />
-                Top IPs - Tráfego
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
-                <Tabs defaultValue="blocked">
-                  <TabsList className="mb-3 flex-wrap h-auto gap-1">
-                    <TabsTrigger value="blocked">Saída Bloqueada</TabsTrigger>
-                    <TabsTrigger value="allowed">Saída Permitida</TabsTrigger>
-                    <TabsTrigger value="inbound_blocked">Entrada Bloqueada</TabsTrigger>
-                    <TabsTrigger value="inbound_allowed">Entrada Permitida</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="blocked">
-                    <IPListWidget ips={m?.topOutboundBlockedIPs ?? []} />
-                  </TabsContent>
-                  <TabsContent value="allowed">
-                    <IPListWidget ips={m?.topOutboundIPs ?? []} />
-                  </TabsContent>
-                  <TabsContent value="inbound_blocked">
-                    <IPListWidget ips={m?.topInboundBlockedIPs ?? []} />
-                  </TabsContent>
-                  <TabsContent value="inbound_allowed">
-                    <IPListWidget ips={m?.topInboundAllowedIPs ?? []} />
-                  </TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
+        {/* Security Insights - Educational Cards */}
+        {snapshot && !isLoading && (
+          <SecurityInsightCards snapshot={snapshot} />
+        )}
 
-          {/* Top Countries - Tráfego */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Globe className="w-4 h-4 text-primary" />
-                Top Países - Tráfego
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
-                <Tabs defaultValue="outbound_blocked">
-                  <TabsList className="mb-3 flex-wrap h-auto gap-1">
-                    <TabsTrigger value="outbound_blocked">Saída Bloqueada</TabsTrigger>
-                    <TabsTrigger value="outbound_allowed">Saída Permitida</TabsTrigger>
-                    <TabsTrigger value="inbound_blocked">Entrada Bloqueada</TabsTrigger>
-                    <TabsTrigger value="inbound_allowed">Entrada Permitida</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="outbound_blocked">
-                    <CountryListWidget countries={m?.topOutboundBlockedCountries ?? []} />
-                  </TabsContent>
-                  <TabsContent value="outbound_allowed">
-                    <CountryListWidget countries={m?.topOutboundCountries ?? []} />
-                  </TabsContent>
-                  <TabsContent value="inbound_blocked">
-                    <CountryListWidget countries={m?.topInboundBlockedCountries ?? []} />
-                  </TabsContent>
-                  <TabsContent value="inbound_allowed">
-                    <CountryListWidget countries={m?.topInboundAllowedCountries ?? []} />
-                  </TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
+        {!selectedFirewall && (
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>Selecione um firewall para visualizar os insights de segurança.</AlertDescription>
+          </Alert>
+        )}
 
-          {/* Top IPs - Auth Firewall */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <KeyRound className="w-4 h-4 text-warning" />
-                Top IPs - Auth Firewall
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
-                <Tabs defaultValue="failed">
-                  <TabsList className="mb-3">
-                    <TabsTrigger value="failed">Falhas</TabsTrigger>
-                    <TabsTrigger value="success">Sucessos</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="failed"><IPListWidget ips={fwAuthIPsFailed} /></TabsContent>
-                  <TabsContent value="success"><IPListWidget ips={fwAuthIPsSuccess} /></TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Top Países - Auth Firewall */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <KeyRound className="w-4 h-4 text-warning" />
-                Top Países - Auth Firewall
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
-                <Tabs defaultValue="failed">
-                  <TabsList className="mb-3">
-                    <TabsTrigger value="failed">Falhas</TabsTrigger>
-                    <TabsTrigger value="success">Sucessos</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="failed"><CountryListWidget countries={fwAuthCountriesFailed} /></TabsContent>
-                  <TabsContent value="success"><CountryListWidget countries={fwAuthCountriesSuccess} /></TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Top IPs - Auth VPN */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Wifi className="w-4 h-4 text-primary" />
-                Top IPs - Auth VPN
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
-                <Tabs defaultValue="failed">
-                  <TabsList className="mb-3">
-                    <TabsTrigger value="failed">Falhas</TabsTrigger>
-                    <TabsTrigger value="success">Sucessos</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="failed"><IPListWidget ips={vpnAuthIPsFailed} /></TabsContent>
-                  <TabsContent value="success"><IPListWidget ips={vpnAuthIPsSuccess} /></TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Top Países - Auth VPN */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Wifi className="w-4 h-4 text-warning" />
-                Top Países - Auth VPN
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
-                <Tabs defaultValue="failed">
-                  <TabsList className="mb-3">
-                    <TabsTrigger value="failed">Falhas</TabsTrigger>
-                    <TabsTrigger value="success">Sucessos</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="failed"><CountryListWidget countries={vpnAuthCountriesFailed} /></TabsContent>
-                  <TabsContent value="success"><CountryListWidget countries={vpnAuthCountriesSuccess} /></TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
-
-
-          {/* Top Web Filter Categories */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Filter className="w-4 h-4 text-primary" />
-                Web Filter - Top Categorias Bloqueadas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
-                <Tabs defaultValue="categories">
-                  <TabsList className="mb-3">
-                    <TabsTrigger value="categories">Categorias</TabsTrigger>
-                    <TabsTrigger value="users">Usuários/IPs</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="categories">
-                    <RankingListWidget items={m?.topWebFilterCategories ?? []} labelKey="category" />
-                  </TabsContent>
-                  <TabsContent value="users">
-                    <RankingListWidget items={m?.topWebFilterUsers ?? []} labelKey="user" />
-                  </TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Top App Control */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <AppWindow className="w-4 h-4 text-primary" />
-                Application Control - Top Aplicações Bloqueadas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
-                <Tabs defaultValue="apps">
-                  <TabsList className="mb-3">
-                    <TabsTrigger value="apps">Aplicações</TabsTrigger>
-                    <TabsTrigger value="users">Usuários/IPs</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="apps">
-                    <RankingListWidget items={(m?.topAppControlApps ?? []).map(a => ({ ...a, category: a.category }))} labelKey="app" />
-                  </TabsContent>
-                  <TabsContent value="users">
-                    <RankingListWidget items={m?.topAppControlUsers ?? []} labelKey="user" />
-                  </TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Anomalies */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Zap className="w-4 h-4 text-primary" />
-                IPS/IDS - Anomalias de Rede
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div> : (
-                <Tabs defaultValue="types">
-                  <TabsList className="mb-3">
-                    <TabsTrigger value="types">Tipos</TabsTrigger>
-                    <TabsTrigger value="sources">IPs Origem</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="types">
-                    <RankingListWidget items={m?.topAnomalyTypes ?? []} labelKey="category" />
-                  </TabsContent>
-                  <TabsContent value="sources">
-                    <IPListWidget ips={m?.topAnomalySources ?? []} />
-                  </TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Botnet Domains */}
-          {(m?.botnetDomains?.length ?? 0) > 0 && (
-            <Card className="glass-card border-destructive/30">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Bug className="w-4 h-4 text-destructive" />
-                  Domínios de Botnet Detectados
-                  <Badge variant="destructive" className="ml-auto text-xs">{m?.botnetDetections ?? 0}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <RankingListWidget items={(m?.botnetDomains ?? []).map(d => ({ domain: d.domain, count: d.count }))} labelKey="domain" />
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Interface Bandwidth */}
-          {(m?.interfaceBandwidth?.length ?? 0) > 0 && (
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Radio className="w-4 h-4 text-primary" />
-                  Bandwidth por Interface
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-1">
-                  {(m?.interfaceBandwidth ?? []).slice(0, 10).map((iface, i) => {
-                    const totalBytes = iface.tx_bytes + iface.rx_bytes;
-                    const formatBytes = (b: number) => {
-                      if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`;
-                      if (b >= 1e6) return `${(b / 1e6).toFixed(1)} MB`;
-                      if (b >= 1e3) return `${(b / 1e3).toFixed(1)} KB`;
-                      return `${b} B`;
-                    };
-                    return (
-                      <div key={i} className="flex items-center gap-3 py-2 px-2 rounded-md hover:bg-secondary/50 transition-colors">
-                        <span className="w-5 h-5 flex items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground shrink-0">
-                          {i + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium text-foreground">{iface.name}</span>
-                        </div>
-                        <div className="flex gap-3 text-xs shrink-0">
-                          <span className="text-primary">↑ {formatBytes(iface.tx_bytes)}</span>
-                          <span className="text-muted-foreground">↓ {formatBytes(iface.rx_bytes)}</span>
-                        </div>
-                        <Badge variant="secondary" className="font-mono text-xs shrink-0">{formatBytes(totalBytes)}</Badge>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Recent Insights Preview */}
-          <Card className="glass-card">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Eye className="w-4 h-4 text-primary" />
-                Insights Recentes
-              </CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => navigate('/scope-firewall/analyzer/insights')}>
-                Ver todos
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {!snapshot?.insights?.length ? (
-                <p className="text-muted-foreground text-sm py-4 text-center">Nenhum insight disponível</p>
-              ) : (
-                <div className="space-y-2">
-                  {snapshot.insights.slice(0, 5).map((insight, i) => (
-                    <div key={i} className="flex items-start gap-3 p-2 rounded-lg hover:bg-secondary/30 transition-colors">
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          'text-xs mt-0.5 shrink-0',
-                          insight.severity === 'critical' && 'text-destructive border-destructive/30',
-                          insight.severity === 'high' && 'text-warning border-warning/30',
-                          insight.severity === 'medium' && 'text-primary border-primary/30',
-                          insight.severity === 'low' && 'text-muted-foreground border-muted-foreground/30',
-                        )}
-                      >
-                        {insight.severity}
-                      </Badge>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{insight.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{insight.description}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+        {selectedFirewall && !snapshot && !isLoading && (
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>Nenhuma análise encontrada. Execute uma análise para começar.</AlertDescription>
+          </Alert>
+        )}
       </div>
+
+      {/* Category Sheet */}
+      <AnalyzerCategorySheet
+        open={categorySheetOpen}
+        onOpenChange={setCategorySheetOpen}
+        category={selectedCategory}
+        snapshot={snapshot!}
+      />
 
       {/* Schedule Dialog */}
       <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-primary" />
-              Agendamento do Firewall Analyzer
+              <Calendar className="w-5 h-5" />
+              Configurar Agendamento de Análise
             </DialogTitle>
             <DialogDescription>
-              Configure a frequência de execução automática do Analyzer para este firewall.
+              Configure quando a análise de logs deve ser executada automaticamente
             </DialogDescription>
           </DialogHeader>
-
-          <Alert className="border-blue-500/30 bg-blue-500/5">
-            <Info className="h-4 w-4 text-blue-500" />
-            <AlertDescription className="text-sm text-muted-foreground">
-              A análise do Analyzer monitora eventos e métricas em tempo real. Recomendamos agendar a execução 1 vez por hora.
-            </AlertDescription>
-          </Alert>
-
-          <div className="space-y-5 py-2">
-            {/* Active toggle */}
+          <div className="space-y-4 py-4">
             <div className="flex items-center justify-between">
-              <Label htmlFor="sched-active" className="text-sm font-medium">Agendamento ativo</Label>
-              <Switch id="sched-active" checked={scheduleActive} onCheckedChange={setScheduleActive} />
+              <Label htmlFor="schedule-active">Ativo</Label>
+              <Switch
+                id="schedule-active"
+                checked={scheduleActive}
+                onCheckedChange={setScheduleActive}
+              />
             </div>
-
-            {/* Frequency */}
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Frequência</Label>
+            <div className="space-y-2">
+              <Label>Frequência</Label>
               <Select value={scheduleFreq} onValueChange={setScheduleFreq}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="hourly">Por Hora</SelectItem>
-                  <SelectItem value="daily">Diário</SelectItem>
-                  <SelectItem value="weekly">Semanal</SelectItem>
-                  <SelectItem value="monthly">Mensal</SelectItem>
+                  <SelectItem value="hourly">A cada hora</SelectItem>
+                  <SelectItem value="daily">Diariamente</SelectItem>
+                  <SelectItem value="weekly">Semanalmente</SelectItem>
+                  <SelectItem value="monthly">Mensalmente</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-
-            {/* Hour (hidden for hourly) */}
             {scheduleFreq !== 'hourly' && (
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium">Hora de execução (UTC-3)</Label>
-                <Select value={String(scheduleHour)} onValueChange={v => setScheduleHour(Number(v))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 24 }, (_, i) => (
-                      <SelectItem key={i} value={String(i)}>{String(i).padStart(2, '0')}:00</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-2">
+                <Label>Hora</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="23"
+                  value={scheduleHour}
+                  onChange={(e) => setScheduleHour(parseInt(e.target.value) || 0)}
+                />
               </div>
             )}
-
-            {/* Day of week (weekly only) */}
             {scheduleFreq === 'weekly' && (
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium">Dia da semana</Label>
-                <Select value={String(scheduleDayOfWeek)} onValueChange={v => setScheduleDayOfWeek(Number(v))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+              <div className="space-y-2">
+                <Label>Dia da Semana</Label>
+                <Select value={String(scheduleDayOfWeek)} onValueChange={(v) => setScheduleDayOfWeek(parseInt(v))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map((d, i) => (
-                      <SelectItem key={i} value={String(i)}>{d}</SelectItem>
-                    ))}
+                    <SelectItem value="0">Domingo</SelectItem>
+                    <SelectItem value="1">Segunda</SelectItem>
+                    <SelectItem value="2">Terça</SelectItem>
+                    <SelectItem value="3">Quarta</SelectItem>
+                    <SelectItem value="4">Quinta</SelectItem>
+                    <SelectItem value="5">Sexta</SelectItem>
+                    <SelectItem value="6">Sábado</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             )}
-
-            {/* Day of month (monthly only) */}
             {scheduleFreq === 'monthly' && (
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium">Dia do mês</Label>
-                <Select value={String(scheduleDayOfMonth)} onValueChange={v => setScheduleDayOfMonth(Number(v))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 28 }, (_, i) => (
-                      <SelectItem key={i + 1} value={String(i + 1)}>Dia {i + 1}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-2">
+                <Label>Dia do Mês</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={scheduleDayOfMonth}
+                  onChange={(e) => setScheduleDayOfMonth(parseInt(e.target.value) || 1)}
+                />
               </div>
             )}
-
-            {/* Next run preview */}
-            <div className="rounded-md bg-muted/20 border border-border/50 px-3 py-2 text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">Próxima execução estimada: </span>
-              {calculateNextRun(scheduleFreq, scheduleHour, scheduleDayOfWeek, scheduleDayOfMonth).toLocaleString('pt-BR', {
-                day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-              })}
-            </div>
           </div>
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setScheduleDialogOpen(false)} disabled={scheduleSaving}>
+            <Button variant="outline" onClick={() => setScheduleDialogOpen(false)}>
               Cancelar
             </Button>
             <Button onClick={handleSaveSchedule} disabled={scheduleSaving}>
@@ -1119,14 +816,6 @@ export default function AnalyzerDashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Category Detail Sheet */}
-      <AnalyzerCategorySheet 
-        open={categorySheetOpen}
-        onOpenChange={setCategorySheetOpen}
-        category={selectedCategory}
-        snapshot={snapshot!}
-      />
     </AppLayout>
   );
 }
