@@ -17,7 +17,8 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ExchangeAnalyzerStatsCards } from '@/components/m365/exchange/ExchangeAnalyzerStatsCards';
 import { ExchangeAnalyzerCategoryGrid } from '@/components/m365/exchange/ExchangeAnalyzerCategoryGrid';
-import { ExchangeAnalyzerCategorySheet } from '@/components/m365/exchange/ExchangeAnalyzerCategorySheet';
+import { ExchangeCategorySheet } from '@/components/m365/exchange/ExchangeCategorySheet';
+import type { ExchangeOperationalCategory } from '@/components/m365/exchange/ExchangeAnalyzerCategoryGrid';
 import { ExchangeSecurityInsightCards } from '@/components/m365/exchange/ExchangeSecurityInsightCards';
 import { ExchangeThreatProtectionSection } from '@/components/m365/exchange/ExchangeThreatProtectionSection';
 import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
@@ -91,8 +92,8 @@ export default function ExchangeAnalyzerPage() {
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
   // Category sheet state
-  const [categorySheetOpen, setCategorySheetOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<M365RiskCategory | null>(null);
+  const [selectedOpCategory, setSelectedOpCategory] = useState<ExchangeOperationalCategory | null>(null);
+  const [opCategorySheetOpen, setOpCategorySheetOpen] = useState(false);
 
   // ─── Extract operational Exchange insights from analyzer snapshot ───────────
   const exchangeInsights: M365AnalyzerInsight[] = (analyzerSnapshot?.insights ?? [])
@@ -236,7 +237,13 @@ export default function ExchangeAnalyzerPage() {
         {/* Category Grid */}
         {selectedTenantId && !loading && dashboardData && (
           <div className="mb-8">
-            <ExchangeAnalyzerCategoryGrid data={dashboardData} />
+            <ExchangeAnalyzerCategoryGrid
+              data={dashboardData}
+              onCategoryClick={(cat) => {
+                setSelectedOpCategory(cat);
+                setOpCategorySheetOpen(true);
+              }}
+            />
           </div>
         )}
 
@@ -288,11 +295,12 @@ export default function ExchangeAnalyzerPage() {
       </div>
 
       {/* Category Sheet */}
-      <ExchangeAnalyzerCategorySheet
-        open={categorySheetOpen}
-        onOpenChange={setCategorySheetOpen}
-        category={selectedCategory}
-        insights={[]}
+      <ExchangeCategorySheet
+        open={opCategorySheetOpen}
+        onOpenChange={setOpCategorySheetOpen}
+        category={selectedOpCategory}
+        dashboardData={dashboardData}
+        analyzerMetrics={analyzerSnapshot?.metrics}
       />
       <ScheduleDialog
         open={scheduleDialogOpen}
