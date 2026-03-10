@@ -224,13 +224,11 @@ Deno.serve(async (req) => {
         }
         if (row.lastActivityDate) {
           const la = new Date(row.lastActivityDate);
-          if (la < thirtyDaysAgo) { notLoggedIn30d++; inactiveUsers30.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
-          if (la < sixtyDaysAgo) { notLoggedIn60d++; inactiveUsers60.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
           if (la < ninetyDaysAgo) { notLoggedIn90d++; inactiveUsers90.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
+          else if (la < sixtyDaysAgo) { notLoggedIn60d++; inactiveUsers60.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
+          else if (la < thirtyDaysAgo) { notLoggedIn30d++; inactiveUsers30.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
         } else {
-          notLoggedIn30d++; notLoggedIn60d++; notLoggedIn90d++;
-          inactiveUsers30.push({ name: upnJ, lastActivity: 'Nunca' });
-          inactiveUsers60.push({ name: upnJ, lastActivity: 'Nunca' });
+          notLoggedIn90d++;
           inactiveUsers90.push({ name: upnJ, lastActivity: 'Nunca' });
         }
       });
