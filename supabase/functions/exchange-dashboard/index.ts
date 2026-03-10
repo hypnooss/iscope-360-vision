@@ -177,9 +177,10 @@ Deno.serve(async (req) => {
     if (mailboxUsageResult?._csv) {
       const rows = parseCsvReport(mailboxUsageResult._csv);
       console.log(`Mailbox usage report: ${rows.length} rows, headers: ${rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'none'}`);
-      totalMailboxes = rows.length;
-      
       rows.forEach((row: any) => {
+        const isDeleted = (row['Is Deleted'] || '').toLowerCase() === 'true';
+        if (isDeleted) return;
+        totalMailboxes++;
         const upn = row['User Principal Name'] || row['Display Name'] || '';
         // Check storage quota (CSV field names)
         const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
