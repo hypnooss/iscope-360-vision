@@ -537,8 +537,9 @@ export function ExchangeCategorySheet({
         return renderSecurityContent(category);
       case 'forwarding':
       case 'auto_reply':
-      case 'over_quota':
         return renderMailboxContent(category);
+      case 'over_quota':
+        return renderOverQuotaContent();
       case 'inactive_mailboxes':
         return renderInactiveContent();
       default:
