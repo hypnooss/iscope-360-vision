@@ -62,6 +62,24 @@ async function fetchActiveAlerts(userId: string, role: string | null): Promise<S
 }
 
 const ALERT_QUERY_KEY = ['system-alerts-active'];
+const PREFS_QUERY_KEY = ['notification-preferences'];
+
+interface NotifPrefs {
+  m365_analyzer_critical: boolean;
+  m365_general: boolean;
+  firewall_analysis: boolean;
+  external_domain_analysis: boolean;
+  attack_surface: boolean;
+}
+
+function alertMatchesPrefs(alertType: string, prefs: NotifPrefs): boolean {
+  if (alertType === 'm365_analyzer_critical') return prefs.m365_analyzer_critical;
+  if (alertType.startsWith('m365_')) return prefs.m365_general;
+  if (alertType.startsWith('firewall_')) return prefs.firewall_analysis;
+  if (alertType.startsWith('external_domain_')) return prefs.external_domain_analysis;
+  if (alertType.startsWith('attack_surface_')) return prefs.attack_surface;
+  return true; // unknown types always shown
+}
 
 export function SystemAlertBanner() {
   const { role, user } = useAuth();
