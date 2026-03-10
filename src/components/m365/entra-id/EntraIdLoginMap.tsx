@@ -50,6 +50,7 @@ export function EntraIdLoginMap({ loginCountriesSuccess, loginCountriesFailed }:
             authSuccessCountries={loginCountriesSuccess}
             firewallLocation={ENTRA_LOCATION}
             hideLegend
+            labelMap={ENTRA_LABEL_MAP}
           />
         </div>
 

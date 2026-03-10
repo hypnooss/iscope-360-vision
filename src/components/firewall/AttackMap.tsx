@@ -189,10 +189,10 @@ export function AttackMap({
       }
     };
 
-    addPoints(authSuccessCountries, COLORS.auth_success, 'Sucesso Auth FW');
-    addPoints(authSuccessVpnCountries, COLORS.auth_success, 'Sucesso Auth VPN');
-    addPoints(authFailedCountries, COLORS.fw_fail, 'Falha Auth FW');
-    addPoints(authFailedVpnCountries, COLORS.vpn_fail, 'Falha Auth VPN');
+    addPoints(authSuccessCountries, COLORS.auth_success, labelMap?.authSuccess ?? 'Sucesso Auth FW');
+    addPoints(authSuccessVpnCountries, COLORS.auth_success, labelMap?.authSuccessVpn ?? 'Sucesso Auth VPN');
+    addPoints(authFailedCountries, COLORS.fw_fail, labelMap?.authFailed ?? 'Falha Auth FW');
+    addPoints(authFailedVpnCountries, COLORS.vpn_fail, labelMap?.authFailedVpn ?? 'Falha Auth VPN');
 
     return result;
   }, [authFailedCountries, authFailedVpnCountries, authSuccessCountries, authSuccessVpnCountries]);

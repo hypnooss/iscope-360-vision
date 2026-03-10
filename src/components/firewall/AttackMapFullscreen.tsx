@@ -134,6 +134,7 @@ export function AttackMapFullscreen({
           outboundBlockedCountries={outboundBlockedCountries}
           firewallLocation={firewallLocation}
           fullscreen={true}
+          labelMap={labelMapProp}
         />
       </div>
 
