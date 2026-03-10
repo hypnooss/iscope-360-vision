@@ -283,10 +283,11 @@ async function fetchDashboardStats(
       for (const row of cveCache) {
         const statsKey = row.module_code === 'firewall' ? 'firewall'
           : row.module_code === 'm365' ? 'm365'
+          : row.module_code === 'external_domain' ? 'externalDomain'
           : null;
         if (!statsKey || !modulesRecord[statsKey]) continue;
 
-        if (row.module_code === 'firewall' && row.client_id) {
+        if ((row.module_code === 'firewall' || row.module_code === 'external_domain') && row.client_id) {
           if (selectedWorkspaceId && row.client_id !== selectedWorkspaceId) continue;
           if (workspaceIds && workspaceIds.length > 0 && !workspaceIds.includes(row.client_id)) continue;
         }
