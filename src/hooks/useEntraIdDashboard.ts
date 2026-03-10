@@ -9,6 +9,8 @@ export interface EntraIdDashboardData {
   loginActivity: { total: number; success: number; failed: number; mfaRequired: number; blocked: number };
   userChanges: { updated: number; new: number; enabled: number; disabled: number; deleted: number };
   passwordActivity: { resets: number; forcedChanges: number; selfService: number };
+  loginCountriesSuccess: { country: string; count: number }[];
+  loginCountriesFailed: { country: string; count: number }[];
   analyzedAt: string;
 }
 
