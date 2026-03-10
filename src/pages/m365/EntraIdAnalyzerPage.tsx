@@ -108,6 +108,12 @@ export default function EntraIdAnalyzerPage() {
         supabase.functions.invoke('entra-id-dashboard', {
           body: { tenant_record_id: selectedTenantId },
         }),
+        supabase.functions.invoke('exchange-dashboard', {
+          body: { tenant_record_id: selectedTenantId },
+        }),
+        supabase.functions.invoke('collaboration-dashboard', {
+          body: { tenant_record_id: selectedTenantId },
+        }),
       ]);
       if (analyzerResult.error) throw analyzerResult.error;
       refreshDashboard();

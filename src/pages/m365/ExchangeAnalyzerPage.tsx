@@ -128,11 +128,17 @@ export default function ExchangeAnalyzerPage() {
     if (!selectedTenantId) return;
     setTriggering(true);
     try {
-      const [analyzerResult, dashboardResult] = await Promise.all([
+      const [analyzerResult] = await Promise.all([
         supabase.functions.invoke('trigger-m365-analyzer', {
           body: { tenant_record_id: selectedTenantId },
         }),
         supabase.functions.invoke('exchange-dashboard', {
+          body: { tenant_record_id: selectedTenantId },
+        }),
+        supabase.functions.invoke('entra-id-dashboard', {
+          body: { tenant_record_id: selectedTenantId },
+        }),
+        supabase.functions.invoke('collaboration-dashboard', {
           body: { tenant_record_id: selectedTenantId },
         }),
       ]);
