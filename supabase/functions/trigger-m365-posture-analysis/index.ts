@@ -270,19 +270,65 @@ Deno.serve(async (req) => {
           total: allInsights.length,
         };
 
-        // If agent task exists, save as 'partial' so frontend waits for agent completion
-        const graphStatus = agentTaskId ? 'partial' : 'completed';
-        console.log(`[trigger-m365-posture-analysis] Saving Graph API results with status: ${graphStatus} (agentTaskId: ${agentTaskId || 'none'})`);
+        // Check if agent already completed before us (race condition handling)
+        const { data: currentRecord } = await supabaseAdmin
+          .from('m365_posture_history')
+          .select('agent_status, agent_insights')
+          .eq('id', historyRecord.id)
+          .maybeSingle();
+
+        const agentAlreadyCompleted = currentRecord?.agent_status === 'completed';
+        const agentInsightsData = Array.isArray(currentRecord?.agent_insights) ? currentRecord.agent_insights : [];
+
+        let finalStatus: string;
+        let finalScore = result.score;
+        let finalSummary = recalculatedSummary;
+
+        if (agentAlreadyCompleted && agentInsightsData.length > 0) {
+          // Agent finished first — merge agent insights and mark as completed
+          const mergedInsights = [...allInsights, ...agentInsightsData];
+          finalSummary = {
+            critical: mergedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'critical').length,
+            high: mergedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'high').length,
+            medium: mergedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'medium').length,
+            low: mergedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'low').length,
+            info: mergedInsights.filter((i: any) => i.severity === 'info').length,
+            total: mergedInsights.length,
+          };
+          // Recalculate score with merged data
+          const applicableInsights = mergedInsights.filter((i: any) => i.status !== 'not_found');
+          const totalChecks = applicableInsights.length;
+          let totalPenalty = 0;
+          for (const insight of applicableInsights) {
+            const i = insight as any;
+            if (i.status === 'fail') {
+              const sevWeight = i.severity === 'critical' ? 4 : i.severity === 'high' ? 3 : i.severity === 'medium' ? 2 : 1;
+              totalPenalty += sevWeight;
+            }
+          }
+          const maxPenalty = totalChecks * 4;
+          finalScore = maxPenalty > 0 ? Math.max(0, Math.round(100 - (totalPenalty / maxPenalty) * 100)) : result.score;
+          finalStatus = 'completed';
+          console.log(`[trigger-m365-posture-analysis] Agent already completed — merging ${agentInsightsData.length} agent insights. Final score: ${finalScore}, total: ${mergedInsights.length}`);
+        } else if (agentTaskId) {
+          // Agent hasn't completed yet — save as partial
+          finalStatus = 'partial';
+          console.log(`[trigger-m365-posture-analysis] Agent not ready yet — saving as partial`);
+        } else {
+          // No agent — completed
+          finalStatus = 'completed';
+          console.log(`[trigger-m365-posture-analysis] No agent task — marking as completed`);
+        }
 
         // Update history record with results
         await supabaseAdmin
           .from('m365_posture_history')
           .update({
-            status: graphStatus,
-            completed_at: graphStatus === 'completed' ? new Date().toISOString() : undefined,
-            score: result.score,
+            status: finalStatus,
+            completed_at: finalStatus === 'completed' ? new Date().toISOString() : undefined,
+            score: finalScore,
             classification: result.classification,
-            summary: recalculatedSummary,
+            summary: finalSummary,
             category_breakdown: result.categoryBreakdown,
             insights: allInsights,
             environment_metrics: result.environmentMetrics || null,
@@ -290,7 +336,7 @@ Deno.serve(async (req) => {
           })
           .eq('id', historyRecord.id);
 
-        console.log(`[trigger-m365-posture-analysis] Record ${historyRecord.id} updated successfully`);
+        console.log(`[trigger-m365-posture-analysis] Record ${historyRecord.id} updated with status: ${finalStatus}`);
 
       } catch (e) {
         console.error(`[trigger-m365-posture-analysis] Background error:`, e);

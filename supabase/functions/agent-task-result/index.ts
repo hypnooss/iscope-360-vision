@@ -4968,54 +4968,70 @@ serve(async (req: Request) => {
           // Transform raw PowerShell data into insights using DB rules
           const agentInsights = processM365AgentInsights(rawData, agentRules);
           
-          // Fetch existing record to merge insights and recalculate summary
+          // Fetch existing record to check if Graph API already saved its insights
           const { data: existingRecord } = await supabase
             .from('m365_posture_history')
-            .select('insights, score')
+            .select('insights, score, status')
             .eq('id', analysisId)
             .maybeSingle();
 
           const existingInsights = Array.isArray(existingRecord?.insights) ? existingRecord.insights : [];
-          const combinedInsights = [...existingInsights, ...agentInsights];
+          const graphApiHasData = existingInsights.length > 0;
+          const graphApiCompleted = existingRecord?.status === 'partial' || existingRecord?.status === 'completed';
 
-          // Recalculate summary with all insights (API + Exchange + Agent)
-          const recalculatedSummary = {
-            critical: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'critical').length,
-            high: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'high').length,
-            medium: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'medium').length,
-            low: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'low').length,
-            info: combinedInsights.filter((i: any) => i.severity === 'info').length,
-            total: combinedInsights.length,
-          };
+          console.log(`[m365_tenant] Race condition check: graphApiHasData=${graphApiHasData}, recordStatus=${existingRecord?.status}, existingInsights=${existingInsights.length}`);
 
-          // Recalculate score: penalize based on fail severity weights (exclude not_found)
-          const applicableInsights = combinedInsights.filter((i: any) => i.status !== 'not_found');
-          const totalChecks = applicableInsights.length;
-          let totalPenalty = 0;
-          for (const insight of applicableInsights) {
-            const i = insight as any;
-            if (i.status === 'fail') {
-              const sevWeight = i.severity === 'critical' ? 4 : i.severity === 'high' ? 3 : i.severity === 'medium' ? 2 : 1;
-              totalPenalty += sevWeight;
+          let updatePayload: Record<string, unknown>;
+
+          if (graphApiHasData && graphApiCompleted) {
+            // Graph API already saved — do the full merge and mark as completed
+            const combinedInsights = [...existingInsights, ...agentInsights];
+
+            const recalculatedSummary = {
+              critical: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'critical').length,
+              high: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'high').length,
+              medium: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'medium').length,
+              low: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'low').length,
+              info: combinedInsights.filter((i: any) => i.severity === 'info').length,
+              total: combinedInsights.length,
+            };
+
+            const applicableInsights = combinedInsights.filter((i: any) => i.status !== 'not_found');
+            const totalChecks = applicableInsights.length;
+            let totalPenalty = 0;
+            for (const insight of applicableInsights) {
+              const i = insight as any;
+              if (i.status === 'fail') {
+                const sevWeight = i.severity === 'critical' ? 4 : i.severity === 'high' ? 3 : i.severity === 'medium' ? 2 : 1;
+                totalPenalty += sevWeight;
+              }
             }
-          }
-          const maxPenalty = totalChecks * 4; // worst case: all critical
-          const recalculatedScore = maxPenalty > 0 
-            ? Math.max(0, Math.round(100 - (totalPenalty / maxPenalty) * 100))
-            : (existingRecord?.score ?? 100);
+            const maxPenalty = totalChecks * 4;
+            const recalculatedScore = maxPenalty > 0 
+              ? Math.max(0, Math.round(100 - (totalPenalty / maxPenalty) * 100))
+              : (existingRecord?.score ?? 100);
 
-          // Update m365_posture_history with agent results + recalculated summary
-          // Mark as 'completed' now that both Graph API and Agent data are available
-          const { error: updateError } = await supabase
-            .from('m365_posture_history')
-            .update({
+            updatePayload = {
               status: 'completed',
               completed_at: new Date().toISOString(),
               agent_insights: agentInsights,
-              agent_status: body.status === 'completed' ? 'completed' : 'partial',
+              agent_status: 'completed',
               summary: recalculatedSummary,
               score: recalculatedScore,
-            })
+            };
+            console.log(`[m365_tenant] Graph API data present — merging and completing. Score: ${recalculatedScore}, total insights: ${combinedInsights.length}`);
+          } else {
+            // Graph API hasn't saved yet — only save agent data, do NOT mark as completed
+            updatePayload = {
+              agent_insights: agentInsights,
+              agent_status: 'completed',
+            };
+            console.log(`[m365_tenant] Graph API not ready yet (status: ${existingRecord?.status}) — saving agent_insights only, NOT marking as completed`);
+          }
+
+          const { error: updateError } = await supabase
+            .from('m365_posture_history')
+            .update(updatePayload)
             .eq('id', analysisId);
           
           if (updateError) {
