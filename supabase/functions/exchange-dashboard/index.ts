@@ -227,7 +227,7 @@ Deno.serve(async (req) => {
           if (new Date(row.createdDateTime) >= thirtyDaysAgo) newLast30d++;
         }
         const recipientTypeJ = (row.recipientType || '').toLowerCase();
-        const isNonUserMailboxJ = ['shared', 'room', 'equipment'].includes(recipientTypeJ);
+        const isNonUserMailboxJ = recipientTypeJ.includes('shared') || recipientTypeJ.includes('room') || recipientTypeJ.includes('equipment');
         if (!isNonUserMailboxJ) {
           if (row.lastActivityDate) {
             const la = new Date(row.lastActivityDate);
