@@ -6,16 +6,24 @@ import { getCountryCoords } from '@/lib/countryUtils';
 import type { TopCountry } from '@/types/analyzerInsights';
 import { supabase } from '@/integrations/supabase/client';
 
+interface AttackMapLabelMap {
+  authFailed?: string;
+  authFailedVpn?: string;
+  authSuccess?: string;
+  authSuccessVpn?: string;
+}
+
 interface AttackMapProps {
-  authFailedCountries: TopCountry[];       // FW auth failures (vermelho escuro)
-  authFailedVpnCountries?: TopCountry[];   // VPN auth failures (laranja)
-  authSuccessCountries: TopCountry[];      // FW Auth success (verde)
-  authSuccessVpnCountries?: TopCountry[];  // VPN Auth success (verde)
-  outboundCountries?: TopCountry[];        // Saída com sucesso (azul) — FW → destino
-  outboundBlockedCountries?: TopCountry[]; // Saída bloqueada (vermelho) — FW → destino
+  authFailedCountries: TopCountry[];
+  authFailedVpnCountries?: TopCountry[];
+  authSuccessCountries: TopCountry[];
+  authSuccessVpnCountries?: TopCountry[];
+  outboundCountries?: TopCountry[];
+  outboundBlockedCountries?: TopCountry[];
   firewallLocation?: { lat: number; lng: number; label: string };
   fullscreen?: boolean;
   hideLegend?: boolean;
+  labelMap?: AttackMapLabelMap;
 }
 
 const FALLBACK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
