@@ -309,6 +309,8 @@ Deno.serve(async (req) => {
         forcedChanges: passwordActivities.forcedChanges,
         selfService: passwordActivities.selfService,
       },
+      loginCountriesSuccess,
+      loginCountriesFailed,
       analyzedAt: now.toISOString(),
     };
 

@@ -239,6 +239,16 @@ export default function EntraIdAnalyzerPage() {
           </div>
         )}
 
+        {/* Login Origin Map */}
+        {selectedTenantId && !loading && dashboardData && (
+          <div className="mb-8">
+            <EntraIdLoginMap
+              loginCountriesSuccess={dashboardData.loginCountriesSuccess}
+              loginCountriesFailed={dashboardData.loginCountriesFailed}
+            />
+          </div>
+        )}
+
         {/* Security Insights (operational only) */}
         {selectedTenantId && !analyzerLoading && dashboardData && (
           <EntraIdSecurityInsightCards insights={entraInsights} loading={analyzerLoading} />

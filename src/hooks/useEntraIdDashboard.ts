@@ -73,6 +73,8 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
     loginActivity: result.loginActivity || { total: 0, success: 0, failed: 0, mfaRequired: 0, blocked: 0 },
     userChanges: result.userChanges || { updated: 0, new: 0, enabled: 0, disabled: 0, deleted: 0 },
     passwordActivity: result.passwordActivity || { resets: 0, forcedChanges: 0, selfService: 0 },
+    loginCountriesSuccess: result.loginCountriesSuccess || [],
+    loginCountriesFailed: result.loginCountriesFailed || [],
     analyzedAt: result.analyzedAt || '',
   });
 
