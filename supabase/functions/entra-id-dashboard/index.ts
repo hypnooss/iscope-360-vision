@@ -212,6 +212,27 @@ Deno.serve(async (req) => {
       l.conditionalAccessStatus === 'failure' || l.status?.errorCode === 53003
     ).length;
 
+    // Aggregate sign-in logs by country
+    const successByCountry: Record<string, number> = {};
+    const failedByCountry: Record<string, number> = {};
+    signInLogs.forEach((l: any) => {
+      const country = l.location?.countryOrRegion;
+      if (!country) return;
+      if (!l.status?.errorCode || l.status.errorCode === 0) {
+        successByCountry[country] = (successByCountry[country] || 0) + 1;
+      } else {
+        failedByCountry[country] = (failedByCountry[country] || 0) + 1;
+      }
+    });
+    const loginCountriesSuccess = Object.entries(successByCountry)
+      .map(([country, count]) => ({ country, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
+    const loginCountriesFailed = Object.entries(failedByCountry)
+      .map(([country, count]) => ({ country, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
+
     // Audit activity aggregation (30 days)
     const userChangeActivities: Record<string, string[]> = {
       'Update user': [],
