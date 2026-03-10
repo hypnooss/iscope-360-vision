@@ -199,7 +199,7 @@ export default function AllFindingsPage() {
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Serviços Expostos</h1>
+              <h1 className="text-2xl font-bold text-foreground">Vulnerabilidades Encontradas</h1>
               <p className="text-muted-foreground">Lista completa ordenada por severidade</p>
             </div>
           </div>
