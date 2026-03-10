@@ -145,6 +145,25 @@ function parseMetrics(raw: unknown): M365AnalyzerMetrics {
         malwareFilter: tp.policyStatus?.malwareFilter ?? 'disabled',
       },
     },
+    emailTrafficRankings: (() => {
+      const etr = m.emailTrafficRankings ?? m.email_traffic_rankings;
+      if (!etr) return undefined;
+      return {
+        topSenders: safeArray(etr.topSenders),
+        topRecipients: safeArray(etr.topRecipients),
+        topDestinationDomains: safeArray(etr.topDestinationDomains),
+        topSourceDomains: safeArray(etr.topSourceDomains),
+      };
+    })(),
+    mailboxRankings: (() => {
+      const mbr = m.mailboxRankings ?? m.mailbox_rankings;
+      if (!mbr) return undefined;
+      return {
+        topForwarding: safeArray(mbr.topForwarding),
+        topInactive: safeArray(mbr.topInactive),
+        topOverQuota: safeArray(mbr.topOverQuota),
+      };
+    })(),
   };
 }
 
