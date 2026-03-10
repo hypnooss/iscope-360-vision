@@ -1,18 +1,22 @@
-# Status: ✅ Confirmado
 
-## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-### Confirmação
+## Ajustar Mapa do Entra ID Analyzer para ficar idêntico ao Firewall Analyzer
 
-O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
+### Problema
+O mapa do Entra ID está dentro de um `Card` com header próprio, enquanto o Firewall Analyzer usa um layout diferente: título uppercase externo ("MAPA DE CONEXÕES"), link "Tela cheia" no canto, e mapa compacto (`max-h-[200px]`) sem card wrapper. Além disso, a legenda interna do `AttackMap` exibe itens de firewall (Saída Bloqueada, Falha Auth FW, etc.) que não se aplicam ao Entra ID.
 
-| # | Edge Function | Fonte de dados | Tipo | Resultado |
-|---|--------------|----------------|------|-----------|
-| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
-| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
+### Alterações
 
-### Fix já aplicado
-- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
+**1. `src/components/firewall/AttackMap.tsx`**
+- Adicionar prop opcional `hideLegend?: boolean` à interface
+- Quando `hideLegend` for `true`, não renderizar a legenda interna do componente (linhas 311-345)
 
-### Melhoria futura sugerida
-- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
+**2. `src/components/m365/entra-id/EntraIdLoginMap.tsx`**
+- Remover o wrapper `Card`/`CardHeader`/`CardContent`
+- Adotar o mesmo layout do Firewall Analyzer:
+  - Título uppercase: `<h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Mapa de Conexões</h2>`
+  - Link "Tela cheia" com ícone `Maximize2` no canto direito
+  - Mapa em container `max-h-[200px] overflow-hidden rounded-lg border border-border/50` clicável para fullscreen
+- Passar `hideLegend` ao `AttackMap` para suprimir a legenda de firewall
+- Manter a legenda simplificada própria (Login com Sucesso / Login com Falha) abaixo do mapa
+
