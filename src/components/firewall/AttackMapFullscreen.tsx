@@ -228,6 +228,7 @@ export function AttackMapFullscreen({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
