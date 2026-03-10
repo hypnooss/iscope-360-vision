@@ -35,7 +35,7 @@ const TechnicalDocsPage = lazy(() => import("./pages/admin/TechnicalDocsPage"));
 const FirewallDashboardPage = lazy(() => import("./pages/firewall/FirewallDashboardPage"));
 const FirewallCreatePage = lazy(() => import("./pages/firewall/FirewallCreatePage"));
 const FirewallEditPage = lazy(() => import("./pages/firewall/FirewallEditPage"));
-const FirewallCVEsPage = lazy(() => import("./pages/firewall/FirewallCVEsPage"));
+
 const FirewallReportsPage = lazy(() => import("./pages/firewall/FirewallReportsPage"));
 const FirewallCompliancePage = lazy(() => import("./pages/firewall/FirewallCompliancePage"));
 const TaskExecutionsPage = lazy(() => import("./pages/firewall/TaskExecutionsPage"));
