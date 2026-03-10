@@ -647,16 +647,21 @@ export default function AnalyzerDashboardPage() {
         {/* Attack Map - Always visible */}
         {snapshot && (
           <>
-            <div>
-              <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-4">Mapa de Conexões</h2>
-              <Card
-                className="glass-card cursor-pointer hover:border-primary/50 transition-colors group relative"
-                onClick={() => setShowAttackMap(true)}
-              >
-                <div className="absolute top-3 right-3 z-10 flex items-center gap-1 text-xs text-muted-foreground group-hover:text-primary transition-colors">
+            <div className="group">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Mapa de Conexões</h2>
+                <div
+                  className="flex items-center gap-1 text-xs text-muted-foreground group-hover:text-primary transition-colors cursor-pointer"
+                  onClick={() => setShowAttackMap(true)}
+                >
                   <Maximize2 className="w-3.5 h-3.5" />
                   Tela cheia
                 </div>
+              </div>
+              <Card
+                className="glass-card cursor-pointer hover:border-primary/50 transition-colors"
+                onClick={() => setShowAttackMap(true)}
+              >
                 <CardContent className="p-4">
                   <div className="max-h-[200px] overflow-hidden rounded-md opacity-90 group-hover:opacity-100 transition-opacity">
                     <AttackMap
