@@ -199,7 +199,7 @@ export default function ExchangeAnalyzerPage() {
 
         {/* Last analysis info */}
         {analyzedAt && (
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap mb-8">
             <Clock className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm text-muted-foreground">Última coleta</span>
             <Badge variant="outline" className="text-xs">
@@ -228,22 +228,26 @@ export default function ExchangeAnalyzerPage() {
 
         {/* Stats Cards */}
         {selectedTenantId && !loading && dashboardData && (
-          <div className="mb-2">
+          <div className="mb-8">
             <ExchangeAnalyzerStatsCards data={dashboardData} />
           </div>
         )}
 
         {/* Category Grid */}
         {selectedTenantId && !loading && dashboardData && (
-          <ExchangeAnalyzerCategoryGrid data={dashboardData} />
+          <div className="mb-8">
+            <ExchangeAnalyzerCategoryGrid data={dashboardData} />
+          </div>
         )}
 
         {/* Threat Protection */}
         {selectedTenantId && !loading && dashboardData && (
-          <ExchangeThreatProtectionSection
-            data={analyzerSnapshot?.metrics?.threatProtection ?? null}
-            loading={analyzerLoading}
-          />
+          <div className="mb-8">
+            <ExchangeThreatProtectionSection
+              data={analyzerSnapshot?.metrics?.threatProtection ?? null}
+              loading={analyzerLoading}
+            />
+          </div>
         )}
 
         {/* Security Insights (operational only) */}

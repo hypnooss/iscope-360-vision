@@ -1,20 +1,17 @@
+# Status: ✅ Implementado
 
-# Aumentar espaçamentos entre seções do Exchange Analyzer
+## Fix: WHOIS data not being saved + parsing issues
 
-As linhas vermelhas no screenshot indicam 4 pontos onde falta respiro visual:
+### Mudanças realizadas
 
-1. **Após "Última coleta"** → antes dos Stats Cards
-2. **Após Stats Cards** → antes de "PANORAMA POR CATEGORIA"
-3. **Após Category Grid** → antes de "STATUS DAS POLÍTICAS DE PROTEÇÃO"
-4. **Após Threat Protection** → antes de Security Insights
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/agent-task-result/index.ts` | Force redeploy (comment timestamp) para ativar extração domain_whois |
+| `supabase/functions/trigger-external-domain-analysis/index.ts` | Removida chamada duplicada ao `domain-whois-lookup` edge function |
+| `python-agent/agent/executors/domain_whois.py` | `.br`: registrar fixo "Registro.br (NIC.br)", busca events em entities aninhadas |
+| `python-agent/agent/executors/domain_whois.py` | `.io`: RDAP endpoint corrigido para `rdap.identitydigital.services` |
+| `python-agent/agent/executors/domain_whois.py` | Owner: extrai registrant separado do registrar (evita confundir dono com registrar) |
 
-## Alteração em `ExchangeAnalyzerPage.tsx`
-
-Trocar os espaçamentos atuais (`mb-2` ou nenhum) por `mb-8` consistente entre todas as seções principais:
-
-- Linha 202: adicionar `mb-8` ao wrapper do "Última coleta"
-- Linha 231: trocar `mb-2` por `mb-8` no wrapper dos Stats Cards
-- Linha 238: envolver `ExchangeAnalyzerCategoryGrid` em `<div className="mb-8">`
-- Linha 243: envolver `ExchangeThreatProtectionSection` em `<div className="mb-8">`
-
-Isso adiciona ~32px de respiro entre cada seção, reduzindo a densidade visual.
+### Próximos passos
+- Deploy do Agent com `domain_whois.py` atualizado
+- Re-executar análise nos domínios .br e precisio.io para validar
