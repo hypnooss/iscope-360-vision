@@ -129,7 +129,7 @@ const App = () => (
                   <Route path="/scope-firewall/dashboard" element={<FirewallDashboardPage />} />
                   <Route path="/scope-firewall/compliance" element={<FirewallCompliancePage />} />
                   <Route path="/scope-firewall/firewalls/:id/analysis" element={<FirewallAnalysis />} />
-                  <Route path="/scope-firewall/cves" element={<FirewallCVEsPage />} />
+                  
                   <Route path="/scope-firewall/executions" element={<TaskExecutionsPage />} />
                   <Route path="/scope-firewall/reports" element={<FirewallReportsPage />} />
                   <Route path="/scope-firewall/analyzer" element={<AnalyzerDashboardPage />} />
