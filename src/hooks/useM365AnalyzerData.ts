@@ -402,7 +402,11 @@ export function useM365AnalyzerProgress(tenantRecordId?: string) {
       return { status: snap.status as string, elapsed, snapshotId: snap.id as string };
     },
     enabled: !!tenantRecordId,
-    refetchInterval: 30000,
-    staleTime: 15000,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'pending' || status === 'processing') return 5000;
+      return 30000;
+    },
+    staleTime: 5000,
   });
 }

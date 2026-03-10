@@ -146,6 +146,11 @@ export default function ExchangeAnalyzerPage() {
     }
   };
 
+  // Resetar triggering quando polling assumir o controle
+  useEffect(() => {
+    if (isAnalysisRunning && triggering) setTriggering(false);
+  }, [isAnalysisRunning, triggering]);
+
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth');
   }, [user, authLoading, navigate]);
