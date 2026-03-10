@@ -15,6 +15,7 @@ interface AttackMapProps {
   outboundBlockedCountries?: TopCountry[]; // Saída bloqueada (vermelho) — FW → destino
   firewallLocation?: { lat: number; lng: number; label: string };
   fullscreen?: boolean;
+  hideLegend?: boolean;
 }
 
 const FALLBACK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
@@ -152,6 +153,7 @@ export function AttackMap({
   outboundBlockedCountries = [],
   firewallLocation,
   fullscreen,
+  hideLegend,
 }: AttackMapProps) {
   const [tileUrl, setTileUrl] = useState(FALLBACK_TILE_URL);
   const [tileAttribution, setTileAttribution] = useState(FALLBACK_ATTRIBUTION);
@@ -309,7 +311,7 @@ export function AttackMap({
       </MapContainer>
 
       {/* Legend — inline mode only */}
-      {!fullscreen && (
+      {!fullscreen && !hideLegend && (
         <div className="flex items-center gap-3 mt-3 justify-center text-xs text-muted-foreground flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLORS.outbound_blocked }} />
