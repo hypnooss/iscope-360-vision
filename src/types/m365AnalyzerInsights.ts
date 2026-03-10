@@ -176,6 +176,11 @@ export const M365_ANALYZER_CATEGORY_LABELS: Record<M365AnalyzerCategory, string>
   exfiltration: 'Exfiltração',
   operational_risks: 'Riscos Operacionais',
   threat_protection: 'Proteção contra Ameaças',
+  teams_governance: 'Governança de Teams',
+  sharepoint_exposure: 'Exposição SharePoint',
+  guest_access: 'Acesso de Convidados',
+  external_sharing: 'Compartilhamento Externo',
+  collaboration_risk: 'Risco de Colaboração',
 };
 
 export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
