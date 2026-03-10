@@ -202,8 +202,8 @@ export default function ExchangeAnalyzerPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={handleTriggerAnalysis} disabled={triggering || !selectedTenantId || loading}>
-              {triggering || loading
+            <Button onClick={handleTriggerAnalysis} disabled={triggering || isAnalysisRunning || !selectedTenantId || loading}>
+              {triggering || isAnalysisRunning || loading
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
                 : <><Play className="w-4 h-4 mr-2" />Executar Análise</>}
             </Button>
