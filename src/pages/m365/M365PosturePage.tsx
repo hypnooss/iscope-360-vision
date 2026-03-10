@@ -560,8 +560,8 @@ export default function M365PosturePage() {
           </Card>
         )}
 
-        {/* Main content - only show if tenants available */}
-        {tenants.length > 0 && (
+        {/* Main content - only show if tenants available AND data exists */}
+        {tenants.length > 0 && data && (
           <>
             {/* Command Central */}
             <CommandCentralLayout
