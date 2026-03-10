@@ -545,10 +545,13 @@ export default function SurfaceAnalyzerV3Page() {
                   onFindingClick={(f) => setSheetFindingId(f.id)}
                 />
                 <SeverityTechDonut findings={findings} assets={assets} />
+                </div>
               </div>
 
               {/* 4. Asset Health (full-width) */}
-              <AssetHealthGrid
+              <div>
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Detalhamento da Exposição</h2>
+                <AssetHealthGrid
                 assets={assets}
                 findings={findings}
                 onAssetClick={(ip) => setSheetAssetIp(ip)}

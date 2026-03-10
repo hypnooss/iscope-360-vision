@@ -256,16 +256,7 @@ export function AssetHealthGrid({ assets, findings, onAssetClick, onRescan, resc
   return (
     <TooltipProvider delayDuration={200}>
       <Card className="border-border/50">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Server className="w-4 h-4 text-muted-foreground" />
-            Saúde dos Ativos
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-auto">
-              {healthData.length}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
+        <CardContent className="pt-6">
           {healthData.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">Nenhum ativo com serviços expostos</p>
           ) : (
