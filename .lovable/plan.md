@@ -1,10 +1,18 @@
+# Status: ✅ Confirmado
 
+## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-## Remover seção "Evidências" da Sheet de Insights do Exchange
+### Confirmação
 
-### Alteração
+O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
 
-**Arquivo: `src/components/m365/exchange/ExchangeSecurityInsightCards.tsx`**
+| # | Edge Function | Fonte de dados | Tipo | Resultado |
+|---|--------------|----------------|------|-----------|
+| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
+| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
 
-Remover as linhas 239-281 (bloco completo da seção "Evidências"), que renderiza metadata restante como JSON bruto na janela lateral.
+### Fix já aplicado
+- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
 
+### Melhoria futura sugerida
+- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
