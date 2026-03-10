@@ -7,8 +7,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import {
   ShieldX, AlertTriangle, CheckCircle2,
-  Globe, Users, Bug, Shield, Info, Lightbulb, ExternalLink,
+  Globe, Users, Bug, Shield, Info, Lightbulb, ExternalLink, FileKey, Check,
 } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { M365AnalyzerMetrics } from '@/types/m365AnalyzerInsights';
 
 type ThreatProtection = M365AnalyzerMetrics['threatProtection'];
