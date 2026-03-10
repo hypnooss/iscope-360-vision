@@ -198,6 +198,7 @@ const TASK_TYPE_TO_TARGET: Record<string, TargetType> = {
   fortigate_analyzer: 'firewall_analyzer',
   external_domain_compliance: 'external_domain',
   m365_compliance: 'm365_compliance',
+  m365_powershell: 'm365_compliance',
   m365_analyzer: 'm365_analyzer',
   attack_surface_scan: 'attack_surface',
 };
