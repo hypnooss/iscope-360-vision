@@ -1,17 +1,41 @@
-# Status: ✅ Implementado
 
-## Fix: WHOIS data not being saved + parsing issues
 
-### Mudanças realizadas
+# Ajustes no Exchange Analyzer
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/agent-task-result/index.ts` | Force redeploy (comment timestamp) para ativar extração domain_whois |
-| `supabase/functions/trigger-external-domain-analysis/index.ts` | Removida chamada duplicada ao `domain-whois-lookup` edge function |
-| `python-agent/agent/executors/domain_whois.py` | `.br`: registrar fixo "Registro.br (NIC.br)", busca events em entities aninhadas |
-| `python-agent/agent/executors/domain_whois.py` | `.io`: RDAP endpoint corrigido para `rdap.identitydigital.services` |
-| `python-agent/agent/executors/domain_whois.py` | Owner: extrai registrant separado do registrar (evita confundir dono com registrar) |
+## 1. Ocultar seções quando `dashboardData` é null
 
-### Próximos passos
-- Deploy do Agent com `domain_whois.py` atualizado
-- Re-executar análise nos domínios .br e precisio.io para validar
+As seções **"Status das Políticas de Proteção"** (`ExchangeThreatProtectionSection`) e **"Insights de Segurança"** (`ExchangeSecurityInsightCards`) precisam ser condicionadas a `dashboardData` existir, assim como já foi feito para Stats Cards e Category Grid.
+
+### Alteração em `ExchangeAnalyzerPage.tsx`
+
+Linhas 234-245: adicionar `&& dashboardData` nas condições de renderização:
+
+```tsx
+{/* Threat Protection - só exibe se dashboardData existir */}
+{selectedTenantId && !loading && dashboardData && (
+  <ExchangeThreatProtectionSection ... />
+)}
+
+{/* Security Insights - só exibe se dashboardData existir */}
+{selectedTenantId && !analyzerLoading && dashboardData && (
+  <ExchangeSecurityInsightCards ... />
+)}
+```
+
+---
+
+## 2. Sobre o botão "Executar Análise"
+
+O botão chama `supabase.functions.invoke('m365-exchange-analyze', ...)` -- porém **essa edge function não existe** no projeto. Não há nenhuma pasta `m365-exchange-analyze` em `supabase/functions/`.
+
+As funções existentes relacionadas são:
+- `trigger-m365-analyzer` -- dispara o analyzer geral do M365
+- `exchange-dashboard` -- coleta dados do dashboard Exchange (cache)
+
+O botão provavelmente deveria invocar `trigger-m365-analyzer` (que gera os snapshots com insights operacionais) ou uma combinação de `trigger-m365-analyzer` + `exchange-dashboard`.
+
+**Preciso da sua orientação**: o "Executar Análise" deve disparar o `trigger-m365-analyzer` (que já popula os snapshots usados nesta tela), ou você quer criar uma edge function dedicada `m365-exchange-analyze`?
+
+### Arquivo alterado
+- `src/pages/m365/ExchangeAnalyzerPage.tsx`
+
