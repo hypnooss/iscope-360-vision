@@ -147,6 +147,7 @@ Deno.serve(async (req) => {
     // Parse mailbox usage data
     let totalMailboxes = 0;
     let overQuota = 0;
+    const overQuotaUsers: { name: string; usedGB: number; quotaGB: number; usagePct: number }[] = [];
     let newLast30d = 0;
     let notLoggedIn30d = 0;
     let notLoggedIn60d = 0;
