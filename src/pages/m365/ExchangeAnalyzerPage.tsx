@@ -252,9 +252,9 @@ export default function ExchangeAnalyzerPage() {
               <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
                 Este tenant ainda não possui análises do Exchange Online. Execute a primeira análise para começar a monitorar a segurança do ambiente.
               </p>
-              <Button onClick={refreshDashboard} disabled={dashboardRefreshing} className="gap-2">
-                {dashboardRefreshing
-                  ? <><Loader2 className="w-4 h-4 animate-spin" />Coletando...</>
+              <Button onClick={handleTriggerAnalysis} disabled={triggering || isAnalysisRunning || !selectedTenantId || loading} className="gap-2">
+                {triggering || isAnalysisRunning
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />Analisando...</>
                   : <><Play className="w-4 h-4" />Executar Análise</>}
               </Button>
             </CardContent>
