@@ -129,6 +129,17 @@ export interface M365AnalyzerMetrics {
       malwareFilter: 'enabled' | 'weak' | 'disabled';
     };
   };
+  emailTrafficRankings?: {
+    topSenders: { name: string; count: number }[];
+    topRecipients: { name: string; count: number }[];
+    topDestinationDomains: { name: string; count: number }[];
+    topSourceDomains: { name: string; count: number }[];
+  };
+  mailboxRankings?: {
+    topForwarding: { name: string; forwardTo: string }[];
+    topInactive: { name: string; lastLogin: string }[];
+    topOverQuota: { name: string; usagePct: number }[];
+  };
 }
 
 export interface M365AnalyzerSnapshot {
