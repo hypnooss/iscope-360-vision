@@ -121,7 +121,6 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     items: [
       { label: 'Compliance', href: '/scope-firewall/compliance', icon: FileText },
       { label: 'Analyzer', href: '/scope-firewall/analyzer', icon: Radar },
-      { label: 'CVEs', href: '/scope-firewall/cves', icon: ShieldCheck },
       { label: 'Execuções', href: '/scope-firewall/executions', icon: Activity },
     ],
   },
@@ -141,7 +140,6 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
       { label: 'Compliance', href: '/scope-m365/compliance', icon: FileText },
       { label: 'Exchange Analyzer', href: '/scope-m365/exchange-analyzer', icon: Mail },
       { label: 'Analyzer', href: '/scope-m365/analyzer', icon: Radar },
-      { label: 'CVEs', href: '/scope-m365/cves', icon: ShieldCheck },
       { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
       
       { label: 'Colaboração', href: '/scope-m365/collaboration', icon: Users },

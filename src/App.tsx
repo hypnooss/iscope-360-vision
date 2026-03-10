@@ -35,7 +35,7 @@ const TechnicalDocsPage = lazy(() => import("./pages/admin/TechnicalDocsPage"));
 const FirewallDashboardPage = lazy(() => import("./pages/firewall/FirewallDashboardPage"));
 const FirewallCreatePage = lazy(() => import("./pages/firewall/FirewallCreatePage"));
 const FirewallEditPage = lazy(() => import("./pages/firewall/FirewallEditPage"));
-const FirewallCVEsPage = lazy(() => import("./pages/firewall/FirewallCVEsPage"));
+
 const FirewallReportsPage = lazy(() => import("./pages/firewall/FirewallReportsPage"));
 const FirewallCompliancePage = lazy(() => import("./pages/firewall/FirewallCompliancePage"));
 const TaskExecutionsPage = lazy(() => import("./pages/firewall/TaskExecutionsPage"));
@@ -67,7 +67,7 @@ const EntraIdApplicationInsightsPage = lazy(() => import("./pages/m365/EntraIdAp
 const EntraIdAnalysisPage = lazy(() => import("./pages/m365/EntraIdAnalysisPage"));
 
 const CollaborationPage = lazy(() => import("./pages/m365/CollaborationPage"));
-const M365CVEsPage = lazy(() => import("./pages/m365/M365CVEsPage"));
+
 const M365AnalyzerDashboardPage = lazy(() => import("./pages/m365/M365AnalyzerDashboardPage"));
 const M365ServiceHealthPage = lazy(() => import("./pages/m365/M365ServiceHealthPage"));
 const ExchangeAnalyzerPage = lazy(() => import("./pages/m365/ExchangeAnalyzerPage"));
@@ -129,7 +129,7 @@ const App = () => (
                   <Route path="/scope-firewall/dashboard" element={<FirewallDashboardPage />} />
                   <Route path="/scope-firewall/compliance" element={<FirewallCompliancePage />} />
                   <Route path="/scope-firewall/firewalls/:id/analysis" element={<FirewallAnalysis />} />
-                  <Route path="/scope-firewall/cves" element={<FirewallCVEsPage />} />
+                  
                   <Route path="/scope-firewall/executions" element={<TaskExecutionsPage />} />
                   <Route path="/scope-firewall/reports" element={<FirewallReportsPage />} />
                   <Route path="/scope-firewall/analyzer" element={<AnalyzerDashboardPage />} />
@@ -165,7 +165,7 @@ const App = () => (
                   
                   <Route path="/scope-m365/exchange-analyzer" element={<ExchangeAnalyzerPage />} />
                   <Route path="/scope-m365/collaboration" element={<CollaborationPage />} />
-                  <Route path="/scope-m365/cves" element={<M365CVEsPage />} />
+                  
                   <Route path="/scope-m365/analyzer" element={<M365AnalyzerDashboardPage />} />
                   <Route path="/scope-m365/service-health" element={<M365ServiceHealthPage />} />
 

@@ -1,22 +1,18 @@
+# Status: ✅ Confirmado
 
+## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-## Remover submenus e páginas de CVEs do Firewall e Microsoft 365
+### Confirmação
 
-### Alterações
+O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
 
-**1. `src/components/layout/AppLayout.tsx`**
-- Remover linha 124: `{ label: 'CVEs', href: '/scope-firewall/cves', icon: ShieldCheck }`
-- Remover linha 144: `{ label: 'CVEs', href: '/scope-m365/cves', icon: ShieldCheck }`
+| # | Edge Function | Fonte de dados | Tipo | Resultado |
+|---|--------------|----------------|------|-----------|
+| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
+| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
 
-**2. `src/App.tsx`**
-- Remover lazy import `FirewallCVEsPage` (linha 38)
-- Remover lazy import `M365CVEsPage` (linha 70)
-- Remover rota `/scope-firewall/cves` (linha 132)
-- Remover rota `/scope-m365/cves` (linha 168)
+### Fix já aplicado
+- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
 
-**3. Deletar arquivos**
-- `src/pages/firewall/FirewallCVEsPage.tsx`
-- `src/pages/m365/M365CVEsPage.tsx`
-
-A página centralizada `/cves` e as fontes `/cves/sources` continuam existindo normalmente.
-
+### Melhoria futura sugerida
+- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
