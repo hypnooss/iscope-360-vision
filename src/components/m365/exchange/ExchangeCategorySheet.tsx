@@ -308,12 +308,25 @@ export function ExchangeCategorySheet({
     const topDomains: { name: string; count: number }[] =
       cat === 'anti_spam' ? (threatData?.topSpamSenderDomains || []).map((d: any) => typeof d === 'string' ? { name: d, count: 0 } : { name: d.domain || d.name || d, count: d.count || 0 }) :
       cat === 'phishing' ? phishDomains :
-      (threatData?.topMalwareSenderDomains || []).map((d: any) => typeof d === 'string' ? { name: d, count: 0 } : { name: d.domain || d.name || d, count: d.count || 0 });
+      (threatData?.topMalwareSenders || []).map((d: any) => ({ name: d.domain || d.name || d, count: d.count || 0 }));
+
+    // Aggregate malware recipients from topMalwareSenders[].recipients
+    const malwareTargets = (() => {
+      const targetMap: Record<string, number> = {};
+      (threatData?.topMalwareSenders || []).forEach((d: any) => {
+        (d.recipients || []).forEach((r: string) => {
+          targetMap[r] = (targetMap[r] || 0) + 1;
+        });
+      });
+      return Object.entries(targetMap)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, count]) => ({ name, count }));
+    })();
 
     const topUsers: { name: string; count: number }[] =
       cat === 'anti_spam' ? (threatData?.topSpamRecipients || []).map((u: any) => typeof u === 'string' ? { name: u, count: 0 } : { name: u.user || u.name || u, count: u.count || 0 }) :
       cat === 'phishing' ? (threatData?.topPhishingTargets || []).map((u: any) => typeof u === 'string' ? { name: u, count: 0 } : { name: u.user || u.name || u, count: u.count || 0 }) :
-      (threatData?.topMalwareRecipients || []).map((u: any) => typeof u === 'string' ? { name: u, count: 0 } : { name: u.user || u.name || u, count: u.count || 0 });
+      malwareTargets;
 
     const sevColor = cat === 'phishing' ? 'text-red-500' : cat === 'malware' ? 'text-amber-500' : 'text-violet-500';
 
