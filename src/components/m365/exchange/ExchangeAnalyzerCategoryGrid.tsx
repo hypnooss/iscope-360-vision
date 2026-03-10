@@ -43,6 +43,7 @@ interface CategoryStats {
   splitB?: { label: string; value: number; color: string };
   pct?: number;
   badgeLabel?: string;
+  inactiveBadges?: { label: string; value: number; colorClass: string }[];
 }
 
 const SEVERITY_COLORS = {
