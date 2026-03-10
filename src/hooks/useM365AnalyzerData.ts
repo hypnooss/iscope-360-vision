@@ -342,7 +342,7 @@ export function useLatestM365AnalyzerSnapshot(tenantRecordId?: string) {
         .eq('tenant_record_id', tenantRecordId)
         .eq('status', 'completed')
         .order('created_at', { ascending: false })
-        .limit(24) as any;
+        .limit(720) as any;
 
       if (error) throw error;
       const rows = (data as any[]) || [];
