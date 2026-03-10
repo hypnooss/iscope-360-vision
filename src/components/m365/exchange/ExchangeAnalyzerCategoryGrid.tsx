@@ -43,6 +43,7 @@ interface CategoryStats {
   splitB?: { label: string; value: number; color: string };
   pct?: number;
   badgeLabel?: string;
+  inactiveBadges?: { label: string; value: number; colorClass: string }[];
 }
 
 const SEVERITY_COLORS = {
@@ -95,7 +96,15 @@ function getCategoryStats(cat: ExchangeOperationalCategory, data: ExchangeDashbo
       const v90 = mailboxes.notLoggedIn90d || 0;
       const v = v30;
       const pct = (v / totalMb) * 100;
-      return { total: v, pct, severity: pct > 30 ? 'high' : pct > 15 ? 'medium' : v > 0 ? 'low' : 'none', badgeLabel: `30d: ${v30} · 60d: ${v60} · 90d: ${v90}` };
+      return {
+        total: v, pct,
+        severity: pct > 30 ? 'high' : pct > 15 ? 'medium' : v > 0 ? 'low' : 'none',
+        inactiveBadges: [
+          { label: `30d: ${v30}`, value: v30, colorClass: 'bg-orange-500/20 text-orange-500 border-orange-500/30' },
+          { label: `60d: ${v60}`, value: v60, colorClass: 'bg-orange-600/20 text-orange-600 border-orange-600/30' },
+          { label: `90d: ${v90}`, value: v90, colorClass: 'bg-red-500/20 text-red-500 border-red-500/30' },
+        ],
+      };
     }
     case 'over_quota': {
       const v = mailboxes.overQuota;
@@ -171,7 +180,17 @@ export function ExchangeAnalyzerCategoryGrid({ data, onCategoryClick }: Exchange
                   </div>
                 )}
 
-                {hasData && !hasSplit && stats.badgeLabel && (
+                {hasData && !hasSplit && stats.inactiveBadges && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {stats.inactiveBadges.map((b, i) => (
+                      <Badge key={i} variant="outline" className={cn("text-[10px] px-1.5 py-0", b.colorClass)}>
+                        {b.label}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                {hasData && !hasSplit && stats.badgeLabel && !stats.inactiveBadges && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Badge variant="outline" className={cn(
                       "text-[10px] px-1.5 py-0",
