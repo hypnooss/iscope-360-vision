@@ -140,6 +140,7 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
       { label: 'Compliance', href: '/scope-m365/compliance', icon: FileText },
       { label: 'Exchange Analyzer', href: '/scope-m365/exchange-analyzer', icon: Mail },
       { label: 'Entra ID Analyzer', href: '/scope-m365/entra-id-analyzer', icon: Shield },
+      { label: 'Teams Analyzer', href: '/scope-m365/teams-analyzer', icon: Users },
       { label: 'Analyzer', href: '/scope-m365/analyzer', icon: Radar },
       { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
       

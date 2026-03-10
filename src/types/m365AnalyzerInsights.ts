@@ -15,7 +15,12 @@ export type M365AnalyzerCategory =
   | 'suspicious_rules'
   | 'exfiltration'
   | 'operational_risks'
-  | 'threat_protection';
+  | 'threat_protection'
+  | 'teams_governance'
+  | 'sharepoint_exposure'
+  | 'guest_access'
+  | 'external_sharing'
+  | 'collaboration_risk';
 
 export interface M365AnalyzerInsight {
   id: string;
@@ -171,6 +176,11 @@ export const M365_ANALYZER_CATEGORY_LABELS: Record<M365AnalyzerCategory, string>
   exfiltration: 'Exfiltração',
   operational_risks: 'Riscos Operacionais',
   threat_protection: 'Proteção contra Ameaças',
+  teams_governance: 'Governança de Teams',
+  sharepoint_exposure: 'Exposição SharePoint',
+  guest_access: 'Acesso de Convidados',
+  external_sharing: 'Compartilhamento Externo',
+  collaboration_risk: 'Risco de Colaboração',
 };
 
 export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
@@ -187,6 +197,11 @@ export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
   'exfiltration',
   'operational_risks',
   'threat_protection',
+  'teams_governance',
+  'sharepoint_exposure',
+  'guest_access',
+  'external_sharing',
+  'collaboration_risk',
 ];
 
 export function groupM365AnalyzerInsightsByCategory(

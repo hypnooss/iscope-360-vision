@@ -72,6 +72,7 @@ const M365AnalyzerDashboardPage = lazy(() => import("./pages/m365/M365AnalyzerDa
 const M365ServiceHealthPage = lazy(() => import("./pages/m365/M365ServiceHealthPage"));
 const ExchangeAnalyzerPage = lazy(() => import("./pages/m365/ExchangeAnalyzerPage"));
 const EntraIdAnalyzerPage = lazy(() => import("./pages/m365/EntraIdAnalyzerPage"));
+const TeamsAnalyzerPage = lazy(() => import("./pages/m365/TeamsAnalyzerPage"));
 
 // Preview pages (temporary)
 const EnvironmentPage = lazy(() => import("./pages/EnvironmentPage"));
@@ -166,6 +167,7 @@ const App = () => (
                   
                   <Route path="/scope-m365/exchange-analyzer" element={<ExchangeAnalyzerPage />} />
                   <Route path="/scope-m365/entra-id-analyzer" element={<EntraIdAnalyzerPage />} />
+                  <Route path="/scope-m365/teams-analyzer" element={<TeamsAnalyzerPage />} />
                   <Route path="/scope-m365/collaboration" element={<CollaborationPage />} />
                   
                   <Route path="/scope-m365/analyzer" element={<M365AnalyzerDashboardPage />} />
