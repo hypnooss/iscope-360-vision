@@ -647,36 +647,31 @@ export default function AnalyzerDashboardV2Page() {
         {/* Attack Map - Always visible */}
         {snapshot && (
           <>
-            <Card
-              className="glass-card mb-6 cursor-pointer hover:border-primary/50 transition-colors group"
-              onClick={() => setShowAttackMap(true)}
-            >
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center justify-between text-base">
-                  <span className="flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-primary" />
-                    Mapa de Ataques
-                  </span>
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground group-hover:text-primary transition-colors">
-                    <Maximize2 className="w-3.5 h-3.5" />
-                    Tela cheia
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 pt-0">
-                <div className="max-h-[200px] overflow-hidden rounded-md opacity-90 group-hover:opacity-100 transition-opacity">
-                <AttackMap
-                    authFailedCountries={fwAuthCountriesFailed}
-                    authFailedVpnCountries={vpnAuthCountriesFailed}
-                    authSuccessCountries={fwAuthCountriesSuccess}
-                    authSuccessVpnCountries={vpnAuthCountriesSuccess}
-                    outboundCountries={m?.topOutboundCountries ?? []}
-                    outboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}
-                    firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
-                  />
+            <div>
+              <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-4">Mapa de Conexões</h2>
+              <Card
+                className="glass-card cursor-pointer hover:border-primary/50 transition-colors group relative"
+                onClick={() => setShowAttackMap(true)}
+              >
+                <div className="absolute top-3 right-3 z-10 flex items-center gap-1 text-xs text-muted-foreground group-hover:text-primary transition-colors">
+                  <Maximize2 className="w-3.5 h-3.5" />
+                  Tela cheia
                 </div>
-              </CardContent>
-            </Card>
+                <CardContent className="p-4">
+                  <div className="max-h-[200px] overflow-hidden rounded-md opacity-90 group-hover:opacity-100 transition-opacity">
+                    <AttackMap
+                      authFailedCountries={fwAuthCountriesFailed}
+                      authFailedVpnCountries={vpnAuthCountriesFailed}
+                      authSuccessCountries={fwAuthCountriesSuccess}
+                      authSuccessVpnCountries={vpnAuthCountriesSuccess}
+                      outboundCountries={m?.topOutboundCountries ?? []}
+                      outboundBlockedCountries={m?.topOutboundBlockedCountries ?? []}
+                      firewallLocation={firewallGeo ? { ...firewallGeo, label: firewallUrl?.name || 'Firewall' } : undefined}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
             {showAttackMap && (
               <AttackMapFullscreen
