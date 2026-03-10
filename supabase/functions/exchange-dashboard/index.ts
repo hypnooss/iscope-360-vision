@@ -166,6 +166,7 @@ Deno.serve(async (req) => {
       totalMailboxes = rows.length;
       
       rows.forEach((row: any) => {
+        const upn = row['User Principal Name'] || row['Display Name'] || '';
         // Check storage quota (CSV field names)
         const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
         const quota = parseInt(row['Prohibit Send/Receive Quota (Byte)'] || '0', 10);
@@ -183,7 +184,6 @@ Deno.serve(async (req) => {
           const created = new Date(row['Created Date']);
           if (created >= thirtyDaysAgo) newLast30d++;
         }
-        const upn = row['User Principal Name'] || row['Display Name'] || '';
         if (row['Last Activity Date']) {
           const lastActivity = new Date(row['Last Activity Date']);
           const lastStr = row['Last Activity Date'];
