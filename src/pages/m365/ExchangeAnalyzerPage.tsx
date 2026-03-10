@@ -87,7 +87,11 @@ export default function ExchangeAnalyzerPage() {
 
   // Data hooks
   const { data: dashboardData, loading: dashboardLoading, refresh: refreshDashboard, refreshing: dashboardRefreshing } = useExchangeDashboard({ tenantRecordId: selectedTenantId });
-  const { data: analyzerSnapshot, isLoading: analyzerLoading } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
+  const { data: analyzerSnapshot, isLoading: analyzerLoading, refetch: refetchSnapshot } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
+  const { data: progress } = useM365AnalyzerProgress(selectedTenantId || undefined);
+  const queryClient = useQueryClient();
+
+  const isAnalysisRunning = progress?.status === 'pending' || progress?.status === 'processing';
 
   const [triggering, setTriggering] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -95,6 +99,23 @@ export default function ExchangeAnalyzerPage() {
   // Category sheet state
   const [selectedOpCategory, setSelectedOpCategory] = useState<ExchangeOperationalCategory | null>(null);
   const [opCategorySheetOpen, setOpCategorySheetOpen] = useState(false);
+
+  // Auto-refresh when analysis finishes
+  const prevProgressStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const currentStatus = progress?.status ?? null;
+    if (
+      (currentStatus === 'completed' || currentStatus === 'failed') &&
+      prevProgressStatus.current &&
+      prevProgressStatus.current !== 'completed' &&
+      prevProgressStatus.current !== 'failed'
+    ) {
+      refetchSnapshot();
+      refreshDashboard();
+      queryClient.invalidateQueries({ queryKey: ['m365-analyzer-latest', selectedTenantId] });
+    }
+    prevProgressStatus.current = currentStatus;
+  }, [progress?.status, selectedTenantId]);
 
   // ─── Extract operational Exchange insights from analyzer snapshot ───────────
   const exchangeInsights: M365AnalyzerInsight[] = (analyzerSnapshot?.insights ?? [])
