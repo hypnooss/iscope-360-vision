@@ -139,7 +139,9 @@ export default function ExchangeAnalyzerPage() {
       if (analyzerResult.error) throw analyzerResult.error;
       // Recarregar cache local com os novos dados do exchange-dashboard
       refreshDashboard();
-    } finally {
+      // Invalidar polling de progresso para detectar o novo snapshot imediatamente
+      queryClient.invalidateQueries({ queryKey: ['m365-analyzer-progress', selectedTenantId] });
+    } catch (e) {
       setTriggering(false);
     }
   };
