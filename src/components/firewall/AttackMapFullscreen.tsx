@@ -6,6 +6,26 @@ import { getCountryCode } from '@/lib/countryUtils';
 import type { TopCountry, TopBlockedIP } from '@/types/analyzerInsights';
 import 'flag-icons/css/flag-icons.min.css';
 
+interface LabelMap {
+  authFailed?: string;
+  authFailedVpn?: string;
+  authSuccess?: string;
+  authSuccessVpn?: string;
+  outbound?: string;
+  outboundBlocked?: string;
+  centerPoint?: string;
+}
+
+const DEFAULT_LABELS: Required<LabelMap> = {
+  authFailed: 'Falha Auth FW',
+  authFailedVpn: 'Falha Auth VPN',
+  authSuccess: 'Sucesso Auth FW',
+  authSuccessVpn: 'Sucesso Auth VPN',
+  outbound: 'Saída Permitida',
+  outboundBlocked: 'Saída Bloqueada',
+  centerPoint: 'Firewall',
+};
+
 interface AttackMapFullscreenProps {
   authFailedCountries: TopCountry[];
   authFailedVpnCountries?: TopCountry[];
@@ -25,6 +45,7 @@ interface AttackMapFullscreenProps {
   topBlockedIPs?: TopBlockedIP[];
   topOutboundCountries?: TopCountry[];
   topOutboundBlockedCountries?: TopCountry[];
+  labelMap?: LabelMap;
   onClose: () => void;
 }
 
