@@ -407,6 +407,14 @@ Deno.serve(async (req) => {
             if (result.success || response.status === 409 || result.code === 'ALREADY_RUNNING') {
               console.log(`[run-scheduled-analyses] Triggered M365 analyzer for tenant ${schedule.tenant_record_id}`);
               m365AnalyzerTriggered++;
+
+              // Also trigger exchange-dashboard to populate KPI cache
+              const exchangeUrl = `${supabaseUrl}/functions/v1/exchange-dashboard`;
+              await fetch(exchangeUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+                body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
+              }).catch(e => console.warn('[run-scheduled-analyses] exchange-dashboard failed:', e));
             } else {
               console.error(`[run-scheduled-analyses] Failed to trigger M365 analyzer for tenant ${schedule.tenant_record_id}:`, result.error);
               m365AnalyzerErrors++;

@@ -105,10 +105,17 @@ export default function ExchangeAnalyzerPage() {
     if (!selectedTenantId) return;
     setTriggering(true);
     try {
-      const { error } = await supabase.functions.invoke('trigger-m365-analyzer', {
-        body: { tenantRecordId: selectedTenantId },
-      });
-      if (error) throw error;
+      const [analyzerResult, dashboardResult] = await Promise.all([
+        supabase.functions.invoke('trigger-m365-analyzer', {
+          body: { tenantRecordId: selectedTenantId },
+        }),
+        supabase.functions.invoke('exchange-dashboard', {
+          body: { tenant_record_id: selectedTenantId },
+        }),
+      ]);
+      if (analyzerResult.error) throw analyzerResult.error;
+      // Recarregar cache local com os novos dados do exchange-dashboard
+      refreshDashboard();
     } finally {
       setTriggering(false);
     }
