@@ -1,18 +1,31 @@
-# Status: ✅ Confirmado
 
-## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-### Confirmação
+## Correção: Drill-down de Detecção de Malware sem dados
 
-O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
+### Causa raiz
 
-| # | Edge Function | Fonte de dados | Tipo | Resultado |
-|---|--------------|----------------|------|-----------|
-| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
-| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
+O drill-down de Malware lê campos que não existem no objeto `threatProtection`:
 
-### Fix já aplicado
-- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
+- **Linha 311**: lê `threatData?.topMalwareSenderDomains` → campo correto é `topMalwareSenders`
+- **Linha 316**: lê `threatData?.topMalwareRecipients` → não existe; os alvos estão em `topMalwareSenders[].recipients`
 
-### Melhoria futura sugerida
-- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
+### Correção
+
+**`src/components/m365/exchange/ExchangeCategorySheet.tsx`**
+
+1. **Top Domínios (linha 311)**: Trocar `topMalwareSenderDomains` por `topMalwareSenders`, mapeando `d.domain` como nome
+2. **Top Usuários Alvos (linha 316)**: Agregar `recipients` de todos os `topMalwareSenders` num mapa `user → count` (mesmo padrão usado para phishing com `senders`), gerando a lista de alvos
+
+Lógica de agregação dos alvos:
+```typescript
+const malwareTargetMap: Record<string, number> = {};
+(threatData?.topMalwareSenders || []).forEach((d: any) => {
+  (d.recipients || []).forEach((r: string) => {
+    malwareTargetMap[r] = (malwareTargetMap[r] || 0) + 1;
+  });
+});
+const malwareTargets = Object.entries(malwareTargetMap)
+  .sort((a, b) => b[1] - a[1])
+  .map(([name, count]) => ({ name, count }));
+```
+
