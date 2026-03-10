@@ -2361,6 +2361,64 @@ Deno.serve(async (req) => {
         fullAccessGrants: operational.metrics.fullAccessGrants || 0,
       },
       threatProtection: threatProtection.metrics,
+      // ── Email Traffic Rankings ──
+      emailTrafficRankings: (() => {
+        const senderMap: Record<string, number> = {};
+        const recipientMap: Record<string, number> = {};
+        const destDomainMap: Record<string, number> = {};
+        const srcDomainMap: Record<string, number> = {};
+        for (const msg of exoMessageTrace) {
+          const sender = (msg.SenderAddress || msg.Sender || '').toLowerCase();
+          const recipient = (msg.RecipientAddress || msg.Recipient || '').toLowerCase();
+          if (sender) senderMap[sender] = (senderMap[sender] || 0) + 1;
+          if (recipient) recipientMap[recipient] = (recipientMap[recipient] || 0) + 1;
+          // Domain extraction
+          const destDomain = recipient.includes('@') ? recipient.split('@')[1] : '';
+          const srcDomain = sender.includes('@') ? sender.split('@')[1] : '';
+          if (destDomain) destDomainMap[destDomain] = (destDomainMap[destDomain] || 0) + 1;
+          if (srcDomain) srcDomainMap[srcDomain] = (srcDomainMap[srcDomain] || 0) + 1;
+        }
+        const toTop = (map: Record<string, number>) =>
+          Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([name, count]) => ({ name, count }));
+        return {
+          topSenders: toTop(senderMap),
+          topRecipients: toTop(recipientMap),
+          topDestinationDomains: toTop(destDomainMap),
+          topSourceDomains: toTop(srcDomainMap),
+        };
+      })(),
+      // ── Mailbox Detail Rankings ──
+      mailboxRankings: (() => {
+        const topForwarding = exoForwarding
+          .filter((f: any) => f.ForwardingSmtpAddress || f.ForwardingAddress)
+          .slice(0, 15)
+          .map((f: any) => ({
+            name: f.PrimarySmtpAddress || f.DisplayName || f.Identity || 'unknown',
+            forwardTo: f.ForwardingSmtpAddress || f.ForwardingAddress || '',
+          }));
+        const topInactive = exoMailboxStats
+          .filter((s: any) => {
+            const ll = s.LastLogonTime || s.LastLoggedOnUserAccount;
+            if (!ll) return true;
+            const d = new Date(ll);
+            return !isNaN(d.getTime()) && (Date.now() - d.getTime()) > 30 * 24 * 60 * 60 * 1000;
+          })
+          .slice(0, 15)
+          .map((s: any) => ({
+            name: s.DisplayName || s.MailboxIdentity || 'unknown',
+            lastLogin: s.LastLogonTime || 'Nunca',
+          }));
+        const topOverQuota = exoMailboxStats
+          .map((s: any) => {
+            const used = parseSizeToBytes(s.TotalItemSize);
+            const quota = 53687091200; // 50GB default
+            return { name: s.DisplayName || s.MailboxIdentity || 'unknown', usagePct: Math.round((used / quota) * 100) };
+          })
+          .filter((m: any) => m.usagePct > 80)
+          .sort((a: any, b: any) => b.usagePct - a.usagePct)
+          .slice(0, 15);
+        return { topForwarding, topInactive, topOverQuota };
+      })(),
       dataSource,
       normalizationVersion: 4,
       stepsReceived,
