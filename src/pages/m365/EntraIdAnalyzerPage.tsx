@@ -206,14 +206,14 @@ export default function EntraIdAnalyzerPage() {
           <Card className="border-warning/30 bg-warning/5">
             <CardContent className="py-10 text-center">
               <Shield className="w-10 h-10 text-warning mx-auto mb-3" />
-              <h3 className="text-base font-semibold mb-1">Dados do Entra ID não sincronizados</h3>
+              <h3 className="text-base font-semibold mb-1">Nenhuma análise do Entra ID encontrada</h3>
               <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
-                Este tenant ainda não possui dados coletados do Entra ID. Clique abaixo para executar a primeira coleta.
+                Não existem análises efetuadas até o momento. Clique abaixo para executar a primeira análise de segurança do Entra ID.
               </p>
-              <Button onClick={refreshDashboard} disabled={dashboardRefreshing} className="gap-2">
-                {dashboardRefreshing
-                  ? <><Loader2 className="w-4 h-4 animate-spin" />Coletando...</>
-                  : <><Play className="w-4 h-4" />Atualizar Dashboard</>}
+              <Button onClick={handleTriggerAnalysis} disabled={triggering || loading || !selectedTenantId} className="gap-2">
+                {triggering || loading
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />Analisando...</>
+                  : <><Play className="w-4 h-4" />Executar Análise</>}
               </Button>
             </CardContent>
           </Card>
