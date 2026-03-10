@@ -1,18 +1,28 @@
-# Status: ✅ Confirmado
 
-## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-### Confirmação
+## Plano: Corrigir botão "Executar Análise" do card de aviso
 
-O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
+### Problema
 
-| # | Edge Function | Fonte de dados | Tipo | Resultado |
-|---|--------------|----------------|------|-----------|
-| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
-| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
+O botão "Executar Análise" dentro do card de aviso (empty state) chama `refreshDashboard` — que apenas invoca a Edge Function `exchange-dashboard`. Já o botão do topo chama `handleTriggerAnalysis`, que dispara **ambos** os fluxos (`trigger-m365-analyzer` + `exchange-dashboard`) via `Promise.all`.
 
-### Fix já aplicado
-- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
+### Mudança
 
-### Melhoria futura sugerida
-- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
+**Arquivo:** `src/pages/m365/ExchangeAnalyzerPage.tsx` (linha 255)
+
+Trocar `onClick={refreshDashboard}` por `onClick={handleTriggerAnalysis}` e ajustar o `disabled` e o estado de loading para usar as mesmas flags do botão do topo:
+
+```tsx
+<Button 
+  onClick={handleTriggerAnalysis} 
+  disabled={triggering || isAnalysisRunning || !selectedTenantId || loading} 
+  className="gap-2"
+>
+  {triggering || isAnalysisRunning
+    ? <><Loader2 className="w-4 h-4 animate-spin" />Analisando...</>
+    : <><Play className="w-4 h-4" />Executar Análise</>}
+</Button>
+```
+
+Isso garante comportamento idêntico ao botão do cabeçalho.
+
