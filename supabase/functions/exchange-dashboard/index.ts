@@ -315,38 +315,38 @@ Deno.serve(async (req) => {
       console.warn('Failed to fetch user mailbox settings:', e);
     }
 
-    // Security data from M365 Analyzer snapshots (collected via PowerShell exoMessageTrace)
+    // Security data from M365 Analyzer snapshots — aggregate last 30 days
     let maliciousInbound = 0;
     let phishing = 0;
     let malware = 0;
     let spam = 0;
 
     try {
-      const { data: latestSnapshot } = await supabase
+      const securityCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: secSnapshots } = await supabase
         .from('m365_analyzer_snapshots')
         .select('metrics')
         .eq('tenant_record_id', tenant_record_id)
         .eq('status', 'completed')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .gte('created_at', securityCutoff)
+        .order('created_at', { ascending: false });
 
-      if (latestSnapshot?.metrics) {
-        const tp = (latestSnapshot.metrics as any).threatProtection;
-        if (tp) {
-          spam = tp.spamBlocked || 0;
-          phishing = tp.phishingDetected || 0;
-          malware = tp.malwareBlocked || 0;
-          maliciousInbound = phishing + malware;
-          console.log(`Security from analyzer snapshot - spam: ${spam}, phishing: ${phishing}, malware: ${malware}`);
-        } else {
-          console.warn('Analyzer snapshot has no threatProtection metrics');
+      if (secSnapshots && secSnapshots.length > 0) {
+        for (const snap of secSnapshots) {
+          const tp = (snap.metrics as any)?.threatProtection;
+          if (tp) {
+            spam += tp.spamBlocked || 0;
+            phishing += tp.phishingDetected || 0;
+            malware += tp.malwareBlocked || 0;
+          }
         }
+        maliciousInbound = phishing + malware;
+        console.log(`Security aggregated from ${secSnapshots.length} snapshots (30d) - spam: ${spam}, phishing: ${phishing}, malware: ${malware}`);
       } else {
-        console.warn('No completed M365 analyzer snapshot found for tenant');
+        console.warn('No completed M365 analyzer snapshots found for tenant in last 30 days');
       }
     } catch (e) {
-      console.warn('Failed to fetch analyzer snapshot for security data:', e);
+      console.warn('Failed to fetch analyzer snapshots for security data:', e);
     }
 
     const result = {
