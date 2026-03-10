@@ -1,17 +1,27 @@
-# Status: ✅ Implementado
 
-## Fix: WHOIS data not being saved + parsing issues
 
-### Mudanças realizadas
+## Reposicionar "Exchange Analyzer" no menu M365
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/agent-task-result/index.ts` | Force redeploy (comment timestamp) para ativar extração domain_whois |
-| `supabase/functions/trigger-external-domain-analysis/index.ts` | Removida chamada duplicada ao `domain-whois-lookup` edge function |
-| `python-agent/agent/executors/domain_whois.py` | `.br`: registrar fixo "Registro.br (NIC.br)", busca events em entities aninhadas |
-| `python-agent/agent/executors/domain_whois.py` | `.io`: RDAP endpoint corrigido para `rdap.identitydigital.services` |
-| `python-agent/agent/executors/domain_whois.py` | Owner: extrai registrant separado do registrar (evita confundir dono com registrar) |
+Mover o item "Exchange Analyzer" da posição 6 (após Exchange Online) para a posição 2 (logo abaixo de Compliance), conforme solicitado.
 
-### Próximos passos
-- Deploy do Agent com `domain_whois.py` atualizado
-- Re-executar análise nos domínios .br e precisio.io para validar
+### Alteração em `src/components/layout/AppLayout.tsx` (linhas 140-150)
+
+Reordenar o array `items` do módulo `scope_m365`:
+
+```tsx
+items: [
+  { label: 'Compliance', href: '/scope-m365/compliance', icon: FileText },
+  { label: 'Exchange Analyzer', href: '/scope-m365/exchange-analyzer', icon: Mail },
+  { label: 'Analyzer', href: '/scope-m365/analyzer', icon: Radar },
+  { label: 'CVEs', href: '/scope-m365/cves', icon: ShieldCheck },
+  { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
+  { label: 'Exchange Online', href: '/scope-m365/exchange-online', icon: Mail },
+  { label: 'Colaboração', href: '/scope-m365/collaboration', icon: Users },
+  { label: 'Saúde do 365', href: '/scope-m365/service-health', icon: HeartPulse },
+  { label: 'Execuções', href: '/scope-m365/executions', icon: Activity },
+],
+```
+
+### Arquivo
+- `src/components/layout/AppLayout.tsx`
+
