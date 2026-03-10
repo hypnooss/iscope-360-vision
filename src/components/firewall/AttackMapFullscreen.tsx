@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AttackMap } from './AttackMap';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { X } from 'lucide-react';
 import { getCountryCode } from '@/lib/countryUtils';
 import type { TopCountry, TopBlockedIP } from '@/types/analyzerInsights';
 import 'flag-icons/css/flag-icons.min.css';
