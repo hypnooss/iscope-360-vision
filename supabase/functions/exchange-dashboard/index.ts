@@ -219,10 +219,10 @@ Deno.serve(async (req) => {
     // Fetch auto-reply and forwarding info - use simple query (no $filter/$count)
     let forwardingEnabled = 0;
     let autoReplyExternal = 0;
+    const autoReplyUsers: { name: string; status: string; externalAudience: string }[] = [];
 
     try {
-      // Simple user query without complex filters that cause 400 errors
-      const users = await graphGetAllPages(accessToken, 'https://graph.microsoft.com/v1.0/users?$select=id&$top=100', 2);
+      const users = await graphGetAllPages(accessToken, 'https://graph.microsoft.com/v1.0/users?$select=id,userPrincipalName&$top=100', 2);
       console.log(`Users for mailbox settings check: ${users.length}`);
 
       if (users.length > 0) {
@@ -234,6 +234,11 @@ Deno.serve(async (req) => {
               if (settings.automaticRepliesSetting?.status === 'alwaysEnabled' || settings.automaticRepliesSetting?.status === 'scheduled') {
                 if (settings.automaticRepliesSetting?.externalAudience === 'all' || settings.automaticRepliesSetting?.externalAudience === 'contactsOnly') {
                   autoReplyExternal++;
+                  autoReplyUsers.push({
+                    name: u.userPrincipalName || u.id,
+                    status: settings.automaticRepliesSetting.status,
+                    externalAudience: settings.automaticRepliesSetting.externalAudience,
+                  });
                 }
               }
             }
@@ -286,6 +291,7 @@ Deno.serve(async (req) => {
         overQuota,
         forwardingEnabled,
         autoReplyExternal,
+        autoReplyUsers,
         newLast30d,
         notLoggedIn30d,
       },
