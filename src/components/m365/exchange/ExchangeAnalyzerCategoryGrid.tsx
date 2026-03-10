@@ -94,7 +94,7 @@ function getCategoryStats(cat: ExchangeOperationalCategory, data: ExchangeDashbo
       const v30 = mailboxes.notLoggedIn30d;
       const v60 = mailboxes.notLoggedIn60d || 0;
       const v90 = mailboxes.notLoggedIn90d || 0;
-      const v = v30;
+      const v = v30 + v60 + v90;
       const pct = (v / totalMb) * 100;
       return {
         total: v, pct,
