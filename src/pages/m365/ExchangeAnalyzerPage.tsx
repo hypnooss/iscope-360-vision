@@ -228,7 +228,7 @@ export default function ExchangeAnalyzerPage() {
 
         {/* Stats Cards */}
         {selectedTenantId && !loading && dashboardData && (
-          <div className="mb-2">
+          <div className="mb-8">
             <ExchangeAnalyzerStatsCards data={dashboardData} />
           </div>
         )}
