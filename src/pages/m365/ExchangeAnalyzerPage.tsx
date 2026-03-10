@@ -237,7 +237,13 @@ export default function ExchangeAnalyzerPage() {
         {/* Category Grid */}
         {selectedTenantId && !loading && dashboardData && (
           <div className="mb-8">
-            <ExchangeAnalyzerCategoryGrid data={dashboardData} />
+            <ExchangeAnalyzerCategoryGrid
+              data={dashboardData}
+              onCategoryClick={(cat) => {
+                setSelectedOpCategory(cat);
+                setOpCategorySheetOpen(true);
+              }}
+            />
           </div>
         )}
 
