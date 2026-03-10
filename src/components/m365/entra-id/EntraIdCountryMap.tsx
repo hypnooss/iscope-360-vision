@@ -36,8 +36,12 @@ export function EntraIdCountryMap({ loginCountriesSuccess, fullscreen = false }:
     const mapped = new Map<string, number>();
 
     for (const item of loginCountriesSuccess) {
-      const iso2 = getCountryCode(item.country);
+      const rawCountry = item.country?.trim().toLowerCase();
+      if (!rawCountry) continue;
+
+      const iso2 = rawCountry.length === 2 ? rawCountry : getCountryCode(item.country);
       if (!iso2) continue;
+
       mapped.set(iso2, (mapped.get(iso2) ?? 0) + item.count);
     }
 
