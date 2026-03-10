@@ -2521,6 +2521,42 @@ export type Database = {
         }
         Relationships: []
       }
+      notification_preferences: {
+        Row: {
+          attack_surface: boolean
+          created_at: string | null
+          external_domain_analysis: boolean
+          firewall_analysis: boolean
+          id: string
+          m365_analyzer_critical: boolean
+          m365_general: boolean
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          attack_surface?: boolean
+          created_at?: string | null
+          external_domain_analysis?: boolean
+          firewall_analysis?: boolean
+          id?: string
+          m365_analyzer_critical?: boolean
+          m365_general?: boolean
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          attack_surface?: boolean
+          created_at?: string | null
+          external_domain_analysis?: boolean
+          firewall_analysis?: boolean
+          id?: string
+          m365_analyzer_critical?: boolean
+          m365_general?: boolean
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       preview_sessions: {
         Row: {
           admin_id: string
