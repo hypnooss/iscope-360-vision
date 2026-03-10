@@ -536,7 +536,9 @@ export default function SurfaceAnalyzerV3Page() {
               </div>
 
               {/* 3. Top Findings + Donut side by side */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Exposição dos Serviços</h2>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <TopFindingsList
                   findings={findings}
                   onViewAll={() => {}}
