@@ -484,7 +484,7 @@ export default function SurfaceAnalyzerV3Page() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-10">
               {/* 1. Summary Stats Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Card className="glass-card">
