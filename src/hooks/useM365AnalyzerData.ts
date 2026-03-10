@@ -237,8 +237,8 @@ function mergeRankingArrays(
   path: string[],
   labelField: string,
   top = 10,
-): T[] {
-  const map = new Map<string, T>();
+): any[] {
+  const map = new Map<string, any>();
   for (const s of snapshots) {
     let obj: any = s.metrics;
     for (const k of path) obj = obj?.[k];
@@ -256,7 +256,7 @@ function mergeRankingArrays(
   }
   return Array.from(map.values())
     .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
-    .slice(0, top) as T[];
+    .slice(0, top);
 }
 
 function aggregateThreatProtection(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerMetrics['threatProtection'] {
