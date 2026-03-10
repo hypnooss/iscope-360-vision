@@ -1,21 +1,21 @@
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import {
-  Mail, ShieldBan, ShieldAlert, Bug, Forward, Reply, UserX, HardDrive,
-  ArrowUpRight, ArrowDownLeft, AlertTriangle, CheckCircle2, TrendingUp,
+  Mail, ShieldBan, ShieldAlert, Bug, Forward, Reply, UserX, HardDrive, User,
+  ArrowUpRight, ArrowDownLeft, Globe, AtSign,
 } from 'lucide-react';
 import type { ExchangeDashboardData } from '@/hooks/useExchangeDashboard';
 import type { ExchangeOperationalCategory } from './ExchangeAnalyzerCategoryGrid';
-
-interface CategoryIconProps {
-  className?: string;
-  style?: React.CSSProperties;
-}
 
 interface ExchangeCategorySheetProps {
   open: boolean;
@@ -27,7 +27,7 @@ interface ExchangeCategorySheetProps {
 
 const CATEGORY_META: Record<ExchangeOperationalCategory, {
   label: string;
-  icon: React.ComponentType<CategoryIconProps>;
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   colorHex: string;
   description: string;
 }> = {
@@ -35,31 +35,31 @@ const CATEGORY_META: Record<ExchangeOperationalCategory, {
     label: 'Tráfego de Email',
     icon: Mail,
     colorHex: '#14b8a6',
-    description: 'Volume de emails enviados e recebidos no período monitorado.',
+    description: 'Análise detalhada do volume de emails enviados e recebidos, incluindo rankings de remetentes e domínios.',
   },
   anti_spam: {
     label: 'Proteção Anti-Spam',
     icon: ShieldBan,
     colorHex: '#8b5cf6',
-    description: 'Emails identificados e bloqueados como spam pelas políticas de proteção.',
+    description: 'Detecções de spam com rankings de domínios atacantes e usuários alvos.',
   },
   phishing: {
     label: 'Detecção de Phishing',
     icon: ShieldAlert,
     colorHex: '#ef4444',
-    description: 'Tentativas de phishing detectadas nas mensagens de entrada.',
+    description: 'Tentativas de phishing detectadas com rankings de atacantes e alvos.',
   },
   malware: {
     label: 'Detecção de Malware',
     icon: Bug,
     colorHex: '#f59e0b',
-    description: 'Anexos ou links maliciosos identificados pelo filtro de malware.',
+    description: 'Anexos e links maliciosos identificados pelo filtro de malware.',
   },
   forwarding: {
     label: 'Forwarding Ativo',
     icon: Forward,
     colorHex: '#f97316',
-    description: 'Caixas de correio com encaminhamento automático configurado para endereços externos.',
+    description: 'Caixas de correio com encaminhamento automático configurado.',
   },
   auto_reply: {
     label: 'Auto-Reply Externo',
@@ -81,383 +81,411 @@ const CATEGORY_META: Record<ExchangeOperationalCategory, {
   },
 };
 
-const RISK_RECOMMENDATIONS: Partial<Record<ExchangeOperationalCategory, string>> = {
-  forwarding: 'Revise as regras de encaminhamento. Forwarding para domínios externos pode indicar exfiltração de dados ou configuração insegura.',
-  auto_reply: 'Respostas automáticas externas podem expor informações internas. Considere restringir via política de transporte.',
-  inactive_mailboxes: 'Contas inativas são vetores de ataque. Desabilite ou remova as licenças para reduzir a superfície de ataque.',
-  over_quota: 'Caixas acima da cota podem deixar de receber emails críticos, incluindo alertas de segurança.',
-};
-
-function getSeverity(cat: ExchangeOperationalCategory, value: number, total: number) {
-  const pct = total > 0 ? (value / total) * 100 : 0;
-  switch (cat) {
-    case 'anti_spam':
-      return value > 500 ? 'critical' : value > 100 ? 'high' : value > 20 ? 'medium' : 'low';
-    case 'phishing':
-      return value > 100 ? 'critical' : value > 30 ? 'high' : value > 5 ? 'medium' : 'low';
-    case 'malware':
-      return value > 50 ? 'critical' : value > 10 ? 'high' : value > 2 ? 'medium' : 'low';
-    case 'forwarding':
-      return pct > 20 ? 'critical' : pct > 10 ? 'high' : pct > 3 ? 'medium' : 'low';
-    case 'auto_reply':
-      return pct > 15 ? 'high' : pct > 5 ? 'medium' : 'low';
-    case 'inactive_mailboxes':
-      return pct > 30 ? 'high' : pct > 15 ? 'medium' : 'low';
-    case 'over_quota':
-      return pct > 10 ? 'critical' : pct > 5 ? 'high' : value > 0 ? 'medium' : 'low';
-    default:
-      return 'low';
-  }
-}
-
-const SEVERITY_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
-  critical: { bg: 'bg-red-500/10', text: 'text-red-500', border: 'border-red-500/30', label: 'Crítico' },
-  high: { bg: 'bg-orange-500/10', text: 'text-orange-500', border: 'border-orange-500/30', label: 'Alto' },
-  medium: { bg: 'bg-yellow-500/10', text: 'text-yellow-500', border: 'border-yellow-500/30', label: 'Médio' },
-  low: { bg: 'bg-blue-400/10', text: 'text-blue-400', border: 'border-blue-400/30', label: 'Baixo' },
-};
-
-function TrafficContent({ data }: { data: ExchangeDashboardData }) {
-  const { sent, received } = data.traffic;
-  const total = sent + received;
-  const sentPct = total > 0 ? (sent / total) * 100 : 50;
-  const receivedPct = total > 0 ? (received / total) * 100 : 50;
-
+/* ─── Generic ranking list (equivalent to Firewall IPList) ─── */
+function RankingList({
+  items,
+  colorClass,
+  renderLabel,
+  renderSub,
+}: {
+  items: { name: string; count?: number; [k: string]: any }[];
+  colorClass?: string;
+  renderLabel?: (item: any, idx: number) => React.ReactNode;
+  renderSub?: (item: any) => React.ReactNode;
+}) {
+  if (!items?.length) return <p className="text-xs text-muted-foreground py-2">Sem dados disponíveis</p>;
   return (
-    <Tabs defaultValue="overview" className="mt-4">
-      <TabsList className="w-full bg-muted/30 rounded-none border-b border-border p-0 h-auto">
-        <TabsTrigger value="overview" className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2.5 text-xs">
-          Visão Geral
-        </TabsTrigger>
-        <TabsTrigger value="sent" className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2.5 text-xs">
-          Enviados ({sent.toLocaleString()})
-        </TabsTrigger>
-        <TabsTrigger value="received" className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2.5 text-xs">
-          Recebidos ({received.toLocaleString()})
-        </TabsTrigger>
-      </TabsList>
-
-      <TabsContent value="overview">
-        <ScrollArea className="h-[calc(100vh-260px)]">
-          <div className="space-y-4 py-4">
-            <Card className="border-border/50">
-              <CardContent className="p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-foreground">Total de Emails</span>
-                  <span className="text-2xl font-bold text-foreground">{total.toLocaleString()}</span>
-                </div>
-
-                <div className="w-full h-3 rounded-full bg-muted/50 overflow-hidden flex">
-                  <div className="h-full transition-all" style={{ width: `${sentPct}%`, backgroundColor: '#10b981' }} />
-                  <div className="h-full transition-all" style={{ width: `${receivedPct}%`, backgroundColor: '#3b82f6' }} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#10b981' }} />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Enviados</p>
-                      <p className="text-sm font-semibold text-foreground">{sent.toLocaleString()} ({sentPct.toFixed(1)}%)</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#3b82f6' }} />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Recebidos</p>
-                      <p className="text-sm font-semibold text-foreground">{received.toLocaleString()} ({receivedPct.toFixed(1)}%)</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/50">
-              <CardContent className="p-4">
-                <h4 className="text-sm font-medium text-foreground mb-3">Proporção Enviado / Recebido</h4>
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-xs text-muted-foreground flex items-center gap-1"><ArrowUpRight className="w-3 h-3" /> Enviados</span>
-                      <span className="text-xs font-medium text-foreground">{sentPct.toFixed(1)}%</span>
-                    </div>
-                    <Progress value={sentPct} className="h-2" />
-                  </div>
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-xs text-muted-foreground flex items-center gap-1"><ArrowDownLeft className="w-3 h-3" /> Recebidos</span>
-                      <span className="text-xs font-medium text-foreground">{receivedPct.toFixed(1)}%</span>
-                    </div>
-                    <Progress value={receivedPct} className="h-2" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+    <>
+      {items.slice(0, 15).map((item, idx) => (
+        <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
+          <div className="flex items-center gap-2 min-w-0">
+            {renderLabel ? renderLabel(item, idx) : (
+              <span className="text-sm truncate">{item.name}</span>
+            )}
+            {renderSub && <span className="text-xs text-muted-foreground truncate">{renderSub(item)}</span>}
           </div>
-        </ScrollArea>
-      </TabsContent>
-
-      <TabsContent value="sent">
-        <ScrollArea className="h-[calc(100vh-260px)]">
-          <div className="space-y-4 py-4">
-            <Card className="border-border/50">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <ArrowUpRight className="w-5 h-5" style={{ color: '#10b981' }} />
-                  <span className="text-lg font-bold text-foreground">{sent.toLocaleString()}</span>
-                  <span className="text-sm text-muted-foreground">emails enviados</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Representam {sentPct.toFixed(1)}% do tráfego total do período monitorado.
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/50 bg-muted/5">
-              <CardContent className="p-4">
-                <p className="text-xs text-muted-foreground">
-                  💡 Rankings de top remetentes e domínios de destino estarão disponíveis quando o Analyzer completar a coleta detalhada.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
-      <TabsContent value="received">
-        <ScrollArea className="h-[calc(100vh-260px)]">
-          <div className="space-y-4 py-4">
-            <Card className="border-border/50">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <ArrowDownLeft className="w-5 h-5" style={{ color: '#3b82f6' }} />
-                  <span className="text-lg font-bold text-foreground">{received.toLocaleString()}</span>
-                  <span className="text-sm text-muted-foreground">emails recebidos</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Representam {receivedPct.toFixed(1)}% do tráfego total do período monitorado.
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/50 bg-muted/5">
-              <CardContent className="p-4">
-                <p className="text-xs text-muted-foreground">
-                  💡 Rankings de top destinatários e domínios de origem estarão disponíveis quando o Analyzer completar a coleta detalhada.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </ScrollArea>
-      </TabsContent>
-    </Tabs>
+          {item.count !== undefined && (
+            <span className={cn('text-sm font-semibold shrink-0 ml-2', colorClass ?? 'text-foreground')}>
+              {item.count.toLocaleString()}
+            </span>
+          )}
+        </div>
+      ))}
+    </>
   );
 }
 
-function SecurityContent({ category, data, analyzerMetrics }: { category: 'anti_spam' | 'phishing' | 'malware'; data: ExchangeDashboardData; analyzerMetrics?: any }) {
-  const valueMap = { anti_spam: data.security.spam, phishing: data.security.phishing, malware: data.security.malware };
-  const value = valueMap[category];
-  const severity = getSeverity(category, value, 1);
-  const sevStyle = SEVERITY_STYLES[severity];
-  const labelMap = { anti_spam: 'spam bloqueados', phishing: 'tentativas de phishing', malware: 'detecções de malware' };
-
-  const threatData = analyzerMetrics?.threatProtection;
-  const topDomains: string[] = threatData?.topAttackerDomains ?? [];
-  const topUsers: string[] = threatData?.topTargetedUsers ?? [];
-
+/* ─── Mailbox detail list (for forwarding/inactive/over-quota) ─── */
+function MailboxDetailList({
+  items,
+  colorClass,
+  subKey,
+  subLabel,
+}: {
+  items: any[];
+  colorClass?: string;
+  subKey: string;
+  subLabel: string;
+}) {
+  if (!items?.length) return <p className="text-xs text-muted-foreground py-2">Rankings disponíveis após execução do Analyzer</p>;
   return (
-    <ScrollArea className="h-[calc(100vh-220px)] mt-4">
-      <div className="space-y-4 py-2">
-        <Card className="border-border/50">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Total de detecções</span>
-              <span className="text-2xl font-bold text-foreground">{value.toLocaleString()}</span>
-            </div>
-            <Badge variant="outline" className={cn('text-xs', sevStyle.text, sevStyle.border, sevStyle.bg)}>
-              Severidade: {sevStyle.label}
-            </Badge>
-            <p className="text-xs text-muted-foreground">
-              {value.toLocaleString()} {labelMap[category]} identificados no período.
-            </p>
-          </CardContent>
-        </Card>
-
-        {topDomains.length > 0 && (
-          <Card className="border-border/50">
-            <CardContent className="p-4">
-              <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-orange-500" />
-                Top Domínios de Origem
-              </h4>
-              <div className="space-y-2">
-                {topDomains.slice(0, 10).map((domain, idx) => (
-                  <div key={idx} className="flex items-center gap-2 text-xs">
-                    <span className="text-muted-foreground w-5">{idx + 1}.</span>
-                    <span className="text-foreground font-medium">{domain}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {topUsers.length > 0 && (
-          <Card className="border-border/50">
-            <CardContent className="p-4">
-              <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
-                <UserX className="w-4 h-4 text-red-500" />
-                Usuários Mais Visados
-              </h4>
-              <div className="space-y-2">
-                {topUsers.slice(0, 10).map((user, idx) => (
-                  <div key={idx} className="flex items-center gap-2 text-xs">
-                    <span className="text-muted-foreground w-5">{idx + 1}.</span>
-                    <span className="text-foreground font-medium">{user}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {topDomains.length === 0 && topUsers.length === 0 && (
-          <Card className="border-border/50 bg-muted/5">
-            <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground">
-                💡 Rankings detalhados de domínios e usuários estarão disponíveis quando o Analyzer completar a análise de Threat Protection.
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    </ScrollArea>
+    <>
+      {items.slice(0, 15).map((item, idx) => (
+        <div key={idx} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <span className="text-sm truncate">{item.name}</span>
+          </div>
+          <span className={cn('text-xs shrink-0 ml-2 font-medium', colorClass ?? 'text-muted-foreground')}>
+            {item[subKey]}
+            {subKey === 'usagePct' ? '%' : ''}
+          </span>
+        </div>
+      ))}
+    </>
   );
 }
 
-function MailboxRiskContent({ category, data }: { category: 'forwarding' | 'auto_reply' | 'inactive_mailboxes' | 'over_quota'; data: ExchangeDashboardData }) {
-  const { mailboxes } = data;
-  const totalMb = mailboxes.total || 1;
-
-  const valueMap: Record<string, number> = {
-    forwarding: mailboxes.forwardingEnabled,
-    auto_reply: mailboxes.autoReplyExternal,
-    inactive_mailboxes: mailboxes.notLoggedIn30d,
-    over_quota: mailboxes.overQuota,
-  };
-
-  const value = valueMap[category] ?? 0;
-  const pct = (value / totalMb) * 100;
-  const severity = getSeverity(category, value, totalMb);
-  const sevStyle = SEVERITY_STYLES[severity];
-  const recommendation = RISK_RECOMMENDATIONS[category];
-
-  return (
-    <ScrollArea className="h-[calc(100vh-220px)] mt-4">
-      <div className="space-y-4 py-2">
-        <Card className="border-border/50">
-          <CardContent className="p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Caixas afetadas</span>
-              <div className="text-right">
-                <span className="text-2xl font-bold text-foreground">{value.toLocaleString()}</span>
-                <span className="text-sm text-muted-foreground ml-1">/ {totalMb.toLocaleString()}</span>
-              </div>
-            </div>
-
-            <div>
-              <div className="flex justify-between mb-1">
-                <span className="text-xs text-muted-foreground">Percentual de exposição</span>
-                <span className="text-xs font-medium text-foreground">{pct.toFixed(1)}%</span>
-              </div>
-              <div className="w-full h-3 rounded-full bg-muted/30 overflow-hidden">
-                <div
-                  className={cn('h-full rounded-full transition-all', SEVERITY_BAR_COLORS[severity])}
-                  style={{ width: `${Math.min(pct, 100)}%` }}
-                />
-              </div>
-            </div>
-
-            <Badge variant="outline" className={cn('text-xs', sevStyle.text, sevStyle.border, sevStyle.bg)}>
-              Risco: {sevStyle.label}
-            </Badge>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/50">
-          <CardContent className="p-4 space-y-3">
-            <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-muted-foreground" />
-              Contexto
-            </h4>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-muted/10 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">Total de mailboxes</p>
-                <p className="text-sm font-semibold text-foreground">{totalMb.toLocaleString()}</p>
-              </div>
-              <div className="bg-muted/10 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">Afetadas</p>
-                <p className="text-sm font-semibold text-foreground">{value.toLocaleString()}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {value === 0 && (
-          <Card className="border-green-500/20 bg-green-500/5">
-            <CardContent className="p-4 flex items-center gap-3">
-              <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
-              <p className="text-sm text-foreground">Nenhuma caixa afetada nesta categoria. Situação saudável.</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {recommendation && value > 0 && (
-          <Card className="border-amber-500/20 bg-amber-500/5">
-            <CardContent className="p-4">
-              <p className="text-sm text-foreground">💡 {recommendation}</p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    </ScrollArea>
-  );
-}
-
-const SEVERITY_BAR_COLORS: Record<string, string> = {
-  critical: 'bg-red-500',
-  high: 'bg-orange-500',
-  medium: 'bg-yellow-500',
-  low: 'bg-blue-400',
-};
-
-export function ExchangeCategorySheet({ open, onOpenChange, category, dashboardData, analyzerMetrics }: ExchangeCategorySheetProps) {
-  if (!category || !dashboardData) return null;
+export function ExchangeCategorySheet({
+  open,
+  onOpenChange,
+  category,
+  dashboardData,
+  analyzerMetrics,
+}: ExchangeCategorySheetProps) {
+  if (!category) return null;
 
   const meta = CATEGORY_META[category];
-  const Icon = meta.icon;
+  const IconComp = meta.icon;
+  const traffic = analyzerMetrics?.emailTrafficRankings;
+  const mbRankings = analyzerMetrics?.mailboxRankings;
+  const threatData = analyzerMetrics?.threatProtection;
+  const phishingData = analyzerMetrics?.phishing;
 
-  const isTraffic = category === 'email_traffic';
-  const isSecurity = category === 'anti_spam' || category === 'phishing' || category === 'malware';
-  const isMailboxRisk = category === 'forwarding' || category === 'auto_reply' || category === 'inactive_mailboxes' || category === 'over_quota';
+  const isFullHeight = ['email_traffic', 'anti_spam', 'phishing'].includes(category);
+
+  const renderTrafficContent = () => {
+    const sent = dashboardData?.traffic.sent || 0;
+    const received = dashboardData?.traffic.received || 0;
+    return (
+      <Tabs defaultValue="enviados" className="flex flex-col flex-1 min-h-0">
+        <div className="border-b border-border shrink-0" />
+        <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-6 h-auto py-0 shrink-0">
+          <TabsTrigger
+            value="enviados"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5"
+          >
+            <ArrowUpRight className="w-3.5 h-3.5" />
+            Enviados ({sent.toLocaleString()})
+          </TabsTrigger>
+          <TabsTrigger
+            value="recebidos"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5"
+          >
+            <ArrowDownLeft className="w-3.5 h-3.5" />
+            Recebidos ({received.toLocaleString()})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="enviados" className="flex-1 mt-0 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="p-6 space-y-4">
+              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
+                {sent.toLocaleString()} emails enviados
+              </Badge>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top Remetentes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <RankingList
+                    items={traffic?.topSenders || []}
+                    colorClass="text-emerald-600 dark:text-emerald-400"
+                    renderLabel={(item) => (
+                      <>
+                        <AtSign className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-sm truncate">{item.name}</span>
+                      </>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top Domínios de Destino</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <RankingList
+                    items={traffic?.topDestinationDomains || []}
+                    colorClass="text-emerald-600 dark:text-emerald-400"
+                    renderLabel={(item) => (
+                      <>
+                        <Globe className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-sm truncate">{item.name}</span>
+                      </>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="recebidos" className="flex-1 mt-0 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="p-6 space-y-4">
+              <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                {received.toLocaleString()} emails recebidos
+              </Badge>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top Destinatários</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <RankingList
+                    items={traffic?.topRecipients || []}
+                    colorClass="text-blue-600 dark:text-blue-400"
+                    renderLabel={(item) => (
+                      <>
+                        <AtSign className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-sm truncate">{item.name}</span>
+                      </>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top Domínios de Origem</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <RankingList
+                    items={traffic?.topSourceDomains || []}
+                    colorClass="text-blue-600 dark:text-blue-400"
+                    renderLabel={(item) => (
+                      <>
+                        <Globe className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-sm truncate">{item.name}</span>
+                      </>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+      </Tabs>
+    );
+  };
+
+  const renderSecurityContent = (cat: 'anti_spam' | 'phishing' | 'malware') => {
+    const valueMap: Record<string, number> = {
+      anti_spam: dashboardData?.security.spam || 0,
+      phishing: dashboardData?.security.phishing || 0,
+      malware: dashboardData?.security.malware || 0,
+    };
+    const value = valueMap[cat];
+    const labelMap: Record<string, string> = {
+      anti_spam: 'detecções de spam',
+      phishing: 'tentativas de phishing',
+      malware: 'detecções de malware',
+    };
+
+    // Get ranking data based on category
+    const topDomains: { name: string; count: number }[] =
+      cat === 'anti_spam' ? (threatData?.topSpamSenderDomains || []).map((d: any) => typeof d === 'string' ? { name: d, count: 0 } : { name: d.domain || d.name || d, count: d.count || 0 }) :
+      cat === 'phishing' ? (phishingData?.topSenderDomains || []).map((d: any) => typeof d === 'string' ? { name: d, count: 0 } : { name: d.domain || d.name || d, count: d.count || 0 }) :
+      (threatData?.topMalwareSenderDomains || []).map((d: any) => typeof d === 'string' ? { name: d, count: 0 } : { name: d.domain || d.name || d, count: d.count || 0 });
+
+    const topUsers: { name: string; count: number }[] =
+      cat === 'anti_spam' ? (threatData?.topSpamRecipients || []).map((u: any) => typeof u === 'string' ? { name: u, count: 0 } : { name: u.user || u.name || u, count: u.count || 0 }) :
+      cat === 'phishing' ? (phishingData?.topAttackedUsers || threatData?.topPhishingTargets || []).map((u: any) => typeof u === 'string' ? { name: u, count: 0 } : { name: u.user || u.name || u, count: u.count || 0 }) :
+      (threatData?.topMalwareRecipients || []).map((u: any) => typeof u === 'string' ? { name: u, count: 0 } : { name: u.user || u.name || u, count: u.count || 0 });
+
+    const sevColor = cat === 'phishing' ? 'text-red-500' : cat === 'malware' ? 'text-amber-500' : 'text-violet-500';
+
+    if (cat === 'malware') {
+      // Malware: no tabs, simple list
+      return (
+        <ScrollArea className="h-[calc(100vh-12rem)] mt-4">
+          <div className="p-6 space-y-4">
+            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30">
+              {value.toLocaleString()} {labelMap[cat]}
+            </Badge>
+            <Card>
+              <CardHeader className="pb-2 pt-4">
+                <CardTitle className="text-sm font-medium">Top Domínios de Origem</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <RankingList items={topDomains} colorClass="text-amber-600 dark:text-amber-400"
+                  renderLabel={(item) => (<><Globe className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm truncate">{item.name}</span></>)} />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2 pt-4">
+                <CardTitle className="text-sm font-medium">Top Usuários Alvos</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <RankingList items={topUsers} colorClass="text-amber-600 dark:text-amber-400"
+                  renderLabel={(item) => (<><User className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm truncate">{item.name}</span></>)} />
+              </CardContent>
+            </Card>
+          </div>
+        </ScrollArea>
+      );
+    }
+
+    // Spam & Phishing: tabs
+    const badgeBg = cat === 'phishing' ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30' : 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/30';
+    const listColor = cat === 'phishing' ? 'text-red-600 dark:text-red-400' : 'text-violet-600 dark:text-violet-400';
+
+    return (
+      <Tabs defaultValue="origens" className="flex flex-col flex-1 min-h-0">
+        <div className="border-b border-border shrink-0" />
+        <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-6 h-auto py-0 shrink-0">
+          <TabsTrigger value="origens" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5">
+            <Globe className="w-3.5 h-3.5" />
+            Origens
+          </TabsTrigger>
+          <TabsTrigger value="alvos" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5">
+            <User className="w-3.5 h-3.5" />
+            Alvos
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="origens" className="flex-1 mt-0 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="p-6 space-y-4">
+              <Badge variant="outline" className={badgeBg}>
+                {value.toLocaleString()} {labelMap[cat]}
+              </Badge>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top Domínios Remetentes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <RankingList items={topDomains} colorClass={listColor}
+                    renderLabel={(item) => (<><Globe className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm truncate">{item.name}</span></>)} />
+                </CardContent>
+              </Card>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="alvos" className="flex-1 mt-0 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="p-6 space-y-4">
+              <Badge variant="outline" className={badgeBg}>
+                {value.toLocaleString()} {labelMap[cat]}
+              </Badge>
+              <Card>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-sm font-medium">Top Usuários Visados</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <RankingList items={topUsers} colorClass={listColor}
+                    renderLabel={(item) => (<><User className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm truncate">{item.name}</span></>)} />
+                </CardContent>
+              </Card>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+      </Tabs>
+    );
+  };
+
+  const renderMailboxContent = (cat: 'forwarding' | 'auto_reply' | 'inactive_mailboxes' | 'over_quota') => {
+    const totalMb = dashboardData?.mailboxes.total || 1;
+    const valueMap: Record<string, number> = {
+      forwarding: dashboardData?.mailboxes.forwardingEnabled || 0,
+      auto_reply: dashboardData?.mailboxes.autoReplyExternal || 0,
+      inactive_mailboxes: dashboardData?.mailboxes.notLoggedIn30d || 0,
+      over_quota: dashboardData?.mailboxes.overQuota || 0,
+    };
+    const value = valueMap[cat];
+
+    const badgeColor: Record<string, string> = {
+      forwarding: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30',
+      auto_reply: 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/30',
+      inactive_mailboxes: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30',
+      over_quota: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30',
+    };
+    const listColor: Record<string, string> = {
+      forwarding: 'text-orange-600 dark:text-orange-400',
+      auto_reply: 'text-pink-600 dark:text-pink-400',
+      inactive_mailboxes: 'text-indigo-600 dark:text-indigo-400',
+      over_quota: 'text-red-600 dark:text-red-400',
+    };
+
+    const items = cat === 'forwarding' ? (mbRankings?.topForwarding || []) :
+      cat === 'inactive_mailboxes' ? (mbRankings?.topInactive || []) :
+      cat === 'over_quota' ? (mbRankings?.topOverQuota || []) : [];
+
+    const subKey = cat === 'forwarding' ? 'forwardTo' : cat === 'inactive_mailboxes' ? 'lastLogin' : 'usagePct';
+    const cardTitle = cat === 'forwarding' ? 'Mailboxes com Forwarding' :
+      cat === 'inactive_mailboxes' ? 'Mailboxes sem Login (30d)' :
+      cat === 'over_quota' ? 'Mailboxes Acima da Cota' : 'Mailboxes com Auto-Reply';
+
+    return (
+      <ScrollArea className="h-[calc(100vh-12rem)] mt-4">
+        <div className="p-6 space-y-4">
+          <Badge variant="outline" className={badgeColor[cat]}>
+            {value.toLocaleString()} de {totalMb.toLocaleString()} mailboxes ({totalMb > 0 ? ((value / totalMb) * 100).toFixed(1) : 0}%)
+          </Badge>
+          <Card>
+            <CardHeader className="pb-2 pt-4">
+              <CardTitle className="text-sm font-medium">{cardTitle}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <MailboxDetailList items={items} colorClass={listColor[cat]} subKey={subKey} subLabel="" />
+            </CardContent>
+          </Card>
+        </div>
+      </ScrollArea>
+    );
+  };
+
+  const renderCategoryContent = () => {
+    switch (category) {
+      case 'email_traffic':
+        return renderTrafficContent();
+      case 'anti_spam':
+      case 'phishing':
+      case 'malware':
+        return renderSecurityContent(category);
+      case 'forwarding':
+      case 'auto_reply':
+      case 'inactive_mailboxes':
+      case 'over_quota':
+        return renderMailboxContent(category);
+      default:
+        return <p className="text-sm text-muted-foreground p-6">Sem dados disponíveis.</p>;
+    }
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-[50vw] p-0">
-        <SheetHeader className="px-6 pt-6 pb-4 border-b border-border">
-          <div className="flex items-center gap-3">
+      <SheetContent
+        className={cn(
+          'w-full sm:max-w-[50vw]',
+          isFullHeight ? 'p-0 flex flex-col' : ''
+        )}
+      >
+        <SheetHeader className={cn(isFullHeight ? 'px-6 pt-6 pb-0 shrink-0' : 'mb-2')}>
+          <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg" style={{ backgroundColor: `${meta.colorHex}15` }}>
-              <Icon className="w-5 h-5" style={{ color: meta.colorHex }} />
+              <IconComp className="w-5 h-5" style={{ color: meta.colorHex }} />
             </div>
-            <div>
-              <SheetTitle className="text-lg">{meta.label}</SheetTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">{meta.description}</p>
-            </div>
+            <SheetTitle>{meta.label}</SheetTitle>
           </div>
+          <SheetDescription>{meta.description}</SheetDescription>
         </SheetHeader>
 
-        <div className="px-6">
-          {isTraffic && <TrafficContent data={dashboardData} />}
-          {isSecurity && <SecurityContent category={category} data={dashboardData} analyzerMetrics={analyzerMetrics} />}
-          {isMailboxRisk && <MailboxRiskContent category={category} data={dashboardData} />}
-        </div>
+        {isFullHeight ? (
+          renderCategoryContent()
+        ) : (
+          renderCategoryContent()
+        )}
       </SheetContent>
     </Sheet>
   );
