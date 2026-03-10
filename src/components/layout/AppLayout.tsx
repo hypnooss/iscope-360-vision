@@ -139,11 +139,11 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     color: 'text-blue-500',
     items: [
       { label: 'Compliance', href: '/scope-m365/compliance', icon: FileText },
+      { label: 'Exchange Analyzer', href: '/scope-m365/exchange-analyzer', icon: Mail },
       { label: 'Analyzer', href: '/scope-m365/analyzer', icon: Radar },
       { label: 'CVEs', href: '/scope-m365/cves', icon: ShieldCheck },
       { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
       { label: 'Exchange Online', href: '/scope-m365/exchange-online', icon: Mail },
-      { label: 'Exchange Analyzer', href: '/scope-m365/exchange-analyzer', icon: Mail },
       { label: 'Colaboração', href: '/scope-m365/collaboration', icon: Users },
       { label: 'Saúde do 365', href: '/scope-m365/service-health', icon: HeartPulse },
       { label: 'Execuções', href: '/scope-m365/executions', icon: Activity },
