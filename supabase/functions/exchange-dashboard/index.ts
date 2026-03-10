@@ -166,6 +166,7 @@ Deno.serve(async (req) => {
       totalMailboxes = rows.length;
       
       rows.forEach((row: any) => {
+        const upn = row['User Principal Name'] || row['Display Name'] || '';
         // Check storage quota (CSV field names)
         const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
         const quota = parseInt(row['Prohibit Send/Receive Quota (Byte)'] || '0', 10);
@@ -183,7 +184,6 @@ Deno.serve(async (req) => {
           const created = new Date(row['Created Date']);
           if (created >= thirtyDaysAgo) newLast30d++;
         }
-        const upn = row['User Principal Name'] || row['Display Name'] || '';
         if (row['Last Activity Date']) {
           const lastActivity = new Date(row['Last Activity Date']);
           const lastStr = row['Last Activity Date'];
@@ -213,6 +213,7 @@ Deno.serve(async (req) => {
       console.log(`Mailbox usage JSON: ${rows.length} rows`);
       totalMailboxes = rows.length;
       rows.forEach((row: any) => {
+        const upnJ = row.userPrincipalName || row.displayName || '';
         const used = row.storageUsedInBytes || 0;
         const quota = row.prohibitSendReceiveQuotaInBytes || 0;
         if (quota > 0 && used >= quota * 0.9) {
@@ -227,7 +228,6 @@ Deno.serve(async (req) => {
         if (row.createdDateTime) {
           if (new Date(row.createdDateTime) >= thirtyDaysAgo) newLast30d++;
         }
-        const upnJ = row.userPrincipalName || row.displayName || '';
         if (row.lastActivityDate) {
           const la = new Date(row.lastActivityDate);
           if (la < thirtyDaysAgo) { notLoggedIn30d++; inactiveUsers30.push({ name: upnJ, lastActivity: row.lastActivityDate }); }
