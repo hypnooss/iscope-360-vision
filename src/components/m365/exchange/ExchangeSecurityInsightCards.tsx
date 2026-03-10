@@ -5,11 +5,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { SEVERITY_CONFIG } from '@/types/m365Insights';
-import type { ExchangeInsight } from '@/hooks/useExchangeOnlineInsights';
-import { AlertTriangle, AlertCircle, Info, Shield, Mail, Lightbulb } from 'lucide-react';
+import type { M365AnalyzerInsight } from '@/types/m365AnalyzerInsights';
+import { AlertTriangle, AlertCircle, Info, Shield, Mail, Lightbulb, Users } from 'lucide-react';
 
 interface ExchangeSecurityInsightCardsProps {
-  insights: ExchangeInsight[];
+  insights: M365AnalyzerInsight[];
+  loading?: boolean;
 }
 
 const severityIcons: Record<string, React.ElementType> = {
@@ -28,16 +29,14 @@ const severityBorderColors: Record<string, string> = {
   info: 'border-l-slate-500',
 };
 
-export function ExchangeSecurityInsightCards({ insights }: ExchangeSecurityInsightCardsProps) {
-  const [selectedInsight, setSelectedInsight] = useState<ExchangeInsight | null>(null);
+export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecurityInsightCardsProps) {
+  const [selectedInsight, setSelectedInsight] = useState<M365AnalyzerInsight | null>(null);
 
   // Sort by severity
   const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-  const failInsights = insights
-    .filter(i => i.status === 'fail' || i.status === 'warn')
-    .sort((a, b) => (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5));
+  const sorted = [...insights].sort((a, b) => (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5));
 
-  if (failInsights.length === 0) return null;
+  if (loading || sorted.length === 0) return null;
 
   return (
     <div className="space-y-4 mb-6">
@@ -46,12 +45,12 @@ export function ExchangeSecurityInsightCards({ insights }: ExchangeSecurityInsig
           Insights de Segurança
         </h2>
         <Badge variant="outline" className="text-xs">
-          {failInsights.length} {failInsights.length === 1 ? 'insight' : 'insights'}
+          {sorted.length} {sorted.length === 1 ? 'insight' : 'insights'}
         </Badge>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {failInsights.map(insight => {
+        {sorted.map(insight => {
           const sevConfig = SEVERITY_CONFIG[insight.severity];
           const Icon = severityIcons[insight.severity] || Shield;
 
@@ -72,19 +71,27 @@ export function ExchangeSecurityInsightCards({ insights }: ExchangeSecurityInsig
                   </div>
                   <Badge
                     variant="outline"
-                    className={cn('text-[10px] px-1.5 py-0 shrink-0', sevConfig.color)}
+                    className={cn('text-[10px] px-1.5 py-0 shrink-0', sevConfig?.color)}
                   >
-                    {sevConfig.label}
+                    {sevConfig?.label ?? insight.severity}
                   </Badge>
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
                 <p className="text-xs text-muted-foreground line-clamp-2">{insight.description}</p>
-                {insight.affectedEntities && insight.affectedEntities.length > 0 && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {insight.affectedEntities.length} entidade(s) afetada(s)
-                  </p>
-                )}
+                <div className="flex items-center gap-3 mt-2">
+                  {insight.count != null && insight.count > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {insight.count} ocorrência(s)
+                    </span>
+                  )}
+                  {insight.affectedUsers && insight.affectedUsers.length > 0 && (
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Users className="w-3 h-3" />
+                      {insight.affectedUsers.length} usuário(s)
+                    </span>
+                  )}
+                </div>
               </CardContent>
             </Card>
           );
@@ -106,13 +113,15 @@ export function ExchangeSecurityInsightCards({ insights }: ExchangeSecurityInsig
                     <div className="flex items-center gap-1.5 mt-1">
                       <Badge
                         variant="outline"
-                        className={cn('text-[10px] px-1.5 py-0', SEVERITY_CONFIG[selectedInsight.severity].color)}
+                        className={cn('text-[10px] px-1.5 py-0', SEVERITY_CONFIG[selectedInsight.severity]?.color)}
                       >
-                        {SEVERITY_CONFIG[selectedInsight.severity].label}
+                        {SEVERITY_CONFIG[selectedInsight.severity]?.label ?? selectedInsight.severity}
                       </Badge>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                        {selectedInsight.status === 'fail' ? 'Em falha' : selectedInsight.status === 'warn' ? 'Alerta' : 'OK'}
-                      </Badge>
+                      {selectedInsight.count != null && selectedInsight.count > 0 && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          {selectedInsight.count} ocorrência(s)
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -132,20 +141,6 @@ export function ExchangeSecurityInsightCards({ insights }: ExchangeSecurityInsig
                     </div>
                   )}
 
-                  {selectedInsight.technicalRisk && (
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground mb-1">⚠️ Risco Técnico</p>
-                      <p className="text-sm">{selectedInsight.technicalRisk}</p>
-                    </div>
-                  )}
-
-                  {selectedInsight.businessImpact && (
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground mb-1">💼 Impacto no Negócio</p>
-                      <p className="text-sm text-muted-foreground">{selectedInsight.businessImpact}</p>
-                    </div>
-                  )}
-
                   {selectedInsight.recommendation && (
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
@@ -158,27 +153,53 @@ export function ExchangeSecurityInsightCards({ insights }: ExchangeSecurityInsig
                     </div>
                   )}
 
-                  {selectedInsight.affectedEntities && selectedInsight.affectedEntities.length > 0 && (
+                  {selectedInsight.affectedUsers && selectedInsight.affectedUsers.length > 0 && (
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground mb-2">
-                        👥 Entidades Afetadas ({selectedInsight.affectedEntities.length})
+                        👥 Usuários Afetados ({selectedInsight.affectedUsers.length})
                       </p>
-                      <div className="space-y-2 max-h-64 overflow-y-auto">
-                        {selectedInsight.affectedEntities.map((entity, i) => (
-                          <div key={i} className="bg-secondary/30 p-2 rounded text-xs">
-                            <span className="font-medium">{entity.name}</span>
-                            <span className="text-muted-foreground ml-2">({entity.type})</span>
-                            {entity.details && <p className="text-muted-foreground mt-0.5">{entity.details}</p>}
+                      <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                        {selectedInsight.affectedUsers.map((user, i) => (
+                          <div key={i} className="bg-secondary/30 p-2 rounded text-xs font-medium">
+                            {user}
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  {selectedInsight.criteria && (
+                  {/* Metadata / Evidence */}
+                  {selectedInsight.metadata && Object.keys(selectedInsight.metadata).length > 0 && (
                     <div>
-                      <p className="text-xs font-semibold text-muted-foreground mb-1">📐 Critério</p>
-                      <p className="text-sm text-muted-foreground bg-muted/50 rounded-lg p-3">{selectedInsight.criteria}</p>
+                      <p className="text-xs font-semibold text-muted-foreground mb-2">🔎 Evidências</p>
+                      <div className="space-y-2">
+                        {Object.entries(selectedInsight.metadata).map(([key, value]) => {
+                          if (Array.isArray(value) && value.length > 0) {
+                            return (
+                              <div key={key}>
+                                <p className="text-xs text-muted-foreground mb-1 capitalize">{key.replace(/_/g, ' ')}</p>
+                                <div className="space-y-1">
+                                  {value.slice(0, 10).map((item, i) => (
+                                    <div key={i} className="bg-muted/50 rounded p-2 text-xs">
+                                      {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+                                    </div>
+                                  ))}
+                                  {value.length > 10 && (
+                                    <p className="text-xs text-muted-foreground">+{value.length - 10} mais...</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          }
+                          if (typeof value === 'object' && value !== null) return null;
+                          return (
+                            <div key={key} className="flex items-center justify-between bg-muted/50 rounded p-2">
+                              <span className="text-xs text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
+                              <span className="text-xs font-medium">{String(value)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>

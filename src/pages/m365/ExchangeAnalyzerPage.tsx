@@ -7,10 +7,9 @@ import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
 import { useExchangeDashboard, type ExchangeDashboardData } from '@/hooks/useExchangeDashboard';
-import { useExchangeOnlineInsights } from '@/hooks/useExchangeOnlineInsights';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -24,14 +23,37 @@ import { ExchangeThreatProtectionSection } from '@/components/m365/exchange/Exch
 import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
-import { cn } from '@/lib/utils';
 import { M365RiskCategory } from '@/types/m365Insights';
+import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
 import {
-  Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Globe, Mail, Settings,
+  Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Mail, Settings,
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+// ─── Exchange-relevant operational categories ────────────────────────────────
+const EXCHANGE_OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
+  'threat_protection',
+  'phishing_threats',
+  'behavioral_baseline',
+  'suspicious_rules',
+  'exfiltration',
+  'exchange_health',
+];
+
+// ─── Filter out configurational/compliance insights ──────────────────────────
+const CONFIG_KEYWORDS = [
+  'desabilitado', 'disabled', 'configuração', 'configuracao', 'policy',
+  'habilitado', 'enabled', 'anti-spam', 'intelligence',
+];
+
+function isConfigurationalInsight(insight: M365AnalyzerInsight): boolean {
+  const name = insight.name.toLowerCase();
+  if (CONFIG_KEYWORDS.some(kw => name.includes(kw))) return true;
+  if ((insight.count === undefined || insight.count === 0) && (!insight.affectedUsers || insight.affectedUsers.length === 0)) return true;
+  return false;
+}
 
 export default function ExchangeAnalyzerPage() {
   const { user, loading: authLoading } = useAuth();
@@ -64,15 +86,6 @@ export default function ExchangeAnalyzerPage() {
   // Data hooks
   const { data: dashboardData, loading: dashboardLoading } = useExchangeDashboard({ tenantRecordId: selectedTenantId });
   const { data: analyzerSnapshot, isLoading: analyzerLoading } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
-  const {
-    insights,
-    summary,
-    analyzedAt,
-    loading: insightsLoading,
-    error: insightsError,
-    errorCode,
-    triggerAnalysis,
-  } = useExchangeOnlineInsights({ tenantRecordId: selectedTenantId });
 
   const [triggering, setTriggering] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -81,10 +94,21 @@ export default function ExchangeAnalyzerPage() {
   const [categorySheetOpen, setCategorySheetOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<M365RiskCategory | null>(null);
 
+  // ─── Extract operational Exchange insights from analyzer snapshot ───────────
+  const exchangeInsights: M365AnalyzerInsight[] = (analyzerSnapshot?.insights ?? [])
+    .filter(i => EXCHANGE_OPERATIONAL_CATEGORIES.includes(i.category as M365AnalyzerCategory))
+    .filter(i => !isConfigurationalInsight(i));
+
+  const analyzedAt = analyzerSnapshot?.created_at;
+
   const handleTriggerAnalysis = async () => {
+    if (!selectedTenantId) return;
     setTriggering(true);
     try {
-      await triggerAnalysis();
+      const { error } = await supabase.functions.invoke('m365-exchange-analyze', {
+        body: { tenantRecordId: selectedTenantId },
+      });
+      if (error) throw error;
     } finally {
       setTriggering(false);
     }
@@ -100,7 +124,7 @@ export default function ExchangeAnalyzerPage() {
 
   if (authLoading) return null;
 
-  const loading = dashboardLoading || insightsLoading;
+  const loading = dashboardLoading || analyzerLoading;
 
   const DEFAULT_DASHBOARD_DATA: ExchangeDashboardData = {
     mailboxes: { total: 0, overQuota: 0, forwardingEnabled: 0, autoReplyExternal: 0, newLast30d: 0, notLoggedIn30d: 0 },
@@ -204,9 +228,9 @@ export default function ExchangeAnalyzerPage() {
           />
         )}
 
-        {/* Security Insights */}
-        {insights.length > 0 && !insightsLoading && (
-          <ExchangeSecurityInsightCards insights={insights} />
+        {/* Security Insights (operational only) */}
+        {selectedTenantId && !analyzerLoading && (
+          <ExchangeSecurityInsightCards insights={exchangeInsights} loading={analyzerLoading} />
         )}
 
         {/* No tenant connected */}
@@ -233,20 +257,11 @@ export default function ExchangeAnalyzerPage() {
           </Alert>
         )}
 
-        {selectedTenantId && !loading && insights.length === 0 && errorCode === 'NO_ANALYSIS' && (
+        {selectedTenantId && !loading && exchangeInsights.length === 0 && !analyzerSnapshot && (
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>Nenhuma análise encontrada. Clique em "Executar Análise" para começar.</AlertDescription>
           </Alert>
-        )}
-
-        {insightsError && errorCode !== 'NO_ANALYSIS' && (
-          <Card className="border-destructive/30 bg-destructive/5">
-            <CardContent className="py-6 text-center">
-              <AlertTriangle className="w-10 h-10 text-destructive mx-auto mb-3" />
-              <h3 className="font-semibold mb-1">{insightsError}</h3>
-            </CardContent>
-          </Card>
         )}
       </div>
 
@@ -255,7 +270,7 @@ export default function ExchangeAnalyzerPage() {
         open={categorySheetOpen}
         onOpenChange={setCategorySheetOpen}
         category={selectedCategory}
-        insights={insights}
+        insights={[]}
       />
       <ScheduleDialog
         open={scheduleDialogOpen}
