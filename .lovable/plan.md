@@ -1,24 +1,17 @@
+# Status: ✅ Implementado
 
+## Fix: WHOIS data not being saved + parsing issues
 
-# Fallback para cache vazio do Exchange Dashboard
+### Mudanças realizadas
 
-## Problema
-Quando `exchange_dashboard_cache` é `null` (tenant nunca teve o dashboard Exchange coletado), os KPI cards mostram zeros enganosos.
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/agent-task-result/index.ts` | Force redeploy (comment timestamp) para ativar extração domain_whois |
+| `supabase/functions/trigger-external-domain-analysis/index.ts` | Removida chamada duplicada ao `domain-whois-lookup` edge function |
+| `python-agent/agent/executors/domain_whois.py` | `.br`: registrar fixo "Registro.br (NIC.br)", busca events em entities aninhadas |
+| `python-agent/agent/executors/domain_whois.py` | `.io`: RDAP endpoint corrigido para `rdap.identitydigital.services` |
+| `python-agent/agent/executors/domain_whois.py` | Owner: extrai registrant separado do registrar (evita confundir dono com registrar) |
 
-## Solução
-No `ExchangeAnalyzerPage.tsx`, quando `dashboardData === null` e `selectedTenantId` existe e não está loading:
-
-1. **Esconder** os componentes `ExchangeAnalyzerStatsCards` e `ExchangeAnalyzerCategoryGrid` (que dependem do cache)
-2. **Exibir** um Alert informativo no lugar, com botão "Atualizar Dashboard" que chama `refresh()` do hook `useExchangeDashboard`
-3. Expor `refresh` e `refreshing` do hook na page (já retornados pelo hook, só não estão sendo usados)
-
-### Alteração em `ExchangeAnalyzerPage.tsx`
-
-- Desestruturar `refresh` e `refreshing` do `useExchangeDashboard`
-- Condicionar a renderização dos stats cards: só exibir se `dashboardData !== null`
-- Adicionar bloco de empty state (Alert + botão) quando `dashboardData === null && selectedTenantId && !dashboardLoading`
-- Seguir o padrão de empty state já usado no projeto (ícone + texto + CTA)
-
-### Arquivo alterado
-- `src/pages/m365/ExchangeAnalyzerPage.tsx`
-
+### Próximos passos
+- Deploy do Agent com `domain_whois.py` atualizado
+- Re-executar análise nos domínios .br e precisio.io para validar

@@ -84,7 +84,7 @@ export default function ExchangeAnalyzerPage() {
   );
 
   // Data hooks
-  const { data: dashboardData, loading: dashboardLoading } = useExchangeDashboard({ tenantRecordId: selectedTenantId });
+  const { data: dashboardData, loading: dashboardLoading, refresh: refreshDashboard, refreshing: dashboardRefreshing } = useExchangeDashboard({ tenantRecordId: selectedTenantId });
   const { data: analyzerSnapshot, isLoading: analyzerLoading } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
 
   const [triggering, setTriggering] = useState(false);
@@ -126,13 +126,6 @@ export default function ExchangeAnalyzerPage() {
 
   const loading = dashboardLoading || analyzerLoading;
 
-  const DEFAULT_DASHBOARD_DATA: ExchangeDashboardData = {
-    mailboxes: { total: 0, overQuota: 0, forwardingEnabled: 0, autoReplyExternal: 0, newLast30d: 0, notLoggedIn30d: 0 },
-    traffic: { sent: 0, received: 0 },
-    security: { maliciousInbound: 0, phishing: 0, malware: 0, spam: 0 },
-    analyzedAt: '',
-  };
-  const effectiveDashboard = dashboardData ?? DEFAULT_DASHBOARD_DATA;
 
   const noTenants = !tenantsLoading && tenants.length === 0;
 
@@ -208,16 +201,34 @@ export default function ExchangeAnalyzerPage() {
           </div>
         )}
 
+        {/* Empty state: dashboard cache not populated */}
+        {selectedTenantId && !dashboardLoading && !dashboardData && (
+          <Card className="border-warning/30 bg-warning/5">
+            <CardContent className="py-10 text-center">
+              <Mail className="w-10 h-10 text-warning mx-auto mb-3" />
+              <h3 className="text-base font-semibold mb-1">Dados do Exchange não sincronizados</h3>
+              <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
+                Este tenant ainda não possui dados coletados do Exchange Online. Clique abaixo para executar a primeira coleta.
+              </p>
+              <Button onClick={refreshDashboard} disabled={dashboardRefreshing} className="gap-2">
+                {dashboardRefreshing
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />Coletando...</>
+                  : <><Play className="w-4 h-4" />Atualizar Dashboard</>}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Stats Cards */}
-        {selectedTenantId && !loading && (
+        {selectedTenantId && !loading && dashboardData && (
           <div className="mb-2">
-            <ExchangeAnalyzerStatsCards data={effectiveDashboard} />
+            <ExchangeAnalyzerStatsCards data={dashboardData} />
           </div>
         )}
 
         {/* Category Grid */}
-        {selectedTenantId && !loading && (
-          <ExchangeAnalyzerCategoryGrid data={effectiveDashboard} />
+        {selectedTenantId && !loading && dashboardData && (
+          <ExchangeAnalyzerCategoryGrid data={dashboardData} />
         )}
 
         {/* Threat Protection */}
