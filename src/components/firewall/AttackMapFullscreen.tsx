@@ -91,12 +91,12 @@ export function AttackMapFullscreen({
 
   // Build sections config
   const sections = [
-    { label: 'Falha Auth FW', color: '#dc2626', countries: authFailedCountries, total: totalFwAuthFailed, showPrivate: true },
-    { label: 'Falha Auth VPN', color: '#f97316', countries: authFailedVpnCountries, total: totalVpnAuthFailed, showPrivate: true },
-    { label: 'Sucesso Auth FW', color: '#22c55e', countries: authSuccessCountries, total: totalFwAuthSuccess, showPrivate: true },
-    { label: 'Sucesso Auth VPN', color: '#22c55e', countries: authSuccessVpnCountries, total: totalVpnAuthSuccess, showPrivate: true },
-    { label: 'Saída Permitida', color: '#38bdf8', countries: topOutboundCountries, total: totalOutbound, showPrivate: false },
-    { label: 'Saída Bloqueada', color: '#ef4444', countries: topOutboundBlockedCountries, total: totalOutboundBlocked, showPrivate: false },
+    { label: L.authFailed, color: '#dc2626', countries: authFailedCountries, total: totalFwAuthFailed, showPrivate: true },
+    { label: L.authFailedVpn, color: '#f97316', countries: authFailedVpnCountries, total: totalVpnAuthFailed, showPrivate: true },
+    { label: L.authSuccess, color: '#22c55e', countries: authSuccessCountries, total: totalFwAuthSuccess, showPrivate: true },
+    { label: L.authSuccessVpn, color: '#22c55e', countries: authSuccessVpnCountries, total: totalVpnAuthSuccess, showPrivate: true },
+    { label: L.outbound, color: '#38bdf8', countries: topOutboundCountries, total: totalOutbound, showPrivate: false },
+    { label: L.outboundBlocked, color: '#ef4444', countries: topOutboundBlockedCountries, total: totalOutboundBlocked, showPrivate: false },
   ].filter(s => s.total > 0);
 
   return (
