@@ -376,17 +376,35 @@ function SchedulesTab() {
     },
   });
 
-  const isLoading = loadingFw || loadingDom || loadingAs || loadingAn || loadingM365;
+  const { data: m365ComplianceSchedules, isLoading: loadingM365Compliance } = useQuery({
+    queryKey: ['admin-schedules-m365-compliance'],
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('m365_compliance_schedules' as any)
+        .select('id, tenant_record_id, frequency, is_active, next_run_at, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, m365_tenants(id, display_name, client_id, clients(id, name))')
+        .order('next_run_at', { ascending: true, nullsFirst: false });
+      if (error) throw error;
+      return ((data || []) as any[]).map((s): UnifiedSchedule => ({
+        id: s.id, targetId: s.tenant_record_id, targetName: s.m365_tenants?.display_name || '—', targetType: 'm365_compliance',
+        frequency: s.frequency, isActive: s.is_active, nextRunAt: s.next_run_at,
+        scheduledHour: s.scheduled_hour, scheduledDayOfWeek: s.scheduled_day_of_week, scheduledDayOfMonth: s.scheduled_day_of_month,
+        clientId: s.m365_tenants?.clients?.id || '', clientName: s.m365_tenants?.clients?.name || '—', lastScore: null,
+      }));
+    },
+  });
+
+  const isLoading = loadingFw || loadingDom || loadingAs || loadingAn || loadingM365 || loadingM365Compliance;
 
   const schedules = useMemo(() => {
-    const all = [...(firewallSchedules || []), ...(domainSchedules || []), ...(attackSurfaceSchedules || []), ...(analyzerSchedules || []), ...(m365Schedules || [])];
+    const all = [...(firewallSchedules || []), ...(domainSchedules || []), ...(attackSurfaceSchedules || []), ...(analyzerSchedules || []), ...(m365Schedules || []), ...(m365ComplianceSchedules || [])];
     return all.sort((a, b) => {
       if (!a.nextRunAt && !b.nextRunAt) return 0;
       if (!a.nextRunAt) return 1;
       if (!b.nextRunAt) return -1;
       return new Date(a.nextRunAt).getTime() - new Date(b.nextRunAt).getTime();
     });
-  }, [firewallSchedules, domainSchedules, attackSurfaceSchedules, analyzerSchedules, m365Schedules]);
+  }, [firewallSchedules, domainSchedules, attackSurfaceSchedules, analyzerSchedules, m365Schedules, m365ComplianceSchedules]);
 
   const targetIds = useMemo(() => schedules.map(s => s.targetId), [schedules]);
 
