@@ -154,7 +154,7 @@ function RankingListWidget({ items, labelKey }: { items: { [key: string]: any; c
   );
 }
 
-export default function AnalyzerDashboardV2Page() {
+export default function AnalyzerDashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const { hasModuleAccess } = useModules();
   const { isPreviewMode } = usePreview();
