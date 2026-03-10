@@ -101,7 +101,7 @@ export function TopFindingsList({ findings, maxItems = 7, onViewAll, onFindingCl
               className="w-full text-xs text-muted-foreground hover:text-foreground mt-1"
               onClick={() => navigate('/scope-external-domain/analyzer/findings')}
             >
-              Ver todos os serviços expostos →
+              Ver todas as vulnerabilidades →
             </Button>
           </>
         )}
