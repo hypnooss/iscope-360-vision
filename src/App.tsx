@@ -167,6 +167,7 @@ const App = () => (
                   
                   <Route path="/scope-m365/exchange-analyzer" element={<ExchangeAnalyzerPage />} />
                   <Route path="/scope-m365/entra-id-analyzer" element={<EntraIdAnalyzerPage />} />
+                  <Route path="/scope-m365/teams-analyzer" element={<TeamsAnalyzerPage />} />
                   <Route path="/scope-m365/collaboration" element={<CollaborationPage />} />
                   
                   <Route path="/scope-m365/analyzer" element={<M365AnalyzerDashboardPage />} />

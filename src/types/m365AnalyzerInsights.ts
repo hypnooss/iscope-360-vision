@@ -15,7 +15,12 @@ export type M365AnalyzerCategory =
   | 'suspicious_rules'
   | 'exfiltration'
   | 'operational_risks'
-  | 'threat_protection';
+  | 'threat_protection'
+  | 'teams_governance'
+  | 'sharepoint_exposure'
+  | 'guest_access'
+  | 'external_sharing'
+  | 'collaboration_risk';
 
 export interface M365AnalyzerInsight {
   id: string;
