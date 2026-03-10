@@ -1698,6 +1698,56 @@ export type Database = {
           },
         ]
       }
+      m365_compliance_schedules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          frequency: Database["public"]["Enums"]["schedule_frequency"]
+          id: string
+          is_active: boolean
+          next_run_at: string | null
+          scheduled_day_of_month: number | null
+          scheduled_day_of_week: number | null
+          scheduled_hour: number | null
+          tenant_record_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          frequency?: Database["public"]["Enums"]["schedule_frequency"]
+          id?: string
+          is_active?: boolean
+          next_run_at?: string | null
+          scheduled_day_of_month?: number | null
+          scheduled_day_of_week?: number | null
+          scheduled_hour?: number | null
+          tenant_record_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          frequency?: Database["public"]["Enums"]["schedule_frequency"]
+          id?: string
+          is_active?: boolean
+          next_run_at?: string | null
+          scheduled_day_of_month?: number | null
+          scheduled_day_of_week?: number | null
+          scheduled_hour?: number | null
+          tenant_record_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_compliance_schedules_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: true
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       m365_external_movement_alerts: {
         Row: {
           affected_domains: string[] | null
