@@ -18,12 +18,20 @@ type PolicyKey = 'antiSpam' | 'antiPhish' | 'safeLinks' | 'safeAttach' | 'malwar
 type PolicyStatus = 'enabled' | 'weak' | 'disabled';
 
 // ─── Policy Detail Data ──────────────────────────────────────────────────────
+type LicensingInfo = {
+  text: string;
+  plans: { name: string; included: boolean }[];
+  note: string;
+  url: string;
+};
+
 const POLICY_DETAILS: Record<PolicyKey, {
   label: string;
   description: string;
   diagnostics: Record<PolicyStatus, string>;
   recommendation: Record<PolicyStatus, string>;
   microsoftUrl: string;
+  licensing?: LicensingInfo;
 }> = {
   antiSpam: {
     label: 'Anti-Spam',
