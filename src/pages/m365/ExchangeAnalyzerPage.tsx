@@ -22,7 +22,7 @@ import { ExchangeCategorySheet } from '@/components/m365/exchange/ExchangeCatego
 import type { ExchangeOperationalCategory } from '@/components/m365/exchange/ExchangeAnalyzerCategoryGrid';
 import { ExchangeSecurityInsightCards } from '@/components/m365/exchange/ExchangeSecurityInsightCards';
 import { ExchangeThreatProtectionSection } from '@/components/m365/exchange/ExchangeThreatProtectionSection';
-import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
+import { useLatestM365AnalyzerSnapshot, useM365AnalyzerProgress } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { M365RiskCategory } from '@/types/m365Insights';
