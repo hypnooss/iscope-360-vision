@@ -121,7 +121,6 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
     items: [
       { label: 'Compliance', href: '/scope-firewall/compliance', icon: FileText },
       { label: 'Analyzer', href: '/scope-firewall/analyzer', icon: Radar },
-      { label: 'CVEs', href: '/scope-firewall/cves', icon: ShieldCheck },
       { label: 'Execuções', href: '/scope-firewall/executions', icon: Activity },
     ],
   },
