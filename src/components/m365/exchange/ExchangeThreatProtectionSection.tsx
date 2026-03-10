@@ -104,6 +104,18 @@ const POLICY_DETAILS: Record<PolicyKey, {
       disabled: 'Crie uma política Safe Attachments com ação "Bloquear" ou "Dynamic Delivery". Configure para todos os domínios do tenant e habilite o redirecionamento de anexos maliciosos para uma caixa de segurança para análise.',
     },
     microsoftUrl: 'https://learn.microsoft.com/en-us/defender-office-365/safe-attachments-policies-configure',
+    licensing: {
+      text: 'Safe Attachments faz parte do Microsoft Defender for Office 365 e requer licenciamento específico para funcionar.',
+      plans: [
+        { name: 'Defender for Office 365 Plan 1', included: true },
+        { name: 'Defender for Office 365 Plan 2', included: true },
+        { name: 'Microsoft 365 E5', included: true },
+        { name: 'Microsoft 365 E5 Security', included: true },
+        { name: 'Microsoft 365 Business Premium', included: true },
+      ],
+      note: 'O Plan 2 adiciona recursos avançados como Threat Explorer, Automated Investigation and Response, Campaign View e Attack Simulation. Mas Safe Attachments já está disponível no Plan 1.',
+      url: 'https://learn.microsoft.com/pt-br/defender-office-365/mdo-about',
+    },
   },
   malwareFilter: {
     label: 'Malware Filter',
