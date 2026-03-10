@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { ExchangeDashboardData } from '@/hooks/useExchangeDashboard';
 
-type ExchangeOperationalCategory =
+export type ExchangeOperationalCategory =
   | 'email_traffic'
   | 'anti_spam'
   | 'phishing'
