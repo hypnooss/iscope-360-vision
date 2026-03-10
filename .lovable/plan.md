@@ -1,18 +1,41 @@
-# Status: ✅ Confirmado
 
-## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-### Confirmação
+## Ajustar Mapa Entra ID: ponto central + legendas fullscreen
 
-O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
+### Problema
+1. Sem `firewallLocation`, o `AttackMap` não renderiza projectiles animados
+2. O `AttackMapFullscreen` exibe labels de firewall ("Falha Auth FW", "Firewall", etc.) no painel lateral e barra inferior
 
-| # | Edge Function | Fonte de dados | Tipo | Resultado |
-|---|--------------|----------------|------|-----------|
-| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
-| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
+### Alterações
 
-### Fix já aplicado
-- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
+**1. `src/components/m365/entra-id/EntraIdLoginMap.tsx`**
+- Definir um ponto fictício no Brasil como destino: `{ lat: -15.8, lng: -47.9, label: 'Entra ID' }`
+- Passar `firewallLocation` ao `AttackMap` (inline) e ao `AttackMapFullscreen` (fullscreen)
 
-### Melhoria futura sugerida
-- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
+**2. `src/components/firewall/AttackMapFullscreen.tsx`**
+- Adicionar prop opcional `customSections` e `customBottomStats` (ou mais simples: uma prop `mode?: 'firewall' | 'entra-id'`) para controlar quais seções e labels aparecem
+- Abordagem mais limpa: adicionar prop `legendOverride?: { sections: {...}[]; bottomStats: {...}[] }` que, quando presente, substitui as seções e stats padrão
+- Quando chamado pelo Entra ID, exibir apenas:
+  - Painel direito: "FALHA LOGIN" (vermelho) + "SUCESSO LOGIN" (verde) com rankings por país
+  - Barra inferior: "Login com Falha" + "Login com Sucesso" + "Entra ID" (em vez de "Firewall")
+
+**Alternativa mais simples (preferida):** adicionar uma prop `labelMap` opcional ao fullscreen:
+```ts
+labelMap?: {
+  authFailed?: string;    // default: "Falha Auth FW"
+  authSuccess?: string;   // default: "Sucesso Auth FW"  
+  centerPoint?: string;   // default: "Firewall"
+}
+```
+
+Isso permite que o `EntraIdLoginMap` passe:
+```ts
+labelMap={{
+  authFailed: 'Login com Falha',
+  authSuccess: 'Login com Sucesso',
+  centerPoint: 'Entra ID'
+}}
+```
+
+O fullscreen automaticamente ocultará seções com total 0 (VPN, Outbound), mostrando apenas as relevantes com os labels corretos.
+
