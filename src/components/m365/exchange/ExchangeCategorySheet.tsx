@@ -71,7 +71,7 @@ const CATEGORY_META: Record<ExchangeOperationalCategory, {
     label: 'Mailboxes Inativas',
     icon: UserX,
     colorHex: '#6366f1',
-    description: 'Caixas de correio sem login nos últimos 30 dias.',
+    description: 'Caixas de correio sem login nos últimos 30, 60 ou 90 dias.',
   },
   over_quota: {
     label: 'Caixas Over Quota',
