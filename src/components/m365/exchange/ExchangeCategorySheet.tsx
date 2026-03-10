@@ -488,9 +488,10 @@ export function ExchangeCategorySheet({
         return renderSecurityContent(category);
       case 'forwarding':
       case 'auto_reply':
-      case 'inactive_mailboxes':
       case 'over_quota':
         return renderMailboxContent(category);
+      case 'inactive_mailboxes':
+        return renderInactiveContent();
       default:
         return <p className="text-sm text-muted-foreground p-6">Sem dados disponíveis.</p>;
     }

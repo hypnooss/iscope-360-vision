@@ -90,9 +90,12 @@ function getCategoryStats(cat: ExchangeOperationalCategory, data: ExchangeDashbo
       return { total: v, pct, severity: pct > 15 ? 'high' : pct > 5 ? 'medium' : v > 0 ? 'low' : 'none', badgeLabel: `${v} configurados` };
     }
     case 'inactive_mailboxes': {
-      const v = mailboxes.notLoggedIn30d;
+      const v30 = mailboxes.notLoggedIn30d;
+      const v60 = mailboxes.notLoggedIn60d || 0;
+      const v90 = mailboxes.notLoggedIn90d || 0;
+      const v = v30;
       const pct = (v / totalMb) * 100;
-      return { total: v, pct, severity: pct > 30 ? 'high' : pct > 15 ? 'medium' : v > 0 ? 'low' : 'none', badgeLabel: `${v} sem login 30d` };
+      return { total: v, pct, severity: pct > 30 ? 'high' : pct > 15 ? 'medium' : v > 0 ? 'low' : 'none', badgeLabel: `30d: ${v30} · 60d: ${v60} · 90d: ${v90}` };
     }
     case 'over_quota': {
       const v = mailboxes.overQuota;
