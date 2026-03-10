@@ -1,16 +1,18 @@
+# Status: ✅ Confirmado
 
+## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-## Plano: Atualizar empty state do Entra ID Analyzer
+### Confirmação
 
-### Mudanças em `src/pages/m365/EntraIdAnalyzerPage.tsx`
+O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
 
-1. **Atualizar texto do card de aviso** (linhas 208-217): Trocar "Dados do Entra ID não sincronizados" por "Nenhuma análise do Entra ID encontrada" e ajustar a descrição para indicar que não existem análises efetuadas.
+| # | Edge Function | Fonte de dados | Tipo | Resultado |
+|---|--------------|----------------|------|-----------|
+| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
+| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
 
-2. **Unificar botão com `handleTriggerAnalysis`** (linha 213): Trocar `onClick={refreshDashboard}` por `onClick={handleTriggerAnalysis}` e ajustar disabled/loading para usar `triggering || loading` em vez de `dashboardRefreshing`. Texto do botão: "Executar Análise".
+### Fix já aplicado
+- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
 
-3. **Remover o Alert redundante do rodapé** (linhas 281-286): Remover o bloco `{selectedTenantId && !loading && entraInsights.length === 0 && !analyzerSnapshot && (...)}` que exibe "Nenhuma análise encontrada".
-
-### Resultado
-
-Card de aviso com texto atualizado e botão com comportamento idêntico ao do topo. Alert inferior removido.
-
+### Melhoria futura sugerida
+- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
