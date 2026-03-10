@@ -228,7 +228,7 @@ export function AttackMap({
   };
 
   return (
-    <div className={fullscreen ? 'w-full h-full' : 'relative w-full'}>
+    <div className={fullscreen ? 'w-full h-full' : 'relative w-full z-0'}>
       <MapContainer
         center={[20, 0]}
         zoom={3}
