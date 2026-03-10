@@ -1,17 +1,18 @@
-# Status: ✅ Implementado
+# Status: ✅ Confirmado
 
-## Fix: WHOIS data not being saved + parsing issues
+## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-### Mudanças realizadas
+### Confirmação
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/agent-task-result/index.ts` | Force redeploy (comment timestamp) para ativar extração domain_whois |
-| `supabase/functions/trigger-external-domain-analysis/index.ts` | Removida chamada duplicada ao `domain-whois-lookup` edge function |
-| `python-agent/agent/executors/domain_whois.py` | `.br`: registrar fixo "Registro.br (NIC.br)", busca events em entities aninhadas |
-| `python-agent/agent/executors/domain_whois.py` | `.io`: RDAP endpoint corrigido para `rdap.identitydigital.services` |
-| `python-agent/agent/executors/domain_whois.py` | Owner: extrai registrant separado do registrar (evita confundir dono com registrar) |
+O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
 
-### Próximos passos
-- Deploy do Agent com `domain_whois.py` atualizado
-- Re-executar análise nos domínios .br e precisio.io para validar
+| # | Edge Function | Fonte de dados | Tipo | Resultado |
+|---|--------------|----------------|------|-----------|
+| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
+| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
+
+### Fix já aplicado
+- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
+
+### Melhoria futura sugerida
+- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
