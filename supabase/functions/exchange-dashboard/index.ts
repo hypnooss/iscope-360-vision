@@ -326,6 +326,11 @@ Deno.serve(async (req) => {
         autoReplyUsers,
         newLast30d,
         notLoggedIn30d,
+        notLoggedIn60d,
+        notLoggedIn90d,
+        inactiveUsers30: inactiveUsers30.slice(0, 50),
+        inactiveUsers60: inactiveUsers60.slice(0, 50),
+        inactiveUsers90: inactiveUsers90.slice(0, 50),
       },
       traffic: { sent, received },
       security: {
