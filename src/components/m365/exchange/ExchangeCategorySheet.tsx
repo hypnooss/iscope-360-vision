@@ -162,7 +162,7 @@ export function ExchangeCategorySheet({
   const threatData = analyzerMetrics?.threatProtection;
   const phishingData = analyzerMetrics?.phishing;
 
-  const isFullHeight = ['email_traffic', 'anti_spam', 'phishing'].includes(category);
+  const isFullHeight = ['email_traffic', 'anti_spam', 'phishing', 'inactive_mailboxes'].includes(category);
 
   const renderTrafficContent = () => {
     const sent = dashboardData?.traffic.sent || 0;
