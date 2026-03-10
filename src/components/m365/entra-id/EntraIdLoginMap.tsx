@@ -1,29 +1,18 @@
 import { useState } from 'react';
-import { AttackMap } from '@/components/firewall/AttackMap';
-import { AttackMapFullscreen } from '@/components/firewall/AttackMapFullscreen';
-import { Maximize2 } from 'lucide-react';
+import { Maximize2, X } from 'lucide-react';
+import { EntraIdCountryMap } from './EntraIdCountryMap';
 
 interface EntraIdLoginMapProps {
   loginCountriesSuccess: { country: string; count: number }[];
-  loginCountriesFailed: { country: string; count: number }[];
+  loginCountriesFailed?: { country: string; count: number }[];
 }
 
-const ENTRA_LOCATION = { lat: -15.8, lng: -47.9, label: 'Entra ID' };
-
-const ENTRA_LABEL_MAP = {
-  authFailed: 'Login com Falha',
-  authSuccess: 'Login com Sucesso',
-  centerPoint: 'Entra ID',
-};
-
-export function EntraIdLoginMap({ loginCountriesSuccess, loginCountriesFailed }: EntraIdLoginMapProps) {
+export function EntraIdLoginMap({ loginCountriesSuccess }: EntraIdLoginMapProps) {
   const [fullscreen, setFullscreen] = useState(false);
 
-  const hasData = loginCountriesSuccess.length > 0 || loginCountriesFailed.length > 0;
-  if (!hasData) return null;
+  if (loginCountriesSuccess.length === 0) return null;
 
   const totalSuccess = loginCountriesSuccess.reduce((s, c) => s + c.count, 0);
-  const totalFailed = loginCountriesFailed.reduce((s, c) => s + c.count, 0);
 
   return (
     <>
@@ -45,13 +34,7 @@ export function EntraIdLoginMap({ loginCountriesSuccess, loginCountriesFailed }:
           className="max-h-[200px] overflow-hidden rounded-lg border border-border/50 cursor-pointer"
           onClick={() => setFullscreen(true)}
         >
-          <AttackMap
-            authFailedCountries={loginCountriesFailed}
-            authSuccessCountries={loginCountriesSuccess}
-            firewallLocation={ENTRA_LOCATION}
-            hideLegend
-            labelMap={ENTRA_LABEL_MAP}
-          />
+          <EntraIdCountryMap loginCountriesSuccess={loginCountriesSuccess} />
         </div>
 
         <div className="flex items-center gap-4 justify-center mt-3 text-xs text-muted-foreground">
@@ -59,24 +42,32 @@ export function EntraIdLoginMap({ loginCountriesSuccess, loginCountriesFailed }:
             <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: 'hsl(142, 71%, 45%)' }} />
             Login com Sucesso ({totalSuccess.toLocaleString()})
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: 'hsl(0, 72%, 51%)' }} />
-            Login com Falha ({totalFailed.toLocaleString()})
-          </div>
         </div>
       </div>
 
       {fullscreen && (
-        <AttackMapFullscreen
-          authFailedCountries={loginCountriesFailed}
-          authSuccessCountries={loginCountriesSuccess}
-          totalFwAuthFailed={totalFailed}
-          totalFwAuthSuccess={totalSuccess}
-          firewallLocation={ENTRA_LOCATION}
-          firewallName="Entra ID — Origens de Login"
-          labelMap={ENTRA_LABEL_MAP}
-          onClose={() => setFullscreen(false)}
-        />
+        <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col">
+          <div className="flex items-center justify-between p-4 border-b border-border">
+            <h2 className="text-lg font-semibold text-foreground">
+              Entra ID — Origens de Login
+            </h2>
+            <button
+              onClick={() => setFullscreen(false)}
+              className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="flex-1 relative">
+            <EntraIdCountryMap loginCountriesSuccess={loginCountriesSuccess} fullscreen />
+          </div>
+          <div className="flex items-center gap-4 justify-center p-3 border-t border-border text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: 'hsl(142, 71%, 45%)' }} />
+              Login com Sucesso ({totalSuccess.toLocaleString()})
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
