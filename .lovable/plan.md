@@ -1,21 +1,17 @@
+# Status: ✅ Implementado
 
+## Fix: WHOIS data not being saved + parsing issues
 
-# Ajuste do texto e formato da data de última coleta
+### Mudanças realizadas
 
-## Alteração em `ExchangeAnalyzerPage.tsx` (linhas 202-208)
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/agent-task-result/index.ts` | Force redeploy (comment timestamp) para ativar extração domain_whois |
+| `supabase/functions/trigger-external-domain-analysis/index.ts` | Removida chamada duplicada ao `domain-whois-lookup` edge function |
+| `python-agent/agent/executors/domain_whois.py` | `.br`: registrar fixo "Registro.br (NIC.br)", busca events em entities aninhadas |
+| `python-agent/agent/executors/domain_whois.py` | `.io`: RDAP endpoint corrigido para `rdap.identitydigital.services` |
+| `python-agent/agent/executors/domain_whois.py` | Owner: extrai registrant separado do registrar (evita confundir dono com registrar) |
 
-Mudar:
-- Texto "Última análise:" → "Última coleta"
-- Formato da data de `"dd MMM yyyy 'às' HH:mm"` → `"dd/MM/yyyy, HH:mm"` para ficar `09/03/2026, 15:03`
-
-```tsx
-<Clock className="w-4 h-4 text-muted-foreground" />
-<span className="text-sm text-muted-foreground">Última coleta</span>
-<Badge variant="outline" className="text-xs">
-  {format(new Date(analyzedAt), "dd/MM/yyyy, HH:mm", { locale: ptBR })}
-</Badge>
-```
-
-### Arquivo alterado
-- `src/pages/m365/ExchangeAnalyzerPage.tsx`
-
+### Próximos passos
+- Deploy do Agent com `domain_whois.py` atualizado
+- Re-executar análise nos domínios .br e precisio.io para validar
