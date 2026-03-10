@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
 import { usePreview } from '@/contexts/PreviewContext';
@@ -21,7 +22,7 @@ import { ExchangeCategorySheet } from '@/components/m365/exchange/ExchangeCatego
 import type { ExchangeOperationalCategory } from '@/components/m365/exchange/ExchangeAnalyzerCategoryGrid';
 import { ExchangeSecurityInsightCards } from '@/components/m365/exchange/ExchangeSecurityInsightCards';
 import { ExchangeThreatProtectionSection } from '@/components/m365/exchange/ExchangeThreatProtectionSection';
-import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
+import { useLatestM365AnalyzerSnapshot, useM365AnalyzerProgress } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { M365RiskCategory } from '@/types/m365Insights';
@@ -86,7 +87,11 @@ export default function ExchangeAnalyzerPage() {
 
   // Data hooks
   const { data: dashboardData, loading: dashboardLoading, refresh: refreshDashboard, refreshing: dashboardRefreshing } = useExchangeDashboard({ tenantRecordId: selectedTenantId });
-  const { data: analyzerSnapshot, isLoading: analyzerLoading } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
+  const { data: analyzerSnapshot, isLoading: analyzerLoading, refetch: refetchSnapshot } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
+  const { data: progress } = useM365AnalyzerProgress(selectedTenantId || undefined);
+  const queryClient = useQueryClient();
+
+  const isAnalysisRunning = progress?.status === 'pending' || progress?.status === 'processing';
 
   const [triggering, setTriggering] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -94,6 +99,23 @@ export default function ExchangeAnalyzerPage() {
   // Category sheet state
   const [selectedOpCategory, setSelectedOpCategory] = useState<ExchangeOperationalCategory | null>(null);
   const [opCategorySheetOpen, setOpCategorySheetOpen] = useState(false);
+
+  // Auto-refresh when analysis finishes
+  const prevProgressStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const currentStatus = progress?.status ?? null;
+    if (
+      (currentStatus === 'completed' || currentStatus === 'failed') &&
+      prevProgressStatus.current &&
+      prevProgressStatus.current !== 'completed' &&
+      prevProgressStatus.current !== 'failed'
+    ) {
+      refetchSnapshot();
+      refreshDashboard();
+      queryClient.invalidateQueries({ queryKey: ['m365-analyzer-latest', selectedTenantId] });
+    }
+    prevProgressStatus.current = currentStatus;
+  }, [progress?.status, selectedTenantId]);
 
   // ─── Extract operational Exchange insights from analyzer snapshot ───────────
   const exchangeInsights: M365AnalyzerInsight[] = (analyzerSnapshot?.insights ?? [])
@@ -186,14 +208,19 @@ export default function ExchangeAnalyzerPage() {
         </div>
 
         {/* Progress card */}
-        {triggering && (
+        {(triggering || isAnalysisRunning) && (
           <Card className="glass-card border-primary/30">
             <CardContent className="p-4">
               <div className="flex items-center gap-3 mb-2">
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                <span className="text-sm font-medium">Análise em andamento...</span>
+                <span className="text-sm font-medium">
+                  {triggering ? 'Iniciando análise...' : progress?.status === 'pending' ? 'Aguardando agente...' : 'Análise em andamento...'}
+                </span>
+                {progress?.elapsed && (
+                  <span className="text-xs text-muted-foreground">({Math.floor(progress.elapsed / 60)}min {progress.elapsed % 60}s)</span>
+                )}
               </div>
-              <Progress value={40} className="h-2" />
+              <Progress value={triggering ? 10 : progress?.status === 'pending' ? 25 : 60} className="h-2" />
             </CardContent>
           </Card>
         )}
