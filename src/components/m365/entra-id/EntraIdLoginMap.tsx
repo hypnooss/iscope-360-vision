@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Maximize2, X } from 'lucide-react';
 import { EntraIdCountryMap } from './EntraIdCountryMap';
+import { getCountryCode } from '@/lib/countryUtils';
+import 'flag-icons/css/flag-icons.min.css';
 
 interface EntraIdLoginMapProps {
   loginCountriesSuccess: { country: string; count: number }[];
@@ -13,6 +15,7 @@ export function EntraIdLoginMap({ loginCountriesSuccess }: EntraIdLoginMapProps)
   if (loginCountriesSuccess.length === 0) return null;
 
   const totalSuccess = loginCountriesSuccess.reduce((s, c) => s + c.count, 0);
+  const top5 = [...loginCountriesSuccess].sort((a, b) => b.count - a.count).slice(0, 5);
 
   return (
     <>
@@ -62,6 +65,29 @@ export function EntraIdLoginMap({ loginCountriesSuccess }: EntraIdLoginMapProps)
           </div>
           <div className="flex-1 relative min-h-0">
             <EntraIdCountryMap loginCountriesSuccess={loginCountriesSuccess} fullscreen />
+
+            {/* Right panel - Country ranking */}
+            <div className="absolute top-4 right-4 z-[1000] w-60 max-h-[calc(100%-2rem)] overflow-y-auto bg-black/70 backdrop-blur-md rounded-lg border border-white/10 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px rgba(34,197,94,0.5)' }} />
+                <h3 className="text-white/90 text-xs font-semibold uppercase tracking-wider">Login com Sucesso</h3>
+                <span className="text-white/40 text-xs font-mono ml-auto">{totalSuccess.toLocaleString()}</span>
+              </div>
+              <div className="space-y-1.5">
+                {top5.map((c, i) => {
+                  const raw = c.country?.trim().toLowerCase();
+                  const code = raw && raw.length === 2 ? raw : getCountryCode(c.country);
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-white/40 text-xs font-bold w-4">{i + 1}</span>
+                      {code && <span className={`fi fi-${code} text-sm`} />}
+                      <span className="text-white/80 text-xs flex-1 truncate">{c.country}</span>
+                      <span className="text-white/60 text-xs font-mono">{c.count.toLocaleString()}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-4 justify-center p-3 border-t border-border text-xs text-muted-foreground">
             <div className="flex items-center gap-1.5">
