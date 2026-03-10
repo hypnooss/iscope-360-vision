@@ -236,49 +236,6 @@ export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecu
                     </div>
                   )}
 
-                  {/* Evidências */}
-                  {selectedInsight.metadata && (() => {
-                    const entries = Object.entries(selectedInsight.metadata).filter(([key, value]) => {
-                      if (key === 'businessImpact') return false;
-                      if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)) && value.trim() !== '')) return false;
-                      if (Array.isArray(value) && value.length > 0) return true;
-                      if (typeof value === 'string' && value.trim()) return true;
-                      return false;
-                    });
-                    if (entries.length === 0) return null;
-                    return (
-                      <div>
-                        <p className="text-xs font-semibold text-muted-foreground mb-2">🔎 Evidências</p>
-                        <div className="space-y-2">
-                          {entries.map(([key, value]) => {
-                            if (Array.isArray(value)) {
-                              return (
-                                <div key={key}>
-                                  <p className="text-xs text-muted-foreground mb-1 capitalize">{key.replace(/_/g, ' ')}</p>
-                                  <div className="space-y-1">
-                                    {value.slice(0, 10).map((item, i) => (
-                                      <div key={i} className="bg-muted/50 rounded p-2 text-xs">
-                                        {typeof item === 'object' ? JSON.stringify(item) : String(item)}
-                                      </div>
-                                    ))}
-                                    {value.length > 10 && (
-                                      <p className="text-xs text-muted-foreground">+{value.length - 10} mais...</p>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            }
-                            return (
-                              <div key={key} className="flex items-center justify-between bg-muted/50 rounded p-2">
-                                <span className="text-xs text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
-                                <span className="text-xs font-medium">{String(value)}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
                 </div>
               </ScrollArea>
             </>
