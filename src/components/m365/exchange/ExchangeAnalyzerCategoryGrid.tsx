@@ -180,7 +180,17 @@ export function ExchangeAnalyzerCategoryGrid({ data, onCategoryClick }: Exchange
                   </div>
                 )}
 
-                {hasData && !hasSplit && stats.badgeLabel && (
+                {hasData && !hasSplit && stats.inactiveBadges && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {stats.inactiveBadges.map((b, i) => (
+                      <Badge key={i} variant="outline" className={cn("text-[10px] px-1.5 py-0", b.colorClass)}>
+                        {b.label}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                {hasData && !hasSplit && stats.badgeLabel && !stats.inactiveBadges && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Badge variant="outline" className={cn(
                       "text-[10px] px-1.5 py-0",
