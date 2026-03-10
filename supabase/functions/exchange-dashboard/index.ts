@@ -138,6 +138,20 @@ Deno.serve(async (req) => {
 
     const now = new Date();
 
+    // ── Fetch disabled users + mail-enabled groups to build exclusion Set ──
+    const nonUserUpnSet = new Set<string>();
+    try {
+      const [disabledUsers, mailGroups] = await Promise.all([
+        graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/users?$filter=accountEnabled eq false&$select=userPrincipalName&$top=999", 5),
+        graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/groups?$filter=mailEnabled eq true and securityEnabled eq false&$select=mail&$top=999", 5),
+      ]);
+      disabledUsers.forEach((u: any) => { if (u.userPrincipalName) nonUserUpnSet.add(u.userPrincipalName.toLowerCase()); });
+      mailGroups.forEach((g: any) => { if (g.mail) nonUserUpnSet.add(g.mail.toLowerCase()); });
+      console.log(`Non-user exclusion set: ${nonUserUpnSet.size} entries (${disabledUsers.length} disabled users, ${mailGroups.length} mail groups)`);
+    } catch (e) {
+      console.warn('Failed to build non-user exclusion set:', e);
+    }
+
     // Fetch reports in parallel - reports return CSV by default
     const [mailboxUsageResult, emailActivityResult] = await Promise.all([
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='D30')").catch(e => { console.warn('mailboxUsage error:', e); return null; }),
