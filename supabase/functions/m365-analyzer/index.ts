@@ -358,17 +358,22 @@ function analyzePhishingThreats(
   }
 
   // --- Content Filter (anti-spam) ---
+  // Note: HighConfidencePhishAction is NOT evaluated here because Microsoft's
+  // "Secure by Default" policy automatically overrides MoveToJmf to Quarantine
+  // for High Confidence Phishing. See: https://learn.microsoft.com/defender-office-365/secure-by-default
   for (const policy of exoContentFilter) {
     const name = policy.Name || policy.Identity || 'Default';
-    const highConfPhishAction = (policy.HighConfidencePhishAction || '').toLowerCase();
-    if (highConfPhishAction === 'movetojmf' || highConfPhishAction === 'addxheader' || !highConfPhishAction) {
+    const spamAction = (policy.SpamAction || '').toLowerCase();
+    const hcSpamAction = (policy.HighConfidenceSpamAction || '').toLowerCase();
+    const weakActions = ['movetojmf', 'addxheader', ''];
+    if (weakActions.includes(spamAction) || weakActions.includes(hcSpamAction)) {
       insights.push({
         id: `spam_filter_weak_${name.replace(/[^a-z0-9]/gi, '_')}`,
         category: 'phishing_threats',
-        name: 'Filtro Anti-Spam com Ação Fraca para High Confidence Phishing',
-        description: `Política "${name}": phishing de alta confiança usa ação "${highConfPhishAction || 'default'}" em vez de quarentena`,
+        name: 'Filtro Anti-Spam com Ação Fraca',
+        description: `Política "${name}": Spam ou High Confidence Spam usa ação fraca ("${spamAction || 'default'}" / "${hcSpamAction || 'default'}") em vez de quarentena`,
         severity: 'medium',
-        recommendation: 'Configure HighConfidencePhishAction para Quarantine.',
+        recommendation: 'Configure SpamAction e HighConfidenceSpamAction para Quarantine. High Confidence Phishing já é protegido pelo "Secure by Default" da Microsoft.',
       });
     }
   }
@@ -1300,9 +1305,13 @@ function analyzeThreatProtection(
 
   // Policy status evaluation
   if (exoContentFilter.length > 0) {
+    // Evaluate SpamAction/HighConfidenceSpamAction instead of HighConfidencePhishAction
+    // because Microsoft "Secure by Default" overrides HCPhish to Quarantine automatically
+    const weakActions = ['movetojmf', 'addxheader', ''];
     const hasWeakAction = exoContentFilter.some((p: any) => {
-      const hcpa = (p.HighConfidencePhishAction || '').toLowerCase();
-      return hcpa === 'movetojmf' || hcpa === 'addxheader' || !hcpa;
+      const spam = (p.SpamAction || '').toLowerCase();
+      const hcSpam = (p.HighConfidenceSpamAction || '').toLowerCase();
+      return weakActions.includes(spam) || weakActions.includes(hcSpam);
     });
     metrics.policyStatus.antiSpam = hasWeakAction ? 'weak' : 'enabled';
   }

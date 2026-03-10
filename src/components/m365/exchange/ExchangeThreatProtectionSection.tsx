@@ -26,18 +26,18 @@ const POLICY_DETAILS: Record<PolicyKey, {
 }> = {
   antiSpam: {
     label: 'Anti-Spam',
-    description: 'A política Anti-Spam filtra mensagens de email indesejadas e maliciosas antes que cheguem às caixas de entrada dos usuários. Ela classifica emails em categorias como Spam, High Confidence Spam, Phishing e High Confidence Phishing, aplicando ações específicas para cada nível de ameaça.',
+    description: 'A política Anti-Spam filtra mensagens de email indesejadas e maliciosas antes que cheguem às caixas de entrada dos usuários. Ela classifica emails em categorias como Spam, High Confidence Spam, Phishing e High Confidence Phishing, aplicando ações específicas para cada nível de ameaça. Nota: High Confidence Phishing é sempre colocado em quarentena pela Microsoft ("Secure by Default"), independente da configuração exibida.',
     diagnostics: {
-      enabled: 'Todas as políticas Anti-Spam estão configuradas com ações adequadas. High Confidence Phish está definido como "Quarentena" e as demais categorias possuem ações de proteção ativas.',
-      weak: 'A ação para High Confidence Phish está configurada como "Mover para Junk" ou "Adicionar X-Header" em vez de "Quarentena". Isso reduz significativamente a eficácia da proteção, pois mensagens de phishing de alta confiança ainda chegam à caixa de entrada ou pasta de lixo eletrônico do usuário.',
+      enabled: 'Todas as políticas Anti-Spam estão configuradas com ações adequadas. As ações de Spam e High Confidence Spam estão definidas como "Quarentena". High Confidence Phishing é automaticamente protegido pela política "Secure by Default" da Microsoft.',
+      weak: 'As ações de Spam ou High Confidence Spam estão configuradas como "Mover para Junk" ou "Adicionar X-Header" em vez de "Quarentena". Embora High Confidence Phishing seja automaticamente colocado em quarentena pela Microsoft (Secure by Default), as demais categorias de spam ainda seguem a ação configurada, permitindo que mensagens maliciosas cheguem à pasta de lixo eletrônico.',
       disabled: 'Nenhuma política Anti-Spam personalizada está configurada ou todas as políticas existentes estão desabilitadas. O tenant está usando apenas a política padrão sem customizações de segurança.',
     },
     recommendation: {
       enabled: 'Política configurada corretamente. Continue monitorando os relatórios de falsos positivos e ajuste os thresholds conforme necessário.',
-      weak: 'Configure a ação de High Confidence Phish para "Quarentena" em todas as políticas Anti-Spam. Acesse o portal Microsoft Defender > Políticas e Regras > Políticas de Ameaças > Anti-spam e edite cada política ativa.',
-      disabled: 'Crie pelo menos uma política Anti-Spam personalizada com ações de quarentena para Phishing e High Confidence Phishing. A política padrão do Microsoft 365 não oferece proteção adequada contra ameaças avançadas.',
+      weak: 'Configure as ações de Spam (SpamAction) e High Confidence Spam (HighConfidenceSpamAction) para "Quarentena" em todas as políticas Anti-Spam. High Confidence Phishing já está protegido automaticamente pelo "Secure by Default" da Microsoft. Acesse Microsoft Defender > Políticas de Ameaças > Anti-spam.',
+      disabled: 'Crie pelo menos uma política Anti-Spam personalizada com ações de quarentena para Spam e High Confidence Spam. A política padrão do Microsoft 365 não oferece proteção adequada contra ameaças avançadas.',
     },
-    microsoftUrl: 'https://learn.microsoft.com/en-us/defender-office-365/anti-spam-policies-configure',
+    microsoftUrl: 'https://learn.microsoft.com/pt-br/defender-office-365/secure-by-default',
   },
   antiPhish: {
     label: 'Anti-Phishing',
