@@ -14,6 +14,7 @@ import {
   Mail, ShieldBan, ShieldAlert, Bug, Forward, Reply, UserX, HardDrive, User,
   ArrowUpRight, ArrowDownLeft, Globe, AtSign,
 } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
 import type { ExchangeDashboardData } from '@/hooks/useExchangeDashboard';
 import type { ExchangeOperationalCategory } from './ExchangeAnalyzerCategoryGrid';
 
