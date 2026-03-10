@@ -242,10 +242,12 @@ export default function ExchangeAnalyzerPage() {
 
         {/* Threat Protection */}
         {selectedTenantId && !loading && dashboardData && (
-          <ExchangeThreatProtectionSection
-            data={analyzerSnapshot?.metrics?.threatProtection ?? null}
-            loading={analyzerLoading}
-          />
+          <div className="mb-8">
+            <ExchangeThreatProtectionSection
+              data={analyzerSnapshot?.metrics?.threatProtection ?? null}
+              loading={analyzerLoading}
+            />
+          </div>
         )}
 
         {/* Security Insights (operational only) */}
