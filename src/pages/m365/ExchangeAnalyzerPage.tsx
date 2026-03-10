@@ -105,7 +105,7 @@ export default function ExchangeAnalyzerPage() {
     if (!selectedTenantId) return;
     setTriggering(true);
     try {
-      const { error } = await supabase.functions.invoke('m365-exchange-analyze', {
+      const { error } = await supabase.functions.invoke('trigger-m365-analyzer', {
         body: { tenantRecordId: selectedTenantId },
       });
       if (error) throw error;
