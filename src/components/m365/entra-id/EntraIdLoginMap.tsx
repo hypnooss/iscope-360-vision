@@ -46,11 +46,11 @@ export function EntraIdLoginMap({ loginCountriesSuccess, loginCountriesFailed }:
 
         <div className="flex items-center gap-4 justify-center mt-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full inline-block bg-green-500" />
+            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: 'hsl(142, 71%, 45%)' }} />
             Login com Sucesso ({totalSuccess.toLocaleString()})
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full inline-block bg-red-600" />
+            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: 'hsl(0, 72%, 51%)' }} />
             Login com Falha ({totalFailed.toLocaleString()})
           </div>
         </div>
