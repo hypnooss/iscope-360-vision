@@ -140,30 +140,87 @@ export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecu
 
               <ScrollArea className="h-[calc(100vh-140px)]">
                 <div className="p-6 space-y-5">
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-1">📋 Descrição</p>
-                    <p className="text-sm">{selectedInsight.description}</p>
+                  {/* Metrics Grid */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {selectedInsight.count != null && selectedInsight.count > 0 && (
+                      <div className="bg-secondary/30 p-3 rounded-lg">
+                        <div className="text-xs text-muted-foreground">Ocorrências</div>
+                        <div className="font-bold text-lg">{selectedInsight.count}</div>
+                      </div>
+                    )}
+                    {selectedInsight.affectedUsers && selectedInsight.affectedUsers.length > 0 && (
+                      <div className="bg-secondary/30 p-3 rounded-lg">
+                        <div className="text-xs text-muted-foreground">Usuários Afetados</div>
+                        <div className="font-bold text-lg">{selectedInsight.affectedUsers.length}</div>
+                      </div>
+                    )}
+                    {selectedInsight.metadata && Object.entries(selectedInsight.metadata).map(([key, value]) => {
+                      if (key === 'businessImpact') return null;
+                      if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)) && value.trim() !== '')) {
+                        return (
+                          <div key={key} className="bg-secondary/30 p-3 rounded-lg">
+                            <div className="text-xs text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</div>
+                            <div className="font-bold text-lg">{String(value)}</div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
                   </div>
 
+                  {/* O que está acontecendo? */}
+                  {selectedInsight.description && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground mb-1">🎯 O que está acontecendo?</p>
+                      <p className="text-sm bg-muted/50 rounded-lg p-3">{selectedInsight.description}</p>
+                    </div>
+                  )}
+
+                  {/* Por que isso é um risco? */}
                   {selectedInsight.details && (
                     <div>
-                      <p className="text-xs font-semibold text-muted-foreground mb-1">🔍 Detalhes</p>
+                      <p className="text-xs font-semibold text-muted-foreground mb-1">❓ Por que isso é um risco?</p>
                       <p className="text-sm bg-muted/50 rounded-lg p-3">{selectedInsight.details}</p>
                     </div>
                   )}
 
+                  {/* Boas práticas recomendadas */}
                   {selectedInsight.recommendation && (
                     <div>
-                      <p className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
-                        <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
-                        Recomendação
-                      </p>
-                      <p className="text-sm bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-                        {selectedInsight.recommendation}
-                      </p>
+                      <p className="text-xs font-semibold text-muted-foreground mb-1">✅ Boas práticas recomendadas</p>
+                      <ul className="space-y-1.5 text-sm bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+                        {selectedInsight.recommendation
+                          .split(/(?:\. |\n|; )/)
+                          .filter(s => s.trim().length > 0)
+                          .map((item, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span className="text-emerald-500 mt-0.5">•</span>
+                              <span>{item.trim().replace(/\.$/, '')}</span>
+                            </li>
+                          ))}
+                      </ul>
                     </div>
                   )}
 
+                  {/* Impacto no negócio */}
+                  {(() => {
+                    const impact = selectedInsight.metadata?.businessImpact as string | undefined;
+                    const fallback: Record<string, string> = {
+                      critical: 'Risco crítico com potencial de impacto imediato nas operações e segurança da organização.',
+                      high: 'Risco elevado que pode comprometer a segurança e continuidade operacional.',
+                      medium: 'Risco moderado que requer atenção para evitar degradação da postura de segurança.',
+                      low: 'Risco baixo, mas que deve ser monitorado para manter a conformidade.',
+                    };
+                    const text = impact || fallback[selectedInsight.severity];
+                    return text ? (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground mb-1">💼 Impacto no negócio</p>
+                        <p className="text-sm bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">{text}</p>
+                      </div>
+                    ) : null;
+                  })()}
+
+                  {/* Usuários Afetados */}
                   {selectedInsight.affectedUsers && selectedInsight.affectedUsers.length > 0 && (
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground mb-2">
@@ -179,40 +236,49 @@ export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecu
                     </div>
                   )}
 
-                  {/* Metadata / Evidence */}
-                  {selectedInsight.metadata && Object.keys(selectedInsight.metadata).length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground mb-2">🔎 Evidências</p>
-                      <div className="space-y-2">
-                        {Object.entries(selectedInsight.metadata).map(([key, value]) => {
-                          if (Array.isArray(value) && value.length > 0) {
-                            return (
-                              <div key={key}>
-                                <p className="text-xs text-muted-foreground mb-1 capitalize">{key.replace(/_/g, ' ')}</p>
-                                <div className="space-y-1">
-                                  {value.slice(0, 10).map((item, i) => (
-                                    <div key={i} className="bg-muted/50 rounded p-2 text-xs">
-                                      {typeof item === 'object' ? JSON.stringify(item) : String(item)}
-                                    </div>
-                                  ))}
-                                  {value.length > 10 && (
-                                    <p className="text-xs text-muted-foreground">+{value.length - 10} mais...</p>
-                                  )}
+                  {/* Evidências */}
+                  {selectedInsight.metadata && (() => {
+                    const entries = Object.entries(selectedInsight.metadata).filter(([key, value]) => {
+                      if (key === 'businessImpact') return false;
+                      if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)) && value.trim() !== '')) return false;
+                      if (Array.isArray(value) && value.length > 0) return true;
+                      if (typeof value === 'string' && value.trim()) return true;
+                      return false;
+                    });
+                    if (entries.length === 0) return null;
+                    return (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground mb-2">🔎 Evidências</p>
+                        <div className="space-y-2">
+                          {entries.map(([key, value]) => {
+                            if (Array.isArray(value)) {
+                              return (
+                                <div key={key}>
+                                  <p className="text-xs text-muted-foreground mb-1 capitalize">{key.replace(/_/g, ' ')}</p>
+                                  <div className="space-y-1">
+                                    {value.slice(0, 10).map((item, i) => (
+                                      <div key={i} className="bg-muted/50 rounded p-2 text-xs">
+                                        {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+                                      </div>
+                                    ))}
+                                    {value.length > 10 && (
+                                      <p className="text-xs text-muted-foreground">+{value.length - 10} mais...</p>
+                                    )}
+                                  </div>
                                 </div>
+                              );
+                            }
+                            return (
+                              <div key={key} className="flex items-center justify-between bg-muted/50 rounded p-2">
+                                <span className="text-xs text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
+                                <span className="text-xs font-medium">{String(value)}</span>
                               </div>
                             );
-                          }
-                          if (typeof value === 'object' && value !== null) return null;
-                          return (
-                            <div key={key} className="flex items-center justify-between bg-muted/50 rounded p-2">
-                              <span className="text-xs text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
-                              <span className="text-xs font-medium">{String(value)}</span>
-                            </div>
-                          );
-                        })}
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </ScrollArea>
             </>
