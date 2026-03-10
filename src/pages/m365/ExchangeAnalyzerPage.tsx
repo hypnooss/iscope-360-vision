@@ -320,12 +320,6 @@ export default function ExchangeAnalyzerPage() {
           </Alert>
         )}
 
-        {selectedTenantId && !loading && exchangeInsights.length === 0 && !analyzerSnapshot && (
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>Nenhuma análise encontrada. Clique em "Executar Análise" para começar.</AlertDescription>
-          </Alert>
-        )}
       </div>
 
       {/* Category Sheet */}
