@@ -107,7 +107,7 @@ export default function ExchangeAnalyzerPage() {
     try {
       const [analyzerResult, dashboardResult] = await Promise.all([
         supabase.functions.invoke('trigger-m365-analyzer', {
-          body: { tenantRecordId: selectedTenantId },
+          body: { tenant_record_id: selectedTenantId },
         }),
         supabase.functions.invoke('exchange-dashboard', {
           body: { tenant_record_id: selectedTenantId },
