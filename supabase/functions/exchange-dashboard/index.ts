@@ -291,6 +291,7 @@ Deno.serve(async (req) => {
         overQuota,
         forwardingEnabled,
         autoReplyExternal,
+        autoReplyUsers,
         newLast30d,
         notLoggedIn30d,
       },

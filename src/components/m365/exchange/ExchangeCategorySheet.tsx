@@ -443,11 +443,18 @@ export function ExchangeCategorySheet({
       over_quota: 'text-red-600 dark:text-red-400',
     };
 
+    const autoReplyItems = (dashboardData?.mailboxes as any)?.autoReplyUsers?.map((u: any) => ({
+      name: u.name,
+      forwardTo: u.status === 'alwaysEnabled' ? 'Sempre ativo' : 'Agendado',
+      detail: `Audiência: ${u.externalAudience === 'all' ? 'Todos' : 'Apenas contatos'}`,
+    })) || [];
+
     const items = cat === 'forwarding' ? (mbRankings?.topForwarding || []) :
       cat === 'inactive_mailboxes' ? (mbRankings?.topInactive || []) :
-      cat === 'over_quota' ? (mbRankings?.topOverQuota || []) : [];
+      cat === 'over_quota' ? (mbRankings?.topOverQuota || []) :
+      cat === 'auto_reply' ? autoReplyItems : [];
 
-    const subKey = cat === 'forwarding' ? 'forwardTo' : cat === 'inactive_mailboxes' ? 'lastLogin' : 'usagePct';
+    const subKey = cat === 'forwarding' || cat === 'auto_reply' ? 'forwardTo' : cat === 'inactive_mailboxes' ? 'lastLogin' : 'usagePct';
     const cardTitle = cat === 'forwarding' ? 'Mailboxes com Forwarding' :
       cat === 'inactive_mailboxes' ? 'Mailboxes sem Login (30d)' :
       cat === 'over_quota' ? 'Mailboxes Acima da Cota' : 'Mailboxes com Auto-Reply';
