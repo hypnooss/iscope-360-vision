@@ -169,7 +169,15 @@ Deno.serve(async (req) => {
         // Check storage quota (CSV field names)
         const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
         const quota = parseInt(row['Prohibit Send/Receive Quota (Byte)'] || '0', 10);
-        if (quota > 0 && used >= quota * 0.9) overQuota++;
+        if (quota > 0 && used >= quota * 0.9) {
+          overQuota++;
+          overQuotaUsers.push({
+            name: upn,
+            usedGB: Math.round(used / (1024**3) * 100) / 100,
+            quotaGB: Math.round(quota / (1024**3) * 100) / 100,
+            usagePct: Math.round((used / quota) * 1000) / 10,
+          });
+        }
         
         if (row['Created Date']) {
           const created = new Date(row['Created Date']);
