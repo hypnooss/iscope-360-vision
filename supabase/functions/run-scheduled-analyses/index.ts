@@ -563,6 +563,7 @@ Deno.serve(async (req) => {
         analyzers: { triggered: analyzerTriggered, skipped: analyzerSkipped, errors: analyzerErrors, total: dueAnalyzerSchedules?.length ?? 0 },
         attack_surface: { triggered: attackSurfaceTriggered, errors: attackSurfaceErrors, total: dueAttackSurfaceSchedules?.length ?? 0 },
         m365_analyzer: { triggered: m365AnalyzerTriggered, skipped: m365AnalyzerSkipped, errors: m365AnalyzerErrors, total: dueM365AnalyzerSchedules?.length ?? 0 },
+        m365_compliance: { triggered: m365ComplianceTriggered, skipped: m365ComplianceSkipped, errors: m365ComplianceErrors, total: dueM365ComplianceSchedules?.length ?? 0 },
         cve_refresh: cveRefreshSuccess,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
