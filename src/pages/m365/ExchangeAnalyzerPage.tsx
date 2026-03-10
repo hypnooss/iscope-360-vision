@@ -92,8 +92,8 @@ export default function ExchangeAnalyzerPage() {
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
   // Category sheet state
-  const [categorySheetOpen, setCategorySheetOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<M365RiskCategory | null>(null);
+  const [selectedOpCategory, setSelectedOpCategory] = useState<ExchangeOperationalCategory | null>(null);
+  const [opCategorySheetOpen, setOpCategorySheetOpen] = useState(false);
 
   // ─── Extract operational Exchange insights from analyzer snapshot ───────────
   const exchangeInsights: M365AnalyzerInsight[] = (analyzerSnapshot?.insights ?? [])
