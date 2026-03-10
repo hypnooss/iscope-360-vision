@@ -1,159 +1,119 @@
-import { useMemo, useState } from 'react';
-import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
-import { getCountryCode } from '@/lib/countryUtils';
+import { useMemo, useEffect, useState } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import { getCountryCoords, getCountryCode } from '@/lib/countryUtils';
+import { supabase } from '@/integrations/supabase/client';
 
 interface EntraIdCountryMapProps {
   loginCountriesSuccess: { country: string; count: number }[];
   fullscreen?: boolean;
 }
 
-const GEO_URL = '/data/world-countries.geojson';
+const FALLBACK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const FALLBACK_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const STADIA_ATTRIBUTION = '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
-type TooltipState = {
-  visible: boolean;
-  x: number;
-  y: number;
-  name: string;
-  count: number;
-};
+const SUCCESS_COLOR = '#22c55e';
 
-function resolveHslToken(tokenName: string, fallback: string) {
-  if (typeof window === 'undefined') return fallback;
-  const value = getComputedStyle(document.documentElement).getPropertyValue(tokenName).trim();
-  return value ? `hsl(${value})` : fallback;
+function MapResizer({ fullscreen }: { fullscreen?: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    const timer = setTimeout(() => map.invalidateSize(), 100);
+    return () => clearTimeout(timer);
+  }, [fullscreen, map]);
+  return null;
+}
+
+function FitWorldBounds() {
+  const map = useMap();
+  useEffect(() => {
+    map.setView([20, 0], 2);
+  }, [map]);
+  return null;
 }
 
 export function EntraIdCountryMap({ loginCountriesSuccess, fullscreen = false }: EntraIdCountryMapProps) {
-  const [tooltip, setTooltip] = useState<TooltipState>({
-    visible: false,
-    x: 0,
-    y: 0,
-    name: '',
-    count: 0,
-  });
+  const [tileUrl, setTileUrl] = useState(FALLBACK_TILE_URL);
+  const [tileAttribution, setTileAttribution] = useState(FALLBACK_ATTRIBUTION);
 
-  const successMap = useMemo(() => {
-    const mapped = new Map<string, number>();
+  useEffect(() => {
+    supabase.functions.invoke('get-map-config').then(({ data }) => {
+      if (data?.stadia_api_key) {
+        setTileUrl(`https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png?api_key=${data.stadia_api_key}`);
+        setTileAttribution(STADIA_ATTRIBUTION);
+      }
+    }).catch(() => {});
+  }, []);
 
-    for (const item of loginCountriesSuccess) {
-      const rawCountry = item.country?.trim().toLowerCase();
-      if (!rawCountry) continue;
+  const points = useMemo(() => {
+    const result: { lat: number; lng: number; r: number; label: string; count: number }[] = [];
 
-      const iso2 = rawCountry.length === 2 ? rawCountry : getCountryCode(item.country);
+    for (const c of loginCountriesSuccess) {
+      const raw = c.country?.trim().toLowerCase();
+      if (!raw) continue;
+
+      // Support both ISO2 codes and country names
+      const iso2 = raw.length === 2 ? raw : getCountryCode(c.country);
       if (!iso2) continue;
 
-      mapped.set(iso2, (mapped.get(iso2) ?? 0) + item.count);
+      const coords = getCountryCoords(iso2);
+      if (!coords) continue;
+
+      const r = Math.max(4, Math.min(18, Math.log2(c.count + 1) * 3));
+      result.push({ lat: coords[0], lng: coords[1], r, label: c.country, count: c.count });
     }
 
-    return mapped;
+    return result;
   }, [loginCountriesSuccess]);
 
-  const primary = resolveHslToken('--primary', 'hsl(142 71% 45%)');
-  const primarySoft = 'hsl(94 79% 66%)';
-  const primaryStrong = 'hsl(118 84% 55%)';
-  const border = resolveHslToken('--border', 'hsl(217 19% 27%)');
-  const foreground = resolveHslToken('--foreground', 'hsl(0 0% 98%)');
-  const card = resolveHslToken('--card', 'hsl(222 47% 8%)');
-  const mutedForeground = resolveHslToken('--muted-foreground', 'hsl(215 20% 65%)');
-
-  const highlightedCountryCount = successMap.size;
+  const mapStyle: React.CSSProperties = {
+    height: '100%',
+    width: '100%',
+    background: '#0a0e17',
+  };
 
   return (
     <div
-      className="relative w-full overflow-hidden rounded-lg"
-      style={{
-        height: fullscreen ? '100%' : '200px',
-        background: 'radial-gradient(circle at center, hsl(202 37% 34% / 0.38) 0%, hsl(213 47% 13%) 46%, hsl(222 47% 6%) 100%)',
-      }}
+      className="w-full overflow-hidden rounded-lg"
+      style={{ height: fullscreen ? '100%' : '200px' }}
     >
-      <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'radial-gradient(hsl(0 0% 100% / 0.08) 0.8px, transparent 0.8px)', backgroundSize: '16px 16px' }} />
-
-      <ComposableMap
-        projection="geoMercator"
-        projectionConfig={{ scale: fullscreen ? 150 : 118 }}
-        style={{ width: '100%', height: '100%', position: 'relative', zIndex: 1 }}
+      <MapContainer
+        center={[20, 0]}
+        zoom={2}
+        minZoom={2}
+        maxZoom={fullscreen ? 6 : 4}
+        zoomControl={!!fullscreen}
+        dragging={!!fullscreen}
+        scrollWheelZoom={!!fullscreen}
+        doubleClickZoom={!!fullscreen}
+        attributionControl={false}
+        style={mapStyle}
       >
-        <ZoomableGroup center={[0, 14]} zoom={fullscreen ? 1.5 : 1.08}>
-          <Geographies geography={GEO_URL}>
-            {({ geographies }) =>
-              geographies.map((geo) => {
-                const props = geo.properties as Record<string, unknown>;
-                const iso2 = typeof props.iso_a2 === 'string' ? props.iso_a2.toLowerCase() : null;
-                const name = typeof props.admin === 'string' ? props.admin : 'País';
-                const count = iso2 ? successMap.get(iso2) : undefined;
-                const highlighted = count !== undefined;
-                const highIntensity = highlighted && highlightedCountryCount > 1 && count === Math.max(...successMap.values());
+        <FitWorldBounds />
+        <MapResizer fullscreen={fullscreen} />
+        <TileLayer url={tileUrl} attribution={tileAttribution} noWrap />
 
-                return (
-                  <Geography
-                    key={geo.rsmKey}
-                    geography={geo}
-                    onMouseEnter={(event) => {
-                      if (count === undefined) return;
-                      const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect();
-                      setTooltip({
-                        visible: true,
-                        x: event.clientX - (rect?.left ?? 0),
-                        y: event.clientY - (rect?.top ?? 0),
-                        name,
-                        count,
-                      });
-                    }}
-                    onMouseMove={(event) => {
-                      if (count === undefined) return;
-                      const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect();
-                      setTooltip((prev) => ({
-                        ...prev,
-                        x: event.clientX - (rect?.left ?? 0),
-                        y: event.clientY - (rect?.top ?? 0),
-                      }));
-                    }}
-                    onMouseLeave={() => setTooltip((prev) => ({ ...prev, visible: false }))}
-                    style={{
-                      default: {
-                        fill: highlighted ? (highIntensity ? primaryStrong : primarySoft) : 'transparent',
-                        fillOpacity: highlighted ? 0.95 : 0,
-                        stroke: highlighted ? 'hsl(0 0% 88%)' : border,
-                        strokeWidth: highlighted ? 1.1 : 0.65,
-                        outline: 'none',
-                      },
-                      hover: {
-                        fill: highlighted ? (highIntensity ? primaryStrong : primary) : 'transparent',
-                        fillOpacity: highlighted ? 1 : 0,
-                        stroke: highlighted ? 'hsl(0 0% 96%)' : border,
-                        strokeWidth: highlighted ? 1.35 : 0.85,
-                        outline: 'none',
-                      },
-                      pressed: {
-                        fill: highlighted ? (highIntensity ? primaryStrong : primary) : 'transparent',
-                        fillOpacity: highlighted ? 1 : 0,
-                        stroke: highlighted ? 'hsl(0 0% 96%)' : border,
-                        strokeWidth: highlighted ? 1.2 : 0.8,
-                        outline: 'none',
-                      },
-                    }}
-                  />
-                );
-              })
-            }
-          </Geographies>
-        </ZoomableGroup>
-      </ComposableMap>
-
-      {tooltip.visible && (
-        <div
-          className="pointer-events-none absolute z-10 rounded-md border border-border bg-card px-3 py-2 text-xs shadow-lg"
-          style={{
-            left: tooltip.x + 12,
-            top: Math.max(tooltip.y - 12, 12),
-            color: foreground,
-            background: card,
-          }}
-        >
-          <div className="font-medium">{tooltip.name}</div>
-          <div style={{ color: mutedForeground }}>Login com Sucesso: {tooltip.count.toLocaleString()}</div>
-        </div>
-      )}
+        {points.map((p, i) => (
+          <CircleMarker
+            key={`success-${i}`}
+            center={[p.lat, p.lng]}
+            radius={p.r}
+            pathOptions={{
+              color: SUCCESS_COLOR,
+              fillColor: SUCCESS_COLOR,
+              fillOpacity: 0.35,
+              weight: 1.5,
+              opacity: 0.8,
+            }}
+          >
+            <Tooltip direction="top" offset={[0, -6]} opacity={0.95}>
+              <span className="text-xs">
+                <strong>{p.label.toUpperCase()}</strong> — Login com Sucesso: {p.count.toLocaleString()}
+              </span>
+            </Tooltip>
+          </CircleMarker>
+        ))}
+      </MapContainer>
     </div>
   );
 }
