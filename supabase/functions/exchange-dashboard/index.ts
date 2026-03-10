@@ -215,7 +215,15 @@ Deno.serve(async (req) => {
       rows.forEach((row: any) => {
         const used = row.storageUsedInBytes || 0;
         const quota = row.prohibitSendReceiveQuotaInBytes || 0;
-        if (quota > 0 && used >= quota * 0.9) overQuota++;
+        if (quota > 0 && used >= quota * 0.9) {
+          overQuota++;
+          overQuotaUsers.push({
+            name: upnJ,
+            usedGB: Math.round(used / (1024**3) * 100) / 100,
+            quotaGB: Math.round(quota / (1024**3) * 100) / 100,
+            usagePct: Math.round((used / quota) * 1000) / 10,
+          });
+        }
         if (row.createdDateTime) {
           if (new Date(row.createdDateTime) >= thirtyDaysAgo) newLast30d++;
         }
