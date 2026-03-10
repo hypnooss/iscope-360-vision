@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AttackMap } from './AttackMap';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
