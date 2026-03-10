@@ -188,13 +188,13 @@ export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecu
                   {selectedInsight.recommendation && (
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground mb-1">✅ Boas práticas recomendadas</p>
-                      <ul className="space-y-1.5 text-sm bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+                      <ul className="space-y-1 mt-1">
                         {selectedInsight.recommendation
                           .split(/(?:\. |\n|; )/)
                           .filter(s => s.trim().length > 0)
                           .map((item, i) => (
-                            <li key={i} className="flex items-start gap-2">
-                              <span className="text-emerald-500 mt-0.5">•</span>
+                            <li key={i} className="flex items-start gap-2 text-sm">
+                              <span className="text-primary shrink-0">•</span>
                               <span>{item.trim().replace(/\.$/, '')}</span>
                             </li>
                           ))}
