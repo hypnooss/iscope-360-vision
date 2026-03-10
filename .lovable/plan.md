@@ -1,37 +1,18 @@
+# Status: ✅ Confirmado
 
+## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-## Problema
+### Confirmação
 
-A Edge Function `exchange-dashboard` filtra mailboxes Shared/Room/Equipment das inativas usando comparação exata:
+O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
 
-```js
-['shared', 'room', 'equipment'].includes(recipientType)
-```
+| # | Edge Function | Fonte de dados | Tipo | Resultado |
+|---|--------------|----------------|------|-----------|
+| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
+| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
 
-Mas a Graph API retorna valores como `"SharedMailbox"`, `"RoomMailbox"`, `"EquipmentMailbox"` (ou no CSV: `"Shared"`, `"SharedMailbox"`, etc.). A comparação exata nunca corresponde, então shared mailboxes acabam aparecendo na lista de inativas.
+### Fix já aplicado
+- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
 
-## Correção
-
-### `supabase/functions/exchange-dashboard/index.ts`
-
-Trocar a comparação exata por `.includes()` em ambos os caminhos (CSV e JSON):
-
-**Caminho CSV (linha ~188):**
-```js
-// De:
-const isNonUserMailbox = ['shared', 'room', 'equipment'].includes(recipientType);
-
-// Para:
-const isNonUserMailbox = recipientType.includes('shared') || recipientType.includes('room') || recipientType.includes('equipment');
-```
-
-**Caminho JSON (linha ~230):**
-```js
-// Mesma correção
-const isNonUserMailboxJ = recipientTypeJ.includes('shared') || recipientTypeJ.includes('room') || recipientTypeJ.includes('equipment');
-```
-
-Isso garante que `"sharedmailbox"`, `"shared"`, `"SharedMailbox"` — qualquer variação — seja corretamente filtrada.
-
-Mudança mínima, apenas 2 linhas na Edge Function. Após o deploy, basta re-executar a coleta para atualizar o cache.
-
+### Melhoria futura sugerida
+- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
