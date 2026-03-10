@@ -177,9 +177,10 @@ Deno.serve(async (req) => {
     if (mailboxUsageResult?._csv) {
       const rows = parseCsvReport(mailboxUsageResult._csv);
       console.log(`Mailbox usage report: ${rows.length} rows, headers: ${rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'none'}`);
-      totalMailboxes = rows.length;
-      
       rows.forEach((row: any) => {
+        const isDeleted = (row['Is Deleted'] || '').toLowerCase() === 'true';
+        if (isDeleted) return;
+        totalMailboxes++;
         const upn = row['User Principal Name'] || row['Display Name'] || '';
         // Check storage quota (CSV field names)
         const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
@@ -223,8 +224,9 @@ Deno.serve(async (req) => {
     } else if (mailboxUsageResult?.value) {
       const rows = mailboxUsageResult.value || [];
       console.log(`Mailbox usage JSON: ${rows.length} rows`);
-      totalMailboxes = rows.length;
       rows.forEach((row: any) => {
+        if (row.isDeleted) return;
+        totalMailboxes++;
         const upnJ = row.userPrincipalName || row.displayName || '';
         const used = row.storageUsedInBytes || 0;
         const quota = row.prohibitSendReceiveQuotaInBytes || 0;
