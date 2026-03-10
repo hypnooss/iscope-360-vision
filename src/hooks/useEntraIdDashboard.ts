@@ -49,6 +49,8 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
           loginActivity: cache.loginActivity || { total: 0, success: 0, failed: 0, mfaRequired: 0, blocked: 0 },
           userChanges: cache.userChanges || { updated: 0, new: 0, enabled: 0, disabled: 0, deleted: 0 },
           passwordActivity: cache.passwordActivity || { resets: 0, forcedChanges: 0, selfService: 0 },
+          loginCountriesSuccess: cache.loginCountriesSuccess || [],
+          loginCountriesFailed: cache.loginCountriesFailed || [],
           analyzedAt: tenant.entra_dashboard_cached_at || '',
         });
       } else {
