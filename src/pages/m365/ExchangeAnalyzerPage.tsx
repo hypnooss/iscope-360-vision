@@ -235,7 +235,9 @@ export default function ExchangeAnalyzerPage() {
 
         {/* Category Grid */}
         {selectedTenantId && !loading && dashboardData && (
-          <ExchangeAnalyzerCategoryGrid data={dashboardData} />
+          <div className="mb-8">
+            <ExchangeAnalyzerCategoryGrid data={dashboardData} />
+          </div>
         )}
 
         {/* Threat Protection */}
