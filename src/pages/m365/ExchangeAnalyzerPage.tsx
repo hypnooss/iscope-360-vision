@@ -295,11 +295,12 @@ export default function ExchangeAnalyzerPage() {
       </div>
 
       {/* Category Sheet */}
-      <ExchangeAnalyzerCategorySheet
-        open={categorySheetOpen}
-        onOpenChange={setCategorySheetOpen}
-        category={selectedCategory}
-        insights={[]}
+      <ExchangeCategorySheet
+        open={opCategorySheetOpen}
+        onOpenChange={setOpCategorySheetOpen}
+        category={selectedOpCategory}
+        dashboardData={dashboardData}
+        analyzerMetrics={analyzerSnapshot?.metrics}
       />
       <ScheduleDialog
         open={scheduleDialogOpen}
