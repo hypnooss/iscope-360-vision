@@ -1,18 +1,13 @@
-# Status: ✅ Confirmado
 
-## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-### Confirmação
+## Correção: Frequência do M365 na página Ambiente
 
-O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
+Na página `EnvironmentPage.tsx` linha 95, a query de agendamento dos tenants M365 busca da tabela `m365_analyzer_schedules`. Precisa trocar para `m365_compliance_schedules`, que é a tabela recém-criada para o módulo de Compliance.
 
-| # | Edge Function | Fonte de dados | Tipo | Resultado |
-|---|--------------|----------------|------|-----------|
-| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
-| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
+### Alteração
 
-### Fix já aplicado
-- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
+**`src/pages/EnvironmentPage.tsx` (linha 95)**
+- Trocar `m365_analyzer_schedules` → `m365_compliance_schedules`
 
-### Melhoria futura sugerida
-- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
+Uma única linha.
+
