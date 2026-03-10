@@ -478,6 +478,54 @@ export function ExchangeCategorySheet({
     );
   };
 
+  const renderInactiveContent = () => {
+    const totalMb = dashboardData?.mailboxes.total || 1;
+    const v30 = dashboardData?.mailboxes.notLoggedIn30d || 0;
+    const v60 = dashboardData?.mailboxes.notLoggedIn60d || 0;
+    const v90 = dashboardData?.mailboxes.notLoggedIn90d || 0;
+    const users30 = (dashboardData?.mailboxes as any)?.inactiveUsers30 || [];
+    const users60 = (dashboardData?.mailboxes as any)?.inactiveUsers60 || [];
+    const users90 = (dashboardData?.mailboxes as any)?.inactiveUsers90 || [];
+    const colorCls = 'text-indigo-600 dark:text-indigo-400';
+
+    return (
+      <Tabs defaultValue="30d" className="flex flex-col flex-1 min-h-0">
+        <div className="border-b border-border shrink-0" />
+        <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-6 h-auto py-0 shrink-0">
+          <TabsTrigger value="30d" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5">
+            <UserX className="w-3.5 h-3.5" /> 30 dias ({v30})
+          </TabsTrigger>
+          <TabsTrigger value="60d" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5">
+            <UserX className="w-3.5 h-3.5" /> 60 dias ({v60})
+          </TabsTrigger>
+          <TabsTrigger value="90d" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs gap-1.5">
+            <UserX className="w-3.5 h-3.5" /> 90 dias ({v90})
+          </TabsTrigger>
+        </TabsList>
+
+        {[{ key: '30d', count: v30, users: users30 }, { key: '60d', count: v60, users: users60 }, { key: '90d', count: v90, users: users90 }].map(({ key, count, users }) => (
+          <TabsContent key={key} value={key} className="flex-1 mt-0 min-h-0">
+            <ScrollArea className="h-full">
+              <div className="p-6 space-y-4">
+                <Badge variant="outline" className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30">
+                  {count.toLocaleString()} de {totalMb.toLocaleString()} mailboxes ({totalMb > 0 ? ((count / totalMb) * 100).toFixed(1) : 0}%)
+                </Badge>
+                <Card>
+                  <CardHeader className="pb-2 pt-4">
+                    <CardTitle className="text-sm font-medium">Mailboxes sem Login ({key})</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <MailboxDetailList items={users} colorClass={colorCls} subKey="lastActivity" subLabel="" />
+                  </CardContent>
+                </Card>
+              </div>
+            </ScrollArea>
+          </TabsContent>
+        ))}
+      </Tabs>
+    );
+  };
+
   const renderCategoryContent = () => {
     switch (category) {
       case 'email_traffic':
