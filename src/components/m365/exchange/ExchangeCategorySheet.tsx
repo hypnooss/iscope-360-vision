@@ -292,14 +292,27 @@ export function ExchangeCategorySheet({
     };
 
     // Get ranking data based on category
+    // For phishing: aggregate sender domains from threatProtection.topPhishingTargets[].senders
+    const phishDomains: { name: string; count: number }[] = (() => {
+      const senderMap: Record<string, number> = {};
+      (threatData?.topPhishingTargets || []).forEach((t: any) => {
+        (t.senders || []).forEach((s: string) => {
+          senderMap[s] = (senderMap[s] || 0) + 1;
+        });
+      });
+      return Object.entries(senderMap)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, count]) => ({ name, count }));
+    })();
+
     const topDomains: { name: string; count: number }[] =
       cat === 'anti_spam' ? (threatData?.topSpamSenderDomains || []).map((d: any) => typeof d === 'string' ? { name: d, count: 0 } : { name: d.domain || d.name || d, count: d.count || 0 }) :
-      cat === 'phishing' ? (phishingData?.topSenderDomains || []).map((d: any) => typeof d === 'string' ? { name: d, count: 0 } : { name: d.domain || d.name || d, count: d.count || 0 }) :
+      cat === 'phishing' ? phishDomains :
       (threatData?.topMalwareSenderDomains || []).map((d: any) => typeof d === 'string' ? { name: d, count: 0 } : { name: d.domain || d.name || d, count: d.count || 0 });
 
     const topUsers: { name: string; count: number }[] =
       cat === 'anti_spam' ? (threatData?.topSpamRecipients || []).map((u: any) => typeof u === 'string' ? { name: u, count: 0 } : { name: u.user || u.name || u, count: u.count || 0 }) :
-      cat === 'phishing' ? (phishingData?.topAttackedUsers || threatData?.topPhishingTargets || []).map((u: any) => typeof u === 'string' ? { name: u, count: 0 } : { name: u.user || u.name || u, count: u.count || 0 }) :
+      cat === 'phishing' ? (threatData?.topPhishingTargets || []).map((u: any) => typeof u === 'string' ? { name: u, count: 0 } : { name: u.user || u.name || u, count: u.count || 0 }) :
       (threatData?.topMalwareRecipients || []).map((u: any) => typeof u === 'string' ? { name: u, count: 0 } : { name: u.user || u.name || u, count: u.count || 0 });
 
     const sevColor = cat === 'phishing' ? 'text-red-500' : cat === 'malware' ? 'text-amber-500' : 'text-violet-500';
