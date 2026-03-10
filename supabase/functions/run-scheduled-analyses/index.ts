@@ -409,12 +409,30 @@ Deno.serve(async (req) => {
               m365AnalyzerTriggered++;
 
               // Also trigger exchange-dashboard to populate KPI cache
-              const exchangeUrl = `${supabaseUrl}/functions/v1/exchange-dashboard`;
-              await fetch(exchangeUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
-                body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
-              }).catch(e => console.warn('[run-scheduled-analyses] exchange-dashboard failed:', e));
+              try {
+                const exchangeUrl = `${supabaseUrl}/functions/v1/exchange-dashboard`;
+                const exchResp = await fetch(exchangeUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+                  body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
+                });
+                const exchResult = await exchResp.json();
+                if (exchResult.success) {
+                  console.log(`[run-scheduled-analyses] exchange-dashboard OK for tenant ${schedule.tenant_record_id}`);
+                } else {
+                  console.error(`[run-scheduled-analyses] exchange-dashboard failed for tenant ${schedule.tenant_record_id}:`, exchResult.error);
+                  // Retry once
+                  const retryResp = await fetch(exchangeUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+                    body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
+                  });
+                  const retryResult = await retryResp.json();
+                  console.log(`[run-scheduled-analyses] exchange-dashboard retry for tenant ${schedule.tenant_record_id}:`, retryResult.success ? 'OK' : retryResult.error);
+                }
+              } catch (e) {
+                console.error(`[run-scheduled-analyses] exchange-dashboard error for tenant ${schedule.tenant_record_id}:`, e);
+              }
             } else {
               console.error(`[run-scheduled-analyses] Failed to trigger M365 analyzer for tenant ${schedule.tenant_record_id}:`, result.error);
               m365AnalyzerErrors++;
