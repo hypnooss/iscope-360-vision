@@ -455,6 +455,75 @@ Deno.serve(async (req) => {
     }
 
     // ========================================================
+    // M365 Compliance Schedules (Posture Analysis)
+    // ========================================================
+    const { data: dueM365ComplianceSchedules, error: m365ComplianceFetchError } = await supabase
+      .from('m365_compliance_schedules')
+      .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .eq('is_active', true)
+      .not('frequency', 'eq', 'manual')
+      .lte('next_run_at', new Date().toISOString());
+
+    if (m365ComplianceFetchError) {
+      console.error('[run-scheduled-analyses] Error fetching M365 compliance schedules:', m365ComplianceFetchError);
+    }
+
+    let m365ComplianceTriggered = 0;
+    let m365ComplianceErrors = 0;
+    let m365ComplianceSkipped = 0;
+
+    if (dueM365ComplianceSchedules && dueM365ComplianceSchedules.length > 0) {
+      console.log(`[run-scheduled-analyses] Found ${dueM365ComplianceSchedules.length} M365 compliance schedule(s) due.`);
+
+      for (const schedule of dueM365ComplianceSchedules) {
+        try {
+          // Pre-check agent online via m365_tenant_agents
+          const { data: tenantAgent } = await supabase
+            .from('m365_tenant_agents')
+            .select('agent_id')
+            .eq('tenant_record_id', schedule.tenant_record_id)
+            .eq('enabled', true)
+            .limit(1)
+            .maybeSingle();
+
+          const agentStatus = await isAgentOnline(supabase, tenantAgent?.agent_id || null);
+
+          if (!agentStatus.online) {
+            console.log(`[run-scheduled-analyses] Skipping M365 compliance ${schedule.tenant_record_id}: agent ${agentStatus.agentName} offline (last_seen: ${agentStatus.lastSeen})`);
+            m365ComplianceSkipped++;
+          } else {
+            const triggerUrl = `${supabaseUrl}/functions/v1/trigger-m365-posture-analysis`;
+            const response = await fetch(triggerUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
+              body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
+            });
+            const result = await response.json();
+            if (result.success || response.status === 409) {
+              console.log(`[run-scheduled-analyses] Triggered M365 compliance for tenant ${schedule.tenant_record_id}`);
+              m365ComplianceTriggered++;
+            } else {
+              console.error(`[run-scheduled-analyses] Failed to trigger M365 compliance for tenant ${schedule.tenant_record_id}:`, result.error);
+              m365ComplianceErrors++;
+            }
+          }
+
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+            schedule.id
+          );
+          await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+        } catch (err) {
+          console.error(`[run-scheduled-analyses] M365 compliance schedule error:`, err);
+          m365ComplianceErrors++;
+        }
+      }
+    } else {
+      console.log('[run-scheduled-analyses] No M365 compliance schedules due.');
+    }
+
+    // ========================================================
     // CVE Cache Refresh
     // ========================================================
     let cveRefreshSuccess = false;
