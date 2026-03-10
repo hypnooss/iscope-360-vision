@@ -1,18 +1,12 @@
-# Status: ✅ Confirmado
 
-## Análise do fluxo "Executar Análise" no Exchange Analyzer
 
-### Confirmação
+## Fix: "Cannot access 'upn' before initialization"
 
-O botão "Executar Análise" dispara corretamente **ambas** as coletas em paralelo:
+### Cause
+In `supabase/functions/exchange-dashboard/index.ts`, line 175 references `upn` but it's declared on line 186 (after the quota check block). JavaScript `const` declarations are not hoisted, causing the runtime error.
 
-| # | Edge Function | Fonte de dados | Tipo | Resultado |
-|---|--------------|----------------|------|-----------|
-| 1 | `trigger-m365-analyzer` | Agent PowerShell + Graph API (híbrido) | Assíncrono | Insights, metrics, threat protection |
-| 2 | `exchange-dashboard` | Graph API direto | Imediato | KPIs de status (mailboxes, tráfego, segurança) |
+### Fix
+Move `const upn = row['User Principal Name'] || row['Display Name'] || '';` (line 186) to the top of the `forEach` callback, before the quota check on line 172. Same issue exists in the JSON branch (~line 219) where `upnJ` is used before declaration — fix that too.
 
-### Fix já aplicado
-- Retry + logging detalhado na chamada `exchange-dashboard` do scheduler (`run-scheduled-analyses`)
+Single file change: `supabase/functions/exchange-dashboard/index.ts`, then redeploy.
 
-### Melhoria futura sugerida
-- Adicionar polling no `useLatestM365AnalyzerSnapshot` para detectar quando o snapshot do Agent muda de `pending` para `completed`
