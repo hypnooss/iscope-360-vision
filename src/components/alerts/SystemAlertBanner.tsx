@@ -186,8 +186,12 @@ export function SystemAlertBanner() {
     navigate('/settings');
   };
 
-  // Filter locally dismissed
-  const visibleAlerts = alerts.filter(alert => !dismissedLocally.includes(alert.id));
+  // Filter locally dismissed + user preferences
+  const visibleAlerts = alerts.filter(alert => {
+    if (dismissedLocally.includes(alert.id)) return false;
+    if (notifPrefs && !alertMatchesPrefs(alert.alert_type, notifPrefs)) return false;
+    return true;
+  });
   const primaryAlert = visibleAlerts[0] ?? null;
 
   const getSeverityStyles = (severity: string) => {
