@@ -149,7 +149,14 @@ Deno.serve(async (req) => {
     let overQuota = 0;
     let newLast30d = 0;
     let notLoggedIn30d = 0;
+    let notLoggedIn60d = 0;
+    let notLoggedIn90d = 0;
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const inactiveUsers30: { name: string; lastActivity: string }[] = [];
+    const inactiveUsers60: { name: string; lastActivity: string }[] = [];
+    const inactiveUsers90: { name: string; lastActivity: string }[] = [];
 
     // Reports return CSV via _csv wrapper
     if (mailboxUsageResult?._csv) {
