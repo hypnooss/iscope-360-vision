@@ -7,8 +7,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import {
   ShieldX, AlertTriangle, CheckCircle2,
-  Globe, Users, Bug, Shield, Info, Lightbulb, ExternalLink,
+  Globe, Users, Bug, Shield, Info, Lightbulb, ExternalLink, FileKey, Check,
 } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { M365AnalyzerMetrics } from '@/types/m365AnalyzerInsights';
 
 type ThreatProtection = M365AnalyzerMetrics['threatProtection'];
@@ -17,12 +18,20 @@ type PolicyKey = 'antiSpam' | 'antiPhish' | 'safeLinks' | 'safeAttach' | 'malwar
 type PolicyStatus = 'enabled' | 'weak' | 'disabled';
 
 // ─── Policy Detail Data ──────────────────────────────────────────────────────
+type LicensingInfo = {
+  text: string;
+  plans: { name: string; included: boolean }[];
+  note: string;
+  url: string;
+};
+
 const POLICY_DETAILS: Record<PolicyKey, {
   label: string;
   description: string;
   diagnostics: Record<PolicyStatus, string>;
   recommendation: Record<PolicyStatus, string>;
   microsoftUrl: string;
+  licensing?: LicensingInfo;
 }> = {
   antiSpam: {
     label: 'Anti-Spam',
@@ -68,6 +77,18 @@ const POLICY_DETAILS: Record<PolicyKey, {
       disabled: 'Crie uma política Safe Links abrangente que cubra emails e aplicações Office. Configure para verificar URLs no momento do clique e registrar eventos para auditoria. Isso requer licença Microsoft Defender for Office 365 Plan 1 ou superior.',
     },
     microsoftUrl: 'https://learn.microsoft.com/en-us/defender-office-365/safe-links-policies-configure',
+    licensing: {
+      text: 'Safe Links faz parte do Microsoft Defender for Office 365 e requer licenciamento específico para funcionar.',
+      plans: [
+        { name: 'Defender for Office 365 Plan 1', included: true },
+        { name: 'Defender for Office 365 Plan 2', included: true },
+        { name: 'Microsoft 365 E5', included: true },
+        { name: 'Microsoft 365 E5 Security', included: true },
+        { name: 'Microsoft 365 Business Premium', included: true },
+      ],
+      note: 'O Plan 2 adiciona recursos avançados como Threat Explorer, Automated Investigation and Response, Campaign View e Attack Simulation. Mas Safe Links já está disponível no Plan 1.',
+      url: 'https://learn.microsoft.com/pt-br/defender-office-365/mdo-about',
+    },
   },
   safeAttach: {
     label: 'Safe Attachments',
@@ -83,6 +104,18 @@ const POLICY_DETAILS: Record<PolicyKey, {
       disabled: 'Crie uma política Safe Attachments com ação "Bloquear" ou "Dynamic Delivery". Configure para todos os domínios do tenant e habilite o redirecionamento de anexos maliciosos para uma caixa de segurança para análise.',
     },
     microsoftUrl: 'https://learn.microsoft.com/en-us/defender-office-365/safe-attachments-policies-configure',
+    licensing: {
+      text: 'Safe Attachments faz parte do Microsoft Defender for Office 365 e requer licenciamento específico para funcionar.',
+      plans: [
+        { name: 'Defender for Office 365 Plan 1', included: true },
+        { name: 'Defender for Office 365 Plan 2', included: true },
+        { name: 'Microsoft 365 E5', included: true },
+        { name: 'Microsoft 365 E5 Security', included: true },
+        { name: 'Microsoft 365 Business Premium', included: true },
+      ],
+      note: 'O Plan 2 adiciona recursos avançados como Threat Explorer, Automated Investigation and Response, Campaign View e Attack Simulation. Mas Safe Attachments já está disponível no Plan 1.',
+      url: 'https://learn.microsoft.com/pt-br/defender-office-365/mdo-about',
+    },
   },
   malwareFilter: {
     label: 'Malware Filter',
@@ -202,7 +235,49 @@ function PolicyDetailSheet({
               </CardContent>
             </Card>
 
-            {/* Referência Microsoft */}
+            {/* Licenciamento */}
+            {detail.licensing && (
+              <Card className="glass-card border">
+                <CardHeader className="pb-2 pt-4 px-4">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <FileKey className="w-4 h-4 text-muted-foreground" />
+                    Licenciamento Necessário
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-4 pb-4 space-y-3">
+                  <p className="text-sm text-muted-foreground leading-relaxed">{detail.licensing.text}</p>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs h-8">Plano</TableHead>
+                        <TableHead className="text-xs h-8 text-center w-20">Incluso</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {detail.licensing.plans.map((plan) => (
+                        <TableRow key={plan.name}>
+                          <TableCell className="text-sm py-2">{plan.name}</TableCell>
+                          <TableCell className="text-center py-2">
+                            {plan.included && <Check className="w-4 h-4 text-emerald-400 mx-auto" />}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{detail.licensing.note}</p>
+                  <a
+                    href={detail.licensing.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-xs text-primary hover:text-primary/80 transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Comparativo de licenciamento Microsoft
+                  </a>
+                </CardContent>
+              </Card>
+            )}
+
             <a
               href={detail.microsoftUrl}
               target="_blank"
