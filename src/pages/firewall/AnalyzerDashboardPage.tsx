@@ -603,7 +603,7 @@ export default function AnalyzerDashboardPage() {
 
         {/* Stats Cards */}
         {snapshot && !isLoading && (
-          <div className="mb-6">
+          <div>
             <AnalyzerStatsCards snapshot={snapshot} />
           </div>
         )}
