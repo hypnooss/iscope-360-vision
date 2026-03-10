@@ -51,16 +51,16 @@ export function EntraIdLoginMap({ loginCountriesSuccess }: EntraIdLoginMapProps)
       )}
 
       {fullscreen && (
-        <div className="fixed inset-0 z-50 bg-background flex flex-col">
-          <div className="flex items-center justify-between p-4 border-b border-border">
-            <h2 className="text-lg font-semibold text-foreground">
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: '#222222' }}>
+          <div className="flex items-center justify-between px-6 py-3 border-b border-white/10 bg-black/40 backdrop-blur-md">
+            <h1 className="text-white text-base font-semibold">
               Entra ID — Origens de Login
-            </h2>
+            </h1>
             <button
               onClick={() => setFullscreen(false)}
-              className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              className="h-8 w-8 flex items-center justify-center rounded-md text-white/60 hover:text-white hover:bg-white/10 transition-colors"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
           <div className="flex-1 relative min-h-0">
