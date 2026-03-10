@@ -84,7 +84,7 @@ export default function ExchangeAnalyzerPage() {
   );
 
   // Data hooks
-  const { data: dashboardData, loading: dashboardLoading } = useExchangeDashboard({ tenantRecordId: selectedTenantId });
+  const { data: dashboardData, loading: dashboardLoading, refresh: refreshDashboard, refreshing: dashboardRefreshing } = useExchangeDashboard({ tenantRecordId: selectedTenantId });
   const { data: analyzerSnapshot, isLoading: analyzerLoading } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
 
   const [triggering, setTriggering] = useState(false);
