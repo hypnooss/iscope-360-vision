@@ -174,11 +174,29 @@ Deno.serve(async (req) => {
           const created = new Date(row['Created Date']);
           if (created >= thirtyDaysAgo) newLast30d++;
         }
+        const upn = row['User Principal Name'] || row['Display Name'] || '';
         if (row['Last Activity Date']) {
           const lastActivity = new Date(row['Last Activity Date']);
-          if (lastActivity < thirtyDaysAgo) notLoggedIn30d++;
+          const lastStr = row['Last Activity Date'];
+          if (lastActivity < thirtyDaysAgo) {
+            notLoggedIn30d++;
+            inactiveUsers30.push({ name: upn, lastActivity: lastStr });
+          }
+          if (lastActivity < sixtyDaysAgo) {
+            notLoggedIn60d++;
+            inactiveUsers60.push({ name: upn, lastActivity: lastStr });
+          }
+          if (lastActivity < ninetyDaysAgo) {
+            notLoggedIn90d++;
+            inactiveUsers90.push({ name: upn, lastActivity: lastStr });
+          }
         } else {
           notLoggedIn30d++;
+          notLoggedIn60d++;
+          notLoggedIn90d++;
+          inactiveUsers30.push({ name: upn, lastActivity: 'Nunca' });
+          inactiveUsers60.push({ name: upn, lastActivity: 'Nunca' });
+          inactiveUsers90.push({ name: upn, lastActivity: 'Nunca' });
         }
       });
     } else if (mailboxUsageResult?.value) {
