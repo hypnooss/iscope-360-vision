@@ -398,7 +398,18 @@ Deno.serve(async (req) => {
 
       for (const schedule of dueM365AnalyzerSchedules) {
         try {
-          // Pre-check agent online via m365_tenant_agents
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+            schedule.id
+          );
+
+          if (!schedule.next_run_at) {
+            await supabase.from('m365_analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+            console.log(`[run-scheduled-analyses] Recalculated next_run_at for M365 analyzer schedule ${schedule.id}: ${nextRunAt}`);
+            continue;
+          }
+
           const { data: tenantAgent } = await supabase
             .from('m365_tenant_agents')
             .select('agent_id')
@@ -410,7 +421,7 @@ Deno.serve(async (req) => {
           const agentStatus = await isAgentOnline(supabase, tenantAgent?.agent_id || null);
 
           if (!agentStatus.online) {
-            console.log(`[run-scheduled-analyses] Skipping M365 tenant ${schedule.tenant_record_id}: agent ${agentStatus.agentName} offline (last_seen: ${agentStatus.lastSeen})`);
+            console.log(`[run-scheduled-analyses] Skipping M365 tenant ${schedule.tenant_record_id}: agent ${agentStatus.agentName} offline`);
             m365AnalyzerSkipped++;
           } else {
             const triggerUrl = `${supabaseUrl}/functions/v1/trigger-m365-analyzer`;
@@ -424,7 +435,6 @@ Deno.serve(async (req) => {
               console.log(`[run-scheduled-analyses] Triggered M365 analyzer for tenant ${schedule.tenant_record_id}`);
               m365AnalyzerTriggered++;
 
-              // Also trigger exchange-dashboard to populate KPI cache
               try {
                 const exchangeUrl = `${supabaseUrl}/functions/v1/exchange-dashboard`;
                 const exchResp = await fetch(exchangeUrl, {
@@ -433,21 +443,16 @@ Deno.serve(async (req) => {
                   body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
                 });
                 const exchResult = await exchResp.json();
-                if (exchResult.success) {
-                  console.log(`[run-scheduled-analyses] exchange-dashboard OK for tenant ${schedule.tenant_record_id}`);
-                } else {
-                  console.error(`[run-scheduled-analyses] exchange-dashboard failed for tenant ${schedule.tenant_record_id}:`, exchResult.error);
-                  // Retry once
+                if (!exchResult.success) {
                   const retryResp = await fetch(exchangeUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
                     body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
                   });
-                  const retryResult = await retryResp.json();
-                  console.log(`[run-scheduled-analyses] exchange-dashboard retry for tenant ${schedule.tenant_record_id}:`, retryResult.success ? 'OK' : retryResult.error);
+                  await retryResp.json();
                 }
               } catch (e) {
-                console.error(`[run-scheduled-analyses] exchange-dashboard error for tenant ${schedule.tenant_record_id}:`, e);
+                console.error(`[run-scheduled-analyses] exchange-dashboard error:`, e);
               }
             } else {
               console.error(`[run-scheduled-analyses] Failed to trigger M365 analyzer for tenant ${schedule.tenant_record_id}:`, result.error);
@@ -455,11 +460,6 @@ Deno.serve(async (req) => {
             }
           }
 
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
           await supabase.from('m365_analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
         } catch (err) {
           console.error(`[run-scheduled-analyses] M365 analyzer schedule error:`, err);
