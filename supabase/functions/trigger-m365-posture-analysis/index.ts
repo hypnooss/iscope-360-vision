@@ -350,6 +350,52 @@ Deno.serve(async (req) => {
 
         console.log(`[trigger-m365-posture-analysis] Record ${historyRecord.id} updated with status: ${finalStatus}`);
 
+        // Re-check after writing partial: agent may have completed between our first read and this write
+        if (finalStatus === 'partial') {
+          const { data: recheck } = await supabaseAdmin
+            .from('m365_posture_history')
+            .select('agent_status, agent_insights')
+            .eq('id', historyRecord.id)
+            .maybeSingle();
+
+          if (recheck?.agent_status === 'completed' && Array.isArray(recheck.agent_insights) && recheck.agent_insights.length > 0) {
+            console.log(`[trigger-m365-posture-analysis] Re-check: agent completed during our write — merging now`);
+            const mergedInsights = [...allInsights, ...recheck.agent_insights];
+            const mergedSummary = {
+              critical: mergedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'critical').length,
+              high: mergedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'high').length,
+              medium: mergedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'medium').length,
+              low: mergedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'low').length,
+              info: mergedInsights.filter((i: any) => i.severity === 'info').length,
+              total: mergedInsights.length,
+            };
+            const applicableMerged = mergedInsights.filter((i: any) => i.status !== 'not_found');
+            const totalMerged = applicableMerged.length;
+            let penaltyMerged = 0;
+            for (const insight of applicableMerged) {
+              const i = insight as any;
+              if (i.status === 'fail') {
+                const w = i.severity === 'critical' ? 4 : i.severity === 'high' ? 3 : i.severity === 'medium' ? 2 : 1;
+                penaltyMerged += w;
+              }
+            }
+            const maxP = totalMerged * 4;
+            const mergedScore = maxP > 0 ? Math.max(0, Math.round(100 - (penaltyMerged / maxP) * 100)) : finalScore;
+
+            await supabaseAdmin
+              .from('m365_posture_history')
+              .update({
+                status: 'completed',
+                completed_at: new Date().toISOString(),
+                score: mergedScore,
+                summary: mergedSummary,
+              })
+              .eq('id', historyRecord.id);
+
+            console.log(`[trigger-m365-posture-analysis] Re-check merge complete. Score: ${mergedScore}, total: ${mergedInsights.length}`);
+          }
+        }
+
       } catch (e) {
         console.error(`[trigger-m365-posture-analysis] Background error:`, e);
         

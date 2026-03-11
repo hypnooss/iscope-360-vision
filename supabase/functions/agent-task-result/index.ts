@@ -5037,7 +5037,53 @@ serve(async (req: Request) => {
           if (updateError) {
             console.error(`[m365_tenant] Failed to update posture history:`, updateError);
           } else {
-            console.log(`[m365_tenant] Updated posture history ${analysisId} with ${agentInsights.length} agent insights, recalculated summary (total: ${recalculatedSummary.total}) and score: ${recalculatedScore}`);
+            console.log(`[m365_tenant] Updated posture history ${analysisId} with agent insights`);
+          }
+
+          // Re-check after write: Edge Function may have set 'partial' between our read and write
+          if (!graphApiCompleted) {
+            const { data: recheck } = await supabase
+              .from('m365_posture_history')
+              .select('status, insights, score')
+              .eq('id', analysisId)
+              .maybeSingle();
+
+            if (recheck?.status === 'partial' && Array.isArray(recheck.insights) && recheck.insights.length > 0) {
+              console.log(`[m365_tenant] Re-check: Edge Function set partial during our write — merging now`);
+              const combinedInsights = [...recheck.insights, ...agentInsights];
+              const mergedSummary = {
+                critical: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'critical').length,
+                high: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'high').length,
+                medium: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'medium').length,
+                low: combinedInsights.filter((i: any) => i.status === 'fail' && i.severity === 'low').length,
+                info: combinedInsights.filter((i: any) => i.severity === 'info').length,
+                total: combinedInsights.length,
+              };
+              const applicable = combinedInsights.filter((i: any) => i.status !== 'not_found');
+              const totalChecks = applicable.length;
+              let penalty = 0;
+              for (const ins of applicable) {
+                const i = ins as any;
+                if (i.status === 'fail') {
+                  const w = i.severity === 'critical' ? 4 : i.severity === 'high' ? 3 : i.severity === 'medium' ? 2 : 1;
+                  penalty += w;
+                }
+              }
+              const maxP = totalChecks * 4;
+              const mergedScore = maxP > 0 ? Math.max(0, Math.round(100 - (penalty / maxP) * 100)) : (recheck.score ?? 100);
+
+              await supabase
+                .from('m365_posture_history')
+                .update({
+                  status: 'completed',
+                  completed_at: new Date().toISOString(),
+                  summary: mergedSummary,
+                  score: mergedScore,
+                })
+                .eq('id', analysisId);
+
+              console.log(`[m365_tenant] Re-check merge complete. Score: ${mergedScore}, total: ${combinedInsights.length}`);
+            }
           }
         } catch (e) {
           console.error(`[m365_tenant] Error processing agent insights:`, e);
