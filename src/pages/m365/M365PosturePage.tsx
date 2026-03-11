@@ -561,10 +561,9 @@ export default function M365PosturePage() {
               <div>
                 <p className="text-sm font-medium">Análise em andamento...</p>
                 <p className="text-xs text-muted-foreground">
-                  {analysisStatus === 'partial' 
-                    ? 'Graph API concluída, aguardando Agent PowerShell...' 
-                    : 'Coletando dados via Graph API...'}
-                  {elapsed > 0 && ` · ${elapsed}s`}
+                  {currentTaskStatus === 'running' 
+                    ? 'Coletando e analisando dados...' 
+                    : 'Preparando análise...'}
                 </p>
               </div>
             </div>
