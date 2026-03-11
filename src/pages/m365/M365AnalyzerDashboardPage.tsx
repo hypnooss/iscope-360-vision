@@ -758,13 +758,13 @@ export default function M365AnalyzerDashboardPage() {
 
         {/* Empty state */}
         {!isLoading && !snapshot && selectedTenantId && (
-          <Card className="glass-card">
-            <CardContent className="py-12 text-center">
-              <Radar className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">Nenhuma análise encontrada</h3>
-              <p className="text-muted-foreground mb-4">Execute a primeira análise para ativar o radar de incidentes.</p>
+          <Card className="border-warning/30 bg-warning/5">
+            <CardContent className="py-10 text-center max-w-md mx-auto">
+              <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-3" />
+              <h3 className="text-base font-semibold mb-1">Nenhuma análise encontrada</h3>
+              <p className="text-sm text-muted-foreground mb-5">Execute a primeira análise para ativar o radar de incidentes.</p>
               <Button onClick={handleTrigger} disabled={triggering}>
-                <Play className="w-4 h-4 mr-2" />Executar Primeira Análise
+                <Play className="w-4 h-4 mr-2" /> Executar Análise
               </Button>
             </CardContent>
           </Card>

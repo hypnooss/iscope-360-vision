@@ -714,10 +714,16 @@ export default function AnalyzerDashboardPage() {
         )}
 
         {selectedFirewall && !snapshot && !isLoading && (
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>Nenhuma análise encontrada. Execute uma análise para começar.</AlertDescription>
-          </Alert>
+          <Card className="border-warning/30 bg-warning/5">
+            <CardContent className="py-10 text-center max-w-md mx-auto">
+              <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-3" />
+              <h3 className="text-base font-semibold mb-1">Nenhuma análise encontrada</h3>
+              <p className="text-sm text-muted-foreground mb-5">Execute a primeira análise para ativar os insights de segurança.</p>
+              <Button onClick={handleTrigger} disabled={triggering || isRunning}>
+                <Play className="w-4 h-4 mr-2" /> Executar Análise
+              </Button>
+            </CardContent>
+          </Card>
         )}
       </div>
 
