@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { Plus, Trash2, Eye, Upload, FileText, Search, ChevronRight, Loader2, X, CheckCircle2 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { format } from 'date-fns';
+import { formatDateOnlyBR } from '@/lib/dateUtils';
 
 interface ApiDoc {
   id: string;
