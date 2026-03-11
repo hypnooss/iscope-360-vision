@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
       .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
       .eq('is_active', true)
       .not('frequency', 'eq', 'manual')
-      .lte('next_run_at', new Date().toISOString());
+      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
 
     if (fetchError) {
       console.error('[run-scheduled-analyses] Error fetching schedules:', fetchError);
