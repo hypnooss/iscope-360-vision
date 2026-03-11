@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
-import { formatDateTimeBR } from '@/lib/dateUtils';
+import { formatDateTimeBR, getUserTimezone, getUtcOffsetHours } from '@/lib/dateUtils';
 
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -35,15 +35,18 @@ interface ScheduleDialogProps {
 }
 
 /**
- * Calculate next run date. The `hour` parameter is in BRT (UTC-3).
- * We convert to UTC for the actual timestamp.
+ * Calculate next run date. The `hour` parameter is in the user's timezone.
+ * We convert to UTC dynamically based on the user's timezone preference.
  */
 function calculateNextRun(freq: string, hour: number, dayOfWeek: number, dayOfMonth: number): Date {
   const now = new Date();
-  // Convert BRT hour to UTC hour
-  const hourUTC = (hour + 3) % 24;
-  // If hour+3 overflows past midnight, we may need to adjust the day
-  const dayOffset = (hour + 3) >= 24 ? 1 : 0;
+  const tz = getUserTimezone();
+  const offsetHours = getUtcOffsetHours(tz);
+  
+  // Convert user's local hour to UTC hour
+  const utcHourRaw = hour - offsetHours;
+  const hourUTC = ((utcHourRaw % 24) + 24) % 24;
+  const dayOffset = utcHourRaw < 0 ? -1 : utcHourRaw >= 24 ? 1 : 0;
 
   if (freq === 'hourly') {
     const next = new Date(now);
@@ -133,6 +136,7 @@ export function ScheduleDialog({
         scheduled_day_of_month: scheduleDayOfMonth,
         is_active: scheduleActive,
         next_run_at: nextRunAt.toISOString(),
+        timezone: getUserTimezone(),
       };
 
       const { error } = await (supabase

@@ -313,6 +313,7 @@ export type Database = {
           scheduled_day_of_month: number | null
           scheduled_day_of_week: number | null
           scheduled_hour: number | null
+          timezone: string
           updated_at: string
         }
         Insert: {
@@ -326,6 +327,7 @@ export type Database = {
           scheduled_day_of_month?: number | null
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
+          timezone?: string
           updated_at?: string
         }
         Update: {
@@ -339,6 +341,7 @@ export type Database = {
           scheduled_day_of_month?: number | null
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
+          timezone?: string
           updated_at?: string
         }
         Relationships: [
@@ -436,6 +439,7 @@ export type Database = {
           scheduled_day_of_month: number | null
           scheduled_day_of_week: number | null
           scheduled_hour: number | null
+          timezone: string
           updated_at: string
         }
         Insert: {
@@ -449,6 +453,7 @@ export type Database = {
           scheduled_day_of_month?: number | null
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
+          timezone?: string
           updated_at?: string
         }
         Update: {
@@ -462,6 +467,7 @@ export type Database = {
           scheduled_day_of_month?: number | null
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
+          timezone?: string
           updated_at?: string
         }
         Relationships: [
@@ -553,6 +559,7 @@ export type Database = {
           scheduled_day_of_month: number | null
           scheduled_day_of_week: number | null
           scheduled_hour: number | null
+          timezone: string
           updated_at: string
         }
         Insert: {
@@ -566,6 +573,7 @@ export type Database = {
           scheduled_day_of_month?: number | null
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
+          timezone?: string
           updated_at?: string
         }
         Update: {
@@ -579,6 +587,7 @@ export type Database = {
           scheduled_day_of_month?: number | null
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
+          timezone?: string
           updated_at?: string
         }
         Relationships: [
@@ -1276,6 +1285,7 @@ export type Database = {
           scheduled_day_of_month: number | null
           scheduled_day_of_week: number | null
           scheduled_hour: number | null
+          timezone: string
           updated_at: string
         }
         Insert: {
@@ -1289,6 +1299,7 @@ export type Database = {
           scheduled_day_of_month?: number | null
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
+          timezone?: string
           updated_at?: string
         }
         Update: {
@@ -1302,6 +1313,7 @@ export type Database = {
           scheduled_day_of_month?: number | null
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
+          timezone?: string
           updated_at?: string
         }
         Relationships: [
@@ -1486,6 +1498,7 @@ export type Database = {
           scheduled_day_of_week: number | null
           scheduled_hour: number | null
           tenant_record_id: string
+          timezone: string
           updated_at: string
         }
         Insert: {
@@ -1499,6 +1512,7 @@ export type Database = {
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
           tenant_record_id: string
+          timezone?: string
           updated_at?: string
         }
         Update: {
@@ -1512,6 +1526,7 @@ export type Database = {
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
           tenant_record_id?: string
+          timezone?: string
           updated_at?: string
         }
         Relationships: [
@@ -1710,6 +1725,7 @@ export type Database = {
           scheduled_day_of_week: number | null
           scheduled_hour: number | null
           tenant_record_id: string
+          timezone: string
           updated_at: string
         }
         Insert: {
@@ -1723,6 +1739,7 @@ export type Database = {
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
           tenant_record_id: string
+          timezone?: string
           updated_at?: string
         }
         Update: {
@@ -1736,6 +1753,7 @@ export type Database = {
           scheduled_day_of_week?: number | null
           scheduled_hour?: number | null
           tenant_record_id?: string
+          timezone?: string
           updated_at?: string
         }
         Relationships: [
