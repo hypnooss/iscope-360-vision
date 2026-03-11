@@ -466,7 +466,7 @@ export default function TemplatesPage() {
               <div>
                 <Label className="text-xs text-muted-foreground">Criado em</Label>
                 <p className="text-sm mt-1">
-                  {new Date(viewingTemplate.created_at).toLocaleString('pt-BR')}
+                  {formatDateTimeBR(viewingTemplate.created_at)}
                 </p>
               </div>
               <div>
