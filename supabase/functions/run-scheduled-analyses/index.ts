@@ -537,7 +537,12 @@ async function processM365ComplianceSchedules(supabase: SupabaseClient, supabase
         }
       }
 
-      await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+      // Only advance next_run_at on success or conflict (already running)
+      if (!agentStatus.online || res?.success || response?.status === 409) {
+        await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+      } else {
+        console.warn(`[run-scheduled-analyses][M365Compliance] Keeping next_run_at for retry (trigger failed for ${schedule.tenant_record_id})`);
+      }
     } catch (err) {
       console.error(`[run-scheduled-analyses][M365Compliance] Error:`, err);
       result.errors++;

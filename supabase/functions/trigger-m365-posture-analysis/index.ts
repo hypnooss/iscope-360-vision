@@ -63,19 +63,29 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    const token = authHeader.replace('Bearer ', '');
 
-    // Verify user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      console.error('[trigger-m365-posture-analysis] Auth error:', userError);
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    // Detect service_role calls (from scheduler) — bypass user auth
+    const isServiceRole = token === serviceRoleKey;
+    let userId: string | null = null;
+
+    if (isServiceRole) {
+      console.log('[trigger-m365-posture-analysis] Service-role call detected (scheduler/system)');
+      userId = null; // system-initiated, analyzed_by will be null
+    } else {
+      const supabase = createClient(supabaseUrl, supabaseKey, {
+        global: { headers: { Authorization: authHeader } },
       });
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error('[trigger-m365-posture-analysis] Auth error:', userError);
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      userId = user.id;
     }
-    const userId = user.id;
 
     // Parse body
     const body = await req.json();
@@ -87,10 +97,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[trigger-m365-posture-analysis] Starting analysis for tenant: ${tenant_record_id}, user: ${userId}`);
+    console.log(`[trigger-m365-posture-analysis] Starting analysis for tenant: ${tenant_record_id}, user: ${userId ?? 'system'}`);
 
-    // Get tenant details
-    const { data: tenant, error: tenantError } = await supabase
+    // Get tenant details (use admin client for service_role, user client otherwise)
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+
+    const { data: tenant, error: tenantError } = await supabaseAdmin
       .from('m365_tenants')
       .select('id, tenant_id, tenant_domain, display_name, client_id')
       .eq('id', tenant_record_id)
@@ -103,19 +115,19 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check user has access to this client
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
-
-    const { data: hasAccess } = await supabaseAdmin.rpc('has_client_access', {
-      _user_id: userId,
-      _client_id: tenant.client_id,
-    });
-
-    if (!hasAccess) {
-      console.warn(`[trigger-m365-posture-analysis] Access denied: user ${userId} → client ${tenant.client_id}`);
-      return new Response(JSON.stringify({ error: 'Acesso negado a este recurso' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    // Check user has access to this client (skip for service_role)
+    if (!isServiceRole && userId) {
+      const { data: hasAccess } = await supabaseAdmin.rpc('has_client_access', {
+        _user_id: userId,
+        _client_id: tenant.client_id,
       });
+
+      if (!hasAccess) {
+        console.warn(`[trigger-m365-posture-analysis] Access denied: user ${userId} → client ${tenant.client_id}`);
+        return new Response(JSON.stringify({ error: 'Acesso negado a este recurso' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
     
     const { data: pendingAnalysis } = await supabaseAdmin
@@ -145,7 +157,7 @@ Deno.serve(async (req) => {
         tenant_record_id,
         client_id: tenant.client_id,
         status: 'pending',
-        analyzed_by: userId,
+        analyzed_by: userId, // null for system calls
       })
       .select('id')
       .single();
