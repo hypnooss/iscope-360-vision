@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow, differenceInHours, differenceInMinutes, differenceInSeconds, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatShortDateTimeBR } from '@/lib/dateUtils';
 import { useCVESources } from '@/hooks/useCVECache';
 
 // ── Shared renderer ──
