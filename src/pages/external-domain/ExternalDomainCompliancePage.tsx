@@ -14,11 +14,12 @@ import { ComplianceCategory, ComplianceReport, SubdomainSummary } from '@/types/
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
-  Loader2, FileDown, Globe, RefreshCw, XCircle, Play, Clock, Building2, Settings, ChevronDown, FileText, ClipboardList,
+  Loader2, FileDown, Globe, RefreshCw, XCircle, Play, Clock, Building2, Settings, ChevronDown, FileText, ClipboardList, AlertTriangle,
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from "@/lib/utils";
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
@@ -679,15 +680,17 @@ export default function ExternalDomainCompliancePage() {
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
         ) : !report ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <Globe className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>Nenhuma análise encontrada para este domínio.</p>
-            <p className="text-sm mt-2">Execute uma nova análise para ver os resultados.</p>
-            <Button className="mt-4" onClick={handleRefresh} disabled={isRefreshing}>
-              {isRefreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
-              Analisar agora
-            </Button>
-          </div>
+          <Card className="border-warning/30 bg-warning/5">
+            <CardContent className="py-10 text-center max-w-md mx-auto">
+              <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-3" />
+              <h3 className="text-base font-semibold mb-1">Nenhuma análise encontrada</h3>
+              <p className="text-sm text-muted-foreground mb-5">Execute a primeira análise para visualizar o relatório de compliance.</p>
+              <Button onClick={handleRefresh} disabled={isRefreshing}>
+                {isRefreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                Executar Análise
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <div>
             {/* Command Center Header */}
