@@ -194,7 +194,7 @@ export function ScheduleDialog({
           {/* Hour (hidden for hourly) */}
           {scheduleFreq !== 'hourly' && (
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Hora de execução (UTC-3)</Label>
+              <Label className="text-sm font-medium">Hora de execução</Label>
               <Select value={String(scheduleHour)} onValueChange={v => setScheduleHour(Number(v))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
