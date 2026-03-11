@@ -20,17 +20,39 @@ function getStaggerOffsetMinutes(scheduleId: string): number {
   return Math.abs(hash) % 15;
 }
 
+/**
+ * Get the UTC offset in hours for a given IANA timezone.
+ * Uses Intl.DateTimeFormat to dynamically resolve offset (handles DST).
+ */
+function getUtcOffsetHours(timezone: string): number {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    timeZoneName: 'shortOffset',
+  });
+  const parts = formatter.formatToParts(now);
+  const offsetStr = parts.find(p => p.type === 'timeZoneName')?.value || 'GMT';
+  const match = offsetStr.match(/GMT([+-]?\d+)?(?::(\d+))?/);
+  if (!match) return 0;
+  const hours = parseInt(match[1] || '0');
+  const minutes = parseInt(match[2] || '0');
+  return hours + (hours >= 0 ? minutes / 60 : -minutes / 60);
+}
+
 function calculateNextRunAt(
   frequency: string,
-  hour: number, // stored as BRT (UTC-3)
+  hour: number, // stored in the schedule's timezone
   dayOfWeek: number,
   dayOfMonth: number,
-  scheduleId: string
+  scheduleId: string,
+  timezone: string = 'America/Sao_Paulo'
 ): string {
   const now = new Date();
   const offset = getStaggerOffsetMinutes(scheduleId);
-  const utcHour = (hour + 3) % 24;
-  const dayOffset = (hour + 3) >= 24 ? 1 : 0;
+  const offsetHours = getUtcOffsetHours(timezone);
+  const utcHourRaw = hour - offsetHours;
+  const utcHour = ((Math.floor(utcHourRaw) % 24) + 24) % 24;
+  const dayOff = utcHourRaw < 0 ? -1 : utcHourRaw >= 24 ? 1 : 0;
   let next: Date;
 
   if (frequency === 'hourly') {
@@ -38,16 +60,16 @@ function calculateNextRunAt(
     next.setUTCMinutes(offset, 0, 0);
     next.setUTCHours(next.getUTCHours() + 1);
   } else if (frequency === 'daily') {
-    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOffset, utcHour, offset, 0));
+    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, utcHour, offset, 0));
     if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
   } else if (frequency === 'weekly') {
-    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOffset, utcHour, offset, 0));
+    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, utcHour, offset, 0));
     const currentDay = next.getUTCDay();
     let daysAhead = dayOfWeek - currentDay;
     if (daysAhead <= 0) daysAhead += 7;
     next.setUTCDate(next.getUTCDate() + daysAhead);
   } else {
-    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), dayOfMonth + dayOffset, utcHour, offset, 0));
+    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), dayOfMonth + dayOff, utcHour, offset, 0));
     if (next <= now) next.setUTCMonth(next.getUTCMonth() + 1);
   }
 
