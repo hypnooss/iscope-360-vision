@@ -1,52 +1,71 @@
+1: # Status: ✅ Implementado
 
+## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-## Fallback de Endpoints: Memory → Disk para FortiGate Analyzer
+### Problema resolvido
+Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
 
-### Problema
-Firewalls com log em memória desativado retornam dados vazios nos endpoints `/api/v2/log/memory/...`. O sistema precisa tentar automaticamente os endpoints equivalentes em `/api/v2/log/disk/...`.
+### Mudanças implementadas
 
-### Solução
+| Componente | Mudança |
+|---|---|
+| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
+| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
+| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
 
-Dois pontos de alteração:
+## Correção de Dados — scheduled_hour UTC→BRT
 
-**1. Blueprint (banco de dados)** — Adicionar `fallback_path` em cada step de log do blueprint "FortiGate - Analyzer":
+### Problema resolvido
+Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
 
-| Step ID | Path atual (memory) | fallback_path (disk) |
-|---|---|---|
-| denied_traffic | `/api/v2/log/memory/traffic/forward?filter=action==deny&rows=500&extra=country_id` | `/api/v2/log/disk/traffic/forward?filter=action==deny&rows=500&extra=country_id` |
-| auth_events | `/api/v2/log/memory/event/system?filter=subtype==system&rows=500&extra=country_id` | `/api/v2/log/disk/event/system?filter=subtype==system&rows=500&extra=country_id` |
-| vpn_events | `/api/v2/log/memory/event/vpn?filter=subtype==vpn&rows=500&extra=country_id` | `/api/v2/log/disk/event/vpn?filter=subtype==vpn&rows=500&extra=country_id` |
-| ips_events | `/api/v2/log/memory/ips?rows=500` | `/api/v2/log/disk/ips?rows=500` |
-| config_changes | `/api/v2/log/memory/event/system/?filter=subtype==system&rows=500` | `/api/v2/log/disk/event/system/?filter=subtype==system&rows=500` |
-| webfilter_blocked | `/api/v2/log/memory/webfilter?filter=action==blocked&rows=500` | `/api/v2/log/disk/webfilter?filter=action==blocked&rows=500` |
-| appctrl_blocked | `/api/v2/log/memory/app-ctrl?filter=action==block&rows=500` | `/api/v2/log/disk/app-ctrl?filter=action==block&rows=500` |
-| anomaly_events | `/api/v2/log/memory/anomaly?rows=500&extra=country_id` | `/api/v2/log/disk/anomaly?rows=500&extra=country_id` |
-| allowed_traffic | `/api/v2/log/memory/traffic/forward?filter=action==accept&rows=500&extra=country_id` | `/api/v2/log/disk/traffic/forward?filter=action==accept&rows=500&extra=country_id` |
+### Solução aplicada
+1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
+2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
+3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
 
-Os steps de monitor (`monitor_firewall_policy`, `monitor_firewall_session`, `monitor_traffic_history`, `monitor_botnet_domains`) **não** precisam de fallback — são endpoints de estado real-time, não de log.
+## Paralelização do run-scheduled-analyses
 
-**2. Agent Python (`python-agent/agent/executors/http_request.py`)** — Adicionar lógica de fallback:
-- Após executar o request principal (memory), se o resultado retornar **0 registros** (results vazio) e o step tiver `fallback_path` configurado, repetir o request usando o `fallback_path`
-- Logar qual path foi usado (memory vs disk) para rastreabilidade
-- A paginação automática já existente se aplica igualmente aos endpoints de disk (mesma estrutura de resposta)
-- O pattern `_MEMORY_LOG_PATTERN` precisa ser expandido para incluir `/api/v2/log/disk/` para que a paginação funcione nos endpoints de fallback
+### Problema resolvido
+A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
 
-**3. Atualizar o regex de paginação** no `http_request.py`:
-- De: `r'/api/v2/log/memory/'`
-- Para: `r'/api/v2/log/(memory|disk)/'`
+### Solução aplicada
+Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
+- `processFirewallComplianceSchedules`
+- `processExternalDomainSchedules`
+- `processAnalyzerSchedules`
+- `processAttackSurfaceSchedules`
+- `processM365AnalyzerSchedules`
+- `processM365ComplianceSchedules`
 
-### Arquivos a modificar
-- `python-agent/agent/executors/http_request.py` — fallback logic + regex update
-- Migration SQL — UPDATE no blueprint para adicionar `fallback_path` nos steps
+CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
 
-### Fluxo
+## Timezone Dinâmico — Preferência do Usuário
+
+### Problema resolvido
+O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
+
+### Solução implementada
+
+| Componente | Mudança |
+|---|---|
+| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
+| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
+| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
+| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
+| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
+
+### Arquitetura
+
 ```text
-Agent recebe step com:
-  path: /api/v2/log/memory/event/system?...
-  fallback_path: /api/v2/log/disk/event/system?...
-
-1. Executa GET memory → results: []
-2. fallback_path existe? Sim → Executa GET disk
-3. Retorna resultado do disk (ou memory se tinha dados)
+┌─────────────────────────────────────────────────────┐
+│  Banco: tudo em UTC + coluna timezone por schedule  │
+├─────────────────────────────────────────────────────┤
+│  Frontend: dateUtils usa timezone do perfil         │
+│  ScheduleDialog: converte dinamicamente para UTC    │
+├─────────────────────────────────────────────────────┤
+│  Edge Function: lê timezone de cada registro        │
+│  e calcula offset via Intl.DateTimeFormat           │
+└─────────────────────────────────────────────────────┘
 ```
-

@@ -16,10 +16,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class HTTPRequestExecutor(BaseExecutor):
-    """Generic executor for HTTP requests with automatic pagination for FortiGate memory logs."""
+    """Generic executor for HTTP requests with automatic pagination for FortiGate log endpoints."""
 
-    # Pattern to detect FortiGate memory log endpoints eligible for pagination
-    _MEMORY_LOG_PATTERN = re.compile(r'/api/v2/log/memory/')
+    # Pattern to detect FortiGate log endpoints eligible for pagination (memory or disk)
+    _LOG_ENDPOINT_PATTERN = re.compile(r'/api/v2/log/(memory|disk)/')
     _ROWS_PATTERN = re.compile(r'[?&]rows=(\d+)')
     _START_PATTERN = re.compile(r'([?&])start=\d+')
 
@@ -59,12 +59,28 @@ class HTTPRequestExecutor(BaseExecutor):
             path = self._interpolate(path, context)
             url = f"{base_url}{path}"
         
-        # Auto-pagination for FortiGate memory log endpoints
+        # Auto-pagination for FortiGate log endpoints (memory or disk)
         if method == 'GET' and self._is_paginatable(url):
-            return self._paginated_request(
+            result = self._paginated_request(
                 step_id, url, interpolated_headers, config, context,
                 verify_ssl=verify_ssl, timeout=timeout
             )
+            # Fallback: if memory returned 0 results and fallback_path exists, try disk
+            if self._should_fallback(result, config, context):
+                fallback_url = self._build_fallback_url(url, config, context)
+                self.logger.info(
+                    f"Step {step_id}: Memory returned 0 results, falling back to disk: {fallback_url}"
+                )
+                result = self._paginated_request(
+                    step_id, fallback_url, interpolated_headers, config, context,
+                    verify_ssl=verify_ssl, timeout=timeout
+                )
+                if result.get('data') and isinstance(result['data'], dict):
+                    result['data']['_source'] = 'disk'
+            else:
+                if result.get('data') and isinstance(result['data'], dict) and '_pagination' in result['data']:
+                    result['data']['_source'] = 'memory'
+            return result
         
         self.logger.debug(f"Step {step_id}: {method} {url}")
         
@@ -129,8 +145,27 @@ class HTTPRequestExecutor(BaseExecutor):
             }
 
     def _is_paginatable(self, url: str) -> bool:
-        """Check if a URL is a FortiGate memory log endpoint with rows parameter."""
-        return bool(self._MEMORY_LOG_PATTERN.search(url) and self._ROWS_PATTERN.search(url))
+        """Check if a URL is a FortiGate log endpoint (memory or disk) with rows parameter."""
+        return bool(self._LOG_ENDPOINT_PATTERN.search(url) and self._ROWS_PATTERN.search(url))
+
+    def _should_fallback(self, result: Dict[str, Any], config: Dict[str, Any], context: Dict[str, Any]) -> bool:
+        """Check if we should fallback to disk endpoint."""
+        fallback_path = config.get('fallback_path')
+        if not fallback_path:
+            return False
+        # Only fallback if primary returned 0 results
+        data = result.get('data')
+        if not isinstance(data, dict):
+            return False
+        results = data.get('results', [])
+        return len(results) == 0 and result.get('error') is None
+
+    def _build_fallback_url(self, original_url: str, config: Dict[str, Any], context: Dict[str, Any]) -> str:
+        """Build fallback URL by replacing the path with fallback_path."""
+        fallback_path = config.get('fallback_path', '')
+        fallback_path = self._interpolate(fallback_path, context)
+        base_url = context.get('base_url', '').rstrip('/')
+        return f"{base_url}{fallback_path}"
 
     def _paginated_request(
         self, step_id: str, url: str, headers: Dict[str, str],
