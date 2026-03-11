@@ -333,6 +333,12 @@ Deno.serve(async (req) => {
         continue
       }
 
+      // Transition snapshot to running immediately after tasks are created
+      await supabase
+        .from('attack_surface_snapshots')
+        .update({ status: 'running' })
+        .eq('id', snapshot.id)
+
       totalSnapshots++
       totalTasks += tasks.length
       console.log(`[queue] Client ${client.name}: snapshot ${snapshot.id}, ${tasks.length} tasks created`)
