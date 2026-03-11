@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
       score = Math.max(0, Math.round(100 - portPenalty - servicePenalty - vulnPenalty))
     }
 
-    // Match CVEs from cve_cache based on CPEs found
+    // Match CVEs from cve_cache based on CPEs found (vendor-aware)
     const allCPEs: string[] = []
     for (const ip of Object.keys(results)) {
       for (const svc of (results[ip].services || [])) {
@@ -114,26 +114,38 @@ Deno.serve(async (req) => {
 
     let cveMatches: any[] = []
     if (allCPEs.length > 0) {
-      const products = allCPEs.map((cpe: string) => {
+      const entries = allCPEs.map((cpe: string) => {
         const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':')
-        return (parts[2] || '').replace(/_/g, ' ')
-      }).filter(Boolean)
+        const vendor = (parts[1] || '').replace(/_/g, ' ').toLowerCase()
+        const product = (parts[2] || '').replace(/_/g, ' ').toLowerCase()
+        return { vendor, product }
+      }).filter(e => e.product.length > 2)
 
-      if (products.length > 0) {
-        const uniqueProducts = [...new Set(products)]
-        for (const product of uniqueProducts.slice(0, 10)) {
-          const { data: cves } = await supabase
-            .from('cve_cache')
-            .select('cve_id, title, severity, score, advisory_url, products')
-            .ilike('title', `%${product}%`)
-            .order('score', { ascending: false })
-            .limit(5)
+      // Deduplicate by vendor+product
+      const seen = new Set<string>()
+      const uniqueEntries = entries.filter(e => {
+        const key = `${e.vendor}:${e.product}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
 
-          if (cves) {
-            for (const cve of cves) {
-              if (!cveMatches.find(c => c.cve_id === cve.cve_id)) {
-                cveMatches.push(cve)
-              }
+      for (const entry of uniqueEntries.slice(0, 10)) {
+        const { data: cves } = await supabase
+          .from('cve_cache')
+          .select('cve_id, title, severity, score, advisory_url, products')
+          .ilike('title', `%${entry.product}%`)
+          .order('score', { ascending: false })
+          .limit(20)
+
+        if (cves) {
+          for (const cve of cves) {
+            if (cveMatches.find(c => c.cve_id === cve.cve_id)) continue
+            const titleLower = (cve.title || '').toLowerCase()
+            const vendorMatch = titleLower.includes(entry.vendor) ||
+              (Array.isArray(cve.products) && cve.products.some((p: any) => String(p).toLowerCase().includes(entry.vendor)))
+            if (vendorMatch) {
+              cveMatches.push(cve)
             }
           }
         }
