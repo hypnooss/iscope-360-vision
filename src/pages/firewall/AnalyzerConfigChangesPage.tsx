@@ -910,7 +910,10 @@ export default function AnalyzerConfigChangesPage() {
                                      </div>
                                      <div className="flex items-center gap-2">
                                        <span className="text-muted-foreground font-medium">Ação:</span>
-                                       <Badge variant="outline" className="text-xs">{d.action || '—'}</Badge>
+                                        <Badge variant="outline" className={`text-xs ${
+                                          d.action?.toLowerCase() === 'add' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                                          d.action?.toLowerCase() === 'delete' || d.action?.toLowerCase() === 'del' ? 'bg-red-500/20 text-red-400 border-red-500/30' : ''
+                                        }`}>{d.action || '—'}</Badge>
                                      </div>
                                    </div>
 
