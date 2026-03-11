@@ -16,10 +16,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class HTTPRequestExecutor(BaseExecutor):
-    """Generic executor for HTTP requests with automatic pagination for FortiGate memory logs."""
+    """Generic executor for HTTP requests with automatic pagination for FortiGate log endpoints."""
 
-    # Pattern to detect FortiGate memory log endpoints eligible for pagination
-    _MEMORY_LOG_PATTERN = re.compile(r'/api/v2/log/memory/')
+    # Pattern to detect FortiGate log endpoints eligible for pagination (memory or disk)
+    _LOG_ENDPOINT_PATTERN = re.compile(r'/api/v2/log/(memory|disk)/')
     _ROWS_PATTERN = re.compile(r'[?&]rows=(\d+)')
     _START_PATTERN = re.compile(r'([?&])start=\d+')
 
