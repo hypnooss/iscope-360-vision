@@ -157,6 +157,29 @@ export default function AccountPage() {
                   />
                 </div>
 
+                {/* Timezone */}
+                <div className="space-y-2">
+                  <Label htmlFor="timezone" className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-muted-foreground" />
+                    Fuso Horário
+                  </Label>
+                  <Select value={timezone} onValueChange={setTimezone}>
+                    <SelectTrigger id="timezone">
+                      <SelectValue placeholder="Selecione o fuso horário" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="America/Sao_Paulo">Brasília (BRT/BRST, UTC-3)</SelectItem>
+                      <SelectItem value="America/Fortaleza">Fortaleza (BRT, UTC-3)</SelectItem>
+                      <SelectItem value="America/Belem">Belém (BRT, UTC-3)</SelectItem>
+                      <SelectItem value="America/Manaus">Manaus (AMT, UTC-4)</SelectItem>
+                      <SelectItem value="America/Cuiaba">Cuiabá (AMT, UTC-4)</SelectItem>
+                      <SelectItem value="America/Rio_Branco">Rio Branco (ACT, UTC-5)</SelectItem>
+                      <SelectItem value="America/Noronha">Fernando de Noronha (FNT, UTC-2)</SelectItem>
+                      <SelectItem value="UTC">UTC</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Read-only info */}
                 <div className="space-y-3 rounded-lg border border-border p-4 bg-muted/30">
                   <div className="flex items-center gap-3">
