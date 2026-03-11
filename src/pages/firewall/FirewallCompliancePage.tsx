@@ -18,6 +18,7 @@ import { FirewallPDF } from '@/components/pdf/FirewallPDF';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCategoryConfigs } from '@/hooks/useCategoryConfig';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
