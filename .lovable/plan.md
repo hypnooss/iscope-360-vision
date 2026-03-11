@@ -1,4 +1,4 @@
-# Status: ✅ Implementado
+1: # Status: ✅ Implementado
 
 ## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
@@ -23,3 +23,19 @@ Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC
 1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
 2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
 3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
+
+## Paralelização do run-scheduled-analyses
+
+### Problema resolvido
+A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
+
+### Solução aplicada
+Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
+- `processFirewallComplianceSchedules`
+- `processExternalDomainSchedules`
+- `processAnalyzerSchedules`
+- `processAttackSurfaceSchedules`
+- `processM365AnalyzerSchedules`
+- `processM365ComplianceSchedules`
+
+CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
