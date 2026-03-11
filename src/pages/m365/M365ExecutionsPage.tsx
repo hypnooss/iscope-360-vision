@@ -499,9 +499,10 @@ export default function M365ExecutionsPage() {
   const handleRefresh = () => {
     refetchPosture();
     refetchTasks();
+    refetchSnapshots();
   };
 
-  const isLoading = isLoadingPosture || isLoadingTasks;
+  const isLoading = isLoadingPosture || isLoadingTasks || isLoadingSnapshots;
 
   return (
     <AppLayout>
