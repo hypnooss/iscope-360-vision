@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import {
   colors,
