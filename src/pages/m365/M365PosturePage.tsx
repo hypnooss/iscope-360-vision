@@ -321,10 +321,18 @@ export default function M365PosturePage() {
       showBlockedMessage();
       return;
     }
+    setIsRefreshing(true);
     const result = await triggerAnalysis();
-    if (result.success && result.analysisId) {
-      setActiveAnalysisId(result.analysisId);
-      setAnalysisStartedAt(Date.now());
+    if (result.success) {
+      if (result.agentTaskId) {
+        setActiveTaskId(result.agentTaskId);
+        setTaskStartedAt(new Date());
+      } else if (result.analysisId) {
+        setActiveAnalysisId(result.analysisId);
+        setTaskStartedAt(new Date());
+      }
+    } else {
+      setIsRefreshing(false);
     }
   }, [isBlocked, showBlockedMessage, triggerAnalysis]);
 
