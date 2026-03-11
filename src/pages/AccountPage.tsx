@@ -73,7 +73,7 @@ export default function AccountPage() {
     setSavingProfile(true);
     const { error } = await supabase
       .from('profiles')
-      .update({ full_name: fullName.trim(), avatar_url: avatarUrl || null })
+      .update({ full_name: fullName.trim(), avatar_url: avatarUrl || null, timezone })
       .eq('id', user.id);
     setSavingProfile(false);
     if (error) {
