@@ -20,7 +20,7 @@ interface UseM365SecurityPostureReturn {
   isLoading: boolean;
   error: string | null;
   refetch: () => void;
-  triggerAnalysis: () => Promise<{ success: boolean; analysisId?: string }>;
+  triggerAnalysis: () => Promise<{ success: boolean; analysisId?: string; agentTaskId?: string | null }>;
   getInsightsByCategory: (category: M365RiskCategory) => M365Insight[];
   getFailedInsights: () => M365Insight[];
   getCriticalInsights: () => M365Insight[];
@@ -86,7 +86,7 @@ export function useM365SecurityPosture({
   const error = queryError ? (queryError instanceof Error ? queryError.message : 'Erro ao buscar postura de segurança') : (!data && !isLoading && tenantRecordId ? 'Nenhuma análise encontrada. Clique em "Executar Análise" para iniciar.' : null);
 
   // Trigger a new analysis (calls edge function)
-  const triggerAnalysis = useCallback(async (): Promise<{ success: boolean; analysisId?: string }> => {
+  const triggerAnalysis = useCallback(async (): Promise<{ success: boolean; analysisId?: string; agentTaskId?: string | null }> => {
     if (!tenantRecordId) return { success: false };
 
     try {
@@ -98,8 +98,8 @@ export function useM365SecurityPosture({
       if (triggerError) throw new Error(triggerError.message || 'Erro ao disparar análise');
       if (!triggerData.success) throw new Error(triggerData.error || 'Erro desconhecido');
 
-      console.log('[useM365SecurityPosture] Analysis triggered:', triggerData.analysis_id);
-      return { success: true, analysisId: triggerData.analysis_id };
+      console.log('[useM365SecurityPosture] Analysis triggered:', triggerData.analysis_id, 'agent_task:', triggerData.agent_task_id);
+      return { success: true, analysisId: triggerData.analysis_id, agentTaskId: triggerData.agent_task_id ?? null };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao analisar postura de segurança';
       toast({ title: 'Erro na análise', description: message, variant: 'destructive' });

@@ -62,9 +62,10 @@ export default function M365PosturePage() {
   const queryClient = useQueryClient();
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [productFilter, setProductFilter] = useState<M365Product | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [taskStartedAt, setTaskStartedAt] = useState<Date | null>(null);
   const [activeAnalysisId, setActiveAnalysisId] = useState<string | null>(null);
-  const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
-  const [elapsed, setElapsed] = useState(0);
   const hasLoadedOnce = useRef(false);
   const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
@@ -139,28 +140,6 @@ export default function M365PosturePage() {
     staleTime: 1000 * 60 * 30,
   });
 
-  // Detect in-progress analysis on mount
-  const { data: activeAnalysis } = useQuery({
-    queryKey: ['m365-active-analysis', selectedTenantId],
-    queryFn: async () => {
-      if (!selectedTenantId) return null;
-      // Only detect recent analyses (last 30 min) to avoid stale partial records causing flickering
-      const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-      const { data } = await supabase
-        .from('m365_posture_history')
-        .select('id, status, created_at')
-        .eq('tenant_record_id', selectedTenantId)
-        .in('status', ['pending', 'running', 'partial'])
-        .is('completed_at', null)
-        .gte('created_at', cutoff)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      return data;
-    },
-    enabled: !!selectedTenantId && !activeAnalysisId,
-  });
-
   const { 
     data, 
     isLoading, 
@@ -181,70 +160,147 @@ export default function M365PosturePage() {
     }
   }, [data]);
 
-  // Poll for analysis status when activeAnalysisId is set
+  const { data: taskStatus } = useQuery({
+    queryKey: ['m365-compliance-task', activeTaskId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('agent_tasks')
+        .select('status, error_message, started_at')
+        .eq('id', activeTaskId!)
+        .single();
+      return data;
+    },
+    enabled: !!activeTaskId,
+    refetchInterval: 15000,
+  });
+
+  // Detect in-progress task on mount
+  useQuery({
+    queryKey: ['m365-active-task', selectedTenantId],
+    queryFn: async () => {
+      if (!selectedTenantId) return null;
+      const { data } = await supabase
+        .from('agent_tasks')
+        .select('id, created_at, status')
+        .eq('target_id', selectedTenantId)
+        .eq('target_type', 'm365_tenant')
+        .in('status', ['pending', 'running'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data && !activeTaskId) {
+        setActiveTaskId(data.id);
+        setTaskStartedAt(new Date(data.created_at));
+        setIsRefreshing(true);
+      }
+      return data;
+    },
+    enabled: !!selectedTenantId && !activeTaskId,
+  });
+
+  // Also detect via m365_posture_history for analyses without agent (Graph API only)
+  useQuery({
+    queryKey: ['m365-active-analysis', selectedTenantId],
+    queryFn: async () => {
+      if (!selectedTenantId) return null;
+      const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { data } = await supabase
+        .from('m365_posture_history')
+        .select('id, status, created_at')
+        .eq('tenant_record_id', selectedTenantId)
+        .in('status', ['pending', 'running'])
+        .is('completed_at', null)
+        .gte('created_at', cutoff)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data && !activeTaskId && !activeAnalysisId) {
+        setActiveAnalysisId(data.id);
+        setTaskStartedAt(new Date(data.created_at));
+        setIsRefreshing(true);
+      }
+      return data;
+    },
+    enabled: !!selectedTenantId && !activeTaskId && !activeAnalysisId,
+  });
+
+  // Poll m365_posture_history for Graph-API-only analyses (no agent task)
   const { data: analysisRecord } = useQuery({
     queryKey: ['m365-posture-status', activeAnalysisId],
     queryFn: async () => {
       if (!activeAnalysisId) return null;
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('m365_posture_history')
-        .select('status, agent_status')
+        .select('status')
         .eq('id', activeAnalysisId)
         .single();
-      if (error) throw error;
       return data;
     },
-    enabled: !!activeAnalysisId,
+    enabled: !!activeAnalysisId && !activeTaskId,
     refetchInterval: 15000,
   });
 
-  // Restore active analysis state on mount
+  // Handle task completion (agent-based)
   useEffect(() => {
-    if (activeAnalysis && !activeAnalysisId) {
-      setActiveAnalysisId(activeAnalysis.id);
-      setAnalysisStartedAt(new Date(activeAnalysis.created_at).getTime());
-    }
-  }, [activeAnalysis, activeAnalysisId]);
-
-  // Reset analysis state when tenant changes
-  useEffect(() => {
-    setActiveAnalysisId(null);
-    setAnalysisStartedAt(null);
-    setElapsed(0);
-  }, [selectedTenantId]);
-
-  // Handle polling result
-  useEffect(() => {
-    if (!analysisRecord || !activeAnalysisId) return;
-    const status = analysisRecord.status;
-    const agentSt = (analysisRecord as any).agent_status ?? '';
-    const isFinished = status === 'completed' || status === 'failed' || status === 'cancelled'
-      || (status === 'partial' && ['failed', 'timeout', 'completed'].includes(agentSt));
-    if (isFinished) {
-      if (status === 'cancelled') {
-        toast({ title: 'Análise cancelada', description: 'A análise foi cancelada pelo usuário.' });
+    if (!taskStatus || !activeTaskId) return;
+    const s = taskStatus.status;
+    if (s === 'completed' || s === 'failed' || s === 'timeout') {
+      if (s === 'completed') {
+        toast({ title: 'Análise concluída', description: 'A análise de compliance foi concluída com sucesso.' });
+      } else if (s === 'failed') {
+        toast({ title: 'Análise falhou', description: taskStatus.error_message || 'Erro desconhecido', variant: 'destructive' });
+      } else {
+        toast({ title: 'Timeout', description: 'A análise expirou.', variant: 'destructive' });
       }
+      setActiveTaskId(null);
       setActiveAnalysisId(null);
-      setAnalysisStartedAt(null);
+      setTaskStartedAt(null);
+      setIsRefreshing(false);
       queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
     }
-  }, [analysisRecord, activeAnalysisId, queryClient, selectedTenantId]);
+  }, [taskStatus?.status]);
 
-  // Elapsed timer + 10-minute safety timeout
+  // Handle analysis completion (Graph-API-only, no agent)
   useEffect(() => {
-    if (!analysisStartedAt) { setElapsed(0); return; }
+    if (!analysisRecord || !activeAnalysisId || activeTaskId) return;
+    const s = analysisRecord.status;
+    if (s === 'completed' || s === 'failed') {
+      if (s === 'completed') {
+        toast({ title: 'Análise concluída', description: 'A análise de compliance foi concluída com sucesso.' });
+      } else {
+        toast({ title: 'Análise falhou', description: 'Erro durante a análise.', variant: 'destructive' });
+      }
+      setActiveAnalysisId(null);
+      setTaskStartedAt(null);
+      setIsRefreshing(false);
+      queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
+    }
+  }, [analysisRecord?.status]);
+
+  // 10-minute safety timeout
+  useEffect(() => {
+    if (!taskStartedAt || (!activeTaskId && !activeAnalysisId)) return;
     const interval = setInterval(() => {
-      const secs = Math.floor((Date.now() - analysisStartedAt) / 1000);
-      setElapsed(secs);
+      const secs = Math.floor((Date.now() - taskStartedAt.getTime()) / 1000);
       if (secs > 600) {
+        setActiveTaskId(null);
         setActiveAnalysisId(null);
-        setAnalysisStartedAt(null);
+        setTaskStartedAt(null);
+        setIsRefreshing(false);
         toast({ title: 'Timeout', description: 'A análise não respondeu em 10 minutos. Verifique o status manualmente.', variant: 'destructive' });
         queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
       }
-    }, 1000);
+    }, 5000);
     return () => clearInterval(interval);
-  }, [analysisStartedAt, queryClient, selectedTenantId]);
+  }, [taskStartedAt, activeTaskId, activeAnalysisId, queryClient, selectedTenantId]);
+
+  // Reset state when tenant changes
+  useEffect(() => {
+    setActiveTaskId(null);
+    setActiveAnalysisId(null);
+    setTaskStartedAt(null);
+    setIsRefreshing(false);
+  }, [selectedTenantId]);
 
   // Auth and module access check
   useEffect(() => {
@@ -265,10 +321,18 @@ export default function M365PosturePage() {
       showBlockedMessage();
       return;
     }
+    setIsRefreshing(true);
     const result = await triggerAnalysis();
-    if (result.success && result.analysisId) {
-      setActiveAnalysisId(result.analysisId);
-      setAnalysisStartedAt(Date.now());
+    if (result.success) {
+      if (result.agentTaskId) {
+        setActiveTaskId(result.agentTaskId);
+        setTaskStartedAt(new Date());
+      } else if (result.analysisId) {
+        setActiveAnalysisId(result.analysisId);
+        setTaskStartedAt(new Date());
+      }
+    } else {
+      setIsRefreshing(false);
     }
   }, [isBlocked, showBlockedMessage, triggerAnalysis]);
 
@@ -410,9 +474,9 @@ export default function M365PosturePage() {
     }
   }
 
-  const isAnalysisRunning = !!activeAnalysisId;
-  const analysisStatus = analysisRecord?.status ?? 'pending';
-  const progressValue = analysisStatus === 'partial' ? 60 : 30;
+  const isAnalysisRunning = isRefreshing || !!activeTaskId || !!activeAnalysisId;
+  const currentTaskStatus = taskStatus?.status ?? analysisRecord?.status ?? 'pending';
+  const progressValue = currentTaskStatus === 'running' ? 60 : 30;
 
   return (
     <AppLayout>
@@ -497,10 +561,9 @@ export default function M365PosturePage() {
               <div>
                 <p className="text-sm font-medium">Análise em andamento...</p>
                 <p className="text-xs text-muted-foreground">
-                  {analysisStatus === 'partial' 
-                    ? 'Graph API concluída, aguardando Agent PowerShell...' 
-                    : 'Coletando dados via Graph API...'}
-                  {elapsed > 0 && ` · ${elapsed}s`}
+                  {currentTaskStatus === 'running' 
+                    ? 'Coletando e analisando dados...' 
+                    : 'Preparando análise...'}
                 </p>
               </div>
             </div>
