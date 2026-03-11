@@ -4,10 +4,12 @@ import { getCorsHeaders } from '../_shared/cors.ts';
 
 const AGENT_OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
+type SupabaseClient = ReturnType<typeof createClient>;
+type SectionResult = { triggered: number; skipped: number; errors: number; total: number };
+
 /**
  * Deterministic stagger offset based on schedule ID.
  * Returns 0-14 minutes to stay within the 15-minute cron window.
- * This prevents schedules from falling between cron cycles.
  */
 function getStaggerOffsetMinutes(scheduleId: string): number {
   let hash = 0;
@@ -27,7 +29,6 @@ function calculateNextRunAt(
 ): string {
   const now = new Date();
   const offset = getStaggerOffsetMinutes(scheduleId);
-  // Convert BRT hour to UTC
   const utcHour = (hour + 3) % 24;
   const dayOffset = (hour + 3) >= 24 ? 1 : 0;
   let next: Date;
@@ -46,7 +47,6 @@ function calculateNextRunAt(
     if (daysAhead <= 0) daysAhead += 7;
     next.setUTCDate(next.getUTCDate() + daysAhead);
   } else {
-    // monthly
     next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), dayOfMonth + dayOffset, utcHour, offset, 0));
     if (next <= now) next.setUTCMonth(next.getUTCMonth() + 1);
   }
@@ -54,10 +54,7 @@ function calculateNextRunAt(
   return next.toISOString();
 }
 
-/**
- * Check if an agent is online (last_seen within threshold).
- */
-async function isAgentOnline(supabase: ReturnType<typeof createClient>, agentId: string | null): Promise<{ online: boolean; agentName?: string; lastSeen?: string }> {
+async function isAgentOnline(supabase: SupabaseClient, agentId: string | null): Promise<{ online: boolean; agentName?: string; lastSeen?: string }> {
   if (!agentId) return { online: false, agentName: 'N/A', lastSeen: 'never' };
   
   const { data: agent } = await supabase
@@ -74,6 +71,465 @@ async function isAgentOnline(supabase: ReturnType<typeof createClient>, agentId:
   return { online, agentName: agent.name, lastSeen: agent.last_seen || 'never' };
 }
 
+// ========================================================
+// Section processors — each runs independently
+// ========================================================
+
+async function processFirewallComplianceSchedules(supabase: SupabaseClient, supabaseUrl: string, serviceKey: string): Promise<SectionResult> {
+  const result: SectionResult = { triggered: 0, skipped: 0, errors: 0, total: 0 };
+
+  const { data: dueSchedules, error: fetchError } = await supabase
+    .from('analysis_schedules')
+    .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .eq('is_active', true)
+    .not('frequency', 'eq', 'manual')
+    .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
+
+  if (fetchError) {
+    console.error('[run-scheduled-analyses][FW] Error fetching schedules:', fetchError);
+    return result;
+  }
+
+  result.total = dueSchedules?.length ?? 0;
+  if (!dueSchedules || dueSchedules.length === 0) {
+    console.log('[run-scheduled-analyses][FW] No firewall schedules due.');
+    return result;
+  }
+
+  console.log(`[run-scheduled-analyses][FW] Found ${dueSchedules.length} schedule(s) due.`);
+
+  for (const schedule of dueSchedules) {
+    try {
+      const nextRunAt = calculateNextRunAt(
+        schedule.frequency, schedule.scheduled_hour ?? 0,
+        schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+        schedule.id
+      );
+
+      if (!schedule.next_run_at) {
+        await supabase.from('analysis_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+        console.log(`[run-scheduled-analyses][FW] Recalculated next_run_at for ${schedule.id}: ${nextRunAt}`);
+        continue;
+      }
+
+      const { data: fw } = await supabase.from('firewalls').select('agent_id, name').eq('id', schedule.firewall_id).single();
+      const agentStatus = await isAgentOnline(supabase, fw?.agent_id || null);
+
+      if (!agentStatus.online) {
+        console.log(`[run-scheduled-analyses][FW] Skipping ${fw?.name || schedule.firewall_id}: agent ${agentStatus.agentName} offline`);
+        result.skipped++;
+      } else {
+        const triggerUrl = `${supabaseUrl}/functions/v1/trigger-firewall-analysis`;
+        const response = await fetch(triggerUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+          body: JSON.stringify({ firewall_id: schedule.firewall_id }),
+        });
+        const res = await response.json();
+        if (res.success || response.status === 409 || res.code === 'ALREADY_RUNNING') {
+          console.log(`[run-scheduled-analyses][FW] Triggered ${schedule.firewall_id}: ${res.message || 'success'}`);
+          result.triggered++;
+        } else {
+          console.error(`[run-scheduled-analyses][FW] Failed ${schedule.firewall_id}:`, res.error);
+          result.errors++;
+        }
+      }
+
+      await supabase.from('analysis_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+    } catch (err) {
+      console.error(`[run-scheduled-analyses][FW] Error processing ${schedule.id}:`, err);
+      result.errors++;
+    }
+  }
+
+  console.log(`[run-scheduled-analyses][FW] Done. Triggered: ${result.triggered}, Skipped: ${result.skipped}, Errors: ${result.errors}`);
+  return result;
+}
+
+async function processExternalDomainSchedules(supabase: SupabaseClient, supabaseUrl: string, serviceKey: string): Promise<SectionResult> {
+  const result: SectionResult = { triggered: 0, skipped: 0, errors: 0, total: 0 };
+
+  const { data: dueSchedules, error: fetchError } = await supabase
+    .from('external_domain_schedules')
+    .select('id, domain_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .eq('is_active', true)
+    .not('frequency', 'eq', 'manual')
+    .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
+
+  if (fetchError) {
+    console.error('[run-scheduled-analyses][Domain] Error fetching schedules:', fetchError);
+    return result;
+  }
+
+  result.total = dueSchedules?.length ?? 0;
+  if (!dueSchedules || dueSchedules.length === 0) {
+    console.log('[run-scheduled-analyses][Domain] No domain schedules due.');
+    return result;
+  }
+
+  console.log(`[run-scheduled-analyses][Domain] Found ${dueSchedules.length} schedule(s) due.`);
+
+  for (const schedule of dueSchedules) {
+    try {
+      const nextRunAt = calculateNextRunAt(
+        schedule.frequency, schedule.scheduled_hour ?? 0,
+        schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+        schedule.id
+      );
+
+      if (!schedule.next_run_at) {
+        await supabase.from('external_domain_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+        console.log(`[run-scheduled-analyses][Domain] Recalculated next_run_at for ${schedule.id}: ${nextRunAt}`);
+        continue;
+      }
+
+      const { data: dom } = await supabase.from('external_domains').select('agent_id, domain').eq('id', schedule.domain_id).single();
+      const agentStatus = await isAgentOnline(supabase, dom?.agent_id || null);
+
+      if (!agentStatus.online) {
+        console.log(`[run-scheduled-analyses][Domain] Skipping ${dom?.domain || schedule.domain_id}: agent ${agentStatus.agentName} offline`);
+        result.skipped++;
+      } else {
+        const triggerUrl = `${supabaseUrl}/functions/v1/trigger-external-domain-analysis`;
+        const response = await fetch(triggerUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+          body: JSON.stringify({ domain_id: schedule.domain_id }),
+        });
+        const res = await response.json();
+        if (res.success || response.status === 409 || res.code === 'ALREADY_RUNNING') {
+          console.log(`[run-scheduled-analyses][Domain] Triggered ${schedule.domain_id}: ${res.message || 'success'}`);
+          result.triggered++;
+        } else {
+          console.error(`[run-scheduled-analyses][Domain] Failed ${schedule.domain_id}:`, res.error);
+          result.errors++;
+        }
+      }
+
+      await supabase.from('external_domain_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+    } catch (err) {
+      console.error(`[run-scheduled-analyses][Domain] Error processing ${schedule.id}:`, err);
+      result.errors++;
+    }
+  }
+
+  console.log(`[run-scheduled-analyses][Domain] Done. Triggered: ${result.triggered}, Skipped: ${result.skipped}, Errors: ${result.errors}`);
+  return result;
+}
+
+async function processAnalyzerSchedules(supabase: SupabaseClient, supabaseUrl: string, serviceKey: string): Promise<SectionResult> {
+  const result: SectionResult = { triggered: 0, skipped: 0, errors: 0, total: 0 };
+
+  const { data: dueSchedules, error: fetchError } = await supabase
+    .from('analyzer_schedules')
+    .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .eq('is_active', true)
+    .not('frequency', 'eq', 'manual')
+    .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
+
+  if (fetchError) {
+    console.error('[run-scheduled-analyses][Analyzer] Error fetching schedules:', fetchError);
+    return result;
+  }
+
+  result.total = dueSchedules?.length ?? 0;
+  if (!dueSchedules || dueSchedules.length === 0) {
+    console.log('[run-scheduled-analyses][Analyzer] No analyzer schedules due.');
+    return result;
+  }
+
+  console.log(`[run-scheduled-analyses][Analyzer] Found ${dueSchedules.length} schedule(s) due.`);
+
+  for (const schedule of dueSchedules) {
+    try {
+      const nextRunAt = calculateNextRunAt(
+        schedule.frequency, schedule.scheduled_hour ?? 0,
+        schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+        schedule.id
+      );
+
+      if (!schedule.next_run_at) {
+        await supabase.from('analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+        console.log(`[run-scheduled-analyses][Analyzer] Recalculated next_run_at for ${schedule.id}: ${nextRunAt}`);
+        continue;
+      }
+
+      const { data: fw } = await supabase.from('firewalls').select('agent_id, name').eq('id', schedule.firewall_id).single();
+      const agentStatus = await isAgentOnline(supabase, fw?.agent_id || null);
+
+      if (!agentStatus.online) {
+        console.log(`[run-scheduled-analyses][Analyzer] Skipping ${fw?.name || schedule.firewall_id}: agent ${agentStatus.agentName} offline`);
+        result.skipped++;
+      } else {
+        const triggerUrl = `${supabaseUrl}/functions/v1/trigger-firewall-analyzer`;
+        const response = await fetch(triggerUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+          body: JSON.stringify({ firewall_id: schedule.firewall_id }),
+        });
+        const res = await response.json();
+        if (res.success || response.status === 409 || res.code === 'ALREADY_RUNNING') {
+          result.triggered++;
+        } else {
+          result.errors++;
+        }
+      }
+
+      await supabase.from('analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+    } catch (err) {
+      console.error(`[run-scheduled-analyses][Analyzer] Error:`, err);
+      result.errors++;
+    }
+  }
+
+  console.log(`[run-scheduled-analyses][Analyzer] Done. Triggered: ${result.triggered}, Skipped: ${result.skipped}, Errors: ${result.errors}`);
+  return result;
+}
+
+async function processAttackSurfaceSchedules(supabase: SupabaseClient, supabaseUrl: string, serviceKey: string): Promise<SectionResult> {
+  const result: SectionResult = { triggered: 0, skipped: 0, errors: 0, total: 0 };
+
+  const { data: dueSchedules, error: fetchError } = await supabase
+    .from('attack_surface_schedules')
+    .select('id, client_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .eq('is_active', true)
+    .not('frequency', 'eq', 'manual')
+    .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
+
+  if (fetchError) {
+    console.error('[run-scheduled-analyses][AttackSurface] Error fetching schedules:', fetchError);
+    return result;
+  }
+
+  result.total = dueSchedules?.length ?? 0;
+  if (!dueSchedules || dueSchedules.length === 0) {
+    console.log('[run-scheduled-analyses][AttackSurface] No schedules due.');
+    return result;
+  }
+
+  console.log(`[run-scheduled-analyses][AttackSurface] Found ${dueSchedules.length} schedule(s) due.`);
+
+  for (const schedule of dueSchedules) {
+    try {
+      const nextRunAt = calculateNextRunAt(
+        schedule.frequency, schedule.scheduled_hour ?? 0,
+        schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+        schedule.id
+      );
+
+      if (!schedule.next_run_at) {
+        await supabase.from('attack_surface_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+        console.log(`[run-scheduled-analyses][AttackSurface] Recalculated next_run_at for ${schedule.id}: ${nextRunAt}`);
+        continue;
+      }
+
+      const triggerUrl = `${supabaseUrl}/functions/v1/run-attack-surface-queue`;
+      const response = await fetch(triggerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+        body: JSON.stringify({ client_id: schedule.client_id }),
+      });
+      const res = await response.json();
+      if (res.success || response.status === 409) {
+        console.log(`[run-scheduled-analyses][AttackSurface] Triggered client ${schedule.client_id}: ${res.message || 'success'}`);
+        result.triggered++;
+      } else {
+        console.error(`[run-scheduled-analyses][AttackSurface] Failed client ${schedule.client_id}:`, res.error);
+        result.errors++;
+      }
+
+      await supabase.from('attack_surface_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+    } catch (err) {
+      console.error(`[run-scheduled-analyses][AttackSurface] Error:`, err);
+      result.errors++;
+    }
+  }
+
+  console.log(`[run-scheduled-analyses][AttackSurface] Done. Triggered: ${result.triggered}, Errors: ${result.errors}`);
+  return result;
+}
+
+async function processM365AnalyzerSchedules(supabase: SupabaseClient, supabaseUrl: string, serviceKey: string): Promise<SectionResult> {
+  const result: SectionResult = { triggered: 0, skipped: 0, errors: 0, total: 0 };
+
+  const { data: dueSchedules, error: fetchError } = await supabase
+    .from('m365_analyzer_schedules')
+    .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .eq('is_active', true)
+    .not('frequency', 'eq', 'manual')
+    .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
+
+  if (fetchError) {
+    console.error('[run-scheduled-analyses][M365Analyzer] Error fetching schedules:', fetchError);
+    return result;
+  }
+
+  result.total = dueSchedules?.length ?? 0;
+  if (!dueSchedules || dueSchedules.length === 0) {
+    console.log('[run-scheduled-analyses][M365Analyzer] No schedules due.');
+    return result;
+  }
+
+  console.log(`[run-scheduled-analyses][M365Analyzer] Found ${dueSchedules.length} schedule(s) due.`);
+
+  for (const schedule of dueSchedules) {
+    try {
+      const nextRunAt = calculateNextRunAt(
+        schedule.frequency, schedule.scheduled_hour ?? 0,
+        schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+        schedule.id
+      );
+
+      if (!schedule.next_run_at) {
+        await supabase.from('m365_analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+        console.log(`[run-scheduled-analyses][M365Analyzer] Recalculated next_run_at for ${schedule.id}: ${nextRunAt}`);
+        continue;
+      }
+
+      const { data: tenantAgent } = await supabase
+        .from('m365_tenant_agents')
+        .select('agent_id')
+        .eq('tenant_record_id', schedule.tenant_record_id)
+        .eq('enabled', true)
+        .limit(1)
+        .maybeSingle();
+
+      const agentStatus = await isAgentOnline(supabase, tenantAgent?.agent_id || null);
+
+      if (!agentStatus.online) {
+        console.log(`[run-scheduled-analyses][M365Analyzer] Skipping tenant ${schedule.tenant_record_id}: agent ${agentStatus.agentName} offline`);
+        result.skipped++;
+      } else {
+        const triggerUrl = `${supabaseUrl}/functions/v1/trigger-m365-analyzer`;
+        const response = await fetch(triggerUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+          body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
+        });
+        const res = await response.json();
+        if (res.success || response.status === 409 || res.code === 'ALREADY_RUNNING') {
+          console.log(`[run-scheduled-analyses][M365Analyzer] Triggered tenant ${schedule.tenant_record_id}`);
+          result.triggered++;
+
+          // Also trigger exchange dashboard refresh
+          try {
+            const exchangeUrl = `${supabaseUrl}/functions/v1/exchange-dashboard`;
+            const exchResp = await fetch(exchangeUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+              body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
+            });
+            const exchResult = await exchResp.json();
+            if (!exchResult.success) {
+              const retryResp = await fetch(exchangeUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+                body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
+              });
+              await retryResp.json();
+            }
+          } catch (e) {
+            console.error(`[run-scheduled-analyses][M365Analyzer] exchange-dashboard error:`, e);
+          }
+        } else {
+          console.error(`[run-scheduled-analyses][M365Analyzer] Failed tenant ${schedule.tenant_record_id}:`, res.error);
+          result.errors++;
+        }
+      }
+
+      await supabase.from('m365_analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+    } catch (err) {
+      console.error(`[run-scheduled-analyses][M365Analyzer] Error:`, err);
+      result.errors++;
+    }
+  }
+
+  console.log(`[run-scheduled-analyses][M365Analyzer] Done. Triggered: ${result.triggered}, Skipped: ${result.skipped}, Errors: ${result.errors}`);
+  return result;
+}
+
+async function processM365ComplianceSchedules(supabase: SupabaseClient, supabaseUrl: string, serviceKey: string): Promise<SectionResult> {
+  const result: SectionResult = { triggered: 0, skipped: 0, errors: 0, total: 0 };
+
+  const { data: dueSchedules, error: fetchError } = await supabase
+    .from('m365_compliance_schedules')
+    .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .eq('is_active', true)
+    .not('frequency', 'eq', 'manual')
+    .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
+
+  if (fetchError) {
+    console.error('[run-scheduled-analyses][M365Compliance] Error fetching schedules:', fetchError);
+    return result;
+  }
+
+  result.total = dueSchedules?.length ?? 0;
+  if (!dueSchedules || dueSchedules.length === 0) {
+    console.log('[run-scheduled-analyses][M365Compliance] No schedules due.');
+    return result;
+  }
+
+  console.log(`[run-scheduled-analyses][M365Compliance] Found ${dueSchedules.length} schedule(s) due.`);
+
+  for (const schedule of dueSchedules) {
+    try {
+      const nextRunAt = calculateNextRunAt(
+        schedule.frequency, schedule.scheduled_hour ?? 0,
+        schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+        schedule.id
+      );
+
+      if (!schedule.next_run_at) {
+        await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+        console.log(`[run-scheduled-analyses][M365Compliance] Recalculated next_run_at for ${schedule.id}: ${nextRunAt}`);
+        continue;
+      }
+
+      const { data: tenantAgent } = await supabase
+        .from('m365_tenant_agents')
+        .select('agent_id')
+        .eq('tenant_record_id', schedule.tenant_record_id)
+        .eq('enabled', true)
+        .limit(1)
+        .maybeSingle();
+
+      const agentStatus = await isAgentOnline(supabase, tenantAgent?.agent_id || null);
+
+      if (!agentStatus.online) {
+        console.log(`[run-scheduled-analyses][M365Compliance] Skipping tenant ${schedule.tenant_record_id}: agent offline`);
+        result.skipped++;
+      } else {
+        const triggerUrl = `${supabaseUrl}/functions/v1/trigger-m365-posture-analysis`;
+        const response = await fetch(triggerUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+          body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
+        });
+        const res = await response.json();
+        if (res.success || response.status === 409) {
+          console.log(`[run-scheduled-analyses][M365Compliance] Triggered tenant ${schedule.tenant_record_id}`);
+          result.triggered++;
+        } else {
+          console.error(`[run-scheduled-analyses][M365Compliance] Failed tenant ${schedule.tenant_record_id}:`, res.error);
+          result.errors++;
+        }
+      }
+
+      await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+    } catch (err) {
+      console.error(`[run-scheduled-analyses][M365Compliance] Error:`, err);
+      result.errors++;
+    }
+  }
+
+  console.log(`[run-scheduled-analyses][M365Compliance] Done. Triggered: ${result.triggered}, Skipped: ${result.skipped}, Errors: ${result.errors}`);
+  return result;
+}
+
+// ========================================================
+// Main handler
+// ========================================================
+
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
@@ -83,10 +539,6 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-    // Auth: rely on Supabase infrastructure (anon/service key in header)
-    // The cron job sends Authorization header; internal ops use service role client
-
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('[run-scheduled-analyses] Starting scheduled analysis check...');
@@ -97,467 +549,23 @@ Deno.serve(async (req) => {
       console.error('[run-scheduled-analyses] cleanup_stuck_tasks error:', cleanupError);
     }
 
-    // ========================================================
-    // Firewall Compliance Schedules
-    // ========================================================
-    const { data: dueSchedules, error: fetchError } = await supabase
-      .from('analysis_schedules')
-      .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
-      .eq('is_active', true)
-      .not('frequency', 'eq', 'manual')
-      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
+    // Process all 6 sections IN PARALLEL
+    const [fwResult, domainResult, analyzerResult, attackResult, m365AnalyzerResult, m365ComplianceResult] = await Promise.all([
+      processFirewallComplianceSchedules(supabase, supabaseUrl, supabaseServiceKey),
+      processExternalDomainSchedules(supabase, supabaseUrl, supabaseServiceKey),
+      processAnalyzerSchedules(supabase, supabaseUrl, supabaseServiceKey),
+      processAttackSurfaceSchedules(supabase, supabaseUrl, supabaseServiceKey),
+      processM365AnalyzerSchedules(supabase, supabaseUrl, supabaseServiceKey),
+      processM365ComplianceSchedules(supabase, supabaseUrl, supabaseServiceKey),
+    ]);
 
-    if (fetchError) {
-      console.error('[run-scheduled-analyses] Error fetching schedules:', fetchError);
-      return new Response(
-        JSON.stringify({ success: false, error: fetchError.message }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (!dueSchedules || dueSchedules.length === 0) {
-      console.log('[run-scheduled-analyses] No firewall schedules due.');
-    }
-
-    console.log(`[run-scheduled-analyses] Found ${dueSchedules.length} schedule(s) due for execution.`);
-
-    let triggered = 0;
-    let errors = 0;
-    let skippedOffline = 0;
-
-    for (const schedule of (dueSchedules || [])) {
-      try {
-        // Always calculate next_run_at first
-        const nextRunAt = calculateNextRunAt(
-          schedule.frequency,
-          schedule.scheduled_hour ?? 0,
-          schedule.scheduled_day_of_week ?? 1,
-          schedule.scheduled_day_of_month ?? 1,
-          schedule.id
-        );
-
-        // If next_run_at was NULL, just recalculate without triggering
-        if (!schedule.next_run_at) {
-          await supabase.from('analysis_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-          console.log(`[run-scheduled-analyses] Recalculated next_run_at for schedule ${schedule.id}: ${nextRunAt}`);
-          continue;
-        }
-
-        // Pre-check: resolve agent and check online status
-        const { data: fw } = await supabase.from('firewalls').select('agent_id, name').eq('id', schedule.firewall_id).single();
-        const agentStatus = await isAgentOnline(supabase, fw?.agent_id || null);
-        
-        if (!agentStatus.online) {
-          console.log(`[run-scheduled-analyses] Skipping firewall ${fw?.name || schedule.firewall_id}: agent ${agentStatus.agentName} offline (last_seen: ${agentStatus.lastSeen})`);
-          skippedOffline++;
-        } else {
-          // Call trigger-firewall-analysis
-          const triggerUrl = `${supabaseUrl}/functions/v1/trigger-firewall-analysis`;
-          const response = await fetch(triggerUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-            },
-            body: JSON.stringify({ firewall_id: schedule.firewall_id }),
-          });
-
-          const result = await response.json();
-
-          if (result.success || response.status === 409 || result.code === 'ALREADY_RUNNING') {
-            console.log(`[run-scheduled-analyses] Triggered firewall ${schedule.firewall_id}: ${result.message || 'success'}`);
-            triggered++;
-          } else {
-            console.error(`[run-scheduled-analyses] Failed to trigger firewall ${schedule.firewall_id}:`, result.error);
-            errors++;
-          }
-        }
-
-        // Update next_run_at
-        await supabase.from('analysis_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-        console.log(`[run-scheduled-analyses] Updated next_run_at for schedule ${schedule.id}: ${nextRunAt}`);
-      } catch (err) {
-        console.error(`[run-scheduled-analyses] Error processing schedule ${schedule.id}:`, err);
-        errors++;
-      }
-    }
-
-    console.log(`[run-scheduled-analyses] Firewalls done. Triggered: ${triggered}, Skipped (offline): ${skippedOffline}, Errors: ${errors}`);
-
-    // ========================================================
-    // External Domain Schedules
-    // ========================================================
-    const { data: dueDomainSchedules, error: domainFetchError } = await supabase
-      .from('external_domain_schedules')
-      .select('id, domain_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
-      .eq('is_active', true)
-      .not('frequency', 'eq', 'manual')
-      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
-
-    if (domainFetchError) {
-      console.error('[run-scheduled-analyses] Error fetching domain schedules:', domainFetchError);
-    }
-
-    let domainTriggered = 0;
-    let domainErrors = 0;
-    let domainSkipped = 0;
-
-    if (dueDomainSchedules && dueDomainSchedules.length > 0) {
-      console.log(`[run-scheduled-analyses] Found ${dueDomainSchedules.length} external domain schedule(s) due.`);
-
-      for (const schedule of dueDomainSchedules) {
-        try {
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
-
-          if (!schedule.next_run_at) {
-            await supabase.from('external_domain_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-            console.log(`[run-scheduled-analyses] Recalculated next_run_at for domain schedule ${schedule.id}: ${nextRunAt}`);
-            continue;
-          }
-
-          // Pre-check agent online
-          const { data: dom } = await supabase.from('external_domains').select('agent_id, domain').eq('id', schedule.domain_id).single();
-          const agentStatus = await isAgentOnline(supabase, dom?.agent_id || null);
-
-          if (!agentStatus.online) {
-            console.log(`[run-scheduled-analyses] Skipping domain ${dom?.domain || schedule.domain_id}: agent ${agentStatus.agentName} offline (last_seen: ${agentStatus.lastSeen})`);
-            domainSkipped++;
-          } else {
-            const triggerUrl = `${supabaseUrl}/functions/v1/trigger-external-domain-analysis`;
-            const response = await fetch(triggerUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
-              body: JSON.stringify({ domain_id: schedule.domain_id }),
-            });
-            const result = await response.json();
-            if (result.success || response.status === 409 || result.code === 'ALREADY_RUNNING') {
-              console.log(`[run-scheduled-analyses] Triggered domain ${schedule.domain_id}: ${result.message || 'success'}`);
-              domainTriggered++;
-            } else {
-              console.error(`[run-scheduled-analyses] Failed to trigger domain ${schedule.domain_id}:`, result.error);
-              domainErrors++;
-            }
-          }
-
-          await supabase.from('external_domain_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-          console.log(`[run-scheduled-analyses] Updated next_run_at for domain schedule ${schedule.id}: ${nextRunAt}`);
-        } catch (err) {
-          console.error(`[run-scheduled-analyses] Error processing domain schedule ${schedule.id}:`, err);
-          domainErrors++;
-        }
-      }
-    } else {
-      console.log('[run-scheduled-analyses] No external domain schedules due.');
-    }
-
-    // ========================================================
-    // Analyzer Schedules
-    // ========================================================
-    const { data: dueAnalyzerSchedules, error: analyzerFetchError } = await supabase
-      .from('analyzer_schedules')
-      .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
-      .eq('is_active', true)
-      .not('frequency', 'eq', 'manual')
-      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
-
-    if (analyzerFetchError) {
-      console.error('[run-scheduled-analyses] Error fetching analyzer schedules:', analyzerFetchError);
-    }
-
-    let analyzerTriggered = 0;
-    let analyzerErrors = 0;
-    let analyzerSkipped = 0;
-
-    if (dueAnalyzerSchedules && dueAnalyzerSchedules.length > 0) {
-      console.log(`[run-scheduled-analyses] Found ${dueAnalyzerSchedules.length} analyzer schedule(s) due.`);
-
-      for (const schedule of dueAnalyzerSchedules) {
-        try {
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
-
-          if (!schedule.next_run_at) {
-            await supabase.from('analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-            console.log(`[run-scheduled-analyses] Recalculated next_run_at for analyzer schedule ${schedule.id}: ${nextRunAt}`);
-            continue;
-          }
-
-          const { data: fw } = await supabase.from('firewalls').select('agent_id, name').eq('id', schedule.firewall_id).single();
-          const agentStatus = await isAgentOnline(supabase, fw?.agent_id || null);
-
-          if (!agentStatus.online) {
-            console.log(`[run-scheduled-analyses] Skipping analyzer for ${fw?.name || schedule.firewall_id}: agent ${agentStatus.agentName} offline`);
-            analyzerSkipped++;
-          } else {
-            const triggerUrl = `${supabaseUrl}/functions/v1/trigger-firewall-analyzer`;
-            const response = await fetch(triggerUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
-              body: JSON.stringify({ firewall_id: schedule.firewall_id }),
-            });
-            const result = await response.json();
-            if (result.success || response.status === 409 || result.code === 'ALREADY_RUNNING') { analyzerTriggered++; }
-            else { analyzerErrors++; }
-          }
-
-          await supabase.from('analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-        } catch (err) {
-          console.error(`[run-scheduled-analyses] Analyzer schedule error:`, err);
-          analyzerErrors++;
-        }
-      }
-    }
-
-    // ========================================================
-    // Attack Surface Schedules (no agent check — uses system agents)
-    // ========================================================
-    const { data: dueAttackSurfaceSchedules, error: attackSurfaceFetchError } = await supabase
-      .from('attack_surface_schedules')
-      .select('id, client_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
-      .eq('is_active', true)
-      .not('frequency', 'eq', 'manual')
-      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
-
-    if (attackSurfaceFetchError) {
-      console.error('[run-scheduled-analyses] Error fetching attack surface schedules:', attackSurfaceFetchError);
-    }
-
-    let attackSurfaceTriggered = 0;
-    let attackSurfaceErrors = 0;
-
-    if (dueAttackSurfaceSchedules && dueAttackSurfaceSchedules.length > 0) {
-      console.log(`[run-scheduled-analyses] Found ${dueAttackSurfaceSchedules.length} attack surface schedule(s) due.`);
-
-      for (const schedule of dueAttackSurfaceSchedules) {
-        try {
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
-
-          if (!schedule.next_run_at) {
-            await supabase.from('attack_surface_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-            console.log(`[run-scheduled-analyses] Recalculated next_run_at for attack surface schedule ${schedule.id}: ${nextRunAt}`);
-            continue;
-          }
-
-          const triggerUrl = `${supabaseUrl}/functions/v1/run-attack-surface-queue`;
-          const response = await fetch(triggerUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
-            body: JSON.stringify({ client_id: schedule.client_id }),
-          });
-          const result = await response.json();
-          if (result.success || response.status === 409) {
-            console.log(`[run-scheduled-analyses] Triggered attack surface for client ${schedule.client_id}: ${result.message || 'success'}`);
-            attackSurfaceTriggered++;
-          } else {
-            console.error(`[run-scheduled-analyses] Failed to trigger attack surface for client ${schedule.client_id}:`, result.error);
-            attackSurfaceErrors++;
-          }
-
-          await supabase.from('attack_surface_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-          console.log(`[run-scheduled-analyses] Updated next_run_at for attack surface schedule ${schedule.id}: ${nextRunAt}`);
-        } catch (err) {
-          console.error(`[run-scheduled-analyses] Attack surface schedule error:`, err);
-          attackSurfaceErrors++;
-        }
-      }
-    } else {
-      console.log('[run-scheduled-analyses] No attack surface schedules due.');
-    }
-
-    // ========================================================
-    // M365 Analyzer Schedules
-    // ========================================================
-    const { data: dueM365AnalyzerSchedules, error: m365AnalyzerFetchError } = await supabase
-      .from('m365_analyzer_schedules')
-      .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
-      .eq('is_active', true)
-      .not('frequency', 'eq', 'manual')
-      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
-
-    if (m365AnalyzerFetchError) {
-      console.error('[run-scheduled-analyses] Error fetching M365 analyzer schedules:', m365AnalyzerFetchError);
-    }
-
-    let m365AnalyzerTriggered = 0;
-    let m365AnalyzerErrors = 0;
-    let m365AnalyzerSkipped = 0;
-
-    if (dueM365AnalyzerSchedules && dueM365AnalyzerSchedules.length > 0) {
-      console.log(`[run-scheduled-analyses] Found ${dueM365AnalyzerSchedules.length} M365 analyzer schedule(s) due.`);
-
-      for (const schedule of dueM365AnalyzerSchedules) {
-        try {
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
-
-          if (!schedule.next_run_at) {
-            await supabase.from('m365_analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-            console.log(`[run-scheduled-analyses] Recalculated next_run_at for M365 analyzer schedule ${schedule.id}: ${nextRunAt}`);
-            continue;
-          }
-
-          const { data: tenantAgent } = await supabase
-            .from('m365_tenant_agents')
-            .select('agent_id')
-            .eq('tenant_record_id', schedule.tenant_record_id)
-            .eq('enabled', true)
-            .limit(1)
-            .maybeSingle();
-
-          const agentStatus = await isAgentOnline(supabase, tenantAgent?.agent_id || null);
-
-          if (!agentStatus.online) {
-            console.log(`[run-scheduled-analyses] Skipping M365 tenant ${schedule.tenant_record_id}: agent ${agentStatus.agentName} offline`);
-            m365AnalyzerSkipped++;
-          } else {
-            const triggerUrl = `${supabaseUrl}/functions/v1/trigger-m365-analyzer`;
-            const response = await fetch(triggerUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
-              body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
-            });
-            const result = await response.json();
-            if (result.success || response.status === 409 || result.code === 'ALREADY_RUNNING') {
-              console.log(`[run-scheduled-analyses] Triggered M365 analyzer for tenant ${schedule.tenant_record_id}`);
-              m365AnalyzerTriggered++;
-
-              try {
-                const exchangeUrl = `${supabaseUrl}/functions/v1/exchange-dashboard`;
-                const exchResp = await fetch(exchangeUrl, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
-                  body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
-                });
-                const exchResult = await exchResp.json();
-                if (!exchResult.success) {
-                  const retryResp = await fetch(exchangeUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
-                    body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
-                  });
-                  await retryResp.json();
-                }
-              } catch (e) {
-                console.error(`[run-scheduled-analyses] exchange-dashboard error:`, e);
-              }
-            } else {
-              console.error(`[run-scheduled-analyses] Failed to trigger M365 analyzer for tenant ${schedule.tenant_record_id}:`, result.error);
-              m365AnalyzerErrors++;
-            }
-          }
-
-          await supabase.from('m365_analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-        } catch (err) {
-          console.error(`[run-scheduled-analyses] M365 analyzer schedule error:`, err);
-          m365AnalyzerErrors++;
-        }
-      }
-    } else {
-      console.log('[run-scheduled-analyses] No M365 analyzer schedules due.');
-    }
-
-    // ========================================================
-    // M365 Compliance Schedules (Posture Analysis)
-    // ========================================================
-    const { data: dueM365ComplianceSchedules, error: m365ComplianceFetchError } = await supabase
-      .from('m365_compliance_schedules')
-      .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
-      .eq('is_active', true)
-      .not('frequency', 'eq', 'manual')
-      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
-
-    if (m365ComplianceFetchError) {
-      console.error('[run-scheduled-analyses] Error fetching M365 compliance schedules:', m365ComplianceFetchError);
-    }
-
-    let m365ComplianceTriggered = 0;
-    let m365ComplianceErrors = 0;
-    let m365ComplianceSkipped = 0;
-
-    if (dueM365ComplianceSchedules && dueM365ComplianceSchedules.length > 0) {
-      console.log(`[run-scheduled-analyses] Found ${dueM365ComplianceSchedules.length} M365 compliance schedule(s) due.`);
-
-      for (const schedule of dueM365ComplianceSchedules) {
-        try {
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
-
-          if (!schedule.next_run_at) {
-            await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-            console.log(`[run-scheduled-analyses] Recalculated next_run_at for M365 compliance schedule ${schedule.id}: ${nextRunAt}`);
-            continue;
-          }
-
-          const { data: tenantAgent } = await supabase
-            .from('m365_tenant_agents')
-            .select('agent_id')
-            .eq('tenant_record_id', schedule.tenant_record_id)
-            .eq('enabled', true)
-            .limit(1)
-            .maybeSingle();
-
-          const agentStatus = await isAgentOnline(supabase, tenantAgent?.agent_id || null);
-
-          if (!agentStatus.online) {
-            console.log(`[run-scheduled-analyses] Skipping M365 compliance ${schedule.tenant_record_id}: agent offline`);
-            m365ComplianceSkipped++;
-          } else {
-            const triggerUrl = `${supabaseUrl}/functions/v1/trigger-m365-posture-analysis`;
-            const response = await fetch(triggerUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
-              body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
-            });
-            const result = await response.json();
-            if (result.success || response.status === 409) {
-              console.log(`[run-scheduled-analyses] Triggered M365 compliance for tenant ${schedule.tenant_record_id}`);
-              m365ComplianceTriggered++;
-            } else {
-              console.error(`[run-scheduled-analyses] Failed to trigger M365 compliance for tenant ${schedule.tenant_record_id}:`, result.error);
-              m365ComplianceErrors++;
-            }
-          }
-
-          await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
-        } catch (err) {
-          console.error(`[run-scheduled-analyses] M365 compliance schedule error:`, err);
-          m365ComplianceErrors++;
-        }
-      }
-    } else {
-      console.log('[run-scheduled-analyses] No M365 compliance schedules due.');
-    }
-
-    // ========================================================
-    // CVE Cache Refresh
-    // ========================================================
+    // CVE Cache Refresh (sequential, after all schedules)
     let cveRefreshSuccess = false;
     try {
       console.log('[run-scheduled-analyses] Triggering CVE cache refresh...');
-      const cveRefreshUrl = `${supabaseUrl}/functions/v1/refresh-cve-cache`;
-      const cveRes = await fetch(cveRefreshUrl, {
+      const cveRes = await fetch(`${supabaseUrl}/functions/v1/refresh-cve-cache`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
         body: JSON.stringify({}),
       });
       const cveResult = await cveRes.json();
@@ -567,12 +575,12 @@ Deno.serve(async (req) => {
       console.error('[run-scheduled-analyses] CVE refresh error:', err);
     }
 
-    const totalTriggered = triggered + domainTriggered + analyzerTriggered + attackSurfaceTriggered + m365AnalyzerTriggered + m365ComplianceTriggered;
-    const totalErrors = errors + domainErrors + analyzerErrors + attackSurfaceErrors + m365AnalyzerErrors + m365ComplianceErrors;
-    const totalSkipped = skippedOffline + domainSkipped + analyzerSkipped + m365AnalyzerSkipped + m365ComplianceSkipped;
+    const totalTriggered = fwResult.triggered + domainResult.triggered + analyzerResult.triggered + attackResult.triggered + m365AnalyzerResult.triggered + m365ComplianceResult.triggered;
+    const totalErrors = fwResult.errors + domainResult.errors + analyzerResult.errors + attackResult.errors + m365AnalyzerResult.errors + m365ComplianceResult.errors;
+    const totalSkipped = fwResult.skipped + domainResult.skipped + analyzerResult.skipped + m365AnalyzerResult.skipped + m365ComplianceResult.skipped;
 
     console.log(`[run-scheduled-analyses] Done. Triggered: ${totalTriggered}, Skipped (offline): ${totalSkipped}, Errors: ${totalErrors}`);
-    console.log(`[run-scheduled-analyses] Breakdown — Firewalls: ${triggered}/${skippedOffline}skip, Domains: ${domainTriggered}/${domainSkipped}skip, Analyzers: ${analyzerTriggered}/${analyzerSkipped}skip, AttackSurface: ${attackSurfaceTriggered}, M365Analyzer: ${m365AnalyzerTriggered}/${m365AnalyzerSkipped}skip, M365Compliance: ${m365ComplianceTriggered}/${m365ComplianceSkipped}skip, CVE: ${cveRefreshSuccess}`);
+    console.log(`[run-scheduled-analyses] Breakdown — Firewalls: ${fwResult.triggered}/${fwResult.skipped}skip, Domains: ${domainResult.triggered}/${domainResult.skipped}skip, Analyzers: ${analyzerResult.triggered}/${analyzerResult.skipped}skip, AttackSurface: ${attackResult.triggered}, M365Analyzer: ${m365AnalyzerResult.triggered}/${m365AnalyzerResult.skipped}skip, M365Compliance: ${m365ComplianceResult.triggered}/${m365ComplianceResult.skipped}skip, CVE: ${cveRefreshSuccess}`);
 
     return new Response(
       JSON.stringify({
@@ -580,12 +588,12 @@ Deno.serve(async (req) => {
         triggered: totalTriggered,
         skipped_offline: totalSkipped,
         errors: totalErrors,
-        firewalls: { triggered, skipped: skippedOffline, errors, total: dueSchedules.length },
-        domains: { triggered: domainTriggered, skipped: domainSkipped, errors: domainErrors, total: dueDomainSchedules?.length ?? 0 },
-        analyzers: { triggered: analyzerTriggered, skipped: analyzerSkipped, errors: analyzerErrors, total: dueAnalyzerSchedules?.length ?? 0 },
-        attack_surface: { triggered: attackSurfaceTriggered, errors: attackSurfaceErrors, total: dueAttackSurfaceSchedules?.length ?? 0 },
-        m365_analyzer: { triggered: m365AnalyzerTriggered, skipped: m365AnalyzerSkipped, errors: m365AnalyzerErrors, total: dueM365AnalyzerSchedules?.length ?? 0 },
-        m365_compliance: { triggered: m365ComplianceTriggered, skipped: m365ComplianceSkipped, errors: m365ComplianceErrors, total: dueM365ComplianceSchedules?.length ?? 0 },
+        firewalls: { triggered: fwResult.triggered, skipped: fwResult.skipped, errors: fwResult.errors, total: fwResult.total },
+        domains: { triggered: domainResult.triggered, skipped: domainResult.skipped, errors: domainResult.errors, total: domainResult.total },
+        analyzers: { triggered: analyzerResult.triggered, skipped: analyzerResult.skipped, errors: analyzerResult.errors, total: analyzerResult.total },
+        attack_surface: { triggered: attackResult.triggered, errors: attackResult.errors, total: attackResult.total },
+        m365_analyzer: { triggered: m365AnalyzerResult.triggered, skipped: m365AnalyzerResult.skipped, errors: m365AnalyzerResult.errors, total: m365AnalyzerResult.total },
+        m365_compliance: { triggered: m365ComplianceResult.triggered, skipped: m365ComplianceResult.skipped, errors: m365ComplianceResult.errors, total: m365ComplianceResult.total },
         cve_refresh: cveRefreshSuccess,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
