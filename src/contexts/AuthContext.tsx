@@ -194,6 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(cached.profile);
       setRole(cached.role);
       setPermissions(cached.permissions);
+      setUserTimezone(cached.profile.timezone || 'UTC');
       setLoading(false);
       lastFetchedUserIdRef.current = userId;
       return;

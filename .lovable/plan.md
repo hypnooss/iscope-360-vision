@@ -39,3 +39,33 @@ Refatoração para processar todas as 6 seções em **paralelo** com `Promise.al
 - `processM365ComplianceSchedules`
 
 CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
+
+## Timezone Dinâmico — Preferência do Usuário
+
+### Problema resolvido
+O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
+
+### Solução implementada
+
+| Componente | Mudança |
+|---|---|
+| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
+| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
+| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
+| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
+| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
+
+### Arquitetura
+
+```text
+┌─────────────────────────────────────────────────────┐
+│  Banco: tudo em UTC + coluna timezone por schedule  │
+├─────────────────────────────────────────────────────┤
+│  Frontend: dateUtils usa timezone do perfil         │
+│  ScheduleDialog: converte dinamicamente para UTC    │
+├─────────────────────────────────────────────────────┤
+│  Edge Function: lê timezone de cada registro        │
+│  e calcula offset via Intl.DateTimeFormat           │
+└─────────────────────────────────────────────────────┘
+```
