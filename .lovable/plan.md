@@ -1,71 +1,82 @@
-1: # Status: ✅ Implementado
 
-## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-### Problema resolvido
-Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
+## Diagnóstico: Race Condition entre Agent e Edge Function
 
-### Mudanças implementadas
+### O problema real
 
-| Componente | Mudança |
-|---|---|
-| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
-| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
-| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
-| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
+Quando o Agent termina primeiro que a Edge Function, existe uma **race condition** no backend:
 
-## Correção de Dados — scheduled_hour UTC→BRT
+1. Agent termina em ~20s → `agent-task-result` lê `m365_posture_history.status` = `running` → decide "Graph API não está pronta" → salva apenas `agent_insights` + `agent_status: 'completed'`, **NÃO marca como completed**
+2. Edge Function termina em ~1.8min → lê `agent_status` → pode ler `pending` (se a escrita do agent ainda não commitou) OU `completed`
+3. Se a Edge Function lê `agent_status = 'completed'` → faz merge → marca `completed` ✅
+4. Se a Edge Function lê `agent_status = 'pending'` (race) → marca como `partial` → **ninguém jamais faz o merge final** ❌
 
-### Problema resolvido
-Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
+O cenário 4 é o bug: o registro fica `partial` para sempre, com `agent_status: 'completed'` e `insights` do Graph API, mas sem merge.
 
-### Solução aplicada
-1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
-2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
-3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
+### Solução
 
-## Paralelização do run-scheduled-analyses
+Adicionar um **re-check after write** em ambos os lados para cobrir a race condition:
 
-### Problema resolvido
-A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
+#### 1. `trigger-m365-posture-analysis/index.ts` (Edge Function)
+Após escrever `status: 'partial'` (linha 336-349), fazer um re-read imediato de `agent_status`. Se agora for `completed`, fazer o merge e atualizar para `completed`:
 
-### Solução aplicada
-Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
-- `processFirewallComplianceSchedules`
-- `processExternalDomainSchedules`
-- `processAnalyzerSchedules`
-- `processAttackSurfaceSchedules`
-- `processM365AnalyzerSchedules`
-- `processM365ComplianceSchedules`
-
-CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
-
-## Timezone Dinâmico — Preferência do Usuário
-
-### Problema resolvido
-O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
-
-### Solução implementada
-
-| Componente | Mudança |
-|---|---|
-| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
-| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
-| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
-| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
-| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
-| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
-
-### Arquitetura
-
-```text
-┌─────────────────────────────────────────────────────┐
-│  Banco: tudo em UTC + coluna timezone por schedule  │
-├─────────────────────────────────────────────────────┤
-│  Frontend: dateUtils usa timezone do perfil         │
-│  ScheduleDialog: converte dinamicamente para UTC    │
-├─────────────────────────────────────────────────────┤
-│  Edge Function: lê timezone de cada registro        │
-│  e calcula offset via Intl.DateTimeFormat           │
-└─────────────────────────────────────────────────────┘
+```typescript
+// After writing partial...
+if (finalStatus === 'partial') {
+  // Re-check: agent may have completed between our first read and write
+  const { data: recheck } = await supabaseAdmin
+    .from('m365_posture_history')
+    .select('agent_status, agent_insights')
+    .eq('id', historyRecord.id)
+    .maybeSingle();
+  
+  if (recheck?.agent_status === 'completed' && Array.isArray(recheck.agent_insights) && recheck.agent_insights.length > 0) {
+    // Agent completed during our write — do the merge now
+    const merged = [...allInsights, ...recheck.agent_insights];
+    // recalculate score/summary with merged data...
+    await supabaseAdmin.from('m365_posture_history')
+      .update({ status: 'completed', completed_at: new Date().toISOString(), ... })
+      .eq('id', historyRecord.id);
+  }
+}
 ```
+
+#### 2. `agent-task-result/index.ts` (Agent handler)
+Após salvar `agent_insights` + `agent_status: 'completed'` sem marcar completed (linha 5024-5029), fazer um re-read de `status`. Se agora for `partial` (Edge Function completou entre o read e write do agent), fazer o merge:
+
+```typescript
+// After saving agent_insights only...
+if (!graphApiCompleted) {
+  // Write agent data first
+  await supabase.from('m365_posture_history').update(updatePayload).eq('id', analysisId);
+  
+  // Re-check: Edge Function may have completed and set 'partial' between our read and write
+  const { data: recheck } = await supabase
+    .from('m365_posture_history')
+    .select('status, insights, score')
+    .eq('id', analysisId)
+    .maybeSingle();
+  
+  if (recheck?.status === 'partial' && Array.isArray(recheck.insights) && recheck.insights.length > 0) {
+    // Edge Function completed — do the merge now
+    const merged = [...recheck.insights, ...agentInsights];
+    // recalculate and update to completed...
+  }
+}
+```
+
+#### 3. UI — `M365PosturePage.tsx`
+Adicionar `'partial'` na lista de status que o polling de `m365_posture_history` trata como "ainda em andamento", e **não limpar a barra de progresso** quando o agent_task completa se o `m365_posture_history` ainda não for `completed`. Assim a UI espera pelo merge final:
+
+- Quando `activeTaskId` completa, verificar `m365_posture_history.status` antes de limpar
+- Se `status !== 'completed'`, trocar tracking para `activeAnalysisId` (continuar monitorando o history record)
+- Só limpar tudo quando o history record chegar a `completed`
+
+### Resumo das mudanças
+
+| Arquivo | Mudança |
+|---|---|
+| `supabase/functions/trigger-m365-posture-analysis/index.ts` | Re-check `agent_status` após escrever `partial` |
+| `supabase/functions/agent-task-result/index.ts` | Re-check `status` após salvar `agent_insights` sem completar |
+| `src/pages/m365/M365PosturePage.tsx` | Transição agent_task→history tracking quando task completa mas history não |
+
