@@ -227,8 +227,39 @@ install_deps() {
 
   if command -v yum >/dev/null 2>&1; then
     yum install -y tar curl gcc openssl-devel libffi-devel || true
-    yum install -y python39 python39-pip python39-devel || true
-    yum install -y python3 python3-pip python3-devel || true
+
+    # Detectar versão do OS
+    local os_major=""
+    if [[ -f /etc/os-release ]]; then
+      os_major=\$(. /etc/os-release && echo "\${VERSION_ID%%.*}")
+    elif [[ -f /etc/centos-release ]]; then
+      os_major=\$(grep -oP '(?<=release )\\d' /etc/centos-release)
+    fi
+
+    if [[ "\$os_major" == "7" ]]; then
+      echo "CentOS/RHEL 7 detectado — adicionando repositório IUS para Python 3.9..."
+      yum install -y https://repo.ius.io/ius-release-el7.rpm 2>/dev/null || true
+      yum install -y python39 python39-pip python39-devel 2>/dev/null || \\
+      yum install -y python3 python3-pip python3-devel 2>/dev/null || true
+
+      # Fallback: compilar Python 3.9 do source se nenhum >= 3.9 disponível
+      if ! command -v python3.9 >/dev/null 2>&1 && ! python3 -c 'import sys; assert sys.version_info >= (3,9)' 2>/dev/null; then
+        echo "Compilando Python 3.9 do source (pode levar alguns minutos)..."
+        yum install -y gcc make zlib-devel bzip2-devel readline-devel sqlite-devel wget || true
+        local py_src="/tmp/Python-3.9.18"
+        wget -q "https://www.python.org/ftp/python/3.9.18/Python-3.9.18.tgz" -O /tmp/python3.tgz
+        tar xzf /tmp/python3.tgz -C /tmp
+        cd "\$py_src" && ./configure --enable-optimizations --prefix=/usr/local 2>&1 | tail -5
+        make -j\$(nproc) 2>&1 | tail -5
+        make altinstall
+        cd /
+        rm -rf "\$py_src" /tmp/python3.tgz
+        echo "Python 3.9 compilado e instalado em /usr/local/bin/python3.9"
+      fi
+    else
+      yum install -y python39 python39-pip python39-devel || true
+      yum install -y python3 python3-pip python3-devel || true
+    fi
     return
   fi
 
