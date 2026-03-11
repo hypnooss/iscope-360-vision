@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 
 // ====== Types ======
 
