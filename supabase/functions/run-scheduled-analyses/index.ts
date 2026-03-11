@@ -493,7 +493,18 @@ Deno.serve(async (req) => {
 
       for (const schedule of dueM365ComplianceSchedules) {
         try {
-          // Pre-check agent online via m365_tenant_agents
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+            schedule.id
+          );
+
+          if (!schedule.next_run_at) {
+            await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+            console.log(`[run-scheduled-analyses] Recalculated next_run_at for M365 compliance schedule ${schedule.id}: ${nextRunAt}`);
+            continue;
+          }
+
           const { data: tenantAgent } = await supabase
             .from('m365_tenant_agents')
             .select('agent_id')
@@ -505,7 +516,7 @@ Deno.serve(async (req) => {
           const agentStatus = await isAgentOnline(supabase, tenantAgent?.agent_id || null);
 
           if (!agentStatus.online) {
-            console.log(`[run-scheduled-analyses] Skipping M365 compliance ${schedule.tenant_record_id}: agent ${agentStatus.agentName} offline (last_seen: ${agentStatus.lastSeen})`);
+            console.log(`[run-scheduled-analyses] Skipping M365 compliance ${schedule.tenant_record_id}: agent offline`);
             m365ComplianceSkipped++;
           } else {
             const triggerUrl = `${supabaseUrl}/functions/v1/trigger-m365-posture-analysis`;
@@ -524,11 +535,6 @@ Deno.serve(async (req) => {
             }
           }
 
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
           await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
         } catch (err) {
           console.error(`[run-scheduled-analyses] M365 compliance schedule error:`, err);
