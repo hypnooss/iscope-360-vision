@@ -770,7 +770,7 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground">Iniciado em</p>
                       <p className="font-medium">
                         {selectedExecution.started_at
-                          ? format(new Date(selectedExecution.started_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })
+                          ? formatDateTimeFullBR(selectedExecution.started_at)
                           : '-'}
                       </p>
                     </div>
