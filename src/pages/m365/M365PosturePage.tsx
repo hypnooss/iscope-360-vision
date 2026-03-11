@@ -62,9 +62,10 @@ export default function M365PosturePage() {
   const queryClient = useQueryClient();
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [productFilter, setProductFilter] = useState<M365Product | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [taskStartedAt, setTaskStartedAt] = useState<Date | null>(null);
   const [activeAnalysisId, setActiveAnalysisId] = useState<string | null>(null);
-  const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null);
-  const [elapsed, setElapsed] = useState(0);
   const hasLoadedOnce = useRef(false);
   const { downloadPDF, isGenerating: isExportingPDF } = usePDFDownload();
 
