@@ -193,7 +193,7 @@ function M365ServiceHealthPage() {
   };
 
   const lastUpdatedLabel = dataUpdatedAt
-    ? formatDateTimeBR(dataUpdatedAt)
+    ? formatDateTimeBR(new Date(dataUpdatedAt))
     : null;
 
   return (
