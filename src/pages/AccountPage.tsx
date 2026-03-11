@@ -36,7 +36,7 @@ export default function AccountPage() {
 
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
-  const [timezone, setTimezone] = useState(profile?.timezone || 'America/Sao_Paulo');
+  const [timezone, setTimezone] = useState(profile?.timezone || 'UTC');
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [newPassword, setNewPassword] = useState('');
@@ -168,14 +168,33 @@ export default function AccountPage() {
                       <SelectValue placeholder="Selecione o fuso horário" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="America/Sao_Paulo">Brasília (BRT/BRST, UTC-3)</SelectItem>
-                      <SelectItem value="America/Fortaleza">Fortaleza (BRT, UTC-3)</SelectItem>
-                      <SelectItem value="America/Belem">Belém (BRT, UTC-3)</SelectItem>
-                      <SelectItem value="America/Manaus">Manaus (AMT, UTC-4)</SelectItem>
-                      <SelectItem value="America/Cuiaba">Cuiabá (AMT, UTC-4)</SelectItem>
-                      <SelectItem value="America/Rio_Branco">Rio Branco (ACT, UTC-5)</SelectItem>
-                      <SelectItem value="America/Noronha">Fernando de Noronha (FNT, UTC-2)</SelectItem>
+                      <SelectItem value="Pacific/Auckland">Auckland (UTC+12)</SelectItem>
+                      <SelectItem value="Pacific/Guadalcanal">Solomon Islands (UTC+11)</SelectItem>
+                      <SelectItem value="Australia/Sydney">Sydney (UTC+10)</SelectItem>
+                      <SelectItem value="Australia/Adelaide">Adelaide (UTC+9:30)</SelectItem>
+                      <SelectItem value="Asia/Tokyo">Tokyo (UTC+9)</SelectItem>
+                      <SelectItem value="Asia/Singapore">Singapore (UTC+8)</SelectItem>
+                      <SelectItem value="Asia/Bangkok">Bangkok (UTC+7)</SelectItem>
+                      <SelectItem value="Asia/Dhaka">Dhaka (UTC+6)</SelectItem>
+                      <SelectItem value="Asia/Kolkata">Mumbai (UTC+5:30)</SelectItem>
+                      <SelectItem value="Asia/Karachi">Karachi (UTC+5)</SelectItem>
+                      <SelectItem value="Asia/Dubai">Dubai (UTC+4)</SelectItem>
+                      <SelectItem value="Europe/Moscow">Moscou (UTC+3)</SelectItem>
+                      <SelectItem value="Africa/Cairo">Cairo (UTC+2)</SelectItem>
+                      <SelectItem value="Europe/Paris">Paris / Berlim (UTC+1)</SelectItem>
                       <SelectItem value="UTC">UTC</SelectItem>
+                      <SelectItem value="Atlantic/Azores">Açores (UTC-1)</SelectItem>
+                      <SelectItem value="America/Noronha">Fernando de Noronha (UTC-2)</SelectItem>
+                      <SelectItem value="America/Sao_Paulo">Brasília (UTC-3)</SelectItem>
+                      <SelectItem value="America/Manaus">Manaus / Santiago (UTC-4)</SelectItem>
+                      <SelectItem value="America/New_York">Nova York / Lima (UTC-5)</SelectItem>
+                      <SelectItem value="America/Chicago">Chicago / Cidade do México (UTC-6)</SelectItem>
+                      <SelectItem value="America/Denver">Denver (UTC-7)</SelectItem>
+                      <SelectItem value="America/Los_Angeles">Los Angeles (UTC-8)</SelectItem>
+                      <SelectItem value="America/Anchorage">Anchorage (UTC-9)</SelectItem>
+                      <SelectItem value="Pacific/Honolulu">Honolulu (UTC-10)</SelectItem>
+                      <SelectItem value="Pacific/Pago_Pago">Samoa (UTC-11)</SelectItem>
+                      <SelectItem value="Etc/GMT+12">Baker Island (UTC-12)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
