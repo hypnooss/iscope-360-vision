@@ -20,7 +20,7 @@ interface UseM365SecurityPostureReturn {
   isLoading: boolean;
   error: string | null;
   refetch: () => void;
-  triggerAnalysis: () => Promise<{ success: boolean; analysisId?: string }>;
+  triggerAnalysis: () => Promise<{ success: boolean; analysisId?: string; agentTaskId?: string | null }>;
   getInsightsByCategory: (category: M365RiskCategory) => M365Insight[];
   getFailedInsights: () => M365Insight[];
   getCriticalInsights: () => M365Insight[];
