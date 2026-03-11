@@ -111,7 +111,7 @@ export default function AccountPage() {
   };
 
   const memberSince = user?.created_at
-    ? format(new Date(user.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+    ? formatDateLongBR(user.created_at)
     : '—';
 
   return (
