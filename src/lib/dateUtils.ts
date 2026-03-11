@@ -1,13 +1,40 @@
 /**
  * Centralized date formatting utilities.
- * All dates are displayed in America/Sao_Paulo (UTC-3/UTC-2 DST) timezone,
- * regardless of the user's browser timezone.
+ * All dates are displayed in the user's preferred timezone,
+ * which is set globally via setUserTimezone() from AuthContext.
  */
 
-const TZ = 'America/Sao_Paulo';
+let _userTZ = 'UTC';
+
+/** Set the global timezone used by all format functions. Called by AuthContext on login. */
+export function setUserTimezone(tz: string) { _userTZ = tz; }
+
+/** Get the current global timezone. */
+export function getUserTimezone(): string { return _userTZ; }
 
 /**
- * Format a date in pt-BR locale with forced America/Sao_Paulo timezone.
+ * Get the UTC offset in hours for a given IANA timezone.
+ * Uses Intl.DateTimeFormat to dynamically resolve offset (handles DST).
+ * Example: 'America/Sao_Paulo' → -3, 'Asia/Kolkata' → 5.5
+ */
+export function getUtcOffsetHours(timezone: string): number {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    timeZoneName: 'shortOffset',
+  });
+  const parts = formatter.formatToParts(now);
+  const offsetStr = parts.find(p => p.type === 'timeZoneName')?.value || 'GMT';
+  // Parse "GMT", "GMT-3", "GMT+5:30", etc.
+  const match = offsetStr.match(/GMT([+-]?\d+)?(?::(\d+))?/);
+  if (!match) return 0;
+  const hours = parseInt(match[1] || '0');
+  const minutes = parseInt(match[2] || '0');
+  return hours + (hours >= 0 ? minutes / 60 : -minutes / 60);
+}
+
+/**
+ * Format a date in pt-BR locale with the user's preferred timezone.
  * Accepts any Intl.DateTimeFormatOptions overrides.
  */
 export function formatDateBR(
@@ -16,7 +43,7 @@ export function formatDateBR(
 ): string {
   if (!date) return '—';
   try {
-    return new Date(date).toLocaleString('pt-BR', { timeZone: TZ, ...opts });
+    return new Date(date).toLocaleString('pt-BR', { timeZone: _userTZ, ...opts });
   } catch {
     return String(date);
   }
@@ -79,13 +106,13 @@ export function formatDateTimeLongBR(date: string | Date | null | undefined): st
   try {
     const d = new Date(date);
     const datePart = d.toLocaleDateString('pt-BR', {
-      timeZone: TZ,
+      timeZone: _userTZ,
       day: 'numeric',
       month: 'short',
       year: 'numeric',
     });
     const timePart = d.toLocaleTimeString('pt-BR', {
-      timeZone: TZ,
+      timeZone: _userTZ,
       hour: '2-digit',
       minute: '2-digit',
     });
@@ -101,13 +128,13 @@ export function formatDateTimeMediumBR(date: string | Date | null | undefined): 
   try {
     const d = new Date(date);
     const datePart = d.toLocaleDateString('pt-BR', {
-      timeZone: TZ,
+      timeZone: _userTZ,
       day: '2-digit',
       month: 'short',
       year: 'numeric',
     });
     const timePart = d.toLocaleTimeString('pt-BR', {
-      timeZone: TZ,
+      timeZone: _userTZ,
       hour: '2-digit',
       minute: '2-digit',
     });
@@ -118,15 +145,15 @@ export function formatDateTimeMediumBR(date: string | Date | null | undefined): 
 }
 
 /**
- * Convert a Date/string to a "fake local" Date shifted to America/Sao_Paulo.
- * Use this when you need date-fns `format()` with BRT timezone.
+ * Convert a Date/string to a "fake local" Date shifted to the user's timezone.
+ * Use this when you need date-fns `format()` with the user's timezone.
  * 
- * Example: format(toBRT(someDate), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+ * Example: format(toUserTZ(someDate), 'dd/MM/yyyy HH:mm', { locale: ptBR })
  */
-export function toBRT(date: Date | string): Date {
+export function toUserTZ(date: Date | string): Date {
   const d = new Date(date);
   const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: TZ,
+    timeZone: _userTZ,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -139,3 +166,6 @@ export function toBRT(date: Date | string): Date {
   const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value || '0');
   return new Date(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
 }
+
+/** @deprecated Use toUserTZ instead. Kept for backwards compatibility. */
+export const toBRT = toUserTZ;

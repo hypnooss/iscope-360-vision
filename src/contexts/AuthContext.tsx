@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useRef, ReactNode } fro
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { isDeviceTrusted, clearTrustedDevice } from '@/lib/trustedDevice';
+import { setUserTimezone } from '@/lib/dateUtils';
 
 type AppRole = 'super_admin' | 'super_suporte' | 'workspace_admin' | 'user';
 type ModulePermission = 'view' | 'edit' | 'full';
@@ -193,6 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(cached.profile);
       setRole(cached.role);
       setPermissions(cached.permissions);
+      setUserTimezone(cached.profile.timezone || 'UTC');
       setLoading(false);
       lastFetchedUserIdRef.current = userId;
       return;
@@ -214,6 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (profileData) {
         setProfile(profileData);
+        setUserTimezone(profileData.timezone || 'UTC');
       }
 
       const userRole = (roleData?.role as AppRole) || 'user';
@@ -278,7 +281,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       if (data) {
-        setProfile(data as UserProfile);
+        const profileData = data as UserProfile;
+        setProfile(profileData);
+        setUserTimezone(profileData.timezone || 'UTC');
         sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${user.id}`);
         lastFetchedUserIdRef.current = null;
       }

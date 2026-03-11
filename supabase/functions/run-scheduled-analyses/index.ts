@@ -20,17 +20,39 @@ function getStaggerOffsetMinutes(scheduleId: string): number {
   return Math.abs(hash) % 15;
 }
 
+/**
+ * Get the UTC offset in hours for a given IANA timezone.
+ * Uses Intl.DateTimeFormat to dynamically resolve offset (handles DST).
+ */
+function getUtcOffsetHours(timezone: string): number {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    timeZoneName: 'shortOffset',
+  });
+  const parts = formatter.formatToParts(now);
+  const offsetStr = parts.find(p => p.type === 'timeZoneName')?.value || 'GMT';
+  const match = offsetStr.match(/GMT([+-]?\d+)?(?::(\d+))?/);
+  if (!match) return 0;
+  const hours = parseInt(match[1] || '0');
+  const minutes = parseInt(match[2] || '0');
+  return hours + (hours >= 0 ? minutes / 60 : -minutes / 60);
+}
+
 function calculateNextRunAt(
   frequency: string,
-  hour: number, // stored as BRT (UTC-3)
+  hour: number, // stored in the schedule's timezone
   dayOfWeek: number,
   dayOfMonth: number,
-  scheduleId: string
+  scheduleId: string,
+  timezone: string = 'America/Sao_Paulo'
 ): string {
   const now = new Date();
   const offset = getStaggerOffsetMinutes(scheduleId);
-  const utcHour = (hour + 3) % 24;
-  const dayOffset = (hour + 3) >= 24 ? 1 : 0;
+  const offsetHours = getUtcOffsetHours(timezone);
+  const utcHourRaw = hour - offsetHours;
+  const utcHour = ((Math.floor(utcHourRaw) % 24) + 24) % 24;
+  const dayOff = utcHourRaw < 0 ? -1 : utcHourRaw >= 24 ? 1 : 0;
   let next: Date;
 
   if (frequency === 'hourly') {
@@ -38,16 +60,16 @@ function calculateNextRunAt(
     next.setUTCMinutes(offset, 0, 0);
     next.setUTCHours(next.getUTCHours() + 1);
   } else if (frequency === 'daily') {
-    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOffset, utcHour, offset, 0));
+    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, utcHour, offset, 0));
     if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
   } else if (frequency === 'weekly') {
-    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOffset, utcHour, offset, 0));
+    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, utcHour, offset, 0));
     const currentDay = next.getUTCDay();
     let daysAhead = dayOfWeek - currentDay;
     if (daysAhead <= 0) daysAhead += 7;
     next.setUTCDate(next.getUTCDate() + daysAhead);
   } else {
-    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), dayOfMonth + dayOffset, utcHour, offset, 0));
+    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), dayOfMonth + dayOff, utcHour, offset, 0));
     if (next <= now) next.setUTCMonth(next.getUTCMonth() + 1);
   }
 
@@ -80,7 +102,7 @@ async function processFirewallComplianceSchedules(supabase: SupabaseClient, supa
 
   const { data: dueSchedules, error: fetchError } = await supabase
     .from('analysis_schedules')
-    .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at, timezone')
     .eq('is_active', true)
     .not('frequency', 'eq', 'manual')
     .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
@@ -103,7 +125,7 @@ async function processFirewallComplianceSchedules(supabase: SupabaseClient, supa
       const nextRunAt = calculateNextRunAt(
         schedule.frequency, schedule.scheduled_hour ?? 0,
         schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-        schedule.id
+        schedule.id, schedule.timezone ?? 'America/Sao_Paulo'
       );
 
       if (!schedule.next_run_at) {
@@ -151,7 +173,7 @@ async function processExternalDomainSchedules(supabase: SupabaseClient, supabase
 
   const { data: dueSchedules, error: fetchError } = await supabase
     .from('external_domain_schedules')
-    .select('id, domain_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .select('id, domain_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at, timezone')
     .eq('is_active', true)
     .not('frequency', 'eq', 'manual')
     .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
@@ -174,7 +196,7 @@ async function processExternalDomainSchedules(supabase: SupabaseClient, supabase
       const nextRunAt = calculateNextRunAt(
         schedule.frequency, schedule.scheduled_hour ?? 0,
         schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-        schedule.id
+        schedule.id, schedule.timezone ?? 'America/Sao_Paulo'
       );
 
       if (!schedule.next_run_at) {
@@ -222,7 +244,7 @@ async function processAnalyzerSchedules(supabase: SupabaseClient, supabaseUrl: s
 
   const { data: dueSchedules, error: fetchError } = await supabase
     .from('analyzer_schedules')
-    .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at, timezone')
     .eq('is_active', true)
     .not('frequency', 'eq', 'manual')
     .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
@@ -245,7 +267,7 @@ async function processAnalyzerSchedules(supabase: SupabaseClient, supabaseUrl: s
       const nextRunAt = calculateNextRunAt(
         schedule.frequency, schedule.scheduled_hour ?? 0,
         schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-        schedule.id
+        schedule.id, schedule.timezone ?? 'America/Sao_Paulo'
       );
 
       if (!schedule.next_run_at) {
@@ -291,7 +313,7 @@ async function processAttackSurfaceSchedules(supabase: SupabaseClient, supabaseU
 
   const { data: dueSchedules, error: fetchError } = await supabase
     .from('attack_surface_schedules')
-    .select('id, client_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .select('id, client_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at, timezone')
     .eq('is_active', true)
     .not('frequency', 'eq', 'manual')
     .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
@@ -314,7 +336,7 @@ async function processAttackSurfaceSchedules(supabase: SupabaseClient, supabaseU
       const nextRunAt = calculateNextRunAt(
         schedule.frequency, schedule.scheduled_hour ?? 0,
         schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-        schedule.id
+        schedule.id, schedule.timezone ?? 'America/Sao_Paulo'
       );
 
       if (!schedule.next_run_at) {
@@ -354,7 +376,7 @@ async function processM365AnalyzerSchedules(supabase: SupabaseClient, supabaseUr
 
   const { data: dueSchedules, error: fetchError } = await supabase
     .from('m365_analyzer_schedules')
-    .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at, timezone')
     .eq('is_active', true)
     .not('frequency', 'eq', 'manual')
     .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
@@ -377,7 +399,7 @@ async function processM365AnalyzerSchedules(supabase: SupabaseClient, supabaseUr
       const nextRunAt = calculateNextRunAt(
         schedule.frequency, schedule.scheduled_hour ?? 0,
         schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-        schedule.id
+        schedule.id, schedule.timezone ?? 'America/Sao_Paulo'
       );
 
       if (!schedule.next_run_at) {
@@ -453,7 +475,7 @@ async function processM365ComplianceSchedules(supabase: SupabaseClient, supabase
 
   const { data: dueSchedules, error: fetchError } = await supabase
     .from('m365_compliance_schedules')
-    .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at, timezone')
     .eq('is_active', true)
     .not('frequency', 'eq', 'manual')
     .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
@@ -476,7 +498,7 @@ async function processM365ComplianceSchedules(supabase: SupabaseClient, supabase
       const nextRunAt = calculateNextRunAt(
         schedule.frequency, schedule.scheduled_hour ?? 0,
         schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-        schedule.id
+        schedule.id, schedule.timezone ?? 'America/Sao_Paulo'
       );
 
       if (!schedule.next_run_at) {

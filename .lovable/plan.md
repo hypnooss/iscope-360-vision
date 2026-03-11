@@ -1,111 +1,71 @@
+1: # Status: ✅ Implementado
 
+## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-## Plano: Timezone dinâmico — armazenar em UTC, exibir no fuso do usuário
+### Problema resolvido
+Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
 
-### Contexto atual
-- `dateUtils.ts` hardcoda `TZ = 'America/Sao_Paulo'` para toda exibição
-- `ScheduleDialog.tsx` hardcoda `+3` para converter hora local → UTC
-- Edge Function `run-scheduled-analyses` hardcoda `+3` em `calculateNextRunAt`
-- 33 arquivos importam funções de `dateUtils.ts`
+### Mudanças implementadas
 
-### Arquitetura proposta
+| Componente | Mudança |
+|---|---|
+| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
+| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
+| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
+
+## Correção de Dados — scheduled_hour UTC→BRT
+
+### Problema resolvido
+Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
+
+### Solução aplicada
+1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
+2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
+3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
+
+## Paralelização do run-scheduled-analyses
+
+### Problema resolvido
+A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
+
+### Solução aplicada
+Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
+- `processFirewallComplianceSchedules`
+- `processExternalDomainSchedules`
+- `processAnalyzerSchedules`
+- `processAttackSurfaceSchedules`
+- `processM365AnalyzerSchedules`
+- `processM365ComplianceSchedules`
+
+CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
+
+## Timezone Dinâmico — Preferência do Usuário
+
+### Problema resolvido
+O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
+
+### Solução implementada
+
+| Componente | Mudança |
+|---|---|
+| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
+| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
+| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
+| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
+| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
+
+### Arquitetura
 
 ```text
-┌─────────────────────────────────────────────────────────┐
-│  Banco de dados: tudo em UTC (já é assim)               │
-│  + timezone column nas tabelas de agendamento           │
-├─────────────────────────────────────────────────────────┤
-│  Frontend (dateUtils.ts):                               │
-│    getTZ() → lê timezone global (set pelo AuthContext)  │
-│    Todas as funções format*() usam getTZ()              │
-├─────────────────────────────────────────────────────────┤
-│  ScheduleDialog:                                        │
-│    Hora selecionada = hora no TZ do usuário              │
-│    Conversão dinâmica para UTC via Intl.DateTimeFormat   │
-│    Salva timezone do usuário junto com o schedule        │
-├─────────────────────────────────────────────────────────┤
-│  Edge Function:                                         │
-│    Lê timezone de cada schedule record                   │
-│    Usa Intl para converter scheduled_hour → UTC          │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  Banco: tudo em UTC + coluna timezone por schedule  │
+├─────────────────────────────────────────────────────┤
+│  Frontend: dateUtils usa timezone do perfil         │
+│  ScheduleDialog: converte dinamicamente para UTC    │
+├─────────────────────────────────────────────────────┤
+│  Edge Function: lê timezone de cada registro        │
+│  e calcula offset via Intl.DateTimeFormat           │
+└─────────────────────────────────────────────────────┘
 ```
-
-### Mudanças detalhadas
-
-#### 1. Migration SQL — adicionar `timezone` em todas as tabelas de agendamento
-
-Adicionar coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` nas 6 tabelas:
-- `analysis_schedules`
-- `analyzer_schedules`
-- `external_domain_schedules`
-- `m365_analyzer_schedules`
-- `m365_compliance_schedules`
-- `attack_surface_schedules`
-
-O default `America/Sao_Paulo` garante que registros existentes (criados com a lógica antiga de +3) continuem corretos.
-
-#### 2. `src/lib/dateUtils.ts` — timezone dinâmico
-
-- Substituir `const TZ = 'America/Sao_Paulo'` por um getter/setter global:
-  ```typescript
-  let _userTZ = 'UTC';
-  export function setUserTimezone(tz: string) { _userTZ = tz; }
-  export function getUserTimezone(): string { return _userTZ; }
-  ```
-- Todas as funções `formatDateBR`, `formatDateTimeBR`, etc. passam a usar `getUserTimezone()` em vez do `TZ` hardcoded
-- Renomear `toBRT` para `toUserTZ` (mantendo `toBRT` como alias para retrocompatibilidade)
-
-**Impacto zero nos 33 arquivos consumidores** — as assinaturas das funções não mudam.
-
-#### 3. `src/contexts/AuthContext.tsx` — setar timezone global ao carregar perfil
-
-Após carregar `profile.timezone`, chamar `setUserTimezone(profile.timezone)`:
-```typescript
-import { setUserTimezone } from '@/lib/dateUtils';
-// no fetchUserData, após obter o profile:
-setUserTimezone(profile.timezone || 'UTC');
-```
-
-#### 4. `src/components/schedule/ScheduleDialog.tsx` — conversão dinâmica
-
-- Importar `getUserTimezone` de dateUtils
-- Substituir o hardcoded `+3` por cálculo dinâmico do offset UTC do timezone do usuário usando `Intl.DateTimeFormat`
-- Salvar `timezone: getUserTimezone()` no payload do upsert
-
-#### 5. `supabase/functions/run-scheduled-analyses/index.ts` — ler timezone do schedule
-
-- Incluir `timezone` no `select('*')` (já vem com `*`)
-- Alterar `calculateNextRunAt` para receber `timezone: string` e calcular o offset dinamicamente via `Intl.DateTimeFormat` (disponível no Deno runtime)
-- Substituir o hardcoded `(hour + 3) % 24` por conversão dinâmica
-
-#### 6. Função helper para offset dinâmico (usada no frontend e edge function)
-
-```typescript
-function getUtcOffsetHours(timezone: string): number {
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    timeZoneName: 'shortOffset',
-  });
-  const parts = formatter.formatToParts(now);
-  const offsetStr = parts.find(p => p.type === 'timeZoneName')?.value || 'GMT';
-  // Parse "GMT-3", "GMT+5:30", etc.
-  const match = offsetStr.match(/GMT([+-]?\d+)?(?::(\d+))?/);
-  if (!match) return 0;
-  const hours = parseInt(match[1] || '0');
-  const minutes = parseInt(match[2] || '0');
-  return hours + (hours >= 0 ? minutes / 60 : -minutes / 60);
-}
-```
-
-### Resumo de impacto
-
-| Arquivo | Tipo de mudança |
-|---|---|
-| 6 tabelas de agendamento | Migration: +coluna `timezone` |
-| `dateUtils.ts` | TZ dinâmico via getter/setter |
-| `AuthContext.tsx` | Chamar `setUserTimezone` |
-| `ScheduleDialog.tsx` | Conversão dinâmica + salvar timezone |
-| `run-scheduled-analyses/index.ts` | Ler timezone, offset dinâmico |
-| 33 arquivos consumidores | **Nenhuma mudança** |
-
