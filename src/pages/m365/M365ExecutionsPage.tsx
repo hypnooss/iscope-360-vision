@@ -278,6 +278,34 @@ export default function M365ExecutionsPage() {
     },
   });
 
+  // Analyzer Snapshots (Edge Function side of M365 Analyzer)
+  const { data: analyzerSnapshots = [], isLoading: isLoadingSnapshots, refetch: refetchSnapshots } = useQuery({
+    queryKey: ['m365-analyzer-snapshots', statusFilter, timeFilter, workspaceIds],
+    queryFn: async () => {
+      const startTime = getTimeFilterDate();
+      let query = supabase
+        .from('m365_analyzer_snapshots')
+        .select('id, tenant_record_id, client_id, status, score, summary, insights, period_start, period_end, agent_task_id, created_at')
+        .gte('created_at', startTime.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (workspaceIds && workspaceIds.length > 0) {
+        query = query.in('client_id', workspaceIds);
+      }
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data || []) as AnalyzerSnapshot[];
+    },
+    refetchInterval: (query) => {
+      const data = query.state.data as AnalyzerSnapshot[] | undefined;
+      const hasActive = data?.some(s => s.status === 'pending' || s.status === 'processing');
+      return hasActive ? 10000 : false;
+    },
+  });
+
   const getDuration = (item: { started_at: string | null; completed_at: string | null; execution_time_ms?: number | null }) => {
     if ('execution_time_ms' in item && item.execution_time_ms) {
       const ms = item.execution_time_ms;
@@ -320,10 +348,22 @@ export default function M365ExecutionsPage() {
       original: task,
     }));
 
-    return [...postureItems, ...taskItems].sort(
+    const snapshotItems: UnifiedExecution[] = analyzerSnapshots.map(snap => ({
+      id: snap.id,
+      source: 'analyzer_snapshot' as const,
+      tenantId: snap.tenant_record_id,
+      agentId: null,
+      type: 'm365_graph_api' as const,
+      status: snap.status === 'processing' ? 'running' : snap.status,
+      duration: '-',
+      createdAt: snap.created_at,
+      original: snap,
+    }));
+
+    return [...postureItems, ...taskItems, ...snapshotItems].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [executions, agentTasks]);
+  }, [executions, agentTasks, analyzerSnapshots]);
 
   const hasActive = unifiedExecutions.some(e => e.status === 'running' || e.status === 'pending' || e.status === 'partial');
 
