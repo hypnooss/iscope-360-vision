@@ -102,7 +102,7 @@ async function processFirewallComplianceSchedules(supabase: SupabaseClient, supa
 
   const { data: dueSchedules, error: fetchError } = await supabase
     .from('analysis_schedules')
-    .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
+    .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at, timezone')
     .eq('is_active', true)
     .not('frequency', 'eq', 'manual')
     .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
