@@ -14,7 +14,7 @@ import { ComplianceCategory, ComplianceReport, SubdomainSummary } from '@/types/
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
-  Loader2, FileDown, Globe, RefreshCw, XCircle, Play, Clock, Building2, Settings, ChevronDown, FileText, ClipboardList,
+  Loader2, FileDown, Globe, RefreshCw, XCircle, Play, Clock, Building2, Settings, ChevronDown, FileText, ClipboardList, AlertTriangle,
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from "@/lib/utils";
