@@ -516,10 +516,12 @@ async function processM365ComplianceSchedules(supabase: SupabaseClient, supabase
         .maybeSingle();
 
       const agentStatus = await isAgentOnline(supabase, tenantAgent?.agent_id || null);
+      let triggerSuccess = false;
 
       if (!agentStatus.online) {
         console.log(`[run-scheduled-analyses][M365Compliance] Skipping tenant ${schedule.tenant_record_id}: agent offline`);
         result.skipped++;
+        triggerSuccess = true; // advance schedule to avoid infinite retry
       } else {
         const triggerUrl = `${supabaseUrl}/functions/v1/trigger-m365-posture-analysis`;
         const response = await fetch(triggerUrl, {
@@ -531,14 +533,14 @@ async function processM365ComplianceSchedules(supabase: SupabaseClient, supabase
         if (res.success || response.status === 409) {
           console.log(`[run-scheduled-analyses][M365Compliance] Triggered tenant ${schedule.tenant_record_id}`);
           result.triggered++;
+          triggerSuccess = true;
         } else {
           console.error(`[run-scheduled-analyses][M365Compliance] Failed tenant ${schedule.tenant_record_id}:`, res.error);
           result.errors++;
         }
       }
 
-      // Only advance next_run_at on success or conflict (already running)
-      if (!agentStatus.online || res?.success || response?.status === 409) {
+      if (triggerSuccess) {
         await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
       } else {
         console.warn(`[run-scheduled-analyses][M365Compliance] Keeping next_run_at for retry (trigger failed for ${schedule.tenant_record_id})`);
