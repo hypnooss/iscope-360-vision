@@ -13,7 +13,8 @@ import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Badge } from '@/components/ui/badge';
 import { passwordRequirements, validatePassword } from '@/lib/passwordValidation';
-import { User, Shield, Lock, Check, X, Loader2, KeyRound, Trash2, Calendar, Mail, IdCard } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { User, Shield, Lock, Check, X, Loader2, KeyRound, Trash2, Calendar, Mail, IdCard, Globe } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AvatarSelector } from '@/components/account/AvatarSelector';
@@ -35,6 +36,7 @@ export default function AccountPage() {
 
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
+  const [timezone, setTimezone] = useState(profile?.timezone || 'America/Sao_Paulo');
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [newPassword, setNewPassword] = useState('');
@@ -48,6 +50,7 @@ export default function AccountPage() {
   useEffect(() => {
     setFullName(profile?.full_name || '');
     setAvatarUrl(profile?.avatar_url || '');
+    setTimezone(profile?.timezone || 'America/Sao_Paulo');
   }, [profile]);
 
   useEffect(() => { loadMfaFactors(); }, []);
@@ -70,7 +73,7 @@ export default function AccountPage() {
     setSavingProfile(true);
     const { error } = await supabase
       .from('profiles')
-      .update({ full_name: fullName.trim(), avatar_url: avatarUrl || null })
+      .update({ full_name: fullName.trim(), avatar_url: avatarUrl || null, timezone })
       .eq('id', user.id);
     setSavingProfile(false);
     if (error) {
@@ -152,6 +155,29 @@ export default function AccountPage() {
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="Seu nome completo"
                   />
+                </div>
+
+                {/* Timezone */}
+                <div className="space-y-2">
+                  <Label htmlFor="timezone" className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-muted-foreground" />
+                    Fuso Horário
+                  </Label>
+                  <Select value={timezone} onValueChange={setTimezone}>
+                    <SelectTrigger id="timezone">
+                      <SelectValue placeholder="Selecione o fuso horário" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="America/Sao_Paulo">Brasília (BRT/BRST, UTC-3)</SelectItem>
+                      <SelectItem value="America/Fortaleza">Fortaleza (BRT, UTC-3)</SelectItem>
+                      <SelectItem value="America/Belem">Belém (BRT, UTC-3)</SelectItem>
+                      <SelectItem value="America/Manaus">Manaus (AMT, UTC-4)</SelectItem>
+                      <SelectItem value="America/Cuiaba">Cuiabá (AMT, UTC-4)</SelectItem>
+                      <SelectItem value="America/Rio_Branco">Rio Branco (ACT, UTC-5)</SelectItem>
+                      <SelectItem value="America/Noronha">Fernando de Noronha (FNT, UTC-2)</SelectItem>
+                      <SelectItem value="UTC">UTC</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Read-only info */}

@@ -1,28 +1,41 @@
+1: # Status: ✅ Implementado
 
+## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-## Plano: Adicionar seletor de fuso horário na conta do usuário
+### Problema resolvido
+Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
 
-### Mudanças
+### Mudanças implementadas
 
-1. **Migration SQL**: Adicionar coluna `timezone` na tabela `profiles`
-   - `ALTER TABLE profiles ADD COLUMN timezone text DEFAULT 'America/Sao_Paulo'`
-
-2. **`src/contexts/AuthContext.tsx`**: Adicionar `timezone` ao `UserProfile` interface e incluí-lo no fetch do perfil
-
-3. **`src/pages/AccountPage.tsx`**: Adicionar um `<Select>` abaixo do campo "Nome Completo" com os fusos horários brasileiros mais comuns e outros relevantes (America/Sao_Paulo, America/Manaus, America/Bahia, America/Fortaleza, America/Belem, America/Cuiaba, America/Rio_Branco, etc. + UTC e alguns internacionais). Salvar o valor junto com o `handleSaveProfile`.
-
-4. **`src/lib/dateUtils.ts`**: (Futuro) Atualmente hardcoded como `America/Sao_Paulo`. Não alterar agora — apenas salvar a preferência. A integração com as funções de formatação pode ser feita em um próximo passo.
-
-### Fusos disponíveis no seletor
-
-| Valor | Label |
+| Componente | Mudança |
 |---|---|
-| America/Sao_Paulo | Brasília (BRT/BRST, UTC-3) |
-| America/Fortaleza | Fortaleza (BRT, UTC-3) |
-| America/Belem | Belém (BRT, UTC-3) |
-| America/Manaus | Manaus (AMT, UTC-4) |
-| America/Cuiaba | Cuiabá (AMT, UTC-4) |
-| America/Rio_Branco | Rio Branco (ACT, UTC-5) |
-| America/Noronha | Fernando de Noronha (FNT, UTC-2) |
-| UTC | UTC |
+| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
+| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
+| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
 
+## Correção de Dados — scheduled_hour UTC→BRT
+
+### Problema resolvido
+Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
+
+### Solução aplicada
+1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
+2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
+3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
+
+## Paralelização do run-scheduled-analyses
+
+### Problema resolvido
+A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
+
+### Solução aplicada
+Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
+- `processFirewallComplianceSchedules`
+- `processExternalDomainSchedules`
+- `processAnalyzerSchedules`
+- `processAttackSurfaceSchedules`
+- `processM365AnalyzerSchedules`
+- `processM365ComplianceSchedules`
+
+CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
