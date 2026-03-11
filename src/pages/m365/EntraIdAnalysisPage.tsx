@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
