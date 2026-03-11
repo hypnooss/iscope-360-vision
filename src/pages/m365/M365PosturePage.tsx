@@ -140,7 +140,26 @@ export default function M365PosturePage() {
     staleTime: 1000 * 60 * 30,
   });
 
-  // ── Task polling (same pattern as Domain Compliance) ──
+  const { 
+    data, 
+    isLoading, 
+    error, 
+    refetch,
+    triggerAnalysis,
+    agentInsights,
+    agentStatus,
+    isAgentPending,
+  } = useM365SecurityPosture({ 
+    tenantRecordId: selectedTenantId || '' 
+  });
+
+  // Track if data has been loaded at least once (to skip gauge animation on cached renders)
+  useEffect(() => {
+    if (data && !hasLoadedOnce.current) {
+      hasLoadedOnce.current = true;
+    }
+  }, [data]);
+
   const { data: taskStatus } = useQuery({
     queryKey: ['m365-compliance-task', activeTaskId],
     queryFn: async () => {
