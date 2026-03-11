@@ -255,7 +255,7 @@ export default function AccountPage() {
                           <div>
                             <p className="text-sm font-medium">{factor.friendly_name || 'Autenticador TOTP'}</p>
                             <p className="text-xs text-muted-foreground">
-                              Cadastrado em {format(new Date(factor.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                              Cadastrado em {formatDateLongBR(factor.created_at)}
                             </p>
                           </div>
                         </div>

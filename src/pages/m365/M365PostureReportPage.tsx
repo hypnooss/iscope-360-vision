@@ -558,7 +558,7 @@ export default function M365PostureReportPage() {
               <div>
                 <h1 className="text-3xl font-bold text-foreground mb-2">Análise de Compliance</h1>
                 <p className="text-muted-foreground">
-                  Relatório gerado em {format(new Date(reportData.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  Relatório gerado em {formatDateTimeBR(reportData.created_at)}
                 </p>
               </div>
 

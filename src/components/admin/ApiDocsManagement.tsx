@@ -332,7 +332,7 @@ export function ApiDocsManagement({ deviceTypeId }: Props) {
                   </TableCell>
                   <TableCell className="text-muted-foreground">{endpointCount} paths</TableCell>
                   <TableCell className="text-muted-foreground text-sm">
-                    {format(new Date(doc.created_at), 'dd/MM/yyyy')}
+                    {formatDateOnlyBR(doc.created_at)}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">

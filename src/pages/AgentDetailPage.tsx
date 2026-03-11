@@ -504,7 +504,7 @@ export default function AgentDetailPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Criado em</span>
-                <span className="text-sm">{format(new Date(agent.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</span>
+                <span className="text-sm">{formatDateTimeBR(agent.created_at)}</span>
               </div>
               <div className="space-y-2">
                 <span className="text-muted-foreground text-sm">Agent ID</span>

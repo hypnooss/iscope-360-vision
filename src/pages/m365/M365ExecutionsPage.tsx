@@ -975,7 +975,7 @@ export default function M365ExecutionsPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">Criado em</p>
                       <p className="font-medium">
-                        {format(new Date(selectedSnapshot.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                        {formatDateTimeFullBR(selectedSnapshot.created_at)}
                       </p>
                     </div>
                   </div>

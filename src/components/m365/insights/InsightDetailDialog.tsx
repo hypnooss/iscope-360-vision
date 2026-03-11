@@ -39,11 +39,7 @@ export function InsightDetailDialog({ insight, open, onOpenChange }: InsightDeta
   const SeverityIcon = SEVERITY_ICONS[insight.severity];
 
   const formatDate = (dateStr: string) => {
-    try {
-      return format(new Date(dateStr), "dd 'de' MMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
-    } catch {
-      return dateStr;
-    }
+    return formatDateTimeLongBR(dateStr);
   };
 
   return (

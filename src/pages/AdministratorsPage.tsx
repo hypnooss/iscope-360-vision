@@ -490,9 +490,7 @@ export default function AdministratorsPage() {
                     <TableCell>{admin.email}</TableCell>
                     <TableCell>{getRoleBadge(admin.role)}</TableCell>
                     <TableCell>
-                      {format(new Date(admin.created_at), "dd/MM/yyyy", {
-                        locale: ptBR,
-                      })}
+                      {formatDateOnlyBR(admin.created_at)}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">

@@ -105,7 +105,7 @@ export default function CollaborationPage() {
               <div className="flex items-center gap-3">
                 {d?.analyzedAt && (
                   <span className="text-xs text-muted-foreground">
-                    Atualizado em {format(new Date(d.analyzedAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
+                    Atualizado em {formatDateTimeMediumBR(d.analyzedAt)}
                   </span>
                 )}
                 <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Conectado</Badge>

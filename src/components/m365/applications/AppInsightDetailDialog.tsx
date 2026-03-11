@@ -42,11 +42,7 @@ export function AppInsightDetailDialog({ insight, open, onOpenChange }: AppInsig
   const SeverityIcon = SEVERITY_ICONS[insight.severity];
 
   const formatDate = (dateStr: string) => {
-    try {
-      return format(new Date(dateStr), "dd 'de' MMM 'de' yyyy", { locale: ptBR });
-    } catch {
-      return dateStr;
-    }
+    return formatDateTimeLongBR(dateStr);
   };
 
   const formatDaysLeft = (days: number | undefined) => {

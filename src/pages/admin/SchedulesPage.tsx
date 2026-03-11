@@ -1043,7 +1043,7 @@ function ExecutionsTab() {
                       {formatDuration(row.started_at, row.completed_at)}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {format(new Date(row.created_at), 'dd/MM HH:mm', { locale: ptBR })}
+                      {formatShortDateTimeBR(row.created_at)}
                     </TableCell>
                   </TableRow>
                 ))}
