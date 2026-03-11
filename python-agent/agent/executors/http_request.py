@@ -145,8 +145,27 @@ class HTTPRequestExecutor(BaseExecutor):
             }
 
     def _is_paginatable(self, url: str) -> bool:
-        """Check if a URL is a FortiGate memory log endpoint with rows parameter."""
-        return bool(self._MEMORY_LOG_PATTERN.search(url) and self._ROWS_PATTERN.search(url))
+        """Check if a URL is a FortiGate log endpoint (memory or disk) with rows parameter."""
+        return bool(self._LOG_ENDPOINT_PATTERN.search(url) and self._ROWS_PATTERN.search(url))
+
+    def _should_fallback(self, result: Dict[str, Any], config: Dict[str, Any], context: Dict[str, Any]) -> bool:
+        """Check if we should fallback to disk endpoint."""
+        fallback_path = config.get('fallback_path')
+        if not fallback_path:
+            return False
+        # Only fallback if primary returned 0 results
+        data = result.get('data')
+        if not isinstance(data, dict):
+            return False
+        results = data.get('results', [])
+        return len(results) == 0 and result.get('error') is None
+
+    def _build_fallback_url(self, original_url: str, config: Dict[str, Any], context: Dict[str, Any]) -> str:
+        """Build fallback URL by replacing the path with fallback_path."""
+        fallback_path = config.get('fallback_path', '')
+        fallback_path = self._interpolate(fallback_path, context)
+        base_url = context.get('base_url', '').rstrip('/')
+        return f"{base_url}{fallback_path}"
 
     def _paginated_request(
         self, step_id: str, url: str, headers: Dict[str, str],
