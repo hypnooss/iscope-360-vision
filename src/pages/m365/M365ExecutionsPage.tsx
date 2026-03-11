@@ -884,7 +884,7 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground">Concluído em</p>
                       <p className="font-medium">
                         {selectedTask.completed_at
-                          ? format(new Date(selectedTask.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })
+                          ? formatDateTimeFullBR(selectedTask.completed_at)
                           : '-'}
                       </p>
                     </div>
