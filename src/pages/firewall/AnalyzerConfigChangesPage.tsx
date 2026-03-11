@@ -879,7 +879,10 @@ export default function AnalyzerConfigChangesPage() {
                             </TableCell>
                             <TableCell className="font-medium">{d.user_name}</TableCell>
                             <TableCell>
-                              <Badge variant="outline" className="text-xs">{d.action || '—'}</Badge>
+                              <Badge variant="outline" className={`text-xs ${
+                                d.action?.toLowerCase() === 'add' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                                d.action?.toLowerCase() === 'delete' || d.action?.toLowerCase() === 'del' ? 'bg-red-500/20 text-red-400 border-red-500/30' : ''
+                              }`}>{d.action || '—'}</Badge>
                             </TableCell>
                             <TableCell className="text-sm">{d.category || '—'}</TableCell>
                             <TableCell className="text-sm max-w-[200px] truncate" title={d.cfgobj}>
