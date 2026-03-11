@@ -960,7 +960,7 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground">Período Início</p>
                       <p className="font-medium">
                         {selectedSnapshot.period_start
-                          ? format(new Date(selectedSnapshot.period_start), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+                          ? formatDateTimeBR(selectedSnapshot.period_start)
                           : '-'}
                       </p>
                     </div>
