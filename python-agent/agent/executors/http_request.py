@@ -59,12 +59,28 @@ class HTTPRequestExecutor(BaseExecutor):
             path = self._interpolate(path, context)
             url = f"{base_url}{path}"
         
-        # Auto-pagination for FortiGate memory log endpoints
+        # Auto-pagination for FortiGate log endpoints (memory or disk)
         if method == 'GET' and self._is_paginatable(url):
-            return self._paginated_request(
+            result = self._paginated_request(
                 step_id, url, interpolated_headers, config, context,
                 verify_ssl=verify_ssl, timeout=timeout
             )
+            # Fallback: if memory returned 0 results and fallback_path exists, try disk
+            if self._should_fallback(result, config, context):
+                fallback_url = self._build_fallback_url(url, config, context)
+                self.logger.info(
+                    f"Step {step_id}: Memory returned 0 results, falling back to disk: {fallback_url}"
+                )
+                result = self._paginated_request(
+                    step_id, fallback_url, interpolated_headers, config, context,
+                    verify_ssl=verify_ssl, timeout=timeout
+                )
+                if result.get('data') and isinstance(result['data'], dict):
+                    result['data']['_source'] = 'disk'
+            else:
+                if result.get('data') and isinstance(result['data'], dict) and '_pagination' in result['data']:
+                    result['data']['_source'] = 'memory'
+            return result
         
         self.logger.debug(f"Step {step_id}: {method} {url}")
         
