@@ -208,7 +208,7 @@ export default function M365PosturePage() {
         .from('m365_posture_history')
         .select('id, status, created_at')
         .eq('tenant_record_id', selectedTenantId)
-        .in('status', ['pending', 'running'])
+        .in('status', ['pending', 'running', 'partial'])
         .is('completed_at', null)
         .gte('created_at', cutoff)
         .order('created_at', { ascending: false })
