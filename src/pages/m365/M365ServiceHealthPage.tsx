@@ -189,7 +189,7 @@ function M365ServiceHealthPage() {
 
   const formatDate = (d: string | null) => {
     if (!d) return '—';
-    try { return format(parseISO(d), "dd/MM/yy HH:mm", { locale: ptBR }); } catch { return d; }
+    return formatDateTimeBR(d);
   };
 
   const lastUpdatedLabel = dataUpdatedAt
