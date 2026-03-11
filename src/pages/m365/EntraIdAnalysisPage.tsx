@@ -245,7 +245,7 @@ export default function EntraIdAnalysisPage() {
                 <CardContent className="py-8 flex flex-col items-center">
                   <ScoreGauge score={report.overallScore} />
                   <p className="text-sm text-muted-foreground mt-4">
-                    Gerado em {new Date(report.generatedAt).toLocaleString('pt-BR')}
+                    Gerado em {formatDateTimeBR(report.generatedAt)}
                   </p>
                 </CardContent>
               </Card>

@@ -875,7 +875,7 @@ export default function AnalyzerConfigChangesPage() {
                                 : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                             </TableCell>
                             <TableCell className="text-xs font-mono whitespace-nowrap">
-                              {d.changed_at ? new Date(d.changed_at).toLocaleString('pt-BR') : '—'}
+                              {d.changed_at ? formatDateTimeBR(d.changed_at) : '—'}
                             </TableCell>
                             <TableCell className="font-medium">{d.user_name}</TableCell>
                             <TableCell>

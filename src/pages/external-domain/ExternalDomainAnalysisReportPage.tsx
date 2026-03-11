@@ -646,7 +646,7 @@ export default function ExternalDomainAnalysisReportPage() {
             <div>
               <h1 className="text-3xl font-bold text-foreground mb-2">Análise de Compliance</h1>
               <p className="text-muted-foreground">
-                Relatório gerado em {new Date(generatedAt || report.generatedAt).toLocaleString('pt-BR')}
+                Relatório gerado em {formatDateTimeBR(generatedAt || report.generatedAt)}
               </p>
             </div>
 

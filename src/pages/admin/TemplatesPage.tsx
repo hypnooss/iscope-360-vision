@@ -472,7 +472,7 @@ export default function TemplatesPage() {
               <div>
                 <Label className="text-xs text-muted-foreground">Atualizado em</Label>
                 <p className="text-sm mt-1">
-                  {new Date(viewingTemplate.updated_at).toLocaleString('pt-BR')}
+                  {formatDateTimeBR(viewingTemplate.updated_at)}
                 </p>
               </div>
             </div>

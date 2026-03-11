@@ -606,9 +606,9 @@ export default function AnalyzerDashboardPage() {
               <>
                 <span className="text-sm text-muted-foreground">Período agregado:</span>
                 <Badge variant="outline" className="text-xs">
-                  {new Date(snapshot.period_start).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  {formatShortDateTimeBR(snapshot.period_start)}
                   {' → '}
-                  {new Date(snapshot.period_end).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  {formatShortDateTimeBR(snapshot.period_end)}
                 </Badge>
               </>
             )}
