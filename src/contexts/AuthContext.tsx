@@ -215,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (profileData) {
         setProfile(profileData);
+        setUserTimezone(profileData.timezone || 'UTC');
       }
 
       const userRole = (roleData?.role as AppRole) || 'user';
