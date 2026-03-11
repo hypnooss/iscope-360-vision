@@ -474,13 +474,16 @@ export default function SurfaceAnalyzerV3Page() {
           {isLoading ? (
             <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
           ) : !activeSnapshot || assets.length === 0 ? (
-            <Card className="glass-card">
-              <CardContent className="py-16">
-                <div className="text-center text-muted-foreground">
-                  <Radar className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p className="font-medium">Nenhum dado disponível</p>
-                  <p className="text-sm mt-1">Execute uma análise para visualizar os ativos expostos.</p>
-                </div>
+            <Card className="border-warning/30 bg-warning/5">
+              <CardContent className="py-10 text-center max-w-md mx-auto">
+                <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-3" />
+                <h3 className="text-base font-semibold mb-1">Nenhuma análise encontrada</h3>
+                <p className="text-sm text-muted-foreground mb-5">
+                  Execute uma análise para visualizar os ativos expostos na internet.
+                </p>
+                <Button onClick={() => setScanDialogOpen(true)} disabled={!isSuperRole}>
+                  <Play className="w-4 h-4 mr-2" /> Executar Análise
+                </Button>
               </CardContent>
             </Card>
           ) : (
