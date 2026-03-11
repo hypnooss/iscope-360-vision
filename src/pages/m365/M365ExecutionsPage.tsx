@@ -21,6 +21,7 @@ import { Activity, Clock, CheckCircle2, XCircle, Loader2, RefreshCw, Eye, Search
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateTimeFullBR, formatDateTimeBR } from '@/lib/dateUtils';
 
 interface PostureHistory {
   id: string;
