@@ -280,7 +280,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       if (data) {
-        setProfile(data as UserProfile);
+        const profileData = data as UserProfile;
+        setProfile(profileData);
+        setUserTimezone(profileData.timezone || 'UTC');
         sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${user.id}`);
         lastFetchedUserIdRef.current = null;
       }
