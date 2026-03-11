@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toBRT } from '@/lib/dateUtils';
 
 interface Administrator {
   id: string;
