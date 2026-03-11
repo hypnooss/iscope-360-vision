@@ -12,7 +12,7 @@ import { ComplianceReport, ComplianceCategory } from '@/types/compliance';
 import type { CorrectionGuideData } from '@/components/pdf/ExternalDomainPDF';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, Play, Clock, Building2, FileText, RefreshCw, Settings, ChevronDown, FileDown, ClipboardList } from 'lucide-react';
+import { Loader2, Play, Clock, Building2, FileText, RefreshCw, Settings, ChevronDown, FileDown, ClipboardList, Shield } from 'lucide-react';
 import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
 import { FirewallPDF } from '@/components/pdf/FirewallPDF';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
