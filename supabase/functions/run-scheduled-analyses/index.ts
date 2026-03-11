@@ -380,7 +380,7 @@ Deno.serve(async (req) => {
     // ========================================================
     const { data: dueM365AnalyzerSchedules, error: m365AnalyzerFetchError } = await supabase
       .from('m365_analyzer_schedules')
-      .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
       .eq('is_active', true)
       .not('frequency', 'eq', 'manual')
       .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
