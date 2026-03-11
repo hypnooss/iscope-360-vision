@@ -31,8 +31,7 @@ import {
   Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Mail, Settings,
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 
 // ─── Exchange-relevant operational categories ────────────────────────────────
 const EXCHANGE_OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
