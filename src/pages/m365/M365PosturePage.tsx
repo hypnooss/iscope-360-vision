@@ -474,9 +474,9 @@ export default function M365PosturePage() {
     }
   }
 
-  const isAnalysisRunning = !!activeAnalysisId;
-  const analysisStatus = analysisRecord?.status ?? 'pending';
-  const progressValue = analysisStatus === 'partial' ? 60 : 30;
+  const isAnalysisRunning = isRefreshing || !!activeTaskId || !!activeAnalysisId;
+  const currentTaskStatus = taskStatus?.status ?? analysisRecord?.status ?? 'pending';
+  const progressValue = currentTaskStatus === 'running' ? 60 : 30;
 
   return (
     <AppLayout>
