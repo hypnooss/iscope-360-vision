@@ -297,14 +297,52 @@ class TaskExecutor:
                         if isinstance(results_list, list) and results_list:
                             original_count = len(results_list)
                             filtered = [log for log in results_list if isinstance(log, dict) and log.get('cfgpath')]
-                            step_data = dict(step_data)
-                            step_data['results'] = filtered
-                            step_data['_pre_filtered'] = True
-                            step_data['_pre_filter_original'] = original_count
                             self.logger.info(
                                 f"Step {step_id}: Pre-filtered config_changes: "
                                 f"{original_count} -> {len(filtered)} (kept only cfgpath logs)"
                             )
+                            
+                            # Post-filter fallback: if pre-filter yields 0 results and
+                            # a fallback_path exists, retry from disk endpoint
+                            fallback_path = config.get('fallback_path')
+                            if len(filtered) == 0 and fallback_path:
+                                self.logger.info(
+                                    f"Step {step_id}: Pre-filter returned 0 cfgpath logs from memory, "
+                                    f"attempting disk fallback via fallback_path"
+                                )
+                                # Build a modified step with fallback_path as the primary path
+                                fallback_step = dict(step)
+                                fallback_config = dict(config)
+                                fallback_config['path'] = fallback_path
+                                fallback_config.pop('fallback_path', None)
+                                fallback_step['config'] = fallback_config
+                                
+                                try:
+                                    fallback_result = executor.run(fallback_step, context)
+                                    fallback_data = fallback_result.get('data')
+                                    if fallback_data and isinstance(fallback_data, dict):
+                                        disk_results = fallback_data.get('results', [])
+                                        disk_filtered = [
+                                            log for log in disk_results
+                                            if isinstance(log, dict) and log.get('cfgpath')
+                                        ]
+                                        self.logger.info(
+                                            f"Step {step_id}: Disk fallback returned {len(disk_results)} logs, "
+                                            f"{len(disk_filtered)} with cfgpath"
+                                        )
+                                        if disk_filtered:
+                                            filtered = disk_filtered
+                                            step_data = dict(fallback_data)
+                                            step_data['_source'] = 'disk'
+                                except Exception as fb_err:
+                                    self.logger.warning(
+                                        f"Step {step_id}: Disk fallback failed: {fb_err}"
+                                    )
+                            
+                            step_data = dict(step_data)
+                            step_data['results'] = filtered
+                            step_data['_pre_filtered'] = True
+                            step_data['_pre_filter_original'] = original_count
                     
                     # Support optional steps - failures become not_applicable
                     is_optional = step.get('config', {}).get('optional', False)

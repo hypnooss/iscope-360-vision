@@ -1,54 +1,71 @@
+1: # Status: ✅ Implementado
 
+## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-## Diagnóstico: Config Changes Não Coletadas (Mesmo com Fallback)
+### Problema resolvido
+Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
 
-### Causa Raiz Identificada
+### Mudanças implementadas
 
-O fallback **não foi acionado** porque a memória retornou 3 registros. O problema está na **ordem das operações**:
+| Componente | Mudança |
+|---|---|
+| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
+| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
+| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
+
+## Correção de Dados — scheduled_hour UTC→BRT
+
+### Problema resolvido
+Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
+
+### Solução aplicada
+1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
+2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
+3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
+
+## Paralelização do run-scheduled-analyses
+
+### Problema resolvido
+A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
+
+### Solução aplicada
+Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
+- `processFirewallComplianceSchedules`
+- `processExternalDomainSchedules`
+- `processAnalyzerSchedules`
+- `processAttackSurfaceSchedules`
+- `processM365AnalyzerSchedules`
+- `processM365ComplianceSchedules`
+
+CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
+
+## Timezone Dinâmico — Preferência do Usuário
+
+### Problema resolvido
+O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
+
+### Solução implementada
+
+| Componente | Mudança |
+|---|---|
+| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
+| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
+| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
+| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
+| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
+
+### Arquitetura
 
 ```text
-1. HTTP Executor (http_request.py):
-   GET /api/v2/log/memory/event/system/?filter=subtype==system&rows=500
-   → Retornou 3 logs (admin login events, NÃO config changes)
-   → 3 > 0, portanto: SEM FALLBACK para disco
-
-2. Agent (tasks.py, linha 293-307):
-   Pre-filter: manter apenas logs com cfgpath
-   → 3 logs → 0 logs (nenhum tinha cfgpath)
-   → Envia 0 config changes para o edge function
-
-3. Edge Function (firewall-analyzer):
-   → Recebe 0 config changes → configChanges: 0
+┌─────────────────────────────────────────────────────┐
+│  Banco: tudo em UTC + coluna timezone por schedule  │
+├─────────────────────────────────────────────────────┤
+│  Frontend: dateUtils usa timezone do perfil         │
+│  ScheduleDialog: converte dinamicamente para UTC    │
+├─────────────────────────────────────────────────────┤
+│  Edge Function: lê timezone de cada registro        │
+│  e calcula offset via Intl.DateTimeFormat           │
+└─────────────────────────────────────────────────────┘
 ```
-
-O endpoint `config_changes` e `auth_events` usam o **mesmo endpoint** (`/api/v2/log/event/system?filter=subtype==system`). Na memória, só havia 3 logs de login admin. Os logs de alteração de config (com `cfgpath`) provavelmente estão apenas no **disco**, mas o fallback nunca foi acionado porque o HTTP executor viu "3 resultados" e considerou sucesso.
-
-### Solução
-
-Mover a lógica de fallback para **depois do pre-filter** em `tasks.py`, especificamente para o step `config_changes`:
-
-**Arquivo: `python-agent/agent/tasks.py`** (linhas ~293-307)
-
-Após o pre-filter do `config_changes` resultar em 0 logs, verificar se o step tem `fallback_path` e, se sim, re-executar o request usando o path de disco. Aplicar o pre-filter novamente no resultado do disco.
-
-```text
-Fluxo corrigido:
-
-1. HTTP Executor: GET memory → 3 logs
-2. Pre-filter cfgpath → 0 logs
-3. fallback_path existe? SIM
-4. HTTP Executor: GET disk (usando fallback_path) → N logs
-5. Pre-filter cfgpath → config changes reais do disco
-6. Envia resultado ao edge function
-```
-
-**Mudanças necessárias em `python-agent/agent/tasks.py`:**
-- Após o bloco de pre-filter (linha ~307), adicionar verificação: se `len(filtered) == 0` e o step config tem `fallback_path`, re-executar o executor com o `fallback_path` como path, aplicar o pre-filter no novo resultado, e usar esse resultado como `step_data`
-- Isso requer acesso ao `executor`, `step` e `context` que já estão disponíveis no escopo
-
-**Mudança na versão:** Incrementar para `1.3.9` em `python-agent/agent/version.py`.
-
-### Arquivos a Modificar
-- `python-agent/agent/tasks.py` — fallback pós-pre-filter para config_changes
-- `python-agent/agent/version.py` — versão 1.3.9
-
