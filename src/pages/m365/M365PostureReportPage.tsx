@@ -11,8 +11,7 @@ import { Button } from '@/components/ui/button';
 import { ScoreGauge } from '@/components/ScoreGauge';
 import { M365CategorySection } from '@/components/m365/posture/M365CategorySection';
 import { Loader2, ArrowLeft, AlertTriangle, FileDown, RefreshCw, XCircle } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { cn } from '@/lib/utils';
 import { CATEGORY_LABELS, M365RiskCategory } from '@/types/m365Insights';
 
