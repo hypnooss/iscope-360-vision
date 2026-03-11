@@ -303,7 +303,7 @@ export default function M365PosturePage() {
     }
   }, [taskStatus?.status]);
 
-  // Handle analysis completion (Graph-API-only, no agent)
+  // Handle analysis completion (history-based tracking — Graph-API-only or post-agent transition)
   useEffect(() => {
     if (!analysisRecord || !activeAnalysisId || activeTaskId) return;
     const s = analysisRecord.status;
@@ -318,6 +318,7 @@ export default function M365PosturePage() {
       setIsRefreshing(false);
       queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
     }
+    // 'partial' and 'running' keep polling — the re-check logic in the backend will resolve to 'completed'
   }, [analysisRecord?.status]);
 
   // 10-minute safety timeout
