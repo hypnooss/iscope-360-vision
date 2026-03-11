@@ -1,71 +1,60 @@
-1: # Status: ✅ Implementado
 
-## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-### Problema resolvido
-Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
+## Corrigir 3 empty states para padrão amber/warning
 
-### Mudanças implementadas
+### Alterações
 
-| Componente | Mudança |
-|---|---|
-| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
-| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
-| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
-| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
-
-## Correção de Dados — scheduled_hour UTC→BRT
-
-### Problema resolvido
-Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
-
-### Solução aplicada
-1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
-2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
-3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
-
-## Paralelização do run-scheduled-analyses
-
-### Problema resolvido
-A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
-
-### Solução aplicada
-Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
-- `processFirewallComplianceSchedules`
-- `processExternalDomainSchedules`
-- `processAnalyzerSchedules`
-- `processAttackSurfaceSchedules`
-- `processM365AnalyzerSchedules`
-- `processM365ComplianceSchedules`
-
-CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
-
-## Timezone Dinâmico — Preferência do Usuário
-
-### Problema resolvido
-O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
-
-### Solução implementada
-
-| Componente | Mudança |
-|---|---|
-| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
-| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
-| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
-| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
-| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
-| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
-
-### Arquitetura
-
-```text
-┌─────────────────────────────────────────────────────┐
-│  Banco: tudo em UTC + coluna timezone por schedule  │
-├─────────────────────────────────────────────────────┤
-│  Frontend: dateUtils usa timezone do perfil         │
-│  ScheduleDialog: converte dinamicamente para UTC    │
-├─────────────────────────────────────────────────────┤
-│  Edge Function: lê timezone de cada registro        │
-│  e calcula offset via Intl.DateTimeFormat           │
-└─────────────────────────────────────────────────────┘
+**1. `src/pages/firewall/AnalyzerDashboardPage.tsx`** (linhas 716-721)
+- Já tem `Card`, `CardContent`, `AlertTriangle` importados
+- Substituir o `<Alert>` por card warning:
+```tsx
+<Card className="border-warning/30 bg-warning/5">
+  <CardContent className="py-10 text-center max-w-md mx-auto">
+    <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-3" />
+    <h3 className="text-base font-semibold mb-1">Nenhuma análise encontrada</h3>
+    <p className="text-sm text-muted-foreground mb-5">Execute a primeira análise para ativar os insights de segurança.</p>
+    <Button onClick={handleTrigger} disabled={triggering || isRunning}>
+      <Play className="w-4 h-4 mr-2" /> Executar Análise
+    </Button>
+  </CardContent>
+</Card>
 ```
+
+**2. `src/pages/m365/M365AnalyzerDashboardPage.tsx`** (linhas 761-770)
+- Já tem `Card`, `CardContent` importados; adicionar `AlertTriangle` ao import de lucide
+- Substituir `glass-card` + `Radar` por:
+```tsx
+<Card className="border-warning/30 bg-warning/5">
+  <CardContent className="py-10 text-center max-w-md mx-auto">
+    <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-3" />
+    <h3 className="text-base font-semibold mb-1">Nenhuma análise encontrada</h3>
+    <p className="text-sm text-muted-foreground mb-5">Execute a primeira análise para ativar o radar de incidentes.</p>
+    <Button onClick={handleTrigger} disabled={triggering}>
+      <Play className="w-4 h-4 mr-2" /> Executar Análise
+    </Button>
+  </CardContent>
+</Card>
+```
+
+**3. `src/pages/external-domain/ExternalDomainCompliancePage.tsx`** (linhas 682-690)
+- Adicionar imports: `AlertTriangle` (lucide), `Card`, `CardContent` (ui/card)
+- Substituir `div` simples por:
+```tsx
+<Card className="border-warning/30 bg-warning/5">
+  <CardContent className="py-10 text-center max-w-md mx-auto">
+    <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-3" />
+    <h3 className="text-base font-semibold mb-1">Nenhuma análise encontrada</h3>
+    <p className="text-sm text-muted-foreground mb-5">Execute a primeira análise para visualizar o relatório de compliance.</p>
+    <Button onClick={handleRefresh} disabled={isRefreshing}>
+      {isRefreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+      Executar Análise
+    </Button>
+  </CardContent>
+</Card>
+```
+
+### Arquivos
+- `src/pages/firewall/AnalyzerDashboardPage.tsx`
+- `src/pages/m365/M365AnalyzerDashboardPage.tsx`
+- `src/pages/external-domain/ExternalDomainCompliancePage.tsx`
+
