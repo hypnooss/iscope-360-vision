@@ -673,19 +673,29 @@ async function correlateCVEs(
     }
   }
 
-  // 2. Match by CPE product names from local cache
-  const productNames = new Set<string>()
+  // 2. Match by CPE vendor+product names from local cache (vendor-aware)
+  const cpeEntries: { vendor: string; product: string }[] = []
   for (const r of enrichedResults) {
     for (const svc of r.services) {
       for (const cpe of svc.cpe || []) {
         const parts = cpe.replace('cpe:2.3:', '').replace('cpe:/', '').split(':')
+        const vendor = (parts[1] || '').replace(/_/g, ' ').toLowerCase()
         const product = (parts[2] || '').replace(/_/g, ' ').toLowerCase()
-        if (product && product.length > 2) productNames.add(product)
+        if (product && product.length > 2) cpeEntries.push({ vendor, product })
       }
     }
   }
 
-  if (productNames.size > 0) {
+  // Deduplicate
+  const seenCpe = new Set<string>()
+  const uniqueCpeEntries = cpeEntries.filter(e => {
+    const key = `${e.vendor}:${e.product}`
+    if (seenCpe.has(key)) return false
+    seenCpe.add(key)
+    return true
+  })
+
+  if (uniqueCpeEntries.length > 0) {
     // Query CVEs from external_domain module in local cache
     const { data: webCves } = await supabase
       .from('cve_cache')
@@ -698,8 +708,10 @@ async function correlateCVEs(
         if (matchMap.has(cve.cve_id)) continue
         const titleLower = (cve.title || '').toLowerCase()
         const cveProducts = (cve.products || []).map((p: any) => String(p).toLowerCase())
-        for (const product of productNames) {
-          if (titleLower.includes(product) || cveProducts.some((cp: string) => cp.includes(product))) {
+        for (const entry of uniqueCpeEntries) {
+          const productMatch = titleLower.includes(entry.product) || cveProducts.some((cp: string) => cp.includes(entry.product))
+          const vendorMatch = titleLower.includes(entry.vendor) || cveProducts.some((cp: string) => cp.includes(entry.vendor))
+          if (productMatch && vendorMatch) {
             matchMap.set(cve.cve_id, cve)
             break
           }
