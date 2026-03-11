@@ -968,7 +968,7 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground">Período Fim</p>
                       <p className="font-medium">
                         {selectedSnapshot.period_end
-                          ? format(new Date(selectedSnapshot.period_end), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+                          ? formatDateTimeBR(selectedSnapshot.period_end)
                           : '-'}
                       </p>
                     </div>
