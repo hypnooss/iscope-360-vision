@@ -337,6 +337,18 @@ Deno.serve(async (req) => {
 
       for (const schedule of dueAttackSurfaceSchedules) {
         try {
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+            schedule.id
+          );
+
+          if (!schedule.next_run_at) {
+            await supabase.from('attack_surface_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+            console.log(`[run-scheduled-analyses] Recalculated next_run_at for attack surface schedule ${schedule.id}: ${nextRunAt}`);
+            continue;
+          }
+
           const triggerUrl = `${supabaseUrl}/functions/v1/run-attack-surface-queue`;
           const response = await fetch(triggerUrl, {
             method: 'POST',
@@ -352,11 +364,6 @@ Deno.serve(async (req) => {
             attackSurfaceErrors++;
           }
 
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
           await supabase.from('attack_surface_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
           console.log(`[run-scheduled-analyses] Updated next_run_at for attack surface schedule ${schedule.id}: ${nextRunAt}`);
         } catch (err) {
