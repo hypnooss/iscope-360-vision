@@ -151,7 +151,6 @@ export default function M365ExecutionsPage() {
   const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
   const [postureCancelOpen, setPostureCancelOpen] = useState(false);
   const [postureToCancel, setPostureToCancel] = useState<PostureHistory | null>(null);
-  const [postureToCancel, setPostureToCancel] = useState<PostureHistory | null>(null);
 
   const { isPreviewMode, previewTarget } = usePreview();
   const { effectiveRole } = useEffectiveAuth();
