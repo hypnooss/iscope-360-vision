@@ -277,12 +277,23 @@ Deno.serve(async (req) => {
 
       for (const schedule of dueAnalyzerSchedules) {
         try {
-          // Pre-check agent online
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+            schedule.id
+          );
+
+          if (!schedule.next_run_at) {
+            await supabase.from('analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+            console.log(`[run-scheduled-analyses] Recalculated next_run_at for analyzer schedule ${schedule.id}: ${nextRunAt}`);
+            continue;
+          }
+
           const { data: fw } = await supabase.from('firewalls').select('agent_id, name').eq('id', schedule.firewall_id).single();
           const agentStatus = await isAgentOnline(supabase, fw?.agent_id || null);
 
           if (!agentStatus.online) {
-            console.log(`[run-scheduled-analyses] Skipping analyzer for ${fw?.name || schedule.firewall_id}: agent ${agentStatus.agentName} offline (last_seen: ${agentStatus.lastSeen})`);
+            console.log(`[run-scheduled-analyses] Skipping analyzer for ${fw?.name || schedule.firewall_id}: agent ${agentStatus.agentName} offline`);
             analyzerSkipped++;
           } else {
             const triggerUrl = `${supabaseUrl}/functions/v1/trigger-firewall-analyzer`;
@@ -296,11 +307,6 @@ Deno.serve(async (req) => {
             else { analyzerErrors++; }
           }
 
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
           await supabase.from('analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
         } catch (err) {
           console.error(`[run-scheduled-analyses] Analyzer schedule error:`, err);
