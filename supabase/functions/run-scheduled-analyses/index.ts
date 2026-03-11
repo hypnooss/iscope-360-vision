@@ -125,8 +125,24 @@ Deno.serve(async (req) => {
     let errors = 0;
     let skippedOffline = 0;
 
-    for (const schedule of dueSchedules) {
+    for (const schedule of (dueSchedules || [])) {
       try {
+        // Always calculate next_run_at first
+        const nextRunAt = calculateNextRunAt(
+          schedule.frequency,
+          schedule.scheduled_hour ?? 0,
+          schedule.scheduled_day_of_week ?? 1,
+          schedule.scheduled_day_of_month ?? 1,
+          schedule.id
+        );
+
+        // If next_run_at was NULL, just recalculate without triggering
+        if (!schedule.next_run_at) {
+          await supabase.from('analysis_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+          console.log(`[run-scheduled-analyses] Recalculated next_run_at for schedule ${schedule.id}: ${nextRunAt}`);
+          continue;
+        }
+
         // Pre-check: resolve agent and check online status
         const { data: fw } = await supabase.from('firewalls').select('agent_id, name').eq('id', schedule.firewall_id).single();
         const agentStatus = await isAgentOnline(supabase, fw?.agent_id || null);
@@ -157,20 +173,8 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Always update next_run_at (even when skipped)
-        const nextRunAt = calculateNextRunAt(
-          schedule.frequency,
-          schedule.scheduled_hour ?? 0,
-          schedule.scheduled_day_of_week ?? 1,
-          schedule.scheduled_day_of_month ?? 1,
-          schedule.id
-        );
-
-        await supabase
-          .from('analysis_schedules')
-          .update({ next_run_at: nextRunAt })
-          .eq('id', schedule.id);
-
+        // Update next_run_at
+        await supabase.from('analysis_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
         console.log(`[run-scheduled-analyses] Updated next_run_at for schedule ${schedule.id}: ${nextRunAt}`);
       } catch (err) {
         console.error(`[run-scheduled-analyses] Error processing schedule ${schedule.id}:`, err);
