@@ -146,7 +146,7 @@ export function AdminActivityDialog({
                         })}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {format(new Date(log.created_at), "HH:mm", { locale: ptBR })}
+                        {format(toBRT(new Date(log.created_at)), "HH:mm", { locale: ptBR })}
                       </p>
                     </div>
                   </div>

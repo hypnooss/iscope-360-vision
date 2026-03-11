@@ -162,7 +162,7 @@ export default function EntraIdSecurityInsightsPage() {
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Calendar className="w-3.5 h-3.5" />
                     <span>
-                      {format(new Date(analyzedPeriod.from), "dd MMM", { locale: ptBR })} - {format(new Date(analyzedPeriod.to), "dd MMM yyyy", { locale: ptBR })}
+                      {format(toBRT(new Date(analyzedPeriod.from)), "dd MMM", { locale: ptBR })} - {format(toBRT(new Date(analyzedPeriod.to)), "dd MMM yyyy", { locale: ptBR })}
                     </span>
                   </div>
                 )}

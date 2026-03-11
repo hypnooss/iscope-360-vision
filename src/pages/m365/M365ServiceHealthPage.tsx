@@ -193,7 +193,7 @@ function M365ServiceHealthPage() {
   };
 
   const lastUpdatedLabel = dataUpdatedAt
-    ? format(new Date(dataUpdatedAt), "dd/MM/yy HH:mm", { locale: ptBR })
+    ? formatDateTimeBR(dataUpdatedAt)
     : null;
 
   return (
