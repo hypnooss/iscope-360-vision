@@ -850,7 +850,7 @@ export default function ExternalDomainExecutionsPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">Criado em</p>
                       <p className="font-medium">
-                        {format(new Date(selectedAnalysis.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                        {formatDateTimeFullBR(selectedAnalysis.created_at)}
                       </p>
                     </div>
                   </div>
