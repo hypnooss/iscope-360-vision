@@ -652,9 +652,9 @@ export default function M365PosturePage() {
 
         {/* No tenants state */}
         {tenants.length === 0 && (
-          <Card className="glass-card">
+          <Card className="border-warning/30 bg-warning/5">
             <CardContent className="p-12 text-center">
-              <AlertTriangle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <AlertTriangle className="w-12 h-12 text-warning mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-foreground mb-2">
                 Nenhum tenant disponível
               </h3>
