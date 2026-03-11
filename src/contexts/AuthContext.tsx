@@ -11,7 +11,7 @@ interface UserProfile {
   email: string;
   full_name: string | null;
   avatar_url: string | null;
-  timezone: string;
+  timezone: string; // default: 'UTC'
 }
 
 interface ModulePermissions {
