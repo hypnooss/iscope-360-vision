@@ -54,16 +54,30 @@ interface AgentTask {
   completed_at: string | null;
 }
 
+interface AnalyzerSnapshot {
+  id: string;
+  tenant_record_id: string;
+  client_id: string;
+  status: string;
+  score: number | null;
+  summary: any;
+  insights: any;
+  period_start: string | null;
+  period_end: string | null;
+  agent_task_id: string | null;
+  created_at: string;
+}
+
 interface UnifiedExecution {
   id: string;
-  source: 'posture' | 'agent_task';
+  source: 'posture' | 'agent_task' | 'analyzer_snapshot';
   tenantId: string;
   agentId: string | null;
   type: 'posture_analysis' | 'm365_powershell' | 'm365_graph_api' | 'm365_analyzer';
   status: string;
   duration: string;
   createdAt: string;
-  original: PostureHistory | AgentTask;
+  original: PostureHistory | AgentTask | AnalyzerSnapshot;
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -129,8 +143,10 @@ export default function M365ExecutionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedExecution, setSelectedExecution] = useState<PostureHistory | null>(null);
   const [selectedTask, setSelectedTask] = useState<AgentTask | null>(null);
+  const [selectedSnapshot, setSelectedSnapshot] = useState<AnalyzerSnapshot | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
+  const [snapshotDetailsOpen, setSnapshotDetailsOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
   const [postureCancelOpen, setPostureCancelOpen] = useState(false);
@@ -262,6 +278,34 @@ export default function M365ExecutionsPage() {
     },
   });
 
+  // Analyzer Snapshots (Edge Function side of M365 Analyzer)
+  const { data: analyzerSnapshots = [], isLoading: isLoadingSnapshots, refetch: refetchSnapshots } = useQuery({
+    queryKey: ['m365-analyzer-snapshots', statusFilter, timeFilter, workspaceIds],
+    queryFn: async () => {
+      const startTime = getTimeFilterDate();
+      let query = supabase
+        .from('m365_analyzer_snapshots')
+        .select('id, tenant_record_id, client_id, status, score, summary, insights, period_start, period_end, agent_task_id, created_at')
+        .gte('created_at', startTime.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (workspaceIds && workspaceIds.length > 0) {
+        query = query.in('client_id', workspaceIds);
+      }
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data || []) as AnalyzerSnapshot[];
+    },
+    refetchInterval: (query) => {
+      const data = query.state.data as AnalyzerSnapshot[] | undefined;
+      const hasActive = data?.some(s => s.status === 'pending' || s.status === 'processing');
+      return hasActive ? 10000 : false;
+    },
+  });
+
   const getDuration = (item: { started_at: string | null; completed_at: string | null; execution_time_ms?: number | null }) => {
     if ('execution_time_ms' in item && item.execution_time_ms) {
       const ms = item.execution_time_ms;
@@ -304,10 +348,22 @@ export default function M365ExecutionsPage() {
       original: task,
     }));
 
-    return [...postureItems, ...taskItems].sort(
+    const snapshotItems: UnifiedExecution[] = analyzerSnapshots.map(snap => ({
+      id: snap.id,
+      source: 'analyzer_snapshot' as const,
+      tenantId: snap.tenant_record_id,
+      agentId: null,
+      type: 'm365_graph_api' as const,
+      status: snap.status === 'processing' ? 'running' : snap.status,
+      duration: '-',
+      createdAt: snap.created_at,
+      original: snap,
+    }));
+
+    return [...postureItems, ...taskItems, ...snapshotItems].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [executions, agentTasks]);
+  }, [executions, agentTasks, analyzerSnapshots]);
 
   const hasActive = unifiedExecutions.some(e => e.status === 'running' || e.status === 'pending' || e.status === 'partial');
 
@@ -358,6 +414,9 @@ export default function M365ExecutionsPage() {
     if (item.source === 'posture') {
       setSelectedExecution(item.original as PostureHistory);
       setDetailsOpen(true);
+    } else if (item.source === 'analyzer_snapshot') {
+      setSelectedSnapshot(item.original as AnalyzerSnapshot);
+      setSnapshotDetailsOpen(true);
     } else {
       setSelectedTask(item.original as AgentTask);
       setTaskDetailsOpen(true);
@@ -440,9 +499,10 @@ export default function M365ExecutionsPage() {
   const handleRefresh = () => {
     refetchPosture();
     refetchTasks();
+    refetchSnapshots();
   };
 
-  const isLoading = isLoadingPosture || isLoadingTasks;
+  const isLoading = isLoadingPosture || isLoadingTasks || isLoadingSnapshots;
 
   return (
     <AppLayout>
@@ -615,7 +675,9 @@ export default function M365ExecutionsPage() {
                           {getTenantLabel(item.tenantId)}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {item.type === 'posture_analysis' ? 'Edge Function' : item.agentId ? getAgentName(item.agentId) : '-'}
+                          {item.source === 'posture' || item.source === 'analyzer_snapshot'
+                            ? <span className="flex items-center gap-1"><Cloud className="w-3 h-3" /> Edge Function</span>
+                            : item.agentId ? <span className="flex items-center gap-1"><Terminal className="w-3 h-3" /> {getAgentName(item.agentId)}</span> : '-'}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={cn('gap-1', tConfig.color)}>
@@ -850,6 +912,106 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground mb-2">Erro</p>
                       <pre className="p-3 bg-destructive/10 rounded text-xs overflow-auto max-h-40 text-destructive">
                         {selectedTask.error_message}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Analyzer Snapshot Details Dialog */}
+        <Dialog open={snapshotDetailsOpen} onOpenChange={setSnapshotDetailsOpen}>
+          <DialogContent className="max-w-2xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Cloud className="w-5 h-5" />
+                Detalhes do Snapshot — M365 Analyzer
+              </DialogTitle>
+            </DialogHeader>
+            {selectedSnapshot && (
+              <ScrollArea className="max-h-[60vh] pr-4">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Tenant</p>
+                      <p className="font-medium">{getTenantLabel(selectedSnapshot.tenant_record_id)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Workspace</p>
+                      <p className="font-medium">{getClientName(selectedSnapshot.client_id)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Status</p>
+                      <Badge variant="outline" className={cn('gap-1', statusConfig[selectedSnapshot.status === 'processing' ? 'running' : selectedSnapshot.status]?.color)}>
+                        {statusConfig[selectedSnapshot.status === 'processing' ? 'running' : selectedSnapshot.status]?.icon}
+                        {statusConfig[selectedSnapshot.status === 'processing' ? 'running' : selectedSnapshot.status]?.label}
+                      </Badge>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Score</p>
+                      <p className="font-medium">
+                        {selectedSnapshot.score !== null ? `${selectedSnapshot.score}%` : '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Período Início</p>
+                      <p className="font-medium">
+                        {selectedSnapshot.period_start
+                          ? format(new Date(selectedSnapshot.period_start), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+                          : '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Período Fim</p>
+                      <p className="font-medium">
+                        {selectedSnapshot.period_end
+                          ? format(new Date(selectedSnapshot.period_end), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+                          : '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Criado em</p>
+                      <p className="font-medium">
+                        {format(new Date(selectedSnapshot.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedSnapshot.summary && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Resumo de Severidade</p>
+                      <div className="grid grid-cols-5 gap-2">
+                        <div className="p-2 bg-red-500/10 rounded text-center">
+                          <p className="text-lg font-bold text-red-500">{selectedSnapshot.summary.critical || 0}</p>
+                          <p className="text-xs text-muted-foreground">Crítico</p>
+                        </div>
+                        <div className="p-2 bg-orange-500/10 rounded text-center">
+                          <p className="text-lg font-bold text-orange-500">{selectedSnapshot.summary.high || 0}</p>
+                          <p className="text-xs text-muted-foreground">Alto</p>
+                        </div>
+                        <div className="p-2 bg-yellow-500/10 rounded text-center">
+                          <p className="text-lg font-bold text-yellow-500">{selectedSnapshot.summary.medium || 0}</p>
+                          <p className="text-xs text-muted-foreground">Médio</p>
+                        </div>
+                        <div className="p-2 bg-blue-500/10 rounded text-center">
+                          <p className="text-lg font-bold text-blue-500">{selectedSnapshot.summary.low || 0}</p>
+                          <p className="text-xs text-muted-foreground">Baixo</p>
+                        </div>
+                        <div className="p-2 bg-muted rounded text-center">
+                          <p className="text-lg font-bold">{selectedSnapshot.summary.info || 0}</p>
+                          <p className="text-xs text-muted-foreground">Info</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedSnapshot.insights && Array.isArray(selectedSnapshot.insights) && selectedSnapshot.insights.length > 0 && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Insights ({selectedSnapshot.insights.length})</p>
+                      <pre className="p-3 bg-muted rounded text-xs overflow-auto max-h-60 font-mono">
+                        {JSON.stringify(selectedSnapshot.insights.slice(0, 10), null, 2)}
                       </pre>
                     </div>
                   )}
