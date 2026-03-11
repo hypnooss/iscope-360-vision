@@ -545,14 +545,17 @@ export default function FirewallCompliancePage() {
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
         ) : !report ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <p>Nenhuma análise encontrada para este firewall.</p>
-            <p className="text-sm mt-2">Execute uma nova análise para ver os resultados.</p>
-            <Button className="mt-4" onClick={handleRefresh} disabled={isRefreshing}>
-              {isRefreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
-              Analisar agora
-            </Button>
-          </div>
+          <Card className="glass-card">
+            <CardContent className="py-12 text-center">
+              <Shield className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">Nenhuma análise encontrada</h3>
+              <p className="text-muted-foreground mb-4">Execute a primeira análise para visualizar o relatório de compliance.</p>
+              <Button onClick={handleRefresh} disabled={isRefreshing}>
+                {isRefreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                Executar Análise
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <Dashboard
             report={report}
