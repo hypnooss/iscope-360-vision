@@ -144,11 +144,15 @@ export default function M365PosturePage() {
     queryKey: ['m365-active-analysis', selectedTenantId],
     queryFn: async () => {
       if (!selectedTenantId) return null;
+      // Only detect recent analyses (last 30 min) to avoid stale partial records causing flickering
+      const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from('m365_posture_history')
         .select('id, status, created_at')
         .eq('tenant_record_id', selectedTenantId)
-        .in('status', ['pending', 'partial'])
+        .in('status', ['pending', 'running', 'partial'])
+        .is('completed_at', null)
+        .gte('created_at', cutoff)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
