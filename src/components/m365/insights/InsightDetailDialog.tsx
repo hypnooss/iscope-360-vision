@@ -18,8 +18,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { SecurityInsight, SEVERITY_CONFIG, CATEGORY_LABELS } from '@/types/securityInsights';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { formatDateTimeLongBR } from '@/lib/dateUtils';
 
 interface InsightDetailDialogProps {
   insight: SecurityInsight;
