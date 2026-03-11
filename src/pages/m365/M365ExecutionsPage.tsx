@@ -143,11 +143,14 @@ export default function M365ExecutionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedExecution, setSelectedExecution] = useState<PostureHistory | null>(null);
   const [selectedTask, setSelectedTask] = useState<AgentTask | null>(null);
+  const [selectedSnapshot, setSelectedSnapshot] = useState<AnalyzerSnapshot | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
+  const [snapshotDetailsOpen, setSnapshotDetailsOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
   const [postureCancelOpen, setPostureCancelOpen] = useState(false);
+  const [postureToCancel, setPostureToCancel] = useState<PostureHistory | null>(null);
   const [postureToCancel, setPostureToCancel] = useState<PostureHistory | null>(null);
 
   const { isPreviewMode, previewTarget } = usePreview();
