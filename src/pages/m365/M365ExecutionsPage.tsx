@@ -414,6 +414,9 @@ export default function M365ExecutionsPage() {
     if (item.source === 'posture') {
       setSelectedExecution(item.original as PostureHistory);
       setDetailsOpen(true);
+    } else if (item.source === 'analyzer_snapshot') {
+      setSelectedSnapshot(item.original as AnalyzerSnapshot);
+      setSnapshotDetailsOpen(true);
     } else {
       setSelectedTask(item.original as AgentTask);
       setTaskDetailsOpen(true);
