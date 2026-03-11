@@ -1013,7 +1013,7 @@ export default function ExternalDomainExecutionsPage() {
                   {selectedTask.started_at &&
                 <div>
                       <p className="text-sm text-muted-foreground">Iniciado em</p>
-                      <p className="text-sm">{format(new Date(selectedTask.started_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
+                      <p className="text-sm">{formatDateTimeFullBR(selectedTask.started_at)}</p>
                     </div>
                 }
                   {selectedTask.completed_at &&
