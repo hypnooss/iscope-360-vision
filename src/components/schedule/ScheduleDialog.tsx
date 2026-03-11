@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
