@@ -12,7 +12,7 @@ import { ComplianceReport, ComplianceCategory } from '@/types/compliance';
 import type { CorrectionGuideData } from '@/components/pdf/ExternalDomainPDF';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, Play, Clock, Building2, FileText, RefreshCw, Settings, ChevronDown, FileDown, ClipboardList, Shield } from 'lucide-react';
+import { Loader2, Play, Clock, Building2, FileText, RefreshCw, Settings, ChevronDown, FileDown, ClipboardList, AlertTriangle } from 'lucide-react';
 import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
 import { FirewallPDF } from '@/components/pdf/FirewallPDF';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -545,11 +545,11 @@ export default function FirewallCompliancePage() {
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
         ) : !report ? (
-          <Card className="glass-card">
-            <CardContent className="py-12 text-center">
-              <Shield className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">Nenhuma análise encontrada</h3>
-              <p className="text-muted-foreground mb-4">Execute a primeira análise para visualizar o relatório de compliance.</p>
+          <Card className="border-warning/30 bg-warning/5">
+            <CardContent className="py-10 text-center max-w-md mx-auto">
+              <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-3" />
+              <h3 className="text-base font-semibold text-foreground mb-2">Nenhuma análise encontrada</h3>
+              <p className="text-sm text-muted-foreground mb-5">Execute a primeira análise para visualizar o relatório de compliance.</p>
               <Button onClick={handleRefresh} disabled={isRefreshing}>
                 {isRefreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
                 Executar Análise
