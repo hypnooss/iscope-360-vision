@@ -259,7 +259,7 @@ Deno.serve(async (req) => {
     // ========================================================
     const { data: dueAnalyzerSchedules, error: analyzerFetchError } = await supabase
       .from('analyzer_schedules')
-      .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
       .eq('is_active', true)
       .not('frequency', 'eq', 'manual')
       .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
