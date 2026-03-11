@@ -239,9 +239,7 @@ export function ScheduleDialog({
           {/* Next run preview */}
           <div className="rounded-md bg-muted/20 border border-border/50 px-3 py-2 text-sm text-muted-foreground">
             <span className="font-medium text-foreground">Próxima execução estimada: </span>
-            {calculateNextRun(scheduleFreq, scheduleHour, scheduleDayOfWeek, scheduleDayOfMonth).toLocaleString('pt-BR', {
-              day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-            })}
+            {formatDateTimeBR(calculateNextRun(scheduleFreq, scheduleHour, scheduleDayOfWeek, scheduleDayOfMonth))}
           </div>
         </div>
 
