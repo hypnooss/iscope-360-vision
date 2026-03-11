@@ -241,22 +241,65 @@ export default function M365PosturePage() {
   });
 
   // Handle task completion (agent-based)
+  // When agent task completes, check if the history record is also done.
+  // If not (still running/partial), transition to tracking the history record.
   useEffect(() => {
     if (!taskStatus || !activeTaskId) return;
     const s = taskStatus.status;
     if (s === 'completed' || s === 'failed' || s === 'timeout') {
-      if (s === 'completed') {
-        toast({ title: 'Análise concluída', description: 'A análise de compliance foi concluída com sucesso.' });
-      } else if (s === 'failed') {
+      if (s === 'failed') {
         toast({ title: 'Análise falhou', description: taskStatus.error_message || 'Erro desconhecido', variant: 'destructive' });
-      } else {
-        toast({ title: 'Timeout', description: 'A análise expirou.', variant: 'destructive' });
+        setActiveTaskId(null);
+        setActiveAnalysisId(null);
+        setTaskStartedAt(null);
+        setIsRefreshing(false);
+        queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
+        return;
       }
-      setActiveTaskId(null);
-      setActiveAnalysisId(null);
-      setTaskStartedAt(null);
-      setIsRefreshing(false);
-      queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
+      if (s === 'timeout') {
+        toast({ title: 'Timeout', description: 'A tarefa do agente expirou.', variant: 'destructive' });
+        setActiveTaskId(null);
+        setActiveAnalysisId(null);
+        setTaskStartedAt(null);
+        setIsRefreshing(false);
+        queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
+        return;
+      }
+      // Agent completed — check if history record is also completed
+      (async () => {
+        try {
+          const { data: history } = await supabase
+            .from('m365_posture_history')
+            .select('id, status')
+            .eq('tenant_record_id', selectedTenantId!)
+            .in('status', ['pending', 'running', 'partial'])
+            .is('completed_at', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          setActiveTaskId(null); // Stop polling agent_tasks
+
+          if (history && history.status !== 'completed') {
+            // History not done yet — transition to tracking history record
+            console.log(`[M365PosturePage] Agent done but history still ${history.status}, switching to history tracking: ${history.id}`);
+            setActiveAnalysisId(history.id);
+          } else {
+            // History also completed — all done
+            toast({ title: 'Análise concluída', description: 'A análise de compliance foi concluída com sucesso.' });
+            setActiveAnalysisId(null);
+            setTaskStartedAt(null);
+            setIsRefreshing(false);
+            queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
+          }
+        } catch {
+          setActiveTaskId(null);
+          setActiveAnalysisId(null);
+          setTaskStartedAt(null);
+          setIsRefreshing(false);
+          queryClient.invalidateQueries({ queryKey: [M365_POSTURE_QUERY_KEY, selectedTenantId] });
+        }
+      })();
     }
   }, [taskStatus?.status]);
 
