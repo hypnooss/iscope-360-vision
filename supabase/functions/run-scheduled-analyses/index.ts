@@ -207,6 +207,18 @@ Deno.serve(async (req) => {
 
       for (const schedule of dueDomainSchedules) {
         try {
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+            schedule.id
+          );
+
+          if (!schedule.next_run_at) {
+            await supabase.from('external_domain_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+            console.log(`[run-scheduled-analyses] Recalculated next_run_at for domain schedule ${schedule.id}: ${nextRunAt}`);
+            continue;
+          }
+
           // Pre-check agent online
           const { data: dom } = await supabase.from('external_domains').select('agent_id, domain').eq('id', schedule.domain_id).single();
           const agentStatus = await isAgentOnline(supabase, dom?.agent_id || null);
@@ -218,15 +230,10 @@ Deno.serve(async (req) => {
             const triggerUrl = `${supabaseUrl}/functions/v1/trigger-external-domain-analysis`;
             const response = await fetch(triggerUrl, {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${supabaseServiceKey}`,
-              },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
               body: JSON.stringify({ domain_id: schedule.domain_id }),
             });
-
             const result = await response.json();
-
             if (result.success || response.status === 409 || result.code === 'ALREADY_RUNNING') {
               console.log(`[run-scheduled-analyses] Triggered domain ${schedule.domain_id}: ${result.message || 'success'}`);
               domainTriggered++;
@@ -236,19 +243,7 @@ Deno.serve(async (req) => {
             }
           }
 
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency,
-            schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1,
-            schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
-
-          await supabase
-            .from('external_domain_schedules')
-            .update({ next_run_at: nextRunAt })
-            .eq('id', schedule.id);
-
+          await supabase.from('external_domain_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
           console.log(`[run-scheduled-analyses] Updated next_run_at for domain schedule ${schedule.id}: ${nextRunAt}`);
         } catch (err) {
           console.error(`[run-scheduled-analyses] Error processing domain schedule ${schedule.id}:`, err);
