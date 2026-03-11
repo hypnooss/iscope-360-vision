@@ -653,7 +653,7 @@ export default function TaskExecutionsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Criado em</p>
-                    <p className="text-sm">{format(new Date(selectedTask.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
+                    <p className="text-sm">{formatDateTimeFullBR(selectedTask.created_at)}</p>
                   </div>
                   {selectedTask.started_at && (
                     <div>
