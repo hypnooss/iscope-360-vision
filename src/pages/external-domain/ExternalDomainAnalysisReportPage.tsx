@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -645,7 +646,7 @@ export default function ExternalDomainAnalysisReportPage() {
             <div>
               <h1 className="text-3xl font-bold text-foreground mb-2">Análise de Compliance</h1>
               <p className="text-muted-foreground">
-                Relatório gerado em {new Date(generatedAt || report.generatedAt).toLocaleString('pt-BR')}
+                Relatório gerado em {formatDateTimeBR(generatedAt || report.generatedAt)}
               </p>
             </div>
 

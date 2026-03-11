@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { formatDateTimeMediumBR } from '@/lib/dateUtils';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -84,7 +85,7 @@ export default function EntraIdPage() {
                 <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Conectado</Badge>
                 {data?.analyzedAt && (
                   <span className="text-xs text-muted-foreground">
-                    Atualizado em {format(new Date(data.analyzedAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
+                    Atualizado em {formatDateTimeMediumBR(data.analyzedAt)}
                   </span>
                 )}
               </div>

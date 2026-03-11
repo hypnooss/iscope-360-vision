@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { formatShortDateTimeBR } from '@/lib/dateUtils';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -625,9 +626,9 @@ export default function M365AnalyzerDashboardPage() {
               <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground md:ml-4">
                 {snapshot.period_start && snapshot.period_end && (
                   <span>
-                    {new Date(snapshot.period_start).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    {formatShortDateTimeBR(snapshot.period_start)}
                     {' → '}
-                    {new Date(snapshot.period_end).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    {formatShortDateTimeBR(snapshot.period_end)}
                   </span>
                 )}
                 {(snapshot as any).snapshotCount && (

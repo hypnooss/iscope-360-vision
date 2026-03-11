@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toBRT } from '@/lib/dateUtils';
 
 interface Administrator {
   id: string;
@@ -145,7 +146,7 @@ export function AdminActivityDialog({
                         })}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {format(new Date(log.created_at), "HH:mm", { locale: ptBR })}
+                        {format(toBRT(new Date(log.created_at)), "HH:mm", { locale: ptBR })}
                       </p>
                     </div>
                   </div>

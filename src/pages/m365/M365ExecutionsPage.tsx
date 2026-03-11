@@ -21,6 +21,7 @@ import { Activity, Clock, CheckCircle2, XCircle, Loader2, RefreshCw, Eye, Search
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateTimeFullBR, formatDateTimeBR } from '@/lib/dateUtils';
 
 interface PostureHistory {
   id: string;
@@ -769,7 +770,7 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground">Iniciado em</p>
                       <p className="font-medium">
                         {selectedExecution.started_at
-                          ? format(new Date(selectedExecution.started_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })
+                          ? formatDateTimeFullBR(selectedExecution.started_at)
                           : '-'}
                       </p>
                     </div>
@@ -777,7 +778,7 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground">Concluído em</p>
                       <p className="font-medium">
                         {selectedExecution.completed_at
-                          ? format(new Date(selectedExecution.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })
+                          ? formatDateTimeFullBR(selectedExecution.completed_at)
                           : '-'}
                       </p>
                     </div>
@@ -875,7 +876,7 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground">Iniciado em</p>
                       <p className="font-medium">
                         {selectedTask.started_at
-                          ? format(new Date(selectedTask.started_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })
+                          ? formatDateTimeFullBR(selectedTask.started_at)
                           : '-'}
                       </p>
                     </div>
@@ -883,7 +884,7 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground">Concluído em</p>
                       <p className="font-medium">
                         {selectedTask.completed_at
-                          ? format(new Date(selectedTask.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })
+                          ? formatDateTimeFullBR(selectedTask.completed_at)
                           : '-'}
                       </p>
                     </div>
@@ -959,7 +960,7 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground">Período Início</p>
                       <p className="font-medium">
                         {selectedSnapshot.period_start
-                          ? format(new Date(selectedSnapshot.period_start), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+                          ? formatDateTimeBR(selectedSnapshot.period_start)
                           : '-'}
                       </p>
                     </div>
@@ -967,14 +968,14 @@ export default function M365ExecutionsPage() {
                       <p className="text-sm text-muted-foreground">Período Fim</p>
                       <p className="font-medium">
                         {selectedSnapshot.period_end
-                          ? format(new Date(selectedSnapshot.period_end), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+                          ? formatDateTimeBR(selectedSnapshot.period_end)
                           : '-'}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Criado em</p>
                       <p className="font-medium">
-                        {format(new Date(selectedSnapshot.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                        {formatDateTimeFullBR(selectedSnapshot.created_at)}
                       </p>
                     </div>
                   </div>

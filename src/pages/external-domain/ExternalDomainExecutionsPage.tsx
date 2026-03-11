@@ -20,6 +20,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Activity, Clock, CheckCircle2, XCircle, AlertTriangle, Timer, Loader2, RefreshCw, Eye, Ban, Search, Globe, Cloud, Terminal, Radar, Building2 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateTimeFullBR } from '@/lib/dateUtils';
 import { toast } from 'sonner';
 import { Json } from '@/integrations/supabase/types';
 
@@ -849,7 +850,7 @@ export default function ExternalDomainExecutionsPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">Criado em</p>
                       <p className="font-medium">
-                        {format(new Date(selectedAnalysis.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                        {formatDateTimeFullBR(selectedAnalysis.created_at)}
                       </p>
                     </div>
                   </div>
@@ -905,14 +906,14 @@ export default function ExternalDomainExecutionsPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">Criado em</p>
                       <p className="font-medium">
-                        {format(new Date(selectedSnapshot.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                        {formatDateTimeFullBR(selectedSnapshot.created_at)}
                       </p>
                     </div>
                     {selectedSnapshot.completed_at &&
                   <div>
                         <p className="text-sm text-muted-foreground">Concluído em</p>
                         <p className="font-medium">
-                          {format(new Date(selectedSnapshot.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                          {formatDateTimeFullBR(selectedSnapshot.completed_at)}
                         </p>
                       </div>
                   }
@@ -1007,18 +1008,18 @@ export default function ExternalDomainExecutionsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Criado em</p>
-                    <p className="text-sm">{format(new Date(selectedTask.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
+                    <p className="text-sm">{formatDateTimeFullBR(selectedTask.created_at)}</p>
                   </div>
                   {selectedTask.started_at &&
                 <div>
                       <p className="text-sm text-muted-foreground">Iniciado em</p>
-                      <p className="text-sm">{format(new Date(selectedTask.started_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
+                      <p className="text-sm">{formatDateTimeFullBR(selectedTask.started_at)}</p>
                     </div>
                 }
                   {selectedTask.completed_at &&
                 <div>
                       <p className="text-sm text-muted-foreground">Concluído em</p>
-                      <p className="text-sm">{format(new Date(selectedTask.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
+                      <p className="text-sm">{formatDateTimeFullBR(selectedTask.completed_at)}</p>
                     </div>
                 }
                 </div>

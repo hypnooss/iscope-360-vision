@@ -11,8 +11,7 @@ import { Button } from '@/components/ui/button';
 import { ScoreGauge } from '@/components/ScoreGauge';
 import { M365CategorySection } from '@/components/m365/posture/M365CategorySection';
 import { Loader2, ArrowLeft, AlertTriangle, FileDown, RefreshCw, XCircle } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { cn } from '@/lib/utils';
 import { CATEGORY_LABELS, M365RiskCategory } from '@/types/m365Insights';
 
@@ -559,7 +558,7 @@ export default function M365PostureReportPage() {
               <div>
                 <h1 className="text-3xl font-bold text-foreground mb-2">Análise de Compliance</h1>
                 <p className="text-muted-foreground">
-                  Relatório gerado em {format(new Date(reportData.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  Relatório gerado em {formatDateTimeBR(reportData.created_at)}
                 </p>
               </div>
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -244,7 +245,7 @@ export default function EntraIdAnalysisPage() {
                 <CardContent className="py-8 flex flex-col items-center">
                   <ScoreGauge score={report.overallScore} />
                   <p className="text-sm text-muted-foreground mt-4">
-                    Gerado em {new Date(report.generatedAt).toLocaleString('pt-BR')}
+                    Gerado em {formatDateTimeBR(report.generatedAt)}
                   </p>
                 </CardContent>
               </Card>

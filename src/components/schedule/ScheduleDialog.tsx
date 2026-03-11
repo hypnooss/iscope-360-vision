@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -33,30 +34,46 @@ interface ScheduleDialogProps {
   allowHourly?: boolean;
 }
 
+/**
+ * Calculate next run date. The `hour` parameter is in BRT (UTC-3).
+ * We convert to UTC for the actual timestamp.
+ */
 function calculateNextRun(freq: string, hour: number, dayOfWeek: number, dayOfMonth: number): Date {
   const now = new Date();
-  const next = new Date();
+  // Convert BRT hour to UTC hour
+  const hourUTC = (hour + 3) % 24;
+  // If hour+3 overflows past midnight, we may need to adjust the day
+  const dayOffset = (hour + 3) >= 24 ? 1 : 0;
+
   if (freq === 'hourly') {
-    next.setMinutes(0, 0, 0);
-    next.setTime(next.getTime() + 60 * 60 * 1000);
-  } else {
-    next.setMinutes(0, 0, 0);
-    next.setHours(hour);
-    if (freq === 'daily') {
-      if (next <= now) next.setDate(next.getDate() + 1);
-    } else if (freq === 'weekly') {
-      const currentDay = now.getDay();
-      let diff = dayOfWeek - currentDay;
-      if (diff < 0 || (diff === 0 && next <= now)) diff += 7;
-      next.setDate(now.getDate() + diff);
-    } else if (freq === 'monthly') {
-      next.setDate(dayOfMonth);
-      if (next <= now) {
-        next.setMonth(next.getMonth() + 1);
-        next.setDate(dayOfMonth);
-      }
+    const next = new Date(now);
+    next.setUTCMinutes(0, 0, 0);
+    next.setUTCHours(next.getUTCHours() + 1);
+    return next;
+  }
+
+  const next = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + dayOffset,
+    hourUTC, 0, 0
+  ));
+
+  if (freq === 'daily') {
+    if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  } else if (freq === 'weekly') {
+    const currentDay = next.getUTCDay();
+    let diff = dayOfWeek - currentDay;
+    if (diff < 0 || (diff === 0 && next <= now)) diff += 7;
+    next.setUTCDate(next.getUTCDate() + diff);
+  } else if (freq === 'monthly') {
+    next.setUTCDate(dayOfMonth + dayOffset);
+    if (next <= now) {
+      next.setUTCMonth(next.getUTCMonth() + 1);
+      next.setUTCDate(dayOfMonth + dayOffset);
     }
   }
+
   return next;
 }
 
@@ -177,7 +194,7 @@ export function ScheduleDialog({
           {/* Hour (hidden for hourly) */}
           {scheduleFreq !== 'hourly' && (
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Hora de execução (UTC-3)</Label>
+              <Label className="text-sm font-medium">Hora de execução</Label>
               <Select value={String(scheduleHour)} onValueChange={v => setScheduleHour(Number(v))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -222,9 +239,7 @@ export function ScheduleDialog({
           {/* Next run preview */}
           <div className="rounded-md bg-muted/20 border border-border/50 px-3 py-2 text-sm text-muted-foreground">
             <span className="font-medium text-foreground">Próxima execução estimada: </span>
-            {calculateNextRun(scheduleFreq, scheduleHour, scheduleDayOfWeek, scheduleDayOfMonth).toLocaleString('pt-BR', {
-              day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-            })}
+            {formatDateTimeBR(calculateNextRun(scheduleFreq, scheduleHour, scheduleDayOfWeek, scheduleDayOfMonth))}
           </div>
         </div>
 

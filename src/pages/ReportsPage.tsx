@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -313,7 +314,7 @@ export default function ReportsPage() {
                   {filteredHistory.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell className="whitespace-nowrap">
-                        {new Date(item.created_at).toLocaleString('pt-BR')}
+                        {formatDateTimeBR(item.created_at)}
                       </TableCell>
                       <TableCell className="font-medium">
                         {item.firewalls?.name || 'N/A'}

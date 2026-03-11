@@ -62,6 +62,7 @@ import {
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateTimeFullBR } from '@/lib/dateUtils';
 import { toast } from 'sonner';
 import { Json } from '@/integrations/supabase/types';
 
@@ -652,18 +653,18 @@ export default function TaskExecutionsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Criado em</p>
-                    <p className="text-sm">{format(new Date(selectedTask.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
+                    <p className="text-sm">{formatDateTimeFullBR(selectedTask.created_at)}</p>
                   </div>
                   {selectedTask.started_at && (
                     <div>
                       <p className="text-sm text-muted-foreground">Iniciado em</p>
-                      <p className="text-sm">{format(new Date(selectedTask.started_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
+                      <p className="text-sm">{formatDateTimeFullBR(selectedTask.started_at)}</p>
                     </div>
                   )}
                   {selectedTask.completed_at && (
                     <div>
                       <p className="text-sm text-muted-foreground">Concluído em</p>
-                      <p className="text-sm">{format(new Date(selectedTask.completed_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}</p>
+                      <p className="text-sm">{formatDateTimeFullBR(selectedTask.completed_at)}</p>
                     </div>
                   )}
                 </div>

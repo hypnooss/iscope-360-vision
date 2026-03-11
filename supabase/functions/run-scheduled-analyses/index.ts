@@ -20,13 +20,16 @@ function getStaggerOffsetMinutes(scheduleId: string): number {
 
 function calculateNextRunAt(
   frequency: string,
-  hour: number,
+  hour: number, // stored as BRT (UTC-3)
   dayOfWeek: number,
   dayOfMonth: number,
   scheduleId: string
 ): string {
   const now = new Date();
   const offset = getStaggerOffsetMinutes(scheduleId);
+  // Convert BRT hour to UTC
+  const utcHour = (hour + 3) % 24;
+  const dayOffset = (hour + 3) >= 24 ? 1 : 0;
   let next: Date;
 
   if (frequency === 'hourly') {
@@ -34,16 +37,17 @@ function calculateNextRunAt(
     next.setUTCMinutes(offset, 0, 0);
     next.setUTCHours(next.getUTCHours() + 1);
   } else if (frequency === 'daily') {
-    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, offset, 0));
+    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOffset, utcHour, offset, 0));
     if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
   } else if (frequency === 'weekly') {
-    const currentDay = now.getUTCDay();
+    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOffset, utcHour, offset, 0));
+    const currentDay = next.getUTCDay();
     let daysAhead = dayOfWeek - currentDay;
     if (daysAhead <= 0) daysAhead += 7;
-    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + daysAhead, hour, offset, 0));
+    next.setUTCDate(next.getUTCDate() + daysAhead);
   } else {
     // monthly
-    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), dayOfMonth, hour, offset, 0));
+    next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), dayOfMonth + dayOffset, utcHour, offset, 0));
     if (next <= now) next.setUTCMonth(next.getUTCMonth() + 1);
   }
 

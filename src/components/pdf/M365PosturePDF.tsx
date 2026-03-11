@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import {
   colors,
@@ -230,7 +231,7 @@ export const M365PosturePDF: React.FC<M365PosturePDFProps> = ({
     ? report.generatedAt
     : new Date(report.generatedAt);
 
-  const dateString = generatedDate.toLocaleString('pt-BR');
+  const dateString = formatDateTimeBR(generatedDate);
 
   // Sort categories by display_order from configs
   const sortedCategories = useMemo(() => {

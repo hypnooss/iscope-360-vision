@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, Fragment } from 'react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -874,7 +875,7 @@ export default function AnalyzerConfigChangesPage() {
                                 : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                             </TableCell>
                             <TableCell className="text-xs font-mono whitespace-nowrap">
-                              {d.changed_at ? new Date(d.changed_at).toLocaleString('pt-BR') : '—'}
+                              {d.changed_at ? formatDateTimeBR(d.changed_at) : '—'}
                             </TableCell>
                             <TableCell className="font-medium">{d.user_name}</TableCell>
                             <TableCell>

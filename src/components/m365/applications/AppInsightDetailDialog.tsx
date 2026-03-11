@@ -20,8 +20,7 @@ import {
   Shield,
 } from 'lucide-react';
 import { ApplicationInsight, APP_SEVERITY_CONFIG, APP_CATEGORY_LABELS } from '@/types/applicationInsights';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { formatDateTimeLongBR } from '@/lib/dateUtils';
 
 interface AppInsightDetailDialogProps {
   insight: ApplicationInsight;
@@ -42,11 +41,7 @@ export function AppInsightDetailDialog({ insight, open, onOpenChange }: AppInsig
   const SeverityIcon = SEVERITY_ICONS[insight.severity];
 
   const formatDate = (dateStr: string) => {
-    try {
-      return format(new Date(dateStr), "dd 'de' MMM 'de' yyyy", { locale: ptBR });
-    } catch {
-      return dateStr;
-    }
+    return formatDateTimeLongBR(dateStr);
   };
 
   const formatDaysLeft = (days: number | undefined) => {

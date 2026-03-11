@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -465,13 +466,13 @@ export default function TemplatesPage() {
               <div>
                 <Label className="text-xs text-muted-foreground">Criado em</Label>
                 <p className="text-sm mt-1">
-                  {new Date(viewingTemplate.created_at).toLocaleString('pt-BR')}
+                  {formatDateTimeBR(viewingTemplate.created_at)}
                 </p>
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Atualizado em</Label>
                 <p className="text-sm mt-1">
-                  {new Date(viewingTemplate.updated_at).toLocaleString('pt-BR')}
+                  {formatDateTimeBR(viewingTemplate.updated_at)}
                 </p>
               </div>
             </div>

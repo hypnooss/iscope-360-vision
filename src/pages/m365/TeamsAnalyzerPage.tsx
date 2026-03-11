@@ -28,8 +28,7 @@ import {
   Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Users, Settings,
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 
 const TEAMS_OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
   'teams_governance',
@@ -183,7 +182,7 @@ export default function TeamsAnalyzerPage() {
             <Clock className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm text-muted-foreground">Última coleta</span>
             <Badge variant="outline" className="text-xs">
-              {format(new Date(analyzedAt), "dd/MM/yyyy, HH:mm", { locale: ptBR })}
+              {formatDateTimeBR(analyzedAt)}
             </Badge>
           </div>
         )}

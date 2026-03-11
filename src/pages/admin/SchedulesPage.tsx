@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow, differenceInHours, differenceInMinutes, differenceInSeconds, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatShortDateTimeBR } from '@/lib/dateUtils';
 import { useCVESources } from '@/hooks/useCVECache';
 
 // ── Shared renderer ──
@@ -1042,7 +1043,7 @@ function ExecutionsTab() {
                       {formatDuration(row.started_at, row.completed_at)}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {format(new Date(row.created_at), 'dd/MM HH:mm', { locale: ptBR })}
+                      {formatShortDateTimeBR(row.created_at)}
                     </TableCell>
                   </TableRow>
                 ))}

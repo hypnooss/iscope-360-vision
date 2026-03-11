@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 
 // ====== Types ======
 
@@ -188,11 +189,11 @@ function M365ServiceHealthPage() {
 
   const formatDate = (d: string | null) => {
     if (!d) return '—';
-    try { return format(parseISO(d), "dd/MM/yy HH:mm", { locale: ptBR }); } catch { return d; }
+    return formatDateTimeBR(d);
   };
 
   const lastUpdatedLabel = dataUpdatedAt
-    ? format(new Date(dataUpdatedAt), "dd/MM/yy HH:mm", { locale: ptBR })
+    ? formatDateTimeBR(new Date(dataUpdatedAt))
     : null;
 
   return (

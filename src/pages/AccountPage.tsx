@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { formatDateLongBR } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -110,7 +111,7 @@ export default function AccountPage() {
   };
 
   const memberSince = user?.created_at
-    ? format(new Date(user.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+    ? formatDateLongBR(user.created_at)
     : '—';
 
   return (
@@ -254,7 +255,7 @@ export default function AccountPage() {
                           <div>
                             <p className="text-sm font-medium">{factor.friendly_name || 'Autenticador TOTP'}</p>
                             <p className="text-xs text-muted-foreground">
-                              Cadastrado em {format(new Date(factor.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                              Cadastrado em {formatDateLongBR(factor.created_at)}
                             </p>
                           </div>
                         </div>

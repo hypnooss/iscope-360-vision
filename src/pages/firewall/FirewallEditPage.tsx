@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModules } from '@/contexts/ModuleContext';
@@ -555,7 +556,7 @@ export default function FirewallEditPage() {
                           if (interfacesData) {
                             const wanIPs = extractWanPublicIPs(interfacesData, sdwanData);
                             if (wanIPs.length > 0) {
-                              const collectedAt = new Date(recentTask.completed_at!).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                              const collectedAt = formatDateTimeBR(recentTask.completed_at!);
                               toast.info(`📦 Usando dados da coleta de ${collectedAt}`);
                               await applyGeoResults(wanIPs, 'cache');
                               setGeoLoading(false);

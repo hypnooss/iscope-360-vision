@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { toast } from '@/hooks/use-toast';
 import { toast as sonnerToast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -579,7 +580,7 @@ export default function M365PosturePage() {
                 <>
                   <DetailRow label="Tenant" value={selectedTenant?.displayName || 'N/A'} />
                   <DetailRow label="Domínio" value={selectedTenant?.domain || 'N/A'} />
-                  <DetailRow label="Última Coleta" value={data?.analyzedAt ? new Date(data.analyzedAt).toLocaleString('pt-BR') : 'N/A'} />
+                  <DetailRow label="Última Coleta" value={data?.analyzedAt ? formatDateTimeBR(data.analyzedAt) : 'N/A'} />
                   <DetailRow 
                     label="Agent" 
                     value={agentStatus === 'completed' ? 'Conectado' : agentStatus === 'failed' ? 'Falhou' : isAgentPending ? 'Aguardando' : 'N/A'}
