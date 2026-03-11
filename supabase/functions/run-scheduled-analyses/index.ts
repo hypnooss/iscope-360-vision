@@ -102,10 +102,10 @@ Deno.serve(async (req) => {
     // ========================================================
     const { data: dueSchedules, error: fetchError } = await supabase
       .from('analysis_schedules')
-      .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
       .eq('is_active', true)
       .not('frequency', 'eq', 'manual')
-      .lte('next_run_at', new Date().toISOString());
+      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
 
     if (fetchError) {
       console.error('[run-scheduled-analyses] Error fetching schedules:', fetchError);
@@ -125,8 +125,24 @@ Deno.serve(async (req) => {
     let errors = 0;
     let skippedOffline = 0;
 
-    for (const schedule of dueSchedules) {
+    for (const schedule of (dueSchedules || [])) {
       try {
+        // Always calculate next_run_at first
+        const nextRunAt = calculateNextRunAt(
+          schedule.frequency,
+          schedule.scheduled_hour ?? 0,
+          schedule.scheduled_day_of_week ?? 1,
+          schedule.scheduled_day_of_month ?? 1,
+          schedule.id
+        );
+
+        // If next_run_at was NULL, just recalculate without triggering
+        if (!schedule.next_run_at) {
+          await supabase.from('analysis_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+          console.log(`[run-scheduled-analyses] Recalculated next_run_at for schedule ${schedule.id}: ${nextRunAt}`);
+          continue;
+        }
+
         // Pre-check: resolve agent and check online status
         const { data: fw } = await supabase.from('firewalls').select('agent_id, name').eq('id', schedule.firewall_id).single();
         const agentStatus = await isAgentOnline(supabase, fw?.agent_id || null);
@@ -157,20 +173,8 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Always update next_run_at (even when skipped)
-        const nextRunAt = calculateNextRunAt(
-          schedule.frequency,
-          schedule.scheduled_hour ?? 0,
-          schedule.scheduled_day_of_week ?? 1,
-          schedule.scheduled_day_of_month ?? 1,
-          schedule.id
-        );
-
-        await supabase
-          .from('analysis_schedules')
-          .update({ next_run_at: nextRunAt })
-          .eq('id', schedule.id);
-
+        // Update next_run_at
+        await supabase.from('analysis_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
         console.log(`[run-scheduled-analyses] Updated next_run_at for schedule ${schedule.id}: ${nextRunAt}`);
       } catch (err) {
         console.error(`[run-scheduled-analyses] Error processing schedule ${schedule.id}:`, err);
@@ -185,10 +189,10 @@ Deno.serve(async (req) => {
     // ========================================================
     const { data: dueDomainSchedules, error: domainFetchError } = await supabase
       .from('external_domain_schedules')
-      .select('id, domain_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .select('id, domain_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
       .eq('is_active', true)
       .not('frequency', 'eq', 'manual')
-      .lte('next_run_at', new Date().toISOString());
+      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
 
     if (domainFetchError) {
       console.error('[run-scheduled-analyses] Error fetching domain schedules:', domainFetchError);
@@ -203,6 +207,18 @@ Deno.serve(async (req) => {
 
       for (const schedule of dueDomainSchedules) {
         try {
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+            schedule.id
+          );
+
+          if (!schedule.next_run_at) {
+            await supabase.from('external_domain_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+            console.log(`[run-scheduled-analyses] Recalculated next_run_at for domain schedule ${schedule.id}: ${nextRunAt}`);
+            continue;
+          }
+
           // Pre-check agent online
           const { data: dom } = await supabase.from('external_domains').select('agent_id, domain').eq('id', schedule.domain_id).single();
           const agentStatus = await isAgentOnline(supabase, dom?.agent_id || null);
@@ -214,15 +230,10 @@ Deno.serve(async (req) => {
             const triggerUrl = `${supabaseUrl}/functions/v1/trigger-external-domain-analysis`;
             const response = await fetch(triggerUrl, {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${supabaseServiceKey}`,
-              },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
               body: JSON.stringify({ domain_id: schedule.domain_id }),
             });
-
             const result = await response.json();
-
             if (result.success || response.status === 409 || result.code === 'ALREADY_RUNNING') {
               console.log(`[run-scheduled-analyses] Triggered domain ${schedule.domain_id}: ${result.message || 'success'}`);
               domainTriggered++;
@@ -232,19 +243,7 @@ Deno.serve(async (req) => {
             }
           }
 
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency,
-            schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1,
-            schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
-
-          await supabase
-            .from('external_domain_schedules')
-            .update({ next_run_at: nextRunAt })
-            .eq('id', schedule.id);
-
+          await supabase.from('external_domain_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
           console.log(`[run-scheduled-analyses] Updated next_run_at for domain schedule ${schedule.id}: ${nextRunAt}`);
         } catch (err) {
           console.error(`[run-scheduled-analyses] Error processing domain schedule ${schedule.id}:`, err);
@@ -260,10 +259,10 @@ Deno.serve(async (req) => {
     // ========================================================
     const { data: dueAnalyzerSchedules, error: analyzerFetchError } = await supabase
       .from('analyzer_schedules')
-      .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .select('id, firewall_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
       .eq('is_active', true)
       .not('frequency', 'eq', 'manual')
-      .lte('next_run_at', new Date().toISOString());
+      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
 
     if (analyzerFetchError) {
       console.error('[run-scheduled-analyses] Error fetching analyzer schedules:', analyzerFetchError);
@@ -278,12 +277,23 @@ Deno.serve(async (req) => {
 
       for (const schedule of dueAnalyzerSchedules) {
         try {
-          // Pre-check agent online
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+            schedule.id
+          );
+
+          if (!schedule.next_run_at) {
+            await supabase.from('analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+            console.log(`[run-scheduled-analyses] Recalculated next_run_at for analyzer schedule ${schedule.id}: ${nextRunAt}`);
+            continue;
+          }
+
           const { data: fw } = await supabase.from('firewalls').select('agent_id, name').eq('id', schedule.firewall_id).single();
           const agentStatus = await isAgentOnline(supabase, fw?.agent_id || null);
 
           if (!agentStatus.online) {
-            console.log(`[run-scheduled-analyses] Skipping analyzer for ${fw?.name || schedule.firewall_id}: agent ${agentStatus.agentName} offline (last_seen: ${agentStatus.lastSeen})`);
+            console.log(`[run-scheduled-analyses] Skipping analyzer for ${fw?.name || schedule.firewall_id}: agent ${agentStatus.agentName} offline`);
             analyzerSkipped++;
           } else {
             const triggerUrl = `${supabaseUrl}/functions/v1/trigger-firewall-analyzer`;
@@ -297,11 +307,6 @@ Deno.serve(async (req) => {
             else { analyzerErrors++; }
           }
 
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
           await supabase.from('analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
         } catch (err) {
           console.error(`[run-scheduled-analyses] Analyzer schedule error:`, err);
@@ -315,10 +320,10 @@ Deno.serve(async (req) => {
     // ========================================================
     const { data: dueAttackSurfaceSchedules, error: attackSurfaceFetchError } = await supabase
       .from('attack_surface_schedules')
-      .select('id, client_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .select('id, client_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
       .eq('is_active', true)
       .not('frequency', 'eq', 'manual')
-      .lte('next_run_at', new Date().toISOString());
+      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
 
     if (attackSurfaceFetchError) {
       console.error('[run-scheduled-analyses] Error fetching attack surface schedules:', attackSurfaceFetchError);
@@ -332,6 +337,18 @@ Deno.serve(async (req) => {
 
       for (const schedule of dueAttackSurfaceSchedules) {
         try {
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+            schedule.id
+          );
+
+          if (!schedule.next_run_at) {
+            await supabase.from('attack_surface_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+            console.log(`[run-scheduled-analyses] Recalculated next_run_at for attack surface schedule ${schedule.id}: ${nextRunAt}`);
+            continue;
+          }
+
           const triggerUrl = `${supabaseUrl}/functions/v1/run-attack-surface-queue`;
           const response = await fetch(triggerUrl, {
             method: 'POST',
@@ -347,11 +364,6 @@ Deno.serve(async (req) => {
             attackSurfaceErrors++;
           }
 
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
           await supabase.from('attack_surface_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
           console.log(`[run-scheduled-analyses] Updated next_run_at for attack surface schedule ${schedule.id}: ${nextRunAt}`);
         } catch (err) {
@@ -368,10 +380,10 @@ Deno.serve(async (req) => {
     // ========================================================
     const { data: dueM365AnalyzerSchedules, error: m365AnalyzerFetchError } = await supabase
       .from('m365_analyzer_schedules')
-      .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
       .eq('is_active', true)
       .not('frequency', 'eq', 'manual')
-      .lte('next_run_at', new Date().toISOString());
+      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
 
     if (m365AnalyzerFetchError) {
       console.error('[run-scheduled-analyses] Error fetching M365 analyzer schedules:', m365AnalyzerFetchError);
@@ -386,7 +398,18 @@ Deno.serve(async (req) => {
 
       for (const schedule of dueM365AnalyzerSchedules) {
         try {
-          // Pre-check agent online via m365_tenant_agents
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+            schedule.id
+          );
+
+          if (!schedule.next_run_at) {
+            await supabase.from('m365_analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+            console.log(`[run-scheduled-analyses] Recalculated next_run_at for M365 analyzer schedule ${schedule.id}: ${nextRunAt}`);
+            continue;
+          }
+
           const { data: tenantAgent } = await supabase
             .from('m365_tenant_agents')
             .select('agent_id')
@@ -398,7 +421,7 @@ Deno.serve(async (req) => {
           const agentStatus = await isAgentOnline(supabase, tenantAgent?.agent_id || null);
 
           if (!agentStatus.online) {
-            console.log(`[run-scheduled-analyses] Skipping M365 tenant ${schedule.tenant_record_id}: agent ${agentStatus.agentName} offline (last_seen: ${agentStatus.lastSeen})`);
+            console.log(`[run-scheduled-analyses] Skipping M365 tenant ${schedule.tenant_record_id}: agent ${agentStatus.agentName} offline`);
             m365AnalyzerSkipped++;
           } else {
             const triggerUrl = `${supabaseUrl}/functions/v1/trigger-m365-analyzer`;
@@ -412,7 +435,6 @@ Deno.serve(async (req) => {
               console.log(`[run-scheduled-analyses] Triggered M365 analyzer for tenant ${schedule.tenant_record_id}`);
               m365AnalyzerTriggered++;
 
-              // Also trigger exchange-dashboard to populate KPI cache
               try {
                 const exchangeUrl = `${supabaseUrl}/functions/v1/exchange-dashboard`;
                 const exchResp = await fetch(exchangeUrl, {
@@ -421,21 +443,16 @@ Deno.serve(async (req) => {
                   body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
                 });
                 const exchResult = await exchResp.json();
-                if (exchResult.success) {
-                  console.log(`[run-scheduled-analyses] exchange-dashboard OK for tenant ${schedule.tenant_record_id}`);
-                } else {
-                  console.error(`[run-scheduled-analyses] exchange-dashboard failed for tenant ${schedule.tenant_record_id}:`, exchResult.error);
-                  // Retry once
+                if (!exchResult.success) {
                   const retryResp = await fetch(exchangeUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
                     body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
                   });
-                  const retryResult = await retryResp.json();
-                  console.log(`[run-scheduled-analyses] exchange-dashboard retry for tenant ${schedule.tenant_record_id}:`, retryResult.success ? 'OK' : retryResult.error);
+                  await retryResp.json();
                 }
               } catch (e) {
-                console.error(`[run-scheduled-analyses] exchange-dashboard error for tenant ${schedule.tenant_record_id}:`, e);
+                console.error(`[run-scheduled-analyses] exchange-dashboard error:`, e);
               }
             } else {
               console.error(`[run-scheduled-analyses] Failed to trigger M365 analyzer for tenant ${schedule.tenant_record_id}:`, result.error);
@@ -443,11 +460,6 @@ Deno.serve(async (req) => {
             }
           }
 
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
           await supabase.from('m365_analyzer_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
         } catch (err) {
           console.error(`[run-scheduled-analyses] M365 analyzer schedule error:`, err);
@@ -463,10 +475,10 @@ Deno.serve(async (req) => {
     // ========================================================
     const { data: dueM365ComplianceSchedules, error: m365ComplianceFetchError } = await supabase
       .from('m365_compliance_schedules')
-      .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month')
+      .select('id, tenant_record_id, frequency, scheduled_hour, scheduled_day_of_week, scheduled_day_of_month, next_run_at')
       .eq('is_active', true)
       .not('frequency', 'eq', 'manual')
-      .lte('next_run_at', new Date().toISOString());
+      .or(`next_run_at.lte.${new Date().toISOString()},next_run_at.is.null`);
 
     if (m365ComplianceFetchError) {
       console.error('[run-scheduled-analyses] Error fetching M365 compliance schedules:', m365ComplianceFetchError);
@@ -481,7 +493,18 @@ Deno.serve(async (req) => {
 
       for (const schedule of dueM365ComplianceSchedules) {
         try {
-          // Pre-check agent online via m365_tenant_agents
+          const nextRunAt = calculateNextRunAt(
+            schedule.frequency, schedule.scheduled_hour ?? 0,
+            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
+            schedule.id
+          );
+
+          if (!schedule.next_run_at) {
+            await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
+            console.log(`[run-scheduled-analyses] Recalculated next_run_at for M365 compliance schedule ${schedule.id}: ${nextRunAt}`);
+            continue;
+          }
+
           const { data: tenantAgent } = await supabase
             .from('m365_tenant_agents')
             .select('agent_id')
@@ -493,7 +516,7 @@ Deno.serve(async (req) => {
           const agentStatus = await isAgentOnline(supabase, tenantAgent?.agent_id || null);
 
           if (!agentStatus.online) {
-            console.log(`[run-scheduled-analyses] Skipping M365 compliance ${schedule.tenant_record_id}: agent ${agentStatus.agentName} offline (last_seen: ${agentStatus.lastSeen})`);
+            console.log(`[run-scheduled-analyses] Skipping M365 compliance ${schedule.tenant_record_id}: agent offline`);
             m365ComplianceSkipped++;
           } else {
             const triggerUrl = `${supabaseUrl}/functions/v1/trigger-m365-posture-analysis`;
@@ -512,11 +535,6 @@ Deno.serve(async (req) => {
             }
           }
 
-          const nextRunAt = calculateNextRunAt(
-            schedule.frequency, schedule.scheduled_hour ?? 0,
-            schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-            schedule.id
-          );
           await supabase.from('m365_compliance_schedules').update({ next_run_at: nextRunAt }).eq('id', schedule.id);
         } catch (err) {
           console.error(`[run-scheduled-analyses] M365 compliance schedule error:`, err);
