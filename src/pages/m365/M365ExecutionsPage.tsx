@@ -54,16 +54,30 @@ interface AgentTask {
   completed_at: string | null;
 }
 
+interface AnalyzerSnapshot {
+  id: string;
+  tenant_record_id: string;
+  client_id: string;
+  status: string;
+  score: number | null;
+  summary: any;
+  insights: any;
+  period_start: string | null;
+  period_end: string | null;
+  agent_task_id: string | null;
+  created_at: string;
+}
+
 interface UnifiedExecution {
   id: string;
-  source: 'posture' | 'agent_task';
+  source: 'posture' | 'agent_task' | 'analyzer_snapshot';
   tenantId: string;
   agentId: string | null;
   type: 'posture_analysis' | 'm365_powershell' | 'm365_graph_api' | 'm365_analyzer';
   status: string;
   duration: string;
   createdAt: string;
-  original: PostureHistory | AgentTask;
+  original: PostureHistory | AgentTask | AnalyzerSnapshot;
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
