@@ -36,7 +36,7 @@ export default function AccountPage() {
 
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
-  const [timezone, setTimezone] = useState(profile?.timezone || 'America/Sao_Paulo');
+  const [timezone, setTimezone] = useState(profile?.timezone || 'UTC');
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [newPassword, setNewPassword] = useState('');
