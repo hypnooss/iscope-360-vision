@@ -498,7 +498,7 @@ async function processM365ComplianceSchedules(supabase: SupabaseClient, supabase
       const nextRunAt = calculateNextRunAt(
         schedule.frequency, schedule.scheduled_hour ?? 0,
         schedule.scheduled_day_of_week ?? 1, schedule.scheduled_day_of_month ?? 1,
-        schedule.id
+        schedule.id, schedule.timezone ?? 'America/Sao_Paulo'
       );
 
       if (!schedule.next_run_at) {
