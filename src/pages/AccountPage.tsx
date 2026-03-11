@@ -50,6 +50,7 @@ export default function AccountPage() {
   useEffect(() => {
     setFullName(profile?.full_name || '');
     setAvatarUrl(profile?.avatar_url || '');
+    setTimezone(profile?.timezone || 'America/Sao_Paulo');
   }, [profile]);
 
   useEffect(() => { loadMfaFactors(); }, []);
