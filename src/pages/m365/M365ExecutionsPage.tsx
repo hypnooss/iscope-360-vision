@@ -921,6 +921,106 @@ export default function M365ExecutionsPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Analyzer Snapshot Details Dialog */}
+        <Dialog open={snapshotDetailsOpen} onOpenChange={setSnapshotDetailsOpen}>
+          <DialogContent className="max-w-2xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Cloud className="w-5 h-5" />
+                Detalhes do Snapshot — M365 Analyzer
+              </DialogTitle>
+            </DialogHeader>
+            {selectedSnapshot && (
+              <ScrollArea className="max-h-[60vh] pr-4">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Tenant</p>
+                      <p className="font-medium">{getTenantLabel(selectedSnapshot.tenant_record_id)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Workspace</p>
+                      <p className="font-medium">{getClientName(selectedSnapshot.client_id)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Status</p>
+                      <Badge variant="outline" className={cn('gap-1', statusConfig[selectedSnapshot.status === 'processing' ? 'running' : selectedSnapshot.status]?.color)}>
+                        {statusConfig[selectedSnapshot.status === 'processing' ? 'running' : selectedSnapshot.status]?.icon}
+                        {statusConfig[selectedSnapshot.status === 'processing' ? 'running' : selectedSnapshot.status]?.label}
+                      </Badge>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Score</p>
+                      <p className="font-medium">
+                        {selectedSnapshot.score !== null ? `${selectedSnapshot.score}%` : '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Período Início</p>
+                      <p className="font-medium">
+                        {selectedSnapshot.period_start
+                          ? format(new Date(selectedSnapshot.period_start), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+                          : '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Período Fim</p>
+                      <p className="font-medium">
+                        {selectedSnapshot.period_end
+                          ? format(new Date(selectedSnapshot.period_end), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+                          : '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Criado em</p>
+                      <p className="font-medium">
+                        {format(new Date(selectedSnapshot.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedSnapshot.summary && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Resumo de Severidade</p>
+                      <div className="grid grid-cols-5 gap-2">
+                        <div className="p-2 bg-red-500/10 rounded text-center">
+                          <p className="text-lg font-bold text-red-500">{selectedSnapshot.summary.critical || 0}</p>
+                          <p className="text-xs text-muted-foreground">Crítico</p>
+                        </div>
+                        <div className="p-2 bg-orange-500/10 rounded text-center">
+                          <p className="text-lg font-bold text-orange-500">{selectedSnapshot.summary.high || 0}</p>
+                          <p className="text-xs text-muted-foreground">Alto</p>
+                        </div>
+                        <div className="p-2 bg-yellow-500/10 rounded text-center">
+                          <p className="text-lg font-bold text-yellow-500">{selectedSnapshot.summary.medium || 0}</p>
+                          <p className="text-xs text-muted-foreground">Médio</p>
+                        </div>
+                        <div className="p-2 bg-blue-500/10 rounded text-center">
+                          <p className="text-lg font-bold text-blue-500">{selectedSnapshot.summary.low || 0}</p>
+                          <p className="text-xs text-muted-foreground">Baixo</p>
+                        </div>
+                        <div className="p-2 bg-muted rounded text-center">
+                          <p className="text-lg font-bold">{selectedSnapshot.summary.info || 0}</p>
+                          <p className="text-xs text-muted-foreground">Info</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedSnapshot.insights && Array.isArray(selectedSnapshot.insights) && selectedSnapshot.insights.length > 0 && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Insights ({selectedSnapshot.insights.length})</p>
+                      <pre className="p-3 bg-muted rounded text-xs overflow-auto max-h-60 font-mono">
+                        {JSON.stringify(selectedSnapshot.insights.slice(0, 10), null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {/* Cancel Confirmation Dialog */}
         <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
           <AlertDialogContent>
