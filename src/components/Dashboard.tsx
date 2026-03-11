@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import { ComplianceReport, CVEInfo } from '@/types/compliance';
 import { CategorySection } from './CategorySection';
 import { CVESection } from './CVESection';
