@@ -675,7 +675,9 @@ export default function M365ExecutionsPage() {
                           {getTenantLabel(item.tenantId)}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {item.type === 'posture_analysis' ? 'Edge Function' : item.agentId ? getAgentName(item.agentId) : '-'}
+                          {item.source === 'posture' || item.source === 'analyzer_snapshot'
+                            ? <span className="flex items-center gap-1"><Cloud className="w-3 h-3" /> Edge Function</span>
+                            : item.agentId ? <span className="flex items-center gap-1"><Terminal className="w-3 h-3" /> {getAgentName(item.agentId)}</span> : '-'}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={cn('gap-1', tConfig.color)}>
