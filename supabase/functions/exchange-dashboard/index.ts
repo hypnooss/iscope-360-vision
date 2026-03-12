@@ -266,7 +266,8 @@ Deno.serve(async (req) => {
       console.warn('Mailbox usage report returned no data. Check Reports.Read.All permission.');
     }
 
-    // Email traffic and rankings — aggregate from analyzer snapshots (contiguous windows)
+    // Email traffic and rankings — aggregate from analyzer snapshots (last 24h only)
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
     let sent = 0;
     let received = 0;
     const senderMap: Record<string, number> = {};
@@ -278,6 +279,7 @@ Deno.serve(async (req) => {
         .select('metrics')
         .eq('tenant_record_id', tenant_record_id)
         .eq('status', 'completed')
+        .gte('created_at', twentyFourHoursAgo)
         .order('created_at', { ascending: false });
 
       if (trafficSnapshots && trafficSnapshots.length > 0) {
@@ -347,7 +349,7 @@ Deno.serve(async (req) => {
       console.warn('Failed to fetch user mailbox settings:', e);
     }
 
-    // Security data from M365 Analyzer snapshots — aggregate ALL completed (no cutoff, frontend controls aggregation)
+    // Security data from M365 Analyzer snapshots — aggregate last 24h only
     let maliciousInbound = 0;
     let phishing = 0;
     let malware = 0;
@@ -359,6 +361,7 @@ Deno.serve(async (req) => {
         .select('metrics')
         .eq('tenant_record_id', tenant_record_id)
         .eq('status', 'completed')
+        .gte('created_at', twentyFourHoursAgo)
         .order('created_at', { ascending: false });
 
       if (secSnapshots && secSnapshots.length > 0) {
