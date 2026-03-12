@@ -180,10 +180,25 @@ export default function TeamsAnalyzerPage() {
         {analyzedAt && (
           <div className="flex items-center gap-3 flex-wrap mb-8">
             <Clock className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Última coleta</span>
+            <span className="text-sm text-muted-foreground">Última coleta:</span>
             <Badge variant="outline" className="text-xs">
               {formatDateTimeBR(analyzedAt)}
             </Badge>
+            {analyzerSnapshot?.period_start && analyzerSnapshot?.period_end && (
+              <>
+                <span className="text-sm text-muted-foreground">Período agregado:</span>
+                <Badge variant="outline" className="text-xs">
+                  {formatShortDateTimeBR(analyzerSnapshot.period_start)}
+                  {' → '}
+                  {formatShortDateTimeBR(analyzerSnapshot.period_end)}
+                </Badge>
+              </>
+            )}
+            {(analyzerSnapshot as any)?.snapshotCount && (
+              <Badge variant="secondary" className="text-xs">
+                {(analyzerSnapshot as any).snapshotCount} coletas
+              </Badge>
+            )}
           </div>
         )}
 
