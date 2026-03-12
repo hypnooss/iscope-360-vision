@@ -158,12 +158,12 @@ Deno.serve(async (req) => {
       graphGet(accessToken, 'https://graph.microsoft.com/v1.0/directoryRoles?$expand=members').catch(() => ({ value: [] })),
       // MFA registration details
       graphGetAllPages(accessToken, 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=999').catch(() => []),
-      // Sign-in logs (30 days)
-      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$filter=createdDateTime ge ${thirtyDaysAgo}&$top=500&$orderby=createdDateTime desc`, 2).catch(() => []),
-      // Directory audit logs (30 days)
-      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${thirtyDaysAgo}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
-      // Directory audit logs (7 days) for password activity
-      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${sevenDaysAgo}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
+      // Sign-in logs (contiguous window)
+      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$filter=createdDateTime ge ${periodStart}&$top=500&$orderby=createdDateTime desc`, 2).catch(() => []),
+      // Directory audit logs (contiguous window)
+      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
+      // Directory audit logs (same contiguous window — password activity)
+      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
       // Risky users (requires P2)
       graphGet(accessToken, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100').catch(() => null),
     ]);
