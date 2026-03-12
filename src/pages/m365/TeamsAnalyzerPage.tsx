@@ -268,7 +268,7 @@ export default function TeamsAnalyzerPage() {
         entityId={selectedTenantId ?? ''}
         table="m365_analyzer_schedules"
         entityColumn="tenant_record_id"
-        title="Agendamento do Teams Analyzer"
+        title="Agendamento do Colaboração Analyzer"
         description="Configure a frequência de execução automática da análise do Teams e SharePoint."
         recommendation="Recomendamos agendar a execução 1 vez ao dia para manter a postura atualizada."
       />
