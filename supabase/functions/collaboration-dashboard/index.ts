@@ -55,6 +55,17 @@ async function graphGet(accessToken: string, url: string, headers?: Record<strin
   return await res.json();
 }
 
+async function graphGetText(accessToken: string, url: string): Promise<string | null> {
+  const res = await fetch(url, {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    console.warn(`Graph GET text ${url} failed: ${res.status}`);
+    return null;
+  }
+  return await res.text();
+}
+
 async function graphGetAllPages(accessToken: string, url: string, maxPages = 5): Promise<any[]> {
   const allValues: any[] = [];
   let nextLink: string | null = url;
