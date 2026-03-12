@@ -199,6 +199,8 @@ Deno.serve(async (req) => {
     // SharePoint site usage report
     let activeSites = 0;
     let inactiveSites = 0;
+    let storageUsedBytes = 0;
+    let storageAllocatedBytes = 0;
 
     const siteUsageCsv = await graphGet(
       accessToken,
@@ -210,6 +212,10 @@ Deno.serve(async (req) => {
       const rows = parseCsvReport(siteUsageCsv);
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       rows.forEach((row: any) => {
+        const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
+        const allocated = parseInt(row['Storage Allocated (Byte)'] || '0', 10);
+        if (!isNaN(used)) storageUsedBytes += used;
+        if (!isNaN(allocated)) storageAllocatedBytes += allocated;
         if (row['Last Activity Date']) {
           const lastActivity = new Date(row['Last Activity Date']);
           if (lastActivity >= thirtyDaysAgo) activeSites++;
@@ -222,6 +228,10 @@ Deno.serve(async (req) => {
       const rows = siteUsageCsv.value || [];
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       rows.forEach((row: any) => {
+        const used = parseInt(row.storageUsedInBytes || '0', 10);
+        const allocated = parseInt(row.storageAllocatedInBytes || '0', 10);
+        if (!isNaN(used)) storageUsedBytes += used;
+        if (!isNaN(allocated)) storageAllocatedBytes += allocated;
         if (row.lastActivityDate) {
           const lastActivity = new Date(row.lastActivityDate);
           if (lastActivity >= thirtyDaysAgo) activeSites++;
