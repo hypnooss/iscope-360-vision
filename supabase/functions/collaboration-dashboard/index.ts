@@ -219,7 +219,14 @@ Deno.serve(async (req) => {
     ).catch(() => null);
 
     if (siteUsageText) {
+      console.log(`SharePoint report CSV length: ${siteUsageText.length} chars`);
+      console.log(`SharePoint report first 200 chars: ${siteUsageText.substring(0, 200)}`);
       const rows = parseCsvReport(siteUsageText);
+      console.log(`SharePoint report parsed: ${rows.length} rows`);
+      if (rows.length > 0) {
+        console.log(`SharePoint CSV headers: ${Object.keys(rows[0]).join(', ')}`);
+        console.log(`SharePoint first row sample: ${JSON.stringify(rows[0]).substring(0, 300)}`);
+      }
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       rows.forEach((row: any) => {
         const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
@@ -234,7 +241,9 @@ Deno.serve(async (req) => {
           inactiveSites++;
         }
       });
-      console.log(`SharePoint storage: used=${storageUsedBytes}, allocated=${storageAllocatedBytes}, rows=${rows.length}`);
+      console.log(`SharePoint storage aggregated: usedBytes=${storageUsedBytes}, allocatedBytes=${storageAllocatedBytes}, active=${activeSites}, inactive=${inactiveSites}`);
+    } else {
+      console.warn('SharePoint site usage report returned null - check Reports.Read.All permission on tenant');
     }
 
     // External sharing - check site count (requires admin-level scope)
