@@ -245,7 +245,7 @@ Deno.serve(async (req) => {
         if (!isNaN(allocated)) storageAllocatedBytes += allocated;
         if (row['Last Activity Date']) {
           const lastActivity = new Date(row['Last Activity Date']);
-          if (lastActivity >= thirtyDaysAgo) activeSites++;
+          if (lastActivity >= sevenDaysAgo) activeSites++;
           else inactiveSites++;
         } else {
           inactiveSites++;
