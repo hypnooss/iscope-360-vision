@@ -192,7 +192,7 @@ export default function TeamsAnalyzerPage() {
           <Card className="border-warning/30 bg-warning/5">
             <CardContent className="py-10 text-center">
               <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-3" />
-              <h3 className="text-base font-semibold mb-1">Nenhuma análise do Teams encontrada</h3>
+              <h3 className="text-base font-semibold mb-1">Nenhuma análise de Colaboração encontrada</h3>
               <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
                 Não existem análises efetuadas até o momento para este tenant. Clique abaixo para executar a primeira análise do Teams e SharePoint.
               </p>
