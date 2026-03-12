@@ -161,11 +161,8 @@ Deno.serve(async (req) => {
       console.warn('Failed to build non-user exclusion set:', e);
     }
 
-    // Fetch reports in parallel - reports return CSV by default
-    const [mailboxUsageResult, emailActivityResult] = await Promise.all([
-      graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='D30')").catch(e => { console.warn('mailboxUsage error:', e); return null; }),
-      graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getEmailActivityCounts(period='D30')").catch(e => { console.warn('emailActivity error:', e); return null; }),
-    ]);
+    // Fetch mailbox usage report (state data — D7 to avoid duplication across snapshots)
+    const mailboxUsageResult = await graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='D7')").catch(e => { console.warn('mailboxUsage error:', e); return null; });
 
     // Parse mailbox usage data
     let totalMailboxes = 0;
