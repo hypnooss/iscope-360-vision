@@ -2143,8 +2143,8 @@ Deno.serve(async (req) => {
         console.log('[m365-analyzer] Got Graph API token, collecting data...');
         dataSource = dataSource === 'agent' ? 'hybrid' : 'graph_api';
 
-        // Use snapshot period window (consecutive, non-overlapping) — fallback to 24h if missing
-        const periodStartISO = snapshot.period_start || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        // Use snapshot period window (consecutive, non-overlapping) — fallback to 1h if missing
+        const periodStartISO = snapshot.period_start || new Date(Date.now() - 60 * 60 * 1000).toISOString();
         const periodEndISO = snapshot.period_end || new Date().toISOString();
         const periodFilter = `&$filter=createdDateTime ge ${periodStartISO} and createdDateTime le ${periodEndISO}`;
         console.log(`[m365-analyzer] Graph API fallback window: ${periodStartISO} → ${periodEndISO}`);
