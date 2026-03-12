@@ -250,7 +250,7 @@ export default function TeamsAnalyzerPage() {
         {!noTenants && !selectedTenantId && (
           <Alert>
             <Info className="h-4 w-4" />
-            <AlertDescription>Selecione um tenant para visualizar a análise do Teams.</AlertDescription>
+            <AlertDescription>Selecione um tenant para visualizar a análise de Colaboração.</AlertDescription>
           </Alert>
         )}
 
