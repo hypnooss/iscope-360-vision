@@ -324,6 +324,8 @@ Deno.serve(async (req) => {
       loginCountriesSuccess,
       loginCountriesFailed,
       analyzedAt: now.toISOString(),
+      periodStart,
+      periodEnd: now.toISOString(),
     };
 
     // Save cache to m365_tenants

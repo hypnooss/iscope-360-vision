@@ -145,6 +145,15 @@ function parseMetrics(raw: unknown): M365AnalyzerMetrics {
         malwareFilter: tp.policyStatus?.malwareFilter ?? 'disabled',
       },
     },
+    emailTraffic: (() => {
+      const et = m.emailTraffic ?? m.email_traffic;
+      if (!et) return undefined;
+      return {
+        sent: safeNum(et.sent),
+        received: safeNum(et.received),
+        totalMessages: safeNum(et.totalMessages),
+      };
+    })(),
     emailTrafficRankings: (() => {
       const etr = m.emailTrafficRankings ?? m.email_traffic_rankings;
       if (!etr) return undefined;

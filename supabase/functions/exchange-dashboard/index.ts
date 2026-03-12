@@ -347,20 +347,18 @@ Deno.serve(async (req) => {
       console.warn('Failed to fetch user mailbox settings:', e);
     }
 
-    // Security data from M365 Analyzer snapshots — aggregate last 30 days
+    // Security data from M365 Analyzer snapshots — aggregate ALL completed (no cutoff, frontend controls aggregation)
     let maliciousInbound = 0;
     let phishing = 0;
     let malware = 0;
     let spam = 0;
 
     try {
-      const securityCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const { data: secSnapshots } = await supabase
         .from('m365_analyzer_snapshots')
         .select('metrics')
         .eq('tenant_record_id', tenant_record_id)
         .eq('status', 'completed')
-        .gte('created_at', securityCutoff)
         .order('created_at', { ascending: false });
 
       if (secSnapshots && secSnapshots.length > 0) {
@@ -373,9 +371,9 @@ Deno.serve(async (req) => {
           }
         }
         maliciousInbound = phishing + malware;
-        console.log(`Security aggregated from ${secSnapshots.length} snapshots (30d) - spam: ${spam}, phishing: ${phishing}, malware: ${malware}`);
+        console.log(`Security aggregated from ${secSnapshots.length} snapshots (all) - spam: ${spam}, phishing: ${phishing}, malware: ${malware}`);
       } else {
-        console.warn('No completed M365 analyzer snapshots found for tenant in last 30 days');
+        console.warn('No completed M365 analyzer snapshots found for tenant');
       }
     } catch (e) {
       console.warn('Failed to fetch analyzer snapshots for security data:', e);
