@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 export interface CollaborationDashboardData {
   teams: { total: number; public: number; private: number; withGuests: number; privateChannels: number; sharedChannels: number };
-  sharepoint: { totalSites: number; activeSites: number; inactiveSites: number; externalSharingEnabled: number; totalLists: number };
+  sharepoint: { totalSites: number; activeSites: number; inactiveSites: number; externalSharingEnabled: number; totalLists: number; storageUsedGB: number; storageAllocatedGB: number };
   analyzedAt: string;
 }
 
