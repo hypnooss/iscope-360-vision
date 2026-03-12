@@ -2143,9 +2143,11 @@ Deno.serve(async (req) => {
         console.log('[m365-analyzer] Got Graph API token, collecting data...');
         dataSource = dataSource === 'agent' ? 'hybrid' : 'graph_api';
 
-        // Use fixed 24h window for signInLogs/auditLogs (ISO 8601 format required by Graph API)
-        const periodStartISO = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const periodFilter = `&$filter=createdDateTime ge ${periodStartISO}`;
+        // Use snapshot period window (consecutive, non-overlapping) — fallback to 24h if missing
+        const periodStartISO = snapshot.period_start || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const periodEndISO = snapshot.period_end || new Date().toISOString();
+        const periodFilter = `&$filter=createdDateTime ge ${periodStartISO} and createdDateTime le ${periodEndISO}`;
+        console.log(`[m365-analyzer] Graph API fallback window: ${periodStartISO} → ${periodEndISO}`);
 
         const [emailData, mailboxData, signInData, auditData, threatStatus,
                riskyUsersRes, credRegRes, caPoliciesRes, recentAppsRes, serviceHealthRes] = await Promise.all([
@@ -2193,9 +2195,11 @@ Deno.serve(async (req) => {
       const token = await getGraphToken(supabase, snapshot.tenant_record_id);
       if (token) {
         console.log('[m365-analyzer] Enriching agent data with Graph API for Entra ID modules...');
-        // Use fixed 24h window for signInLogs/auditLogs (ISO 8601 format required by Graph API)
-        const enrichPeriodStartISO = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const periodFilter = `&$filter=createdDateTime ge ${enrichPeriodStartISO}`;
+        // Use snapshot period window (consecutive, non-overlapping) — fallback to 24h if missing
+        const enrichPeriodStartISO = snapshot.period_start || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const enrichPeriodEndISO = snapshot.period_end || new Date().toISOString();
+        const periodFilter = `&$filter=createdDateTime ge ${enrichPeriodStartISO} and createdDateTime le ${enrichPeriodEndISO}`;
+        console.log(`[m365-analyzer] Graph enrichment window: ${enrichPeriodStartISO} → ${enrichPeriodEndISO}`);
         const enrichCalls = [];
 
         // Existing enrichment calls
