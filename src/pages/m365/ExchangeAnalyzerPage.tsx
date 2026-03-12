@@ -31,7 +31,7 @@ import {
   Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Mail, Settings,
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
-import { formatDateTimeBR } from '@/lib/dateUtils';
+import { formatDateTimeBR, formatShortDateTimeBR } from '@/lib/dateUtils';
 
 // ─── Exchange-relevant operational categories ────────────────────────────────
 const EXCHANGE_OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
@@ -241,10 +241,25 @@ export default function ExchangeAnalyzerPage() {
         {analyzedAt && (
           <div className="flex items-center gap-3 flex-wrap mb-8">
             <Clock className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Última coleta</span>
+            <span className="text-sm text-muted-foreground">Última coleta:</span>
             <Badge variant="outline" className="text-xs">
               {formatDateTimeBR(analyzedAt)}
             </Badge>
+            {analyzerSnapshot?.period_start && analyzerSnapshot?.period_end && (
+              <>
+                <span className="text-sm text-muted-foreground">Período agregado:</span>
+                <Badge variant="outline" className="text-xs">
+                  {formatShortDateTimeBR(analyzerSnapshot.period_start)}
+                  {' → '}
+                  {formatShortDateTimeBR(analyzerSnapshot.period_end)}
+                </Badge>
+              </>
+            )}
+            {(analyzerSnapshot as any)?.snapshotCount && (
+              <Badge variant="secondary" className="text-xs">
+                {(analyzerSnapshot as any).snapshotCount} coletas
+              </Badge>
+            )}
           </div>
         )}
 
