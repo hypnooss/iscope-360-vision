@@ -29,7 +29,7 @@ import {
   Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Shield, Settings,
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
-import { formatDateTimeBR } from '@/lib/dateUtils';
+import { formatDateTimeBR, formatShortDateTimeBR } from '@/lib/dateUtils';
 
 // ─── Identity-relevant operational categories ────────────────────────────────
 const ENTRA_OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
