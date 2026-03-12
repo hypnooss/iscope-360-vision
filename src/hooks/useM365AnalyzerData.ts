@@ -359,13 +359,15 @@ export function useLatestM365AnalyzerSnapshot(tenantRecordId?: string) {
     queryFn: async () => {
       if (!tenantRecordId) return null;
 
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
       const { data, error } = await supabase
         .from('m365_analyzer_snapshots' as any)
         .select('id, tenant_record_id, client_id, agent_task_id, status, period_start, period_end, score, summary, metrics, created_at')
         .eq('tenant_record_id', tenantRecordId)
         .eq('status', 'completed')
-        .order('created_at', { ascending: false })
-        .limit(720) as any;
+        .gte('created_at', twentyFourHoursAgo)
+        .order('created_at', { ascending: false }) as any;
 
       if (error) throw error;
       const rows = (data as any[]) || [];

@@ -349,7 +349,7 @@ Deno.serve(async (req) => {
       console.warn('Failed to fetch user mailbox settings:', e);
     }
 
-    // Security data from M365 Analyzer snapshots — aggregate ALL completed (no cutoff, frontend controls aggregation)
+    // Security data from M365 Analyzer snapshots — aggregate last 24h only
     let maliciousInbound = 0;
     let phishing = 0;
     let malware = 0;
@@ -361,6 +361,7 @@ Deno.serve(async (req) => {
         .select('metrics')
         .eq('tenant_record_id', tenant_record_id)
         .eq('status', 'completed')
+        .gte('created_at', twentyFourHoursAgo)
         .order('created_at', { ascending: false });
 
       if (secSnapshots && secSnapshots.length > 0) {
