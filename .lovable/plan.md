@@ -1,43 +1,71 @@
+1: # Status: ✅ Implementado
 
+## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-## Renomear "Teams Analyzer" → "Colaboração Analyzer" + Adicionar Storage SharePoint
+### Problema resolvido
+Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
 
-### 1. Renomear referências de UI (sem renomear arquivos/componentes internos)
+### Mudanças implementadas
 
-**Arquivos afetados:**
+| Componente | Mudança |
+|---|---|
+| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
+| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
+| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
 
-- **`src/pages/m365/TeamsAnalyzerPage.tsx`**:
-  - Breadcrumb: "Teams Analyzer" → "Colaboração Analyzer"
-  - H1: "Teams Analyzer" → "Colaboração Analyzer"
-  - Descrição: manter referência a Teams + SharePoint
-  - Empty state: "Nenhuma análise do Teams" → "Nenhuma análise de Colaboração"
-  - ScheduleDialog title: "Agendamento do Teams Analyzer" → "Agendamento do Colaboração Analyzer"
-  - Alert: "análise do Teams" → "análise de Colaboração"
+## Correção de Dados — scheduled_hour UTC→BRT
 
-- **`src/components/layout/AppLayout.tsx`** (linha 143):
-  - Menu label: "Teams Analyzer" → "Colaboração Analyzer"
+### Problema resolvido
+Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
 
-### 2. Adicionar dados de storage SharePoint
+### Solução aplicada
+1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
+2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
+3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
 
-**Edge Function `collaboration-dashboard/index.ts`:**
-- Usar o relatório `getSharePointSiteUsageStorage(period='D7')` da Graph API para obter `storageUsedInBytes` e `storageAllocatedInBytes` do tenant
-- Alternativamente, usar o endpoint `/sites/{siteId}/drive` por site (mas é lento para muitos sites)
-- Melhor abordagem: usar `getSharePointSiteUsageDetail(period='D30')` que já é chamado — ele retorna `Storage Used (Byte)` e `Storage Allocated (Byte)` por site. Basta somar os valores na iteração existente.
-- Adicionar ao resultado: `sharepoint.storageUsedGB`, `sharepoint.storageAllocatedGB`
+## Paralelização do run-scheduled-analyses
 
-**Hook `useCollaborationDashboard.ts`:**
-- Expandir interface `CollaborationDashboardData.sharepoint` com `storageUsedGB` e `storageAllocatedGB`
+### Problema resolvido
+A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
 
-**Stats Cards `TeamsAnalyzerStatsCards.tsx`:**
-- Adicionar 5º card (ou substituir um) com ícone `HardDrive` mostrando storage usado/total (ex: "12.3 / 25.0 GB") com barra de progresso
+### Solução aplicada
+Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
+- `processFirewallComplianceSchedules`
+- `processExternalDomainSchedules`
+- `processAnalyzerSchedules`
+- `processAttackSurfaceSchedules`
+- `processM365AnalyzerSchedules`
+- `processM365ComplianceSchedules`
 
-### 3. Resumo das mudanças
+CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
 
-| Arquivo | Mudança |
-|---------|---------|
-| `TeamsAnalyzerPage.tsx` | Textos "Teams Analyzer" → "Colaboração Analyzer" |
-| `AppLayout.tsx` | Label do menu lateral |
-| `collaboration-dashboard/index.ts` | Extrair `storageUsed` e `storageAllocated` do relatório SPO já existente |
-| `useCollaborationDashboard.ts` | Adicionar `storageUsedGB`, `storageAllocatedGB` na interface |
-| `TeamsAnalyzerStatsCards.tsx` | Novo card de storage com barra de progresso |
+## Timezone Dinâmico — Preferência do Usuário
 
+### Problema resolvido
+O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
+
+### Solução implementada
+
+| Componente | Mudança |
+|---|---|
+| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
+| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
+| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
+| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
+| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
+
+### Arquitetura
+
+```text
+┌─────────────────────────────────────────────────────┐
+│  Banco: tudo em UTC + coluna timezone por schedule  │
+├─────────────────────────────────────────────────────┤
+│  Frontend: dateUtils usa timezone do perfil         │
+│  ScheduleDialog: converte dinamicamente para UTC    │
+├─────────────────────────────────────────────────────┤
+│  Edge Function: lê timezone de cada registro        │
+│  e calcula offset via Intl.DateTimeFormat           │
+└─────────────────────────────────────────────────────┘
+```

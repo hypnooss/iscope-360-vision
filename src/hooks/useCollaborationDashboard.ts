@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 export interface CollaborationDashboardData {
   teams: { total: number; public: number; private: number; withGuests: number; privateChannels: number; sharedChannels: number };
-  sharepoint: { totalSites: number; activeSites: number; inactiveSites: number; externalSharingEnabled: number; totalLists: number };
+  sharepoint: { totalSites: number; activeSites: number; inactiveSites: number; externalSharingEnabled: number; totalLists: number; storageUsedGB: number; storageAllocatedGB: number };
   analyzedAt: string;
 }
 
@@ -47,7 +47,7 @@ export function useCollaborationDashboard({ tenantRecordId }: UseCollaborationDa
 
   const mapToData = (cache: any, cachedAt?: string): CollaborationDashboardData => ({
     teams: cache.teams || { total: 0, public: 0, private: 0, withGuests: 0, privateChannels: 0, sharedChannels: 0 },
-    sharepoint: cache.sharepoint || { totalSites: 0, activeSites: 0, inactiveSites: 0, externalSharingEnabled: 0, totalLists: 0 },
+    sharepoint: { totalSites: 0, activeSites: 0, inactiveSites: 0, externalSharingEnabled: 0, totalLists: 0, storageUsedGB: 0, storageAllocatedGB: 0, ...(cache.sharepoint || {}) },
     analyzedAt: cache.analyzedAt || cachedAt || '',
   });
 

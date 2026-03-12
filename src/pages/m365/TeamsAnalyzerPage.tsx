@@ -118,12 +118,12 @@ export default function TeamsAnalyzerPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-10">
-        <PageBreadcrumb items={[{ label: 'Microsoft 365' }, { label: 'Teams Analyzer' }]} />
+        <PageBreadcrumb items={[{ label: 'Microsoft 365' }, { label: 'Colaboração Analyzer' }]} />
 
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Teams Analyzer</h1>
+            <h1 className="text-2xl font-bold text-foreground">Colaboração Analyzer</h1>
             <p className="text-muted-foreground">Análise de governança e segurança do Microsoft Teams e SharePoint</p>
           </div>
           <div className="flex items-center gap-3">
@@ -192,7 +192,7 @@ export default function TeamsAnalyzerPage() {
           <Card className="border-warning/30 bg-warning/5">
             <CardContent className="py-10 text-center">
               <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-3" />
-              <h3 className="text-base font-semibold mb-1">Nenhuma análise do Teams encontrada</h3>
+              <h3 className="text-base font-semibold mb-1">Nenhuma análise de Colaboração encontrada</h3>
               <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
                 Não existem análises efetuadas até o momento para este tenant. Clique abaixo para executar a primeira análise do Teams e SharePoint.
               </p>
@@ -237,7 +237,7 @@ export default function TeamsAnalyzerPage() {
               <AlertTriangle className="w-12 h-12 text-warning mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">Tenant Microsoft 365 não conectado</h3>
               <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                Para visualizar o Teams Analyzer, primeiro conecte um tenant Microsoft 365.
+                Para visualizar o Colaboração Analyzer, primeiro conecte um tenant Microsoft 365.
               </p>
               <Button asChild className="gap-2">
                 <Link to="/environment/new/m365"><LinkIcon className="w-4 h-4" />Conectar Tenant</Link>
@@ -250,7 +250,7 @@ export default function TeamsAnalyzerPage() {
         {!noTenants && !selectedTenantId && (
           <Alert>
             <Info className="h-4 w-4" />
-            <AlertDescription>Selecione um tenant para visualizar a análise do Teams.</AlertDescription>
+            <AlertDescription>Selecione um tenant para visualizar a análise de Colaboração.</AlertDescription>
           </Alert>
         )}
 
@@ -268,7 +268,7 @@ export default function TeamsAnalyzerPage() {
         entityId={selectedTenantId ?? ''}
         table="m365_analyzer_schedules"
         entityColumn="tenant_record_id"
-        title="Agendamento do Teams Analyzer"
+        title="Agendamento do Colaboração Analyzer"
         description="Configure a frequência de execução automática da análise do Teams e SharePoint."
         recommendation="Recomendamos agendar a execução 1 vez ao dia para manter a postura atualizada."
       />
