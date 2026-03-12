@@ -272,23 +272,38 @@ Deno.serve(async (req) => {
     // Email traffic - CSV headers are "Send", "Receive", "Read" (not "Send Count", "Receive Count")
     let sent = 0;
     let received = 0;
+    const senderRanking: { name: string; count: number }[] = [];
+    const recipientRanking: { name: string; count: number }[] = [];
     
     if (emailActivityResult?._csv) {
       const rows = parseCsvReport(emailActivityResult._csv);
       console.log(`Email activity report: ${rows.length} rows, headers: ${rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'none'}`);
       rows.forEach((row: any) => {
-        // Try both formats: "Send" (actual) and "Send Count" (documented)
-        sent += parseInt(row['Send'] || row['Send Count'] || '0', 10);
-        received += parseInt(row['Receive'] || row['Receive Count'] || '0', 10);
+        const upn = row['User Principal Name'] || row.userPrincipalName || '';
+        const s = parseInt(row['Send'] || row['Send Count'] || '0', 10);
+        const r = parseInt(row['Receive'] || row['Receive Count'] || '0', 10);
+        sent += s;
+        received += r;
+        if (upn && s > 0) senderRanking.push({ name: upn, count: s });
+        if (upn && r > 0) recipientRanking.push({ name: upn, count: r });
       });
     } else if (emailActivityResult?.value) {
       emailActivityResult.value.forEach((row: any) => {
-        sent += row.send || row.sendCount || 0;
-        received += row.receive || row.receiveCount || 0;
+        const upn = row.userPrincipalName || '';
+        const s = row.send || row.sendCount || 0;
+        const r = row.receive || row.receiveCount || 0;
+        sent += s;
+        received += r;
+        if (upn && s > 0) senderRanking.push({ name: upn, count: s });
+        if (upn && r > 0) recipientRanking.push({ name: upn, count: r });
       });
     } else {
       console.warn('Email activity report returned no data. Check Reports.Read.All permission.');
     }
+
+    // Sort rankings and keep top 15
+    senderRanking.sort((a, b) => b.count - a.count);
+    recipientRanking.sort((a, b) => b.count - a.count);
 
     // Fetch auto-reply and forwarding info - use simple query (no $filter/$count)
     let forwardingEnabled = 0;
@@ -376,6 +391,10 @@ Deno.serve(async (req) => {
         inactiveUsers90: inactiveUsers90.slice(0, 50),
       },
       traffic: { sent, received },
+      trafficRankings: {
+        topSenders: senderRanking.slice(0, 15),
+        topRecipients: recipientRanking.slice(0, 15),
+      },
       security: {
         maliciousInbound,
         phishing,

@@ -1,83 +1,106 @@
+1: # Status: ✅ Implementado
 
+## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-## Problema: Sheet de Tráfego de Email sem dados de ranking
+### Problema resolvido
+Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
 
-### Diagnóstico
+### Mudanças implementadas
 
-A sheet lateral do "Tráfego de Email" busca rankings (Top Remetentes, Top Destinatários, Top Domínios) de `analyzerMetrics.emailTrafficRankings`, que vem do snapshot do M365 Analyzer (PowerShell `exoMessageTrace`). Para o tenant IE MADEIRA, o PowerShell não retornou dados de message trace — os arrays estão vazios no banco.
+| Componente | Mudança |
+|---|---|
+| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
+| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
+| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
 
-Porém, a **edge function `exchange-dashboard`** já coleta o relatório de atividade de email via Graph API (`getEmailActivity`), que contém contagens de envio/recebimento **por usuário**. Esses dados já estão sendo iterados para somar os totais, mas os detalhes por usuário são descartados.
+## Correção de Dados — scheduled_hour UTC→BRT
 
-### Solução
+### Problema resolvido
+Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
 
-Enriquecer a `exchange-dashboard` para extrair rankings de tráfego diretamente do relatório Graph API e persistir no cache. Ajustar o frontend para usar esses rankings do cache como fallback quando os do analyzer estiverem vazios.
+### Solução aplicada
+1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
+2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
+3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
 
-### Alterações
+## Paralelização do run-scheduled-analyses
 
-**1. Edge Function `supabase/functions/exchange-dashboard/index.ts`**
+### Problema resolvido
+A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
 
-No bloco de parsing do email activity report (linhas 276-291), coletar top senders e top recipients:
+### Solução aplicada
+Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
+- `processFirewallComplianceSchedules`
+- `processExternalDomainSchedules`
+- `processAnalyzerSchedules`
+- `processAttackSurfaceSchedules`
+- `processM365AnalyzerSchedules`
+- `processM365ComplianceSchedules`
 
-```ts
-const senderRanking: { name: string; count: number }[] = [];
-const recipientRanking: { name: string; count: number }[] = [];
+CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
 
-rows.forEach((row: any) => {
-  const upn = row['User Principal Name'] || row.userPrincipalName || '';
-  const s = parseInt(row['Send'] || row['Send Count'] || '0', 10);
-  const r = parseInt(row['Receive'] || row['Receive Count'] || '0', 10);
-  sent += s;
-  received += r;
-  if (upn && s > 0) senderRanking.push({ name: upn, count: s });
-  if (upn && r > 0) recipientRanking.push({ name: upn, count: r });
-});
+## Timezone Dinâmico — Preferência do Usuário
 
-// Sort and take top 15
-senderRanking.sort((a, b) => b.count - a.count);
-recipientRanking.sort((a, b) => b.count - a.count);
+### Problema resolvido
+O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
+
+### Solução implementada
+
+| Componente | Mudança |
+|---|---|
+| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
+| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
+| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
+| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
+| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
+
+### Arquitetura
+
+```text
+┌─────────────────────────────────────────────────────┐
+│  Banco: tudo em UTC + coluna timezone por schedule  │
+├─────────────────────────────────────────────────────┤
+│  Frontend: dateUtils usa timezone do perfil         │
+│  ScheduleDialog: converte dinamicamente para UTC    │
+├─────────────────────────────────────────────────────┤
+│  Edge Function: lê timezone de cada registro        │
+│  e calcula offset via Intl.DateTimeFormat           │
+└─────────────────────────────────────────────────────┘
 ```
 
-Adicionar ao objeto `result`:
-```ts
-trafficRankings: {
-  topSenders: senderRanking.slice(0, 15),
-  topRecipients: recipientRanking.slice(0, 15),
-},
+## Correção de Dados Duplicados — Exchange Analyzer
+
+### Status: ✅ Implementado
+
+### Problema resolvido
+O Exchange Analyzer usava janelas temporais fixas de 24h tanto no PowerShell (blueprint) quanto nas queries Graph API (edge function), causando sobreposição de dados entre snapshots consecutivos e contagem duplicada de eventos.
+
+### Mudanças implementadas
+
+| Componente | Mudança |
+|---|---|
+| **Blueprint `m365` (hybrid)** | Comando `exo_message_trace` alterado de `-StartDate (Get-Date).AddHours(-24)` para `-StartDate "{period_start}" -EndDate "{period_end}"`, usando os valores do payload da task |
+| **`supabase/functions/m365-analyzer/index.ts`** | Duas janelas fixas de 24h (fallback Graph API ~linha 2147 e enriquecimento ~linha 2197) substituídas por `snapshot.period_start`/`period_end` com fallback para 24h se ausentes. Filtro `createdDateTime le` adicionado para limite superior |
+| **Frontend** | Sem alteração necessária — agregação já funciona corretamente com snapshots não-sobrepostos |
+
+### Arquitetura final
+```text
+trigger-m365-analyzer:
+  period_start = last_snapshot.period_end (ou now - 2h)
+  period_end = now
+  → Cria snapshot + agent_task com period_start/period_end no payload
+
+Blueprint (PowerShell):
+  Get-MessageTraceV2 -StartDate "{period_start}" -EndDate "{period_end}"
+  → Agente interpola placeholders do payload
+
+Edge Function (Graph API):
+  $filter=createdDateTime ge {period_start} and createdDateTime le {period_end}
+  → Usa snapshot.period_start/period_end
+
+Frontend (useM365AnalyzerData.ts):
+  Soma contadores de snapshots consecutivos sem sobreposição
+  → Dados precisos sem duplicação
 ```
-
-**2. Hook `src/hooks/useExchangeDashboard.ts`**
-
-Expandir `ExchangeDashboardData` para incluir `trafficRankings`:
-```ts
-trafficRankings?: {
-  topSenders: { name: string; count: number }[];
-  topRecipients: { name: string; count: number }[];
-};
-```
-
-Mapear no `mapToData`:
-```ts
-trafficRankings: cache.trafficRankings || undefined,
-```
-
-**3. Sheet `src/components/m365/exchange/ExchangeCategorySheet.tsx`**
-
-No `renderTrafficContent`, usar rankings do dashboard cache como fallback:
-```ts
-const trafficRankings = analyzerMetrics?.emailTrafficRankings;
-const cacheRankings = dashboardData?.trafficRankings;
-
-// Use analyzer rankings if available, otherwise fall back to cache
-const topSenders = trafficRankings?.topSenders?.length ? trafficRankings.topSenders : cacheRankings?.topSenders || [];
-const topRecipients = trafficRankings?.topRecipients?.length ? trafficRankings.topRecipients : cacheRankings?.topRecipients || [];
-// Domains only available from analyzer
-const topDestDomains = trafficRankings?.topDestinationDomains || [];
-const topSrcDomains = trafficRankings?.topSourceDomains || [];
-```
-
-### Resultado
-
-- Os rankings de remetentes/destinatários serão populados pela Graph API (sempre disponível), sem depender do PowerShell
-- Rankings de domínios continuam dependendo do analyzer (PowerShell) mas falham graciosamente
-- O cache é atualizado tanto em execuções manuais quanto agendadas
-
