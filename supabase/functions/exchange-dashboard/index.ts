@@ -391,6 +391,10 @@ Deno.serve(async (req) => {
         inactiveUsers90: inactiveUsers90.slice(0, 50),
       },
       traffic: { sent, received },
+      trafficRankings: {
+        topSenders: senderRanking.slice(0, 15),
+        topRecipients: recipientRanking.slice(0, 15),
+      },
       security: {
         maliciousInbound,
         phishing,

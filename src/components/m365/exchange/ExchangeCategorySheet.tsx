@@ -158,7 +158,15 @@ export function ExchangeCategorySheet({
 
   const meta = CATEGORY_META[category];
   const IconComp = meta.icon;
-  const traffic = analyzerMetrics?.emailTrafficRankings;
+  const analyzerTraffic = analyzerMetrics?.emailTrafficRankings;
+  const cacheRankings = dashboardData?.trafficRankings;
+  // Use analyzer rankings if available, otherwise fall back to dashboard cache (Graph API)
+  const traffic = {
+    topSenders: analyzerTraffic?.topSenders?.length ? analyzerTraffic.topSenders : cacheRankings?.topSenders || [],
+    topRecipients: analyzerTraffic?.topRecipients?.length ? analyzerTraffic.topRecipients : cacheRankings?.topRecipients || [],
+    topDestinationDomains: analyzerTraffic?.topDestinationDomains || [],
+    topSourceDomains: analyzerTraffic?.topSourceDomains || [],
+  };
   const mbRankings = analyzerMetrics?.mailboxRankings;
   const threatData = analyzerMetrics?.threatProtection;
   const phishingData = analyzerMetrics?.phishing;

@@ -50,6 +50,7 @@ export function useExchangeDashboard({ tenantRecordId }: UseExchangeDashboardOpt
   const mapToData = (cache: any, cachedAt?: string): ExchangeDashboardData => ({
     mailboxes: cache.mailboxes || { total: 0, overQuota: 0, forwardingEnabled: 0, autoReplyExternal: 0, newLast30d: 0, notLoggedIn30d: 0, notLoggedIn60d: 0, notLoggedIn90d: 0 },
     traffic: cache.traffic || { sent: 0, received: 0 },
+    trafficRankings: cache.trafficRankings || undefined,
     security: cache.security || { maliciousInbound: 0, phishing: 0, malware: 0, spam: 0 },
     analyzedAt: cache.analyzedAt || cachedAt || '',
   });
