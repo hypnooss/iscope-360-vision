@@ -213,14 +213,13 @@ Deno.serve(async (req) => {
     let storageUsedBytes = 0;
     let storageAllocatedBytes = 0;
 
-    const siteUsageCsv = await graphGet(
+    const siteUsageText = await graphGetText(
       accessToken,
-      "https://graph.microsoft.com/v1.0/reports/getSharePointSiteUsageDetail(period='D30')",
-      { 'Accept': 'application/json' }
+      "https://graph.microsoft.com/v1.0/reports/getSharePointSiteUsageDetail(period='D30')"
     ).catch(() => null);
 
-    if (siteUsageCsv && typeof siteUsageCsv === 'string') {
-      const rows = parseCsvReport(siteUsageCsv);
+    if (siteUsageText) {
+      const rows = parseCsvReport(siteUsageText);
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       rows.forEach((row: any) => {
         const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
@@ -235,22 +234,7 @@ Deno.serve(async (req) => {
           inactiveSites++;
         }
       });
-    } else if (siteUsageCsv?.value) {
-      const rows = siteUsageCsv.value || [];
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      rows.forEach((row: any) => {
-        const used = parseInt(row.storageUsedInBytes || '0', 10);
-        const allocated = parseInt(row.storageAllocatedInBytes || '0', 10);
-        if (!isNaN(used)) storageUsedBytes += used;
-        if (!isNaN(allocated)) storageAllocatedBytes += allocated;
-        if (row.lastActivityDate) {
-          const lastActivity = new Date(row.lastActivityDate);
-          if (lastActivity >= thirtyDaysAgo) activeSites++;
-          else inactiveSites++;
-        } else {
-          inactiveSites++;
-        }
-      });
+      console.log(`SharePoint storage: used=${storageUsedBytes}, allocated=${storageAllocatedBytes}, rows=${rows.length}`);
     }
 
     // External sharing - check site count (requires admin-level scope)
