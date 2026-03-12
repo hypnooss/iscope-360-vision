@@ -1,44 +1,59 @@
 
 
-## Diagnóstico: Exchange Analyzer sem dados para alguns tenants
+## Ajuste: Exibir período agregado nos Analyzers M365
 
-### Causa Raiz
+### Contexto
+As três páginas de Analyzer M365 exibem apenas "Última coleta" com a data. O Firewall Analyzer exibe também "Período agregado" (com range de datas) e o badge de "N coletas". Os dados necessários (`period_start`, `period_end`, `snapshotCount`) já existem no `analyzerSnapshot` retornado pelo hook `useLatestM365AnalyzerSnapshot`.
 
-A edge function `exchange-dashboard` retorna o resultado **sem o campo `success: true`** na resposta (linha 398):
+### Alterações
 
-```js
-// Atual (linha 398):
-return new Response(JSON.stringify(result), { ... });
+Nas três páginas, substituir o bloco "Last analysis info" atual (que só mostra `analyzedAt`) pelo padrão completo do Firewall Analyzer:
 
-// O scheduler espera:
-if (!exchResult.success) { retry... }
+**Arquivos afetados:**
+1. `src/pages/m365/ExchangeAnalyzerPage.tsx` (linhas 241-248)
+2. `src/pages/m365/EntraIdAnalyzerPage.tsx` (linhas 198-206)
+3. `src/pages/m365/TeamsAnalyzerPage.tsx` (linhas 179-187)
+
+**De:**
+```tsx
+{analyzedAt && (
+  <div className="flex items-center gap-3 flex-wrap mb-8">
+    <Clock className="w-4 h-4 text-muted-foreground" />
+    <span className="text-sm text-muted-foreground">Última coleta</span>
+    <Badge variant="outline" className="text-xs">
+      {formatDateTimeBR(analyzedAt)}
+    </Badge>
+  </div>
+)}
 ```
 
-Como `result` não tem `success`, o scheduler interpreta como falha e faz retry. Antes do fix de autenticação (aplicado hoje), ambas as tentativas falhavam com 401. Resultado: o cache do Exchange nunca foi gravado para tenants como IE MADEIRA.
-
-Os caches de Entra ID e Collaboration sobreviveram porque foram populados em execuções anteriores e **não foram limpos** (só o Exchange foi zerado pelo UPDATE).
-
-### Confirmação nos dados
-
-| Tenant | Exchange Cache | Entra Cache | Collab Cache |
-|---|---|---|---|
-| IE MADEIRA | NULL | 10/03 15:02 | 07/03 17:44 |
-
-### Correção
-
-Alterar a resposta da `exchange-dashboard` para incluir `success: true` no objeto retornado, garantindo que o scheduler reconheça o sucesso:
-
-```ts
-// Linha 398 - Antes:
-return new Response(JSON.stringify(result), { ... });
-
-// Depois:
-return new Response(JSON.stringify({ success: true, ...result }), { ... });
+**Para:**
+```tsx
+{analyzedAt && (
+  <div className="flex items-center gap-3 flex-wrap mb-8">
+    <Clock className="w-4 h-4 text-muted-foreground" />
+    <span className="text-sm text-muted-foreground">Última coleta:</span>
+    <Badge variant="outline" className="text-xs">
+      {formatDateTimeBR(analyzedAt)}
+    </Badge>
+    {analyzerSnapshot?.period_start && analyzerSnapshot?.period_end && (
+      <>
+        <span className="text-sm text-muted-foreground">Período agregado:</span>
+        <Badge variant="outline" className="text-xs">
+          {formatShortDateTimeBR(analyzerSnapshot.period_start)}
+          {' → '}
+          {formatShortDateTimeBR(analyzerSnapshot.period_end)}
+        </Badge>
+      </>
+    )}
+    {(analyzerSnapshot as any)?.snapshotCount && (
+      <Badge variant="secondary" className="text-xs">
+        {(analyzerSnapshot as any).snapshotCount} coletas
+      </Badge>
+    )}
+  </div>
+)}
 ```
 
-Verificar e aplicar o mesmo padrão em `entra-id-dashboard` e `collaboration-dashboard` para consistência.
-
-### Ação Imediata
-
-Enquanto o fix é aplicado, o usuário pode clicar em **"Executar Análise"** na página do Exchange Analyzer para IE MADEIRA — o botão chama a `exchange-dashboard` diretamente com JWT de usuário (que sempre funcionou), populando o cache imediatamente.
+Cada arquivo também precisará do import de `formatShortDateTimeBR` de `@/lib/dateUtils` (adicionando ao import existente de `formatDateTimeBR`).
 
