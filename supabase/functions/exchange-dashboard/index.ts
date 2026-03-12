@@ -266,41 +266,52 @@ Deno.serve(async (req) => {
       console.warn('Mailbox usage report returned no data. Check Reports.Read.All permission.');
     }
 
-    // Email traffic - CSV headers are "Send", "Receive", "Read" (not "Send Count", "Receive Count")
+    // Email traffic and rankings — aggregate from analyzer snapshots (contiguous windows)
     let sent = 0;
     let received = 0;
-    const senderRanking: { name: string; count: number }[] = [];
-    const recipientRanking: { name: string; count: number }[] = [];
-    
-    if (emailActivityResult?._csv) {
-      const rows = parseCsvReport(emailActivityResult._csv);
-      console.log(`Email activity report: ${rows.length} rows, headers: ${rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'none'}`);
-      rows.forEach((row: any) => {
-        const upn = row['User Principal Name'] || row.userPrincipalName || '';
-        const s = parseInt(row['Send'] || row['Send Count'] || '0', 10);
-        const r = parseInt(row['Receive'] || row['Receive Count'] || '0', 10);
-        sent += s;
-        received += r;
-        if (upn && s > 0) senderRanking.push({ name: upn, count: s });
-        if (upn && r > 0) recipientRanking.push({ name: upn, count: r });
-      });
-    } else if (emailActivityResult?.value) {
-      emailActivityResult.value.forEach((row: any) => {
-        const upn = row.userPrincipalName || '';
-        const s = row.send || row.sendCount || 0;
-        const r = row.receive || row.receiveCount || 0;
-        sent += s;
-        received += r;
-        if (upn && s > 0) senderRanking.push({ name: upn, count: s });
-        if (upn && r > 0) recipientRanking.push({ name: upn, count: r });
-      });
-    } else {
-      console.warn('Email activity report returned no data. Check Reports.Read.All permission.');
+    const senderMap: Record<string, number> = {};
+    const recipientMap: Record<string, number> = {};
+
+    try {
+      const { data: trafficSnapshots } = await supabase
+        .from('m365_analyzer_snapshots')
+        .select('metrics')
+        .eq('tenant_record_id', tenant_record_id)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false });
+
+      if (trafficSnapshots && trafficSnapshots.length > 0) {
+        for (const snap of trafficSnapshots) {
+          const m = snap.metrics as any;
+          // Aggregate emailTraffic totals
+          const et = m?.emailTraffic;
+          if (et) {
+            sent += et.sent || 0;
+            received += et.received || 0;
+          }
+          // Aggregate emailTrafficRankings
+          const etr = m?.emailTrafficRankings;
+          if (etr) {
+            for (const s of (etr.topSenders || [])) {
+              if (s.name) senderMap[s.name] = (senderMap[s.name] || 0) + (s.count || 0);
+            }
+            for (const r of (etr.topRecipients || [])) {
+              if (r.name) recipientMap[r.name] = (recipientMap[r.name] || 0) + (r.count || 0);
+            }
+          }
+        }
+        console.log(`Traffic aggregated from ${trafficSnapshots.length} snapshots - sent: ${sent}, received: ${received}`);
+      }
+    } catch (e) {
+      console.warn('Failed to aggregate traffic from snapshots:', e);
     }
 
-    // Sort rankings and keep top 15
-    senderRanking.sort((a, b) => b.count - a.count);
-    recipientRanking.sort((a, b) => b.count - a.count);
+    const senderRanking = Object.entries(senderMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+    const recipientRanking = Object.entries(recipientMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
 
     // Fetch auto-reply and forwarding info - use simple query (no $filter/$count)
     let forwardingEnabled = 0;
