@@ -237,7 +237,7 @@ export default function TeamsAnalyzerPage() {
               <AlertTriangle className="w-12 h-12 text-warning mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">Tenant Microsoft 365 não conectado</h3>
               <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                Para visualizar o Teams Analyzer, primeiro conecte um tenant Microsoft 365.
+                Para visualizar o Colaboração Analyzer, primeiro conecte um tenant Microsoft 365.
               </p>
               <Button asChild className="gap-2">
                 <Link to="/environment/new/m365"><LinkIcon className="w-4 h-4" />Conectar Tenant</Link>
