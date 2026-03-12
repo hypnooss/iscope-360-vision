@@ -69,3 +69,38 @@ O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de data
 │  e calcula offset via Intl.DateTimeFormat           │
 └─────────────────────────────────────────────────────┘
 ```
+
+## Correção de Dados Duplicados — Exchange Analyzer
+
+### Status: ✅ Implementado
+
+### Problema resolvido
+O Exchange Analyzer usava janelas temporais fixas de 24h tanto no PowerShell (blueprint) quanto nas queries Graph API (edge function), causando sobreposição de dados entre snapshots consecutivos e contagem duplicada de eventos.
+
+### Mudanças implementadas
+
+| Componente | Mudança |
+|---|---|
+| **Blueprint `m365` (hybrid)** | Comando `exo_message_trace` alterado de `-StartDate (Get-Date).AddHours(-24)` para `-StartDate "{period_start}" -EndDate "{period_end}"`, usando os valores do payload da task |
+| **`supabase/functions/m365-analyzer/index.ts`** | Duas janelas fixas de 24h (fallback Graph API ~linha 2147 e enriquecimento ~linha 2197) substituídas por `snapshot.period_start`/`period_end` com fallback para 24h se ausentes. Filtro `createdDateTime le` adicionado para limite superior |
+| **Frontend** | Sem alteração necessária — agregação já funciona corretamente com snapshots não-sobrepostos |
+
+### Arquitetura final
+```text
+trigger-m365-analyzer:
+  period_start = last_snapshot.period_end (ou now - 2h)
+  period_end = now
+  → Cria snapshot + agent_task com period_start/period_end no payload
+
+Blueprint (PowerShell):
+  Get-MessageTraceV2 -StartDate "{period_start}" -EndDate "{period_end}"
+  → Agente interpola placeholders do payload
+
+Edge Function (Graph API):
+  $filter=createdDateTime ge {period_start} and createdDateTime le {period_end}
+  → Usa snapshot.period_start/period_end
+
+Frontend (useM365AnalyzerData.ts):
+  Soma contadores de snapshots consecutivos sem sobreposição
+  → Dados precisos sem duplicação
+```
