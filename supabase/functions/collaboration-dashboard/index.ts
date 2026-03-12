@@ -260,7 +260,9 @@ Deno.serve(async (req) => {
         activeSites: activeSites || totalSites, // fallback
         inactiveSites,
         externalSharingEnabled,
-        totalLists: 0, // Would require per-site enumeration
+        totalLists: 0,
+        storageUsedGB: parseFloat((storageUsedBytes / (1024 ** 3)).toFixed(2)),
+        storageAllocatedGB: parseFloat((storageAllocatedBytes / (1024 ** 3)).toFixed(2)),
       },
       analyzedAt: now.toISOString(),
     };
