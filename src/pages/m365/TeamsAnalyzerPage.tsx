@@ -118,7 +118,7 @@ export default function TeamsAnalyzerPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-10">
-        <PageBreadcrumb items={[{ label: 'Microsoft 365' }, { label: 'Teams Analyzer' }]} />
+        <PageBreadcrumb items={[{ label: 'Microsoft 365' }, { label: 'Colaboração Analyzer' }]} />
 
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
