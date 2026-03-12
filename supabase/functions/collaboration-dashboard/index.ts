@@ -237,7 +237,7 @@ Deno.serve(async (req) => {
         console.log(`SharePoint CSV headers: ${Object.keys(rows[0]).join(', ')}`);
         console.log(`SharePoint first row sample: ${JSON.stringify(rows[0]).substring(0, 300)}`);
       }
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       rows.forEach((row: any) => {
         const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
         const allocated = parseInt(row['Storage Allocated (Byte)'] || '0', 10);
