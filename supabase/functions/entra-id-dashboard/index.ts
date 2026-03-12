@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { data: tenant } = await supabase.from('m365_tenants').select('id, tenant_id, tenant_domain, client_id').eq('id', tenant_record_id).single();
+    const { data: tenant } = await supabase.from('m365_tenants').select('id, tenant_id, tenant_domain, client_id, entra_dashboard_cached_at').eq('id', tenant_record_id).single();
     if (!tenant) {
       return new Response(JSON.stringify({ success: false, error: 'Tenant not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -127,8 +127,11 @@ Deno.serve(async (req) => {
     const accessToken = await getAccessToken(tenant.tenant_id, globalConfig.app_id, clientSecret);
 
     const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    // Contiguous window: from last successful execution to now (fallback: 24h)
+    const periodStart = (tenant as any).entra_dashboard_cached_at
+      ? new Date((tenant as any).entra_dashboard_cached_at).toISOString()
+      : new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    console.log(`[entra-id-dashboard] Contiguous window: ${periodStart} → ${now.toISOString()}`);
 
     // Fetch all data in parallel
     const [
@@ -155,12 +158,12 @@ Deno.serve(async (req) => {
       graphGet(accessToken, 'https://graph.microsoft.com/v1.0/directoryRoles?$expand=members').catch(() => ({ value: [] })),
       // MFA registration details
       graphGetAllPages(accessToken, 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=999').catch(() => []),
-      // Sign-in logs (30 days)
-      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$filter=createdDateTime ge ${thirtyDaysAgo}&$top=500&$orderby=createdDateTime desc`, 2).catch(() => []),
-      // Directory audit logs (30 days)
-      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${thirtyDaysAgo}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
-      // Directory audit logs (7 days) for password activity
-      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${sevenDaysAgo}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
+      // Sign-in logs (contiguous window)
+      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$filter=createdDateTime ge ${periodStart}&$top=500&$orderby=createdDateTime desc`, 2).catch(() => []),
+      // Directory audit logs (contiguous window)
+      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
+      // Directory audit logs (same contiguous window — password activity)
+      graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
       // Risky users (requires P2)
       graphGet(accessToken, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100').catch(() => null),
     ]);
@@ -321,6 +324,8 @@ Deno.serve(async (req) => {
       loginCountriesSuccess,
       loginCountriesFailed,
       analyzedAt: now.toISOString(),
+      periodStart,
+      periodEnd: now.toISOString(),
     };
 
     // Save cache to m365_tenants

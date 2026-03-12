@@ -145,6 +145,15 @@ function parseMetrics(raw: unknown): M365AnalyzerMetrics {
         malwareFilter: tp.policyStatus?.malwareFilter ?? 'disabled',
       },
     },
+    emailTraffic: (() => {
+      const et = m.emailTraffic ?? m.email_traffic;
+      if (!et) return undefined;
+      return {
+        sent: safeNum(et.sent),
+        received: safeNum(et.received),
+        totalMessages: safeNum(et.totalMessages),
+      };
+    })(),
     emailTrafficRankings: (() => {
       const etr = m.emailTrafficRankings ?? m.email_traffic_rankings;
       if (!etr) return undefined;
@@ -307,10 +316,24 @@ function aggregateSnapshots(snapshots: M365AnalyzerSnapshot[]): M365AnalyzerSnap
     { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
   );
 
-  // Use latest metrics as base but aggregate threatProtection across all snapshots
+  // Use latest metrics as base but aggregate threatProtection and emailTraffic across all snapshots
+  const aggregatedEmailTraffic = (() => {
+    let sent = 0, received = 0, totalMessages = 0;
+    for (const s of snapshots) {
+      const et = s.metrics?.emailTraffic;
+      if (et) {
+        sent += et.sent ?? 0;
+        received += et.received ?? 0;
+        totalMessages += et.totalMessages ?? 0;
+      }
+    }
+    return { sent, received, totalMessages };
+  })();
+
   const metrics: M365AnalyzerMetrics = {
     ...latest.metrics,
     threatProtection: aggregateThreatProtection(snapshots),
+    emailTraffic: aggregatedEmailTraffic,
   };
 
   const scoreHistory: ScoreHistoryPoint[] = snapshots

@@ -222,9 +222,10 @@ Deno.serve(async (req) => {
     let storageUsedBytes = 0;
     let storageAllocatedBytes = 0;
 
+    // SharePoint usage report — state data, D7 to avoid duplication across cache refreshes
     const siteUsageText = await graphGetText(
       accessToken,
-      "https://graph.microsoft.com/v1.0/reports/getSharePointSiteUsageDetail(period='D30')"
+      "https://graph.microsoft.com/v1.0/reports/getSharePointSiteUsageDetail(period='D7')"
     ).catch(() => null);
 
     if (siteUsageText) {

@@ -2374,6 +2374,21 @@ Deno.serve(async (req) => {
         fullAccessGrants: operational.metrics.fullAccessGrants || 0,
       },
       threatProtection: threatProtection.metrics,
+      // ── Email Traffic Totals (contiguous window) ──
+      emailTraffic: (() => {
+        const tenantDomainsLower = tenantDomains.map(d => d.toLowerCase());
+        let sentCount = 0;
+        let receivedCount = 0;
+        for (const msg of exoMessageTrace) {
+          const sender = (msg.SenderAddress || msg.Sender || '').toLowerCase();
+          const recipient = (msg.RecipientAddress || msg.Recipient || '').toLowerCase();
+          const senderIsInternal = tenantDomainsLower.some(d => sender.endsWith('@' + d));
+          const recipientIsInternal = tenantDomainsLower.some(d => recipient.endsWith('@' + d));
+          if (senderIsInternal) sentCount++;
+          if (recipientIsInternal) receivedCount++;
+        }
+        return { sent: sentCount, received: receivedCount, totalMessages: exoMessageTrace.length };
+      })(),
       // ── Email Traffic Rankings ──
       emailTrafficRankings: (() => {
         const senderMap: Record<string, number> = {};

@@ -134,6 +134,11 @@ export interface M365AnalyzerMetrics {
       malwareFilter: 'enabled' | 'weak' | 'disabled';
     };
   };
+  emailTraffic?: {
+    sent: number;
+    received: number;
+    totalMessages: number;
+  };
   emailTrafficRankings?: {
     topSenders: { name: string; count: number }[];
     topRecipients: { name: string; count: number }[];

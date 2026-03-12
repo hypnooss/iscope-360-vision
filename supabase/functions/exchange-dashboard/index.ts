@@ -161,11 +161,8 @@ Deno.serve(async (req) => {
       console.warn('Failed to build non-user exclusion set:', e);
     }
 
-    // Fetch reports in parallel - reports return CSV by default
-    const [mailboxUsageResult, emailActivityResult] = await Promise.all([
-      graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='D30')").catch(e => { console.warn('mailboxUsage error:', e); return null; }),
-      graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getEmailActivityCounts(period='D30')").catch(e => { console.warn('emailActivity error:', e); return null; }),
-    ]);
+    // Fetch mailbox usage report (state data — D7 to avoid duplication across snapshots)
+    const mailboxUsageResult = await graphGet(accessToken, "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='D7')").catch(e => { console.warn('mailboxUsage error:', e); return null; });
 
     // Parse mailbox usage data
     let totalMailboxes = 0;
@@ -269,41 +266,52 @@ Deno.serve(async (req) => {
       console.warn('Mailbox usage report returned no data. Check Reports.Read.All permission.');
     }
 
-    // Email traffic - CSV headers are "Send", "Receive", "Read" (not "Send Count", "Receive Count")
+    // Email traffic and rankings — aggregate from analyzer snapshots (contiguous windows)
     let sent = 0;
     let received = 0;
-    const senderRanking: { name: string; count: number }[] = [];
-    const recipientRanking: { name: string; count: number }[] = [];
-    
-    if (emailActivityResult?._csv) {
-      const rows = parseCsvReport(emailActivityResult._csv);
-      console.log(`Email activity report: ${rows.length} rows, headers: ${rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'none'}`);
-      rows.forEach((row: any) => {
-        const upn = row['User Principal Name'] || row.userPrincipalName || '';
-        const s = parseInt(row['Send'] || row['Send Count'] || '0', 10);
-        const r = parseInt(row['Receive'] || row['Receive Count'] || '0', 10);
-        sent += s;
-        received += r;
-        if (upn && s > 0) senderRanking.push({ name: upn, count: s });
-        if (upn && r > 0) recipientRanking.push({ name: upn, count: r });
-      });
-    } else if (emailActivityResult?.value) {
-      emailActivityResult.value.forEach((row: any) => {
-        const upn = row.userPrincipalName || '';
-        const s = row.send || row.sendCount || 0;
-        const r = row.receive || row.receiveCount || 0;
-        sent += s;
-        received += r;
-        if (upn && s > 0) senderRanking.push({ name: upn, count: s });
-        if (upn && r > 0) recipientRanking.push({ name: upn, count: r });
-      });
-    } else {
-      console.warn('Email activity report returned no data. Check Reports.Read.All permission.');
+    const senderMap: Record<string, number> = {};
+    const recipientMap: Record<string, number> = {};
+
+    try {
+      const { data: trafficSnapshots } = await supabase
+        .from('m365_analyzer_snapshots')
+        .select('metrics')
+        .eq('tenant_record_id', tenant_record_id)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false });
+
+      if (trafficSnapshots && trafficSnapshots.length > 0) {
+        for (const snap of trafficSnapshots) {
+          const m = snap.metrics as any;
+          // Aggregate emailTraffic totals
+          const et = m?.emailTraffic;
+          if (et) {
+            sent += et.sent || 0;
+            received += et.received || 0;
+          }
+          // Aggregate emailTrafficRankings
+          const etr = m?.emailTrafficRankings;
+          if (etr) {
+            for (const s of (etr.topSenders || [])) {
+              if (s.name) senderMap[s.name] = (senderMap[s.name] || 0) + (s.count || 0);
+            }
+            for (const r of (etr.topRecipients || [])) {
+              if (r.name) recipientMap[r.name] = (recipientMap[r.name] || 0) + (r.count || 0);
+            }
+          }
+        }
+        console.log(`Traffic aggregated from ${trafficSnapshots.length} snapshots - sent: ${sent}, received: ${received}`);
+      }
+    } catch (e) {
+      console.warn('Failed to aggregate traffic from snapshots:', e);
     }
 
-    // Sort rankings and keep top 15
-    senderRanking.sort((a, b) => b.count - a.count);
-    recipientRanking.sort((a, b) => b.count - a.count);
+    const senderRanking = Object.entries(senderMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+    const recipientRanking = Object.entries(recipientMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
 
     // Fetch auto-reply and forwarding info - use simple query (no $filter/$count)
     let forwardingEnabled = 0;
@@ -339,20 +347,18 @@ Deno.serve(async (req) => {
       console.warn('Failed to fetch user mailbox settings:', e);
     }
 
-    // Security data from M365 Analyzer snapshots — aggregate last 30 days
+    // Security data from M365 Analyzer snapshots — aggregate ALL completed (no cutoff, frontend controls aggregation)
     let maliciousInbound = 0;
     let phishing = 0;
     let malware = 0;
     let spam = 0;
 
     try {
-      const securityCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const { data: secSnapshots } = await supabase
         .from('m365_analyzer_snapshots')
         .select('metrics')
         .eq('tenant_record_id', tenant_record_id)
         .eq('status', 'completed')
-        .gte('created_at', securityCutoff)
         .order('created_at', { ascending: false });
 
       if (secSnapshots && secSnapshots.length > 0) {
@@ -365,9 +371,9 @@ Deno.serve(async (req) => {
           }
         }
         maliciousInbound = phishing + malware;
-        console.log(`Security aggregated from ${secSnapshots.length} snapshots (30d) - spam: ${spam}, phishing: ${phishing}, malware: ${malware}`);
+        console.log(`Security aggregated from ${secSnapshots.length} snapshots (all) - spam: ${spam}, phishing: ${phishing}, malware: ${malware}`);
       } else {
-        console.warn('No completed M365 analyzer snapshots found for tenant in last 30 days');
+        console.warn('No completed M365 analyzer snapshots found for tenant');
       }
     } catch (e) {
       console.warn('Failed to fetch analyzer snapshots for security data:', e);
