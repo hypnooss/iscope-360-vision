@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { data: tenant } = await supabase.from('m365_tenants').select('id, tenant_id, tenant_domain, client_id').eq('id', tenant_record_id).single();
+    const { data: tenant } = await supabase.from('m365_tenants').select('id, tenant_id, tenant_domain, client_id, entra_dashboard_cached_at').eq('id', tenant_record_id).single();
     if (!tenant) {
       return new Response(JSON.stringify({ success: false, error: 'Tenant not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
