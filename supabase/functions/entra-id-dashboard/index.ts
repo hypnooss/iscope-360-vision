@@ -127,8 +127,11 @@ Deno.serve(async (req) => {
     const accessToken = await getAccessToken(tenant.tenant_id, globalConfig.app_id, clientSecret);
 
     const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    // Contiguous window: from last successful execution to now (fallback: 24h)
+    const periodStart = (tenant as any).entra_dashboard_cached_at
+      ? new Date((tenant as any).entra_dashboard_cached_at).toISOString()
+      : new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    console.log(`[entra-id-dashboard] Contiguous window: ${periodStart} → ${now.toISOString()}`);
 
     // Fetch all data in parallel
     const [
