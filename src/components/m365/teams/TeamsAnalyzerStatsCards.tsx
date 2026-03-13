@@ -51,7 +51,8 @@ export function TeamsAnalyzerStatsCards({ data }: TeamsAnalyzerStatsCardsProps) 
       </Card>
 
       {/* Convidados Externos */}
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex items-center gap-3">
           <UserPlus className="w-8 h-8 text-amber-500" />
           <div>
