@@ -1,6 +1,7 @@
 import { Users, Eye, UserPlus, Share2, HardDrive } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { DataSourceDot } from '@/components/m365/shared';
 import type { CollaborationDashboardData } from '@/hooks/useCollaborationDashboard';
 
 interface TeamsAnalyzerStatsCardsProps {
