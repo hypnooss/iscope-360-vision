@@ -300,9 +300,9 @@ export default function EntraIdAnalyzerPage() {
         )}
 
         {/* Stats Cards */}
-        {selectedTenantId && !loading && dashboardData && (
+        {selectedTenantId && !loading && effectiveDashboardData && (
           <div className="mb-8">
-            <EntraIdAnalyzerStatsCards data={dashboardData} />
+            <EntraIdAnalyzerStatsCards data={effectiveDashboardData} />
           </div>
         )}
 
