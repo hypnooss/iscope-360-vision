@@ -172,18 +172,17 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
               <div className="space-y-6">
                 <div className="space-y-3">
                   <Badge variant="outline" className="text-xs">Resumo MFA</Badge>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <MetricCard label="Membros Analisados" value={mfa.total} icon={Users} />
-                    <MetricCard label="Com MFA" value={mfa.enabled} color="text-emerald-500" icon={ShieldCheck} />
-                    <MetricCard label="Sem MFA" value={mfa.disabled} color="text-destructive" icon={AlertTriangle} />
+                    <MetricCard label="MFA Forte" value={strongUsers.length} color="text-emerald-500" icon={ShieldCheck} />
+                    <MetricCard label="MFA Fraco" value={weakUsers.length} color="text-amber-500" icon={AlertTriangle} />
+                    <MetricCard label="Sem MFA" value={disabledUsersDetail.length} color="text-destructive" icon={UserX} />
                   </div>
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Cobertura MFA</span>
-                      <span>{pct.toFixed(1)}%</span>
-                    </div>
-                    <Progress value={pct} className="h-2" />
-                  </div>
+                  <ProportionalBar segments={[
+                    { label: 'MFA Forte', value: strongUsers.length, colorClass: 'bg-emerald-500' },
+                    { label: 'MFA Fraco', value: weakUsers.length, colorClass: 'bg-amber-500' },
+                    { label: 'Sem MFA', value: disabledUsersDetail.length, colorClass: 'bg-destructive' },
+                  ]} />
                 </div>
 
                 <div className="space-y-3">
