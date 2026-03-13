@@ -6,7 +6,7 @@ import { usePreview } from '@/contexts/PreviewContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useM365TenantSelector } from '@/hooks/useM365TenantSelector';
-import { useCollaborationDashboard } from '@/hooks/useCollaborationDashboard';
+import { useCollaborationDashboard, type CollaborationDashboardData } from '@/hooks/useCollaborationDashboard';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
