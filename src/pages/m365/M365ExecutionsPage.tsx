@@ -1114,6 +1114,33 @@ export default function M365ExecutionsPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Cancel Analyzer Snapshot Confirmation */}
+        <AlertDialog open={snapshotCancelOpen} onOpenChange={setSnapshotCancelOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cancelar análise do Analyzer?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Isso marcará a análise do Analyzer (Edge Function) como <span className="font-medium">cancelada</span>.
+                Se a execução já estiver em andamento, os dados parciais serão descartados.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setSnapshotToCancel(null)}>
+                Voltar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (!snapshotToCancel) return;
+                  cancelSnapshotMutation.mutate(snapshotToCancel.id);
+                }}
+                disabled={!snapshotToCancel || cancelSnapshotMutation.isPending}
+              >
+                {cancelSnapshotMutation.isPending ? 'Cancelando...' : 'Cancelar'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
