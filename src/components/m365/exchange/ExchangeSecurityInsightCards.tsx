@@ -46,7 +46,6 @@ export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecu
           <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             Insights de Segurança
           </h2>
-          <DataSourceDot source="analyzed" />
         </div>
         <Badge variant="outline" className="text-xs">
           {sorted.length} {sorted.length === 1 ? 'insight' : 'insights'}
@@ -73,12 +72,15 @@ export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecu
                     <Icon className="w-5 h-5 shrink-0" />
                     <CardTitle className="text-sm font-semibold">{insight.name}</CardTitle>
                   </div>
-                  <Badge
-                    variant="outline"
-                    className={cn('text-[10px] px-1.5 py-0 shrink-0', sevConfig?.color)}
-                  >
-                    {sevConfig?.label ?? insight.severity}
-                  </Badge>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Badge
+                      variant="outline"
+                      className={cn('text-[10px] px-1.5 py-0', sevConfig?.color)}
+                    >
+                      {sevConfig?.label ?? insight.severity}
+                    </Badge>
+                    <DataSourceDot source="analyzed" />
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
