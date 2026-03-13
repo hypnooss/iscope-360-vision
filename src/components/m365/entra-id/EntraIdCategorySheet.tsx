@@ -151,7 +151,7 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
             <div className="space-y-3">
               <Badge variant="outline" className="text-xs">Resumo MFA</Badge>
               <div className="grid grid-cols-3 gap-3">
-                <MetricCard label="Total Analisados" value={mfa.total} icon={Users} />
+                <MetricCard label="Membros Analisados" value={mfa.total} icon={Users} />
                 <MetricCard label="Com MFA" value={mfa.enabled} color="text-emerald-500" icon={ShieldCheck} />
                 <MetricCard label="Sem MFA" value={mfa.disabled} color="text-red-500" icon={AlertTriangle} />
               </div>
@@ -172,25 +172,20 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
                     {methodEntries.map((m) => (
                       <MetricCard key={m.key} label={m.label} value={m.value} />
                     ))}
-                    <MetricCard label="Sem MFA" value={mfa.disabled} color="text-red-500" icon={AlertTriangle} />
                   </div>
-                  <ProportionalBar segments={[
-                    ...methodEntries.map((m) => ({
-                      label: m.label,
-                      value: m.value,
-                      colorClass: m.colorClass,
-                    })),
-                    { label: 'Sem MFA', value: mfa.disabled, colorClass: 'bg-red-500' },
-                  ]} />
+                  <ProportionalBar segments={methodEntries.map((m) => ({
+                    label: m.label,
+                    value: m.value,
+                    colorClass: m.colorClass,
+                  }))} />
                 </>
               ) : (
-                <>
-                  <ProportionalBar segments={[
-                    { label: 'Com MFA', value: mfa.enabled, colorClass: 'bg-emerald-500' },
-                    { label: 'Sem MFA', value: mfa.disabled, colorClass: 'bg-red-500' },
-                  ]} />
-                </>
+                <ProportionalBar segments={[
+                  { label: 'Com MFA', value: mfa.enabled, colorClass: 'bg-emerald-500' },
+                  { label: 'Sem MFA', value: mfa.disabled, colorClass: 'bg-red-500' },
+                ]} />
               )}
+              <p className="text-xs text-muted-foreground">Exclui contas Guest. Um usuário pode ter mais de um método.</p>
             </div>
           </div>
         );
