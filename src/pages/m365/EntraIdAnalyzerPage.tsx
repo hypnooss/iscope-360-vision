@@ -307,10 +307,10 @@ export default function EntraIdAnalyzerPage() {
         )}
 
         {/* Category Grid */}
-        {selectedTenantId && !loading && dashboardData && (
+        {selectedTenantId && !loading && effectiveDashboardData && (
           <div className="mb-8">
             <EntraIdAnalyzerCategoryGrid
-              data={dashboardData}
+              data={effectiveDashboardData}
               onCategoryClick={(cat) => {
                 setSelectedOpCategory(cat);
                 setOpCategorySheetOpen(true);
