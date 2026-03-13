@@ -271,10 +271,10 @@ export default function TeamsAnalyzerPage() {
         )}
 
         {/* Category Grid */}
-        {selectedTenantId && !loading && dashboardData && (
+        {selectedTenantId && !loading && effectiveDashboardData && (
           <div className="mb-8">
             <TeamsAnalyzerCategoryGrid
-              data={dashboardData}
+              data={effectiveDashboardData}
               onCategoryClick={(cat) => {
                 setSelectedOpCategory(cat);
                 setOpCategorySheetOpen(true);
