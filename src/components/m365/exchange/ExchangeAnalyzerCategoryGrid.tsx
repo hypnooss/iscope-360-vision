@@ -1,4 +1,6 @@
 import { ExternalLink, Mail, ShieldBan, ShieldAlert, Bug, Forward, Reply, UserX, HardDrive } from 'lucide-react';
+import { DataSourceDot } from '@/components/m365/shared/DataSourceDot';
+import type { DataSourceType } from '@/components/m365/shared/DataSourceDot';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
