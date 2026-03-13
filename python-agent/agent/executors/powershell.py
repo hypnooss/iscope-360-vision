@@ -496,6 +496,15 @@ class PowerShellExecutor(BaseExecutor):
                     'timeout': cmd_timeout,
                 })
         
+        # Resolve placeholders in command text using context values
+        for cmd_info in cmd_list:
+            cmd_text = cmd_info['command']
+            for key in ('period_start', 'period_end'):
+                placeholder = '{' + key + '}'
+                if placeholder in cmd_text and key in context:
+                    cmd_text = cmd_text.replace(placeholder, context[key])
+            cmd_info['command'] = cmd_text
+        
         self.logger.info(
             f"PowerShell interactive: module={module}, {len(cmd_list)} commands, "
             f"auth={auth_mode}"
