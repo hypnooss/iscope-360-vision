@@ -30,7 +30,8 @@ export function EntraIdAnalyzerStatsCards({ data }: EntraIdAnalyzerStatsCardsPro
         </CardContent>
       </Card>
 
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex items-center gap-3">
           <ShieldCheck className="w-8 h-8 text-emerald-500" />
           <div>
