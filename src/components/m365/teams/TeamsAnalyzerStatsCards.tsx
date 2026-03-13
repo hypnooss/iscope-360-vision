@@ -1,6 +1,7 @@
 import { Users, Eye, UserPlus, Share2, HardDrive } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { DataSourceDot } from '@/components/m365/shared';
 import type { CollaborationDashboardData } from '@/hooks/useCollaborationDashboard';
 
 interface TeamsAnalyzerStatsCardsProps {
@@ -21,7 +22,8 @@ export function TeamsAnalyzerStatsCards({ data }: TeamsAnalyzerStatsCardsProps) 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
       {/* Total Teams */}
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex items-center gap-3">
           <Users className="w-8 h-8 text-teal-400" />
           <div>
@@ -34,7 +36,8 @@ export function TeamsAnalyzerStatsCards({ data }: TeamsAnalyzerStatsCardsProps) 
       </Card>
 
       {/* Teams Públicas */}
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex items-center gap-3">
           <Eye className="w-8 h-8 text-red-500" />
           <div>
@@ -48,7 +51,8 @@ export function TeamsAnalyzerStatsCards({ data }: TeamsAnalyzerStatsCardsProps) 
       </Card>
 
       {/* Convidados Externos */}
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex items-center gap-3">
           <UserPlus className="w-8 h-8 text-amber-500" />
           <div>
@@ -62,7 +66,8 @@ export function TeamsAnalyzerStatsCards({ data }: TeamsAnalyzerStatsCardsProps) 
       </Card>
 
       {/* Compartilhamento Externo SPO */}
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex items-center gap-3">
           <Share2 className="w-8 h-8 text-orange-500" />
           <div>
@@ -76,7 +81,8 @@ export function TeamsAnalyzerStatsCards({ data }: TeamsAnalyzerStatsCardsProps) 
       </Card>
 
       {/* Storage SharePoint */}
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex flex-col gap-2">
           <div className="flex items-center gap-3">
             <HardDrive className="w-8 h-8 text-primary" />

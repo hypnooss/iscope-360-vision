@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Maximize2, X } from 'lucide-react';
 import { EntraIdCountryMap } from './EntraIdCountryMap';
 import { getCountryCode } from '@/lib/countryUtils';
+import { DataSourceDot } from '@/components/m365/shared';
 import 'flag-icons/css/flag-icons.min.css';
 
 interface EntraIdLoginMapProps {
@@ -22,9 +23,12 @@ export function EntraIdLoginMap({ loginCountriesSuccess }: EntraIdLoginMapProps)
       {!fullscreen && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Mapa de Conexões
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                Mapa de Conexões
+              </h2>
+              <DataSourceDot source="aggregated" />
+            </div>
             <button
               onClick={() => setFullscreen(true)}
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"

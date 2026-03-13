@@ -2,6 +2,7 @@ import { ExternalLink, Eye, Lock, UserPlus, Hash, Share, Globe, Share2, FolderX 
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { DataSourceDot } from '@/components/m365/shared';
 import type { CollaborationDashboardData } from '@/hooks/useCollaborationDashboard';
 
 export type TeamsOperationalCategory =
@@ -114,7 +115,8 @@ export function TeamsAnalyzerCategoryGrid({ data, onCategoryClick }: TeamsAnalyz
               )}
               onClick={() => onCategoryClick?.(catKey)}
             >
-              <CardContent className="p-4 space-y-3">
+              <CardContent className="p-4 space-y-3 relative">
+                <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: `${info.colorHex}15` }}>
                     <Icon className="w-4.5 h-4.5" style={{ color: info.colorHex }} />

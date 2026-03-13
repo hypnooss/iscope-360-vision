@@ -1,5 +1,6 @@
 import { Users, ShieldCheck, AlertTriangle, UserCog } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { DataSourceDot } from '@/components/m365/shared';
 import type { EntraIdDashboardData } from '@/hooks/useEntraIdDashboard';
 
 interface EntraIdAnalyzerStatsCardsProps {
@@ -13,7 +14,8 @@ export function EntraIdAnalyzerStatsCards({ data }: EntraIdAnalyzerStatsCardsPro
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex items-center gap-3">
           <Users className="w-8 h-8 text-teal-400" />
           <div>
@@ -28,7 +30,8 @@ export function EntraIdAnalyzerStatsCards({ data }: EntraIdAnalyzerStatsCardsPro
         </CardContent>
       </Card>
 
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex items-center gap-3">
           <ShieldCheck className="w-8 h-8 text-emerald-500" />
           <div>
@@ -41,7 +44,8 @@ export function EntraIdAnalyzerStatsCards({ data }: EntraIdAnalyzerStatsCardsPro
         </CardContent>
       </Card>
 
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex items-center gap-3">
           <AlertTriangle className="w-8 h-8 text-red-500" />
           <div>
@@ -56,7 +60,8 @@ export function EntraIdAnalyzerStatsCards({ data }: EntraIdAnalyzerStatsCardsPro
         </CardContent>
       </Card>
 
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex items-center gap-3">
           <UserCog className="w-8 h-8 text-amber-500" />
           <div>

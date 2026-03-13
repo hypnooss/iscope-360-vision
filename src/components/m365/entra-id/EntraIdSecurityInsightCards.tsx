@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { SEVERITY_CONFIG } from '@/types/m365Insights';
 import type { M365AnalyzerInsight } from '@/types/m365AnalyzerInsights';
 import { AlertTriangle, AlertCircle, Info, Shield, Users } from 'lucide-react';
+import { DataSourceDot } from '@/components/m365/shared';
 
 interface EntraIdSecurityInsightCardsProps {
   insights: M365AnalyzerInsight[];
@@ -68,12 +69,15 @@ export function EntraIdSecurityInsightCards({ insights, loading }: EntraIdSecuri
                     <Icon className="w-5 h-5 shrink-0" />
                     <CardTitle className="text-sm font-semibold">{insight.name}</CardTitle>
                   </div>
-                  <Badge
-                    variant="outline"
-                    className={cn('text-[10px] px-1.5 py-0 shrink-0', sevConfig?.color)}
-                  >
-                    {sevConfig?.label ?? insight.severity}
-                  </Badge>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Badge
+                      variant="outline"
+                      className={cn('text-[10px] px-1.5 py-0', sevConfig?.color)}
+                    >
+                      {sevConfig?.label ?? insight.severity}
+                    </Badge>
+                    <DataSourceDot source="analyzed" />
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="pt-0">

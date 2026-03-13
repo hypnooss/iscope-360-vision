@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { formatDateTimeBR, formatShortDateTimeBR } from '@/lib/dateUtils';
+import { DataSourceLegend } from '@/components/m365/shared';
 
 const TEAMS_OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
   'teams_governance',
@@ -213,6 +214,7 @@ export default function TeamsAnalyzerPage() {
                 {(analyzerSnapshot as any).snapshotCount} coletas
               </Badge>
             )}
+            <DataSourceLegend />
           </div>
         )}
 
