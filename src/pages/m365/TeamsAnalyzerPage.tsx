@@ -69,6 +69,34 @@ export default function TeamsAnalyzerPage() {
   const { data: dashboardData, loading: dashboardLoading, refresh: refreshDashboard, refreshing: dashboardRefreshing } = useCollaborationDashboard({ tenantRecordId: selectedTenantId });
   const { data: analyzerSnapshot, isLoading: analyzerLoading } = useLatestM365AnalyzerSnapshot(selectedTenantId || undefined);
 
+  // Fallback: derive dashboard KPIs from analyzer snapshot metrics when cache is empty
+  const effectiveDashboardData: CollaborationDashboardData | null = dashboardData ?? (() => {
+    const m = (analyzerSnapshot as any)?.metrics;
+    if (!m) return null;
+    const teamsMetrics = m.teams || m.collaboration?.teams || {};
+    const spMetrics = m.sharepoint || m.collaboration?.sharepoint || {};
+    return {
+      teams: {
+        total: teamsMetrics.total ?? 0,
+        public: teamsMetrics.public ?? 0,
+        private: teamsMetrics.private ?? 0,
+        withGuests: teamsMetrics.withGuests ?? 0,
+        privateChannels: teamsMetrics.privateChannels ?? 0,
+        sharedChannels: teamsMetrics.sharedChannels ?? 0,
+      },
+      sharepoint: {
+        totalSites: spMetrics.totalSites ?? 0,
+        activeSites: spMetrics.activeSites ?? 0,
+        inactiveSites: spMetrics.inactiveSites ?? 0,
+        externalSharingEnabled: spMetrics.externalSharingEnabled ?? 0,
+        totalLists: spMetrics.totalLists ?? 0,
+        storageUsedGB: spMetrics.storageUsedGB ?? 0,
+        storageAllocatedGB: spMetrics.storageAllocatedGB ?? 0,
+      },
+      analyzedAt: analyzerSnapshot?.created_at ?? '',
+    } as CollaborationDashboardData;
+  })();
+
   const [triggering, setTriggering] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [selectedOpCategory, setSelectedOpCategory] = useState<TeamsOperationalCategory | null>(null);

@@ -78,7 +78,7 @@ export function useCollaborationDashboard({ tenantRecordId }: UseCollaborationDa
       });
 
       if (fnError) throw new Error(fnError.message);
-      if (!result?.success) throw new Error(result?.error || 'Erro ao atualizar dashboard');
+      if (!result?.success && !result?.teams) throw new Error(result?.error || 'Erro ao atualizar dashboard');
 
       setData(mapToData(result));
       loadCache().catch(() => {});
