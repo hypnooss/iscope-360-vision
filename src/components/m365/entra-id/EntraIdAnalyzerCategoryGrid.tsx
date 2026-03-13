@@ -163,7 +163,7 @@ export function EntraIdAnalyzerCategoryGrid({ data, onCategoryClick }: EntraIdAn
           const hasData = stats.total > 0;
           const Icon = info.icon;
           const hasSplit = stats.splitA && stats.splitB;
-
+          const hasSplits = stats.splits && stats.splits.length > 0;
           return (
             <Card
               key={catKey}
