@@ -151,11 +151,20 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
         const enabledUsers = userDetails.filter((u) => u.hasMfa);
         const disabledUsersDetail = userDetails.filter((u) => !u.hasMfa);
 
+        const WEAK_METHODS = new Set(['mobilePhone', 'email']);
+        const weakUsers = enabledUsers.filter(
+          (u) => u.methods.length > 0 && u.methods.every((m) => WEAK_METHODS.has(m))
+        );
+        const strongUsers = enabledUsers.filter(
+          (u) => !u.methods.every((m) => WEAK_METHODS.has(m))
+        );
+
         return (
           <Tabs defaultValue="overview" className="space-y-4">
             <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-0 h-auto py-0">
               <TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">Status Geral</TabsTrigger>
-              <TabsTrigger value="enabled" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">MFA Habilitado ({enabledUsers.length})</TabsTrigger>
+              <TabsTrigger value="enabled" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">MFA Habilitado ({strongUsers.length})</TabsTrigger>
+              <TabsTrigger value="weak" className="rounded-none border-b-2 border-transparent data-[state=active]:border-amber-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs text-amber-500">MFA Fraco ({weakUsers.length})</TabsTrigger>
               <TabsTrigger value="disabled" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">MFA Desativado ({disabledUsersDetail.length})</TabsTrigger>
             </TabsList>
 
@@ -204,7 +213,11 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
             </TabsContent>
 
             <TabsContent value="enabled">
-              <MfaUserList users={enabledUsers} showMethods />
+              <MfaUserList users={strongUsers} showMethods />
+            </TabsContent>
+
+            <TabsContent value="weak">
+              <MfaUserList users={weakUsers} showMethods />
             </TabsContent>
 
             <TabsContent value="disabled">
