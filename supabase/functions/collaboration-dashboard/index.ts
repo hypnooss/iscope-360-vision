@@ -220,7 +220,6 @@ Deno.serve(async (req) => {
     let activeSites = 0;
     let inactiveSites = 0;
     let storageUsedBytes = 0;
-    let storageAllocatedBytes = 0;
 
     // SharePoint usage report — state data, D7 to avoid duplication across cache refreshes
     const siteUsageText = await graphGetText(
@@ -229,20 +228,12 @@ Deno.serve(async (req) => {
     ).catch(() => null);
 
     if (siteUsageText) {
-      console.log(`SharePoint report CSV length: ${siteUsageText.length} chars`);
-      console.log(`SharePoint report first 200 chars: ${siteUsageText.substring(0, 200)}`);
       const rows = parseCsvReport(siteUsageText);
       console.log(`SharePoint report parsed: ${rows.length} rows`);
-      if (rows.length > 0) {
-        console.log(`SharePoint CSV headers: ${Object.keys(rows[0]).join(', ')}`);
-        console.log(`SharePoint first row sample: ${JSON.stringify(rows[0]).substring(0, 300)}`);
-      }
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       rows.forEach((row: any) => {
         const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
-        const allocated = parseInt(row['Storage Allocated (Byte)'] || '0', 10);
         if (!isNaN(used)) storageUsedBytes += used;
-        if (!isNaN(allocated)) storageAllocatedBytes += allocated;
         if (row['Last Activity Date']) {
           const lastActivity = new Date(row['Last Activity Date']);
           if (lastActivity >= sevenDaysAgo) activeSites++;
@@ -251,13 +242,43 @@ Deno.serve(async (req) => {
           inactiveSites++;
         }
       });
-      console.log(`SharePoint storage aggregated: usedBytes=${storageUsedBytes}, allocatedBytes=${storageAllocatedBytes}, active=${activeSites}, inactive=${inactiveSites}`);
+      console.log(`SharePoint storage: usedBytes=${storageUsedBytes}, active=${activeSites}, inactive=${inactiveSites}`);
     } else {
       console.warn('SharePoint site usage report returned null - check Reports.Read.All permission on tenant');
     }
 
+    // Try to get tenant-level storage quota via SPO Admin API
+    let storageAllocatedBytes = 0;
+    const tenantDomain = tenant.tenant_domain?.replace('.onmicrosoft.com', '') || '';
+    if (tenantDomain) {
+      try {
+        const spoAdminUrl = `https://${tenantDomain}-admin.sharepoint.com/_api/StorageQuota()`;
+        const quotaRes = await fetch(spoAdminUrl, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json;odata=nometadata',
+          },
+        });
+        if (quotaRes.ok) {
+          const quotaData = await quotaRes.json();
+          const totalMB = quotaData?.Total || quotaData?.GeoAvailableStorageMB || 0;
+          if (totalMB > 0) {
+            storageAllocatedBytes = totalMB * 1024 * 1024;
+            console.log(`SPO Admin quota: ${totalMB} MB (${(totalMB / 1024).toFixed(2)} GB)`);
+          }
+        } else {
+          console.log(`SPO Admin quota unavailable (${quotaRes.status}) - quota will be 0`);
+        }
+      } catch (e) {
+        console.log(`SPO Admin quota fetch failed: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+
     // External sharing - check site count (requires admin-level scope)
     const externalSharingEnabled = 0; // Requires SPO admin API, placeholder
+
+    const storageUsedGB = parseFloat((storageUsedBytes / (1024 ** 3)).toFixed(2));
+    const storageAllocatedGB = parseFloat((storageAllocatedBytes / (1024 ** 3)).toFixed(2));
 
     const result = {
       success: true,
@@ -275,8 +296,8 @@ Deno.serve(async (req) => {
         inactiveSites,
         externalSharingEnabled,
         totalLists: 0,
-        storageUsedGB: parseFloat((storageUsedBytes / (1024 ** 3)).toFixed(2)),
-        storageAllocatedGB: parseFloat((storageAllocatedBytes / (1024 ** 3)).toFixed(2)),
+        storageUsedGB,
+        storageAllocatedGB,
       },
       analyzedAt: now.toISOString(),
     };
