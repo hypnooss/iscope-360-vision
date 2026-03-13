@@ -375,7 +375,6 @@ export function ExchangeThreatProtectionSection({ data, loading }: ExchangeThrea
       <div>
         <div className="mb-4 flex items-center gap-2">
           <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Status das Políticas de Proteção</h2>
-          <DataSourceDot source="analyzed" />
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
           {policies.map(p => (
