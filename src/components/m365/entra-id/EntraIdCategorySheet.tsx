@@ -36,11 +36,40 @@ const CATEGORY_META: Record<EntraIdOperationalCategory, {
   password_activity: { label: 'Atividade de Senhas',   icon: KeyRound,      colorHex: '#f97316', description: 'Resets, alterações e atividades de senha nos últimos 7 dias.' },
 };
 
-function MetricCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
+function MetricCard({ label, value, color, icon: Icon }: { label: string; value: string | number; color?: string; icon?: React.ComponentType<{ className?: string }> }) {
   return (
     <div className="bg-secondary/30 p-3 rounded-lg">
-      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {Icon && <Icon className="w-3 h-3" />}
+        {label}
+      </div>
       <div className={`font-bold text-lg ${color ?? ''}`}>{typeof value === 'number' ? value.toLocaleString() : value}</div>
+    </div>
+  );
+}
+
+function ProportionalBar({ segments }: { segments: { label: string; value: number; colorClass: string }[] }) {
+  const total = segments.reduce((s, seg) => s + seg.value, 0);
+  if (total === 0) return null;
+  return (
+    <div className="space-y-2">
+      <div className="flex h-3 rounded-full overflow-hidden bg-secondary/40">
+        {segments.map((seg) => (
+          <div
+            key={seg.label}
+            className={`${seg.colorClass} transition-all`}
+            style={{ width: `${(seg.value / total) * 100}%` }}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {segments.map((seg) => (
+          <div key={seg.label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className={`w-2 h-2 rounded-full ${seg.colorClass}`} />
+            {seg.label}: {seg.value.toLocaleString()} ({total > 0 ? ((seg.value / total) * 100).toFixed(1) : 0}%)
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
