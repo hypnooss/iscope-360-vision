@@ -260,6 +260,7 @@ export default function ExchangeAnalyzerPage() {
                 {(analyzerSnapshot as any).snapshotCount} coletas
               </Badge>
             )}
+            <DataSourceLegend />
           </div>
         )}
 

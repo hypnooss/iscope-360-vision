@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DataSourceDot } from '@/components/m365/shared/DataSourceDot';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
