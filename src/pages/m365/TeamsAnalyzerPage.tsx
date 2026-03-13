@@ -24,6 +24,7 @@ import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
+import { toast } from 'sonner';
 import {
   Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Users, Settings,
 } from 'lucide-react';
