@@ -107,16 +107,16 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
 
             <div className="space-y-3">
               <Badge variant="outline" className="text-xs">Composição do Diretório</Badge>
-              <ProportionalBar segments={[
-                { label: 'Cloud-Only', value: cloudOnly, colorClass: 'bg-sky-500' },
-                { label: 'Sincronizados', value: users.onPremSynced, colorClass: 'bg-violet-500' },
-                { label: 'Convidados', value: users.guests, colorClass: 'bg-pink-500' },
-              ]} />
               <div className="grid grid-cols-3 gap-3">
                 <MetricCard label="Cloud-Only" value={cloudOnly} icon={Cloud} color="text-sky-500" />
                 <MetricCard label="Sincronizados" value={users.onPremSynced} icon={RefreshCw} color="text-violet-500" />
                 <MetricCard label="Convidados" value={users.guests} icon={UserPlus} color="text-pink-500" />
               </div>
+              <ProportionalBar segments={[
+                { label: 'Cloud-Only', value: cloudOnly, colorClass: 'bg-sky-500' },
+                { label: 'Sincronizados', value: users.onPremSynced, colorClass: 'bg-violet-500' },
+                { label: 'Convidados', value: users.guests, colorClass: 'bg-pink-500' },
+              ]} />
             </div>
           </div>
         );
