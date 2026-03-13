@@ -152,6 +152,8 @@ export default function M365ExecutionsPage() {
   const [taskToCancel, setTaskToCancel] = useState<AgentTask | null>(null);
   const [postureCancelOpen, setPostureCancelOpen] = useState(false);
   const [postureToCancel, setPostureToCancel] = useState<PostureHistory | null>(null);
+  const [snapshotCancelOpen, setSnapshotCancelOpen] = useState(false);
+  const [snapshotToCancel, setSnapshotToCancel] = useState<AnalyzerSnapshot | null>(null);
 
   const { isPreviewMode, previewTarget } = usePreview();
   const { effectiveRole } = useEffectiveAuth();
@@ -497,6 +499,31 @@ export default function M365ExecutionsPage() {
     setPostureCancelOpen(true);
   };
 
+  const cancelSnapshotMutation = useMutation({
+    mutationFn: async (snapshotId: string) => {
+      const { error } = await supabase
+        .from('m365_analyzer_snapshots')
+        .update({ status: 'cancelled' })
+        .eq('id', snapshotId)
+        .in('status', ['pending', 'processing']);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      toast.success('Análise do Analyzer cancelada com sucesso');
+      await queryClient.invalidateQueries({ queryKey: ['m365-analyzer-snapshots'] });
+      setSnapshotCancelOpen(false);
+      setSnapshotToCancel(null);
+    },
+    onError: (e: any) => {
+      toast.error('Erro ao cancelar análise', { description: e?.message });
+    },
+  });
+
+  const requestSnapshotCancel = (snapshot: AnalyzerSnapshot) => {
+    setSnapshotToCancel(snapshot);
+    setSnapshotCancelOpen(true);
+  };
+
   const handleRefresh = () => {
     refetchPosture();
     refetchTasks();
@@ -717,6 +744,17 @@ export default function M365ExecutionsPage() {
                                 onClick={() => requestCancel(item.original as AgentTask)}
                                 disabled={cancelMutation.isPending}
                                 title="Cancelar tarefa"
+                              >
+                                <Ban className="w-4 h-4 text-destructive" />
+                              </Button>
+                            )}
+                            {item.source === 'analyzer_snapshot' && ['pending', 'running'].includes(item.status) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => requestSnapshotCancel(item.original as AnalyzerSnapshot)}
+                                disabled={cancelSnapshotMutation.isPending}
+                                title="Cancelar análise do Analyzer"
                               >
                                 <Ban className="w-4 h-4 text-destructive" />
                               </Button>
@@ -1072,6 +1110,33 @@ export default function M365ExecutionsPage() {
                 disabled={!postureToCancel || cancelPostureMutation.isPending}
               >
                 {cancelPostureMutation.isPending ? 'Cancelando...' : 'Cancelar'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Cancel Analyzer Snapshot Confirmation */}
+        <AlertDialog open={snapshotCancelOpen} onOpenChange={setSnapshotCancelOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cancelar análise do Analyzer?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Isso marcará a análise do Analyzer (Edge Function) como <span className="font-medium">cancelada</span>.
+                Se a execução já estiver em andamento, os dados parciais serão descartados.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setSnapshotToCancel(null)}>
+                Voltar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (!snapshotToCancel) return;
+                  cancelSnapshotMutation.mutate(snapshotToCancel.id);
+                }}
+                disabled={!snapshotToCancel || cancelSnapshotMutation.isPending}
+              >
+                {cancelSnapshotMutation.isPending ? 'Cancelando...' : 'Cancelar'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
