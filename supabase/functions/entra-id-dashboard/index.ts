@@ -209,6 +209,14 @@ Deno.serve(async (req) => {
     }).length;
     const mfaDisabled = mfaUsers.length - mfaEnabled;
 
+    // MFA method breakdown
+    const mfaMethodCounts: Record<string, number> = {};
+    mfaUsers.forEach((u: any) => {
+      (u.methodsRegistered || []).forEach((m: string) => {
+        mfaMethodCounts[m] = (mfaMethodCounts[m] || 0) + 1;
+      });
+    });
+
     // Risks
     const riskyUsers = riskyUsersData?.value || [];
     const riskyAtRisk = riskyUsers.filter((u: any) => u.riskState === 'atRisk').length;
