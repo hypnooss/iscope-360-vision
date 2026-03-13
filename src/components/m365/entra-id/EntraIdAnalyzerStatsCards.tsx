@@ -19,13 +19,8 @@ export function EntraIdAnalyzerStatsCards({ data }: EntraIdAnalyzerStatsCardsPro
         <CardContent className="p-4 flex items-center gap-3">
           <Users className="w-8 h-8 text-teal-400" />
           <div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-bold">{users.total.toLocaleString()}</p>
-              {users.guests > 0 && (
-                <p className="text-xs text-muted-foreground">(+{users.guests} guests)</p>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">Total de Usuários</p>
+            <p className="text-xs text-muted-foreground">Usuários Ativos</p>
+            <p className="text-2xl font-bold">{users.total.toLocaleString()}</p>
           </div>
         </CardContent>
       </Card>
