@@ -6,10 +6,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Users, ShieldCheck, AlertTriangle, LogIn, UserCog, UserX, UserPlus, KeyRound, User,
-  Cloud, RefreshCw, Eye,
+  Cloud, RefreshCw, Eye, Download,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
+import * as XLSX from 'xlsx';
 import type { EntraIdDashboardData } from '@/hooks/useEntraIdDashboard';
 import type { EntraIdOperationalCategory } from './EntraIdAnalyzerCategoryGrid';
 import { MfaUserList } from './MfaUserList';
@@ -166,6 +168,37 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
               <TabsTrigger value="enabled" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">MFA Forte ({strongUsers.length})</TabsTrigger>
               <TabsTrigger value="weak" className="rounded-none border-b-2 border-transparent data-[state=active]:border-amber-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs text-amber-500">MFA Fraco ({weakUsers.length})</TabsTrigger>
               <TabsTrigger value="disabled" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">MFA Desativado ({disabledUsersDetail.length})</TabsTrigger>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  const allUsers = mfa.userDetails || [];
+                  const rows = allUsers.map((u) => {
+                    const isWeak = u.hasMfa && u.methods.length > 0 && u.methods.every((m) => WEAK_METHODS.has(m));
+                    const isStrong = u.hasMfa && !isWeak;
+                    const classification = isStrong ? 'MFA Forte' : isWeak ? 'MFA Fraco' : 'Sem MFA';
+                    const methods = u.methods.map((m) => methodLabels[m]?.label || m).join(', ');
+                    const defaultMethod = u.defaultMethod ? (methodLabels[u.defaultMethod]?.label || u.defaultMethod) : '';
+                    return {
+                      'Nome': u.displayName || '',
+                      'UPN': u.upn || '',
+                      'Classificação': classification,
+                      'Métodos': methods,
+                      'Método Padrão': defaultMethod,
+                    };
+                  });
+                  const ws = XLSX.utils.json_to_sheet(rows);
+                  ws['!cols'] = [{ wch: 30 }, { wch: 35 }, { wch: 14 }, { wch: 40 }, { wch: 28 }];
+                  const wb = XLSX.utils.book_new();
+                  XLSX.utils.book_append_sheet(wb, ws, 'Cobertura MFA');
+                  const date = new Date().toISOString().slice(0, 10);
+                  XLSX.writeFile(wb, `cobertura-mfa-${date}.xlsx`);
+                }}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Exportar
+              </Button>
             </TabsList>
 
             <TabsContent value="overview">
