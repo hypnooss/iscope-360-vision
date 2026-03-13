@@ -328,15 +328,23 @@ Deno.serve(async (req) => {
       periodEnd: now.toISOString(),
     };
 
-    // Save cache to m365_tenants
+    // Save snapshot to m365_dashboard_snapshots
+    const { error: snapError } = await supabase.from('m365_dashboard_snapshots').insert({
+      tenant_record_id,
+      client_id: tenant.client_id,
+      dashboard_type: 'entra_id',
+      data: result,
+      period_start: periodStart,
+      period_end: now.toISOString(),
+    });
+    if (snapError) console.error('Failed to save entra dashboard snapshot:', snapError);
+
+    // Save legacy cache (backward compat)
     const { error: updateError } = await supabase.from('m365_tenants').update({
       entra_dashboard_cache: result,
       entra_dashboard_cached_at: now.toISOString(),
     }).eq('id', tenant_record_id);
-
-    if (updateError) {
-      console.error('Failed to save entra dashboard cache:', updateError);
-    }
+    if (updateError) console.error('Failed to save entra dashboard cache:', updateError);
 
     console.log('Entra ID Dashboard data aggregated and cached successfully');
 
