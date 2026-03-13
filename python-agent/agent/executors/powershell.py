@@ -65,6 +65,12 @@ class PowerShellExecutor(BaseExecutor):
             "connect_credential": 'Connect-MgGraph -Credential $cred -TenantId "{tenant_id}" -NoWelcome',
             "disconnect": "Disconnect-MgGraph -ErrorAction SilentlyContinue",
         },
+        "PnP.PowerShell": {
+            "import": "Import-Module PnP.PowerShell -ErrorAction Stop",
+            "connect_cba": 'Connect-PnPOnline -Url "https://{spo_admin_domain}-admin.sharepoint.com" -ClientId "{app_id}" -Thumbprint "{thumbprint}" -Tenant "{tenant_id}"',
+            "connect_credential": 'Connect-PnPOnline -Url "https://{spo_admin_domain}-admin.sharepoint.com" -Credential $cred',
+            "disconnect": "Disconnect-PnPOnline -ErrorAction SilentlyContinue",
+        },
     }
 
     def __init__(self, logger):
