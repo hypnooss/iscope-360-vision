@@ -172,7 +172,7 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
               <div className="space-y-6">
                 <div className="space-y-3">
                   <Badge variant="outline" className="text-xs">Resumo MFA</Badge>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-4 gap-3">
                     <MetricCard label="Membros Analisados" value={mfa.total} icon={Users} />
                     <MetricCard label="MFA Forte" value={strongUsers.length} color="text-emerald-500" icon={ShieldCheck} />
                     <MetricCard label="MFA Fraco" value={weakUsers.length} color="text-amber-500" icon={AlertTriangle} />
