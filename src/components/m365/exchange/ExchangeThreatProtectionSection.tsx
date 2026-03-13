@@ -147,9 +147,10 @@ function PolicyCard({ name, status, onClick }: { name: string; status: PolicySta
 
   return (
     <Card
-      className={cn('glass-card border cursor-pointer transition-all hover:ring-1 hover:ring-primary/30', cfg.bg)}
+      className={cn('glass-card border cursor-pointer transition-all hover:ring-1 hover:ring-primary/30 relative', cfg.bg)}
       onClick={onClick}
     >
+      <DataSourceDot source="snapshot" className="absolute top-2 right-2" />
       <CardContent className="p-3 flex items-center gap-2.5">
         <cfg.icon className={cn('w-4 h-4 shrink-0', cfg.color)} />
         <div className="min-w-0 flex-1">
