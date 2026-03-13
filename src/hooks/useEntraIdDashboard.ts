@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 export interface EntraIdDashboardData {
   users: { total: number; signInEnabled: number; disabled: number; guests: number; onPremSynced: number };
   admins: { total: number; globalAdmins: number };
-  mfa: { total: number; enabled: number; disabled: number; methodBreakdown: Record<string, number> };
+  mfa: { total: number; enabled: number; disabled: number; methodBreakdown: Record<string, number>; userDetails?: Array<{ displayName: string; upn: string; methods: string[]; hasMfa: boolean }> };
   risks: { riskyUsers: number; atRisk: number; compromised: number };
   loginActivity: { total: number; success: number; failed: number; mfaRequired: number; blocked: number };
   userChanges: { updated: number; new: number; enabled: number; disabled: number; deleted: number };
