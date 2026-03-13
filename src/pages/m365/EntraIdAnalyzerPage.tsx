@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { formatDateTimeBR, formatShortDateTimeBR } from '@/lib/dateUtils';
+import { DataSourceLegend } from '@/components/m365/shared';
 
 // ─── Identity-relevant operational categories ────────────────────────────────
 const ENTRA_OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
