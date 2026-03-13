@@ -1,14 +1,64 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
+export interface RiskDetail {
+  displayName: string;
+  upn: string;
+  riskLevel: string;
+  riskState: string;
+  lastUpdated: string;
+}
+
+export interface LoginDetail {
+  displayName: string;
+  upn: string;
+  status: 'success' | 'failed' | 'blocked';
+  errorCode: number;
+  location: string;
+  city: string;
+  app: string;
+  createdDateTime: string;
+}
+
+export interface AdminDetail {
+  displayName: string;
+  upn: string;
+  roles: string[];
+}
+
+export interface DisabledUserDetail {
+  displayName: string;
+  upn: string;
+  createdDateTime: string;
+}
+
+export interface GuestUserDetail {
+  displayName: string;
+  upn: string;
+  mail: string;
+  createdDateTime: string;
+}
+
+export interface PasswordDetail {
+  activity: string;
+  type: 'reset' | 'selfService' | 'forced';
+  targetUser: string;
+  initiatedBy: string;
+  activityDateTime: string;
+}
+
 export interface EntraIdDashboardData {
-  users: { total: number; signInEnabled: number; disabled: number; guests: number; onPremSynced: number };
-  admins: { total: number; globalAdmins: number };
+  users: {
+    total: number; signInEnabled: number; disabled: number; guests: number; onPremSynced: number;
+    disabledDetails?: DisabledUserDetail[];
+    guestDetails?: GuestUserDetail[];
+  };
+  admins: { total: number; globalAdmins: number; details?: AdminDetail[] };
   mfa: { total: number; enabled: number; disabled: number; methodBreakdown: Record<string, number>; userDetails?: Array<{ displayName: string; upn: string; methods: string[]; hasMfa: boolean; defaultMethod?: string | null }> };
-  risks: { riskyUsers: number; atRisk: number; compromised: number };
-  loginActivity: { total: number; success: number; failed: number; mfaRequired: number; blocked: number };
+  risks: { riskyUsers: number; atRisk: number; compromised: number; details?: RiskDetail[] };
+  loginActivity: { total: number; success: number; failed: number; mfaRequired: number; blocked: number; details?: LoginDetail[] };
   userChanges: { updated: number; new: number; enabled: number; disabled: number; deleted: number };
-  passwordActivity: { resets: number; forcedChanges: number; selfService: number };
+  passwordActivity: { resets: number; forcedChanges: number; selfService: number; details?: PasswordDetail[] };
   loginCountriesSuccess: { country: string; count: number }[];
   loginCountriesFailed: { country: string; count: number }[];
   analyzedAt: string;
@@ -25,13 +75,17 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
   const [error, setError] = useState<string | null>(null);
 
   const mapResultToData = (result: any): EntraIdDashboardData => ({
-    users: result.users || { total: 0, signInEnabled: 0, disabled: 0, guests: 0, onPremSynced: 0 },
-    admins: result.admins || { total: 0, globalAdmins: 0 },
+    users: {
+      ...(result.users || { total: 0, signInEnabled: 0, disabled: 0, guests: 0, onPremSynced: 0 }),
+      disabledDetails: result.users?.disabledDetails || [],
+      guestDetails: result.users?.guestDetails || [],
+    },
+    admins: { ...(result.admins || { total: 0, globalAdmins: 0 }), details: result.admins?.details || [] },
     mfa: { ...(result.mfa || { total: 0, enabled: 0, disabled: 0 }), methodBreakdown: result.mfa?.methodBreakdown || {}, userDetails: result.mfa?.userDetails || [] },
-    risks: result.risks || { riskyUsers: 0, atRisk: 0, compromised: 0 },
-    loginActivity: result.loginActivity || { total: 0, success: 0, failed: 0, mfaRequired: 0, blocked: 0 },
+    risks: { ...(result.risks || { riskyUsers: 0, atRisk: 0, compromised: 0 }), details: result.risks?.details || [] },
+    loginActivity: { ...(result.loginActivity || { total: 0, success: 0, failed: 0, mfaRequired: 0, blocked: 0 }), details: result.loginActivity?.details || [] },
     userChanges: result.userChanges || { updated: 0, new: 0, enabled: 0, disabled: 0, deleted: 0 },
-    passwordActivity: result.passwordActivity || { resets: 0, forcedChanges: 0, selfService: 0 },
+    passwordActivity: { ...(result.passwordActivity || { resets: 0, forcedChanges: 0, selfService: 0 }), details: result.passwordActivity?.details || [] },
     loginCountriesSuccess: result.loginCountriesSuccess || [],
     loginCountriesFailed: result.loginCountriesFailed || [],
     analyzedAt: result.analyzedAt || '',
@@ -43,7 +97,6 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
     setError(null);
 
     try {
-      // Try loading from m365_dashboard_snapshots (new architecture)
       const { data: snapshot, error: snapError } = await supabase
         .from('m365_dashboard_snapshots')
         .select('data, created_at')
@@ -56,7 +109,6 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
       if (!snapError && snapshot?.data) {
         setData(mapResultToData(snapshot.data as any));
       } else {
-        // Fallback to legacy cache columns
         const { data: tenant, error: dbError } = await supabase
           .from('m365_tenants')
           .select('entra_dashboard_cache, entra_dashboard_cached_at')
