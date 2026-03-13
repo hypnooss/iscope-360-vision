@@ -14,7 +14,8 @@ export function EntraIdAnalyzerStatsCards({ data }: EntraIdAnalyzerStatsCardsPro
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
         <CardContent className="p-4 flex items-center gap-3">
           <Users className="w-8 h-8 text-teal-400" />
           <div>
