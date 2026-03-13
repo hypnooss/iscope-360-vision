@@ -65,6 +65,12 @@ class PowerShellExecutor(BaseExecutor):
             "connect_credential": 'Connect-MgGraph -Credential $cred -TenantId "{tenant_id}" -NoWelcome',
             "disconnect": "Disconnect-MgGraph -ErrorAction SilentlyContinue",
         },
+        "PnP.PowerShell": {
+            "import": "Import-Module PnP.PowerShell -ErrorAction Stop",
+            "connect_cba": 'Connect-PnPOnline -Url "https://{spo_admin_domain}-admin.sharepoint.com" -ClientId "{app_id}" -Thumbprint "{thumbprint}" -Tenant "{tenant_id}"',
+            "connect_credential": 'Connect-PnPOnline -Url "https://{spo_admin_domain}-admin.sharepoint.com" -Credential $cred',
+            "disconnect": "Disconnect-PnPOnline -ErrorAction SilentlyContinue",
+        },
     }
 
     def __init__(self, logger):
@@ -154,17 +160,22 @@ class PowerShellExecutor(BaseExecutor):
                 f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
                 "",
                 "# Connect with credentials",
-                module_config["connect_credential"].format(tenant_id=tenant_id),
+                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.onmicrosoft.com', '').split('.')[0]),
                 "",
             ])
         else:
+            # Derive SPO admin domain from organization (e.g. contoso.onmicrosoft.com -> contoso)
+            spo_admin_domain = (organization or '').replace('.onmicrosoft.com', '').split('.')[0]
+            thumbprint = self._get_thumbprint() or ''
             script_parts.extend([
                 "# Connect with certificate",
                 module_config["connect_cba"].format(
                     app_id=app_id,
                     cert_path=str(self.PFX_FILE),
                     tenant_id=tenant_id,
-                    organization=organization
+                    organization=organization,
+                    spo_admin_domain=spo_admin_domain,
+                    thumbprint=thumbprint
                 ),
                 "",
             ])
@@ -248,15 +259,19 @@ class PowerShellExecutor(BaseExecutor):
             lines.extend([
                 f'$secPassword = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force',
                 f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
-                module_config["connect_credential"].format(tenant_id=tenant_id),
+                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.onmicrosoft.com', '').split('.')[0]),
             ])
         else:
+            spo_admin_domain = (organization or '').replace('.onmicrosoft.com', '').split('.')[0]
+            thumbprint = self._get_thumbprint() or ''
             lines.extend([
                 module_config["connect_cba"].format(
                     app_id=app_id,
                     cert_path=str(self.PFX_FILE),
                     tenant_id=tenant_id,
-                    organization=organization
+                    organization=organization,
+                    spo_admin_domain=spo_admin_domain,
+                    thumbprint=thumbprint
                 ),
             ])
         
@@ -393,15 +408,19 @@ class PowerShellExecutor(BaseExecutor):
             lines.extend([
                 f'$secPassword = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force',
                 f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
-                module_config["connect_credential"].format(tenant_id=tenant_id),
+                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.onmicrosoft.com', '').split('.')[0]),
             ])
         else:
+            spo_admin_domain = (organization or '').replace('.onmicrosoft.com', '').split('.')[0]
+            thumbprint = self._get_thumbprint() or ''
             lines.extend([
                 module_config["connect_cba"].format(
                     app_id=app_id,
                     cert_path=str(self.PFX_FILE),
                     tenant_id=tenant_id,
-                    organization=organization
+                    organization=organization,
+                    spo_admin_domain=spo_admin_domain,
+                    thumbprint=thumbprint
                 ),
             ])
 
