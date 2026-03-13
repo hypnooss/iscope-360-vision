@@ -6,7 +6,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Users, ShieldCheck, AlertTriangle, LogIn, UserCog, UserX, UserPlus, KeyRound, User,
+  Cloud, RefreshCw, Eye,
 } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import type { EntraIdDashboardData } from '@/hooks/useEntraIdDashboard';
 import type { EntraIdOperationalCategory } from './EntraIdAnalyzerCategoryGrid';
 
