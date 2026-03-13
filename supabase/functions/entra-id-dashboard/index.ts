@@ -307,9 +307,7 @@ Deno.serve(async (req) => {
         methodBreakdown: mfaMethodCounts,
         userDetails: mfaUsers.map((u: any) => {
           const methods = u.methodsRegistered || [];
-          const hasMfa = methods.some((m: string) =>
-            ['microsoftAuthenticatorPush', 'softwareOneTimePasscode', 'hardwareOneTimePasscode', 'windowsHelloForBusiness', 'passKeyDeviceBound'].includes(m)
-          );
+          const hasMfa = methods.length > 0;
           return {
             displayName: u.userDisplayName || '',
             upn: u.userPrincipalName || '',
