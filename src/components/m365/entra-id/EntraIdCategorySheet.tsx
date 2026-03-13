@@ -125,6 +125,27 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
 
       case 'mfa_coverage': {
         const pct = mfa.total > 0 ? (mfa.enabled / mfa.total) * 100 : 0;
+        const methodLabels: Record<string, { label: string; colorClass: string }> = {
+          microsoftAuthenticatorPush: { label: 'Microsoft Authenticator', colorClass: 'bg-blue-500' },
+          softwareOneTimePasscode: { label: 'Software OTP', colorClass: 'bg-violet-500' },
+          mobilePhone: { label: 'Mobile Phone', colorClass: 'bg-amber-500' },
+          email: { label: 'Email', colorClass: 'bg-cyan-500' },
+          windowsHelloForBusiness: { label: 'Windows Hello', colorClass: 'bg-teal-500' },
+          passKeyDeviceBound: { label: 'Passkey', colorClass: 'bg-indigo-500' },
+          hardwareOneTimePasscode: { label: 'Hardware OTP', colorClass: 'bg-orange-500' },
+          microsoftAuthenticatorPasswordless: { label: 'Authenticator Passwordless', colorClass: 'bg-emerald-500' },
+          fido2: { label: 'FIDO2', colorClass: 'bg-rose-500' },
+        };
+        const breakdown = mfa.methodBreakdown || {};
+        const methodEntries = Object.entries(breakdown)
+          .map(([key, value]) => ({
+            key,
+            label: methodLabels[key]?.label || key,
+            colorClass: methodLabels[key]?.colorClass || 'bg-muted-foreground',
+            value,
+          }))
+          .sort((a, b) => b.value - a.value);
+
         return (
           <div className="space-y-6">
             <div className="space-y-3">
@@ -144,11 +165,32 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
             </div>
 
             <div className="space-y-3">
-              <Badge variant="outline" className="text-xs">Distribuição MFA</Badge>
-              <ProportionalBar segments={[
-                { label: 'Com MFA', value: mfa.enabled, colorClass: 'bg-emerald-500' },
-                { label: 'Sem MFA', value: mfa.disabled, colorClass: 'bg-red-500' },
-              ]} />
+              <Badge variant="outline" className="text-xs">Distribuição MFA por Método</Badge>
+              {methodEntries.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    {methodEntries.map((m) => (
+                      <MetricCard key={m.key} label={m.label} value={m.value} />
+                    ))}
+                    <MetricCard label="Sem MFA" value={mfa.disabled} color="text-red-500" icon={AlertTriangle} />
+                  </div>
+                  <ProportionalBar segments={[
+                    ...methodEntries.map((m) => ({
+                      label: m.label,
+                      value: m.value,
+                      colorClass: m.colorClass,
+                    })),
+                    { label: 'Sem MFA', value: mfa.disabled, colorClass: 'bg-red-500' },
+                  ]} />
+                </>
+              ) : (
+                <>
+                  <ProportionalBar segments={[
+                    { label: 'Com MFA', value: mfa.enabled, colorClass: 'bg-emerald-500' },
+                    { label: 'Sem MFA', value: mfa.disabled, colorClass: 'bg-red-500' },
+                  ]} />
+                </>
+              )}
             </div>
           </div>
         );
