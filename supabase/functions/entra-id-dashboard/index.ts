@@ -156,8 +156,8 @@ Deno.serve(async (req) => {
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/users/$count?$filter=onPremisesSyncEnabled eq true", { 'ConsistencyLevel': 'eventual', 'Accept': 'text/plain' }).catch(() => null),
       // Directory roles with members
       graphGet(accessToken, 'https://graph.microsoft.com/v1.0/directoryRoles?$expand=members').catch(() => ({ value: [] })),
-      // MFA registration details
-      graphGetAllPages(accessToken, 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=999').catch(() => []),
+      // MFA registration details (members only, excludes guests)
+      graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$filter=userType eq 'member'&$top=999").catch(() => []),
       // Sign-in logs (contiguous window)
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$filter=createdDateTime ge ${periodStart}&$top=500&$orderby=createdDateTime desc`, 2).catch(() => []),
       // Directory audit logs (contiguous window)
