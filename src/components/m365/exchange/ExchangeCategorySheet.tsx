@@ -339,40 +339,8 @@ export function ExchangeCategorySheet({
 
     const sevColor = cat === 'phishing' ? 'text-red-500' : cat === 'malware' ? 'text-amber-500' : 'text-violet-500';
 
-    if (cat === 'malware') {
-      // Malware: no tabs, simple list
-      return (
-        <ScrollArea className="h-[calc(100vh-12rem)] mt-4">
-          <div className="p-6 space-y-4">
-            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30">
-              {value.toLocaleString()} {labelMap[cat]}
-            </Badge>
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top Domínios de Origem</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <RankingList items={topDomains} colorClass="text-amber-600 dark:text-amber-400"
-                  renderLabel={(item) => (<><Globe className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm truncate">{item.name}</span></>)} />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-medium">Top Usuários Alvos</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <RankingList items={topUsers} colorClass="text-amber-600 dark:text-amber-400"
-                  renderLabel={(item) => (<><User className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm truncate">{item.name}</span></>)} />
-              </CardContent>
-            </Card>
-          </div>
-        </ScrollArea>
-      );
-    }
-
-    // Spam & Phishing: tabs
-    const badgeBg = cat === 'phishing' ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30' : 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/30';
-    const listColor = cat === 'phishing' ? 'text-red-600 dark:text-red-400' : 'text-violet-600 dark:text-violet-400';
+    const badgeBg = cat === 'phishing' ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30' : cat === 'malware' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' : 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/30';
+    const listColor = cat === 'phishing' ? 'text-red-600 dark:text-red-400' : cat === 'malware' ? 'text-amber-600 dark:text-amber-400' : 'text-violet-600 dark:text-violet-400';
 
     return (
       <Tabs defaultValue="origens" className="flex flex-col flex-1 min-h-0">
