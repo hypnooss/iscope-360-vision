@@ -2,6 +2,7 @@ import { ExternalLink, Users, ShieldCheck, AlertTriangle, LogIn, UserCog, UserX,
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { DataSourceDot } from '@/components/m365/shared';
 import type { EntraIdDashboardData } from '@/hooks/useEntraIdDashboard';
 
 export type EntraIdOperationalCategory =
