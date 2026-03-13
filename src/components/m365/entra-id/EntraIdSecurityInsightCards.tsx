@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { SEVERITY_CONFIG } from '@/types/m365Insights';
 import type { M365AnalyzerInsight } from '@/types/m365AnalyzerInsights';
 import { AlertTriangle, AlertCircle, Info, Shield, Users } from 'lucide-react';
+import { DataSourceDot } from '@/components/m365/shared';
 
 interface EntraIdSecurityInsightCardsProps {
   insights: M365AnalyzerInsight[];
