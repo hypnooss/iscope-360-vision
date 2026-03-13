@@ -116,8 +116,21 @@ export default function EntraIdAnalyzerPage() {
         }),
       ]);
       if (analyzerResult.error) throw analyzerResult.error;
+      if (analyzerResult.data && !analyzerResult.data.success) {
+        const code = analyzerResult.data.code;
+        const msg = analyzerResult.data.error || 'Erro ao disparar análise';
+        toast.error(
+          code === 'ALREADY_RUNNING' ? 'Análise já em andamento' :
+          code === 'AGENT_OFFLINE'   ? 'Agent offline — verifique a conectividade' : msg,
+          { description: analyzerResult.data.message || msg }
+        );
+        setTriggering(false);
+        return;
+      }
+      toast.success('Análise iniciada', { description: 'A coleta de dados será processada em breve.' });
       refreshDashboard();
-    } finally {
+    } catch (e: any) {
+      toast.error('Erro ao disparar análise', { description: e.message });
       setTriggering(false);
     }
   };
