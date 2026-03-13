@@ -233,6 +233,7 @@ export default function EntraIdAnalyzerPage() {
                 {(analyzerSnapshot as any).snapshotCount} coletas
               </Badge>
             )}
+            <DataSourceLegend />
           </div>
         )}
 

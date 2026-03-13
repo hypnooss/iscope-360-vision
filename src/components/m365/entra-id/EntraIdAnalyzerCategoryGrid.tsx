@@ -160,7 +160,8 @@ export function EntraIdAnalyzerCategoryGrid({ data, onCategoryClick }: EntraIdAn
               )}
               onClick={() => onCategoryClick?.(catKey)}
             >
-              <CardContent className="p-4 space-y-3">
+              <CardContent className="p-4 space-y-3 relative">
+                <DataSourceDot source="snapshot" className="absolute top-3 right-3" />
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: `${info.colorHex}15` }}>
                     <Icon className="w-4.5 h-4.5" style={{ color: info.colorHex }} />

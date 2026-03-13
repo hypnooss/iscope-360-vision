@@ -214,6 +214,7 @@ export default function TeamsAnalyzerPage() {
                 {(analyzerSnapshot as any).snapshotCount} coletas
               </Badge>
             )}
+            <DataSourceLegend />
           </div>
         )}
 
