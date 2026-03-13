@@ -348,7 +348,7 @@ Deno.serve(async (req) => {
 
     console.log('Entra ID Dashboard data aggregated and cached successfully');
 
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify({ ...result, success: true }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

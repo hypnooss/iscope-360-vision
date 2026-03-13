@@ -149,6 +149,50 @@ export default function EntraIdAnalyzerPage() {
   const loading = dashboardLoading || analyzerLoading;
   const noTenants = !tenantsLoading && tenants.length === 0;
 
+  // ─── Fallback: derive dashboard KPIs from analyzer snapshot metrics ─────
+  const effectiveDashboardData = dashboardData ?? (() => {
+    const m = analyzerSnapshot?.metrics;
+    if (!m) return null;
+    return {
+      users: {
+        total: (m.identity?.newUsers ?? 0) + (m.identity?.disabledUsers ?? 0) + (m.identity?.noMfaUsers ?? 0),
+        signInEnabled: 0,
+        disabled: m.identity?.disabledUsers ?? 0,
+        guests: 0,
+        onPremSynced: 0,
+      },
+      admins: { total: 0, globalAdmins: 0 },
+      mfa: {
+        total: 0,
+        enabled: 0,
+        disabled: m.identity?.noMfaUsers ?? 0,
+      },
+      risks: {
+        riskyUsers: m.securityRisk?.riskyUsers ?? 0,
+        atRisk: m.securityRisk?.highRiskSignIns ?? 0,
+        compromised: m.securityRisk?.blockedAccounts ?? 0,
+      },
+      loginActivity: {
+        total: 0,
+        success: 0,
+        failed: m.securityRisk?.mfaFailures ?? 0,
+        mfaRequired: 0,
+        blocked: m.securityRisk?.blockedAccounts ?? 0,
+      },
+      userChanges: {
+        updated: 0,
+        new: m.identity?.newUsers ?? 0,
+        enabled: 0,
+        disabled: m.identity?.disabledUsers ?? 0,
+        deleted: 0,
+      },
+      passwordActivity: { resets: 0, forcedChanges: 0, selfService: 0 },
+      loginCountriesSuccess: [],
+      loginCountriesFailed: [],
+      analyzedAt: analyzerSnapshot?.created_at ?? '',
+    };
+  })();
+
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-10">
@@ -238,7 +282,7 @@ export default function EntraIdAnalyzerPage() {
         )}
 
         {/* Empty state: no dashboard cache AND no analyzer snapshot */}
-        {selectedTenantId && !dashboardLoading && !analyzerLoading && !dashboardData && !analyzerSnapshot && (
+        {selectedTenantId && !dashboardLoading && !analyzerLoading && !effectiveDashboardData && !analyzerSnapshot && (
           <Card className="border-warning/30 bg-warning/5">
             <CardContent className="py-10 text-center">
               <Shield className="w-10 h-10 text-warning mx-auto mb-3" />
@@ -256,17 +300,17 @@ export default function EntraIdAnalyzerPage() {
         )}
 
         {/* Stats Cards */}
-        {selectedTenantId && !loading && dashboardData && (
+        {selectedTenantId && !loading && effectiveDashboardData && (
           <div className="mb-8">
-            <EntraIdAnalyzerStatsCards data={dashboardData} />
+            <EntraIdAnalyzerStatsCards data={effectiveDashboardData} />
           </div>
         )}
 
         {/* Category Grid */}
-        {selectedTenantId && !loading && dashboardData && (
+        {selectedTenantId && !loading && effectiveDashboardData && (
           <div className="mb-8">
             <EntraIdAnalyzerCategoryGrid
-              data={dashboardData}
+              data={effectiveDashboardData}
               onCategoryClick={(cat) => {
                 setSelectedOpCategory(cat);
                 setOpCategorySheetOpen(true);
@@ -276,11 +320,11 @@ export default function EntraIdAnalyzerPage() {
         )}
 
         {/* Login Origin Map */}
-        {selectedTenantId && !loading && dashboardData && (
+        {selectedTenantId && !loading && effectiveDashboardData && (
           <div className="mb-8">
             <EntraIdLoginMap
-              loginCountriesSuccess={dashboardData.loginCountriesSuccess}
-              loginCountriesFailed={dashboardData.loginCountriesFailed}
+              loginCountriesSuccess={effectiveDashboardData.loginCountriesSuccess}
+              loginCountriesFailed={effectiveDashboardData.loginCountriesFailed}
             />
           </div>
         )}
@@ -320,7 +364,7 @@ export default function EntraIdAnalyzerPage() {
         open={opCategorySheetOpen}
         onOpenChange={setOpCategorySheetOpen}
         category={selectedOpCategory}
-        dashboardData={dashboardData}
+        dashboardData={effectiveDashboardData}
       />
       <ScheduleDialog
         open={scheduleDialogOpen}
