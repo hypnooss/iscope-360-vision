@@ -433,26 +433,37 @@ async function processM365AnalyzerSchedules(supabase: SupabaseClient, supabaseUr
           console.log(`[run-scheduled-analyses][M365Analyzer] Triggered tenant ${schedule.tenant_record_id}`);
           result.triggered++;
 
-          // Also trigger exchange dashboard refresh
-          try {
-            const exchangeUrl = `${supabaseUrl}/functions/v1/exchange-dashboard`;
-            const exchResp = await fetch(exchangeUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
-              body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
-            });
-            const exchResult = await exchResp.json();
-            if (!exchResult.success) {
-              const retryResp = await fetch(exchangeUrl, {
+          // Also trigger all dashboard refreshes in parallel
+          const dashboardFunctions = ['exchange-dashboard', 'entra-id-dashboard', 'collaboration-dashboard'];
+          await Promise.all(dashboardFunctions.map(async (fnName) => {
+            try {
+              const dashUrl = `${supabaseUrl}/functions/v1/${fnName}`;
+              const dashResp = await fetch(dashUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
                 body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
               });
-              await retryResp.json();
+              const dashResult = await dashResp.json();
+              if (!dashResult.success) {
+                console.warn(`[run-scheduled-analyses][M365Analyzer] ${fnName} first attempt failed, retrying...`);
+                const retryResp = await fetch(dashUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+                  body: JSON.stringify({ tenant_record_id: schedule.tenant_record_id }),
+                });
+                const retryResult = await retryResp.json();
+                if (retryResult.success) {
+                  console.log(`[run-scheduled-analyses][M365Analyzer] ${fnName} succeeded on retry`);
+                } else {
+                  console.error(`[run-scheduled-analyses][M365Analyzer] ${fnName} failed after retry:`, retryResult.error);
+                }
+              } else {
+                console.log(`[run-scheduled-analyses][M365Analyzer] ${fnName} succeeded`);
+              }
+            } catch (e) {
+              console.error(`[run-scheduled-analyses][M365Analyzer] ${fnName} error:`, e);
             }
-          } catch (e) {
-            console.error(`[run-scheduled-analyses][M365Analyzer] exchange-dashboard error:`, e);
-          }
+          }));
         } else {
           console.error(`[run-scheduled-analyses][M365Analyzer] Failed tenant ${schedule.tenant_record_id}:`, res.error);
           result.errors++;
