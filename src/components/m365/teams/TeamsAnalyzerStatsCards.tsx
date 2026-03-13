@@ -17,7 +17,13 @@ export function TeamsAnalyzerStatsCards({ data }: TeamsAnalyzerStatsCardsProps) 
 
   const storageUsed = sharepoint.storageUsedGB ?? 0;
   const storageAllocated = sharepoint.storageAllocatedGB ?? 0;
-  const storagePct = storageAllocated > 0 ? Math.min((storageUsed / storageAllocated) * 100, 100) : 0;
+  const quotaReliable = storageAllocated > 0 && storageAllocated < storageUsed * 100;
+  const storagePct = quotaReliable ? Math.min((storageUsed / storageAllocated) * 100, 100) : 0;
+
+  const formatStorage = (gb: number): string => {
+    if (gb >= 1024) return `${(gb / 1024).toFixed(2)} TB`;
+    return `${gb.toFixed(1)} GB`;
+  };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
