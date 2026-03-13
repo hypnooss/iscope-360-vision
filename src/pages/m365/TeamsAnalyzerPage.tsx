@@ -202,8 +202,8 @@ export default function TeamsAnalyzerPage() {
           </div>
         )}
 
-        {/* Empty state: dashboard cache not populated */}
-        {selectedTenantId && !dashboardLoading && !dashboardData && (
+        {/* Empty state: no dashboard cache AND no analyzer snapshot */}
+        {selectedTenantId && !dashboardLoading && !analyzerLoading && !dashboardData && !analyzerSnapshot && (
           <Card className="border-warning/30 bg-warning/5">
             <CardContent className="py-10 text-center">
               <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-3" />
@@ -240,8 +240,8 @@ export default function TeamsAnalyzerPage() {
           </div>
         )}
 
-        {/* Security Insights */}
-        {selectedTenantId && !analyzerLoading && dashboardData && (
+        {/* Security Insights — shown independently of dashboard cache */}
+        {selectedTenantId && !analyzerLoading && teamsInsights.length > 0 && (
           <TeamsSecurityInsightCards insights={teamsInsights} loading={analyzerLoading} />
         )}
 

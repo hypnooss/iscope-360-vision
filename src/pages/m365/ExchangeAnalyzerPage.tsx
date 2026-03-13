@@ -263,8 +263,8 @@ export default function ExchangeAnalyzerPage() {
           </div>
         )}
 
-        {/* Empty state: dashboard cache not populated */}
-        {selectedTenantId && !dashboardLoading && !dashboardData && (
+        {/* Empty state: no dashboard cache AND no analyzer snapshot */}
+        {selectedTenantId && !dashboardLoading && !analyzerLoading && !dashboardData && !analyzerSnapshot && (
           <Card className="border-warning/30 bg-warning/5">
             <CardContent className="py-10 text-center">
               <Mail className="w-10 h-10 text-warning mx-auto mb-3" />

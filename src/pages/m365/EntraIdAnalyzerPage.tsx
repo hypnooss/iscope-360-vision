@@ -221,8 +221,8 @@ export default function EntraIdAnalyzerPage() {
           </div>
         )}
 
-        {/* Empty state: dashboard cache not populated */}
-        {selectedTenantId && !dashboardLoading && !dashboardData && (
+        {/* Empty state: no dashboard cache AND no analyzer snapshot */}
+        {selectedTenantId && !dashboardLoading && !analyzerLoading && !dashboardData && !analyzerSnapshot && (
           <Card className="border-warning/30 bg-warning/5">
             <CardContent className="py-10 text-center">
               <Shield className="w-10 h-10 text-warning mx-auto mb-3" />
@@ -269,8 +269,8 @@ export default function EntraIdAnalyzerPage() {
           </div>
         )}
 
-        {/* Security Insights (operational only) */}
-        {selectedTenantId && !analyzerLoading && dashboardData && (
+        {/* Security Insights (operational only) — shown independently of dashboard cache */}
+        {selectedTenantId && !analyzerLoading && entraInsights.length > 0 && (
           <EntraIdSecurityInsightCards insights={entraInsights} loading={analyzerLoading} />
         )}
 
