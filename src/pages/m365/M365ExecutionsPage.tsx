@@ -499,6 +499,31 @@ export default function M365ExecutionsPage() {
     setPostureCancelOpen(true);
   };
 
+  const cancelSnapshotMutation = useMutation({
+    mutationFn: async (snapshotId: string) => {
+      const { error } = await supabase
+        .from('m365_analyzer_snapshots')
+        .update({ status: 'cancelled' })
+        .eq('id', snapshotId)
+        .in('status', ['pending', 'processing']);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      toast.success('Análise do Analyzer cancelada com sucesso');
+      await queryClient.invalidateQueries({ queryKey: ['m365-analyzer-snapshots'] });
+      setSnapshotCancelOpen(false);
+      setSnapshotToCancel(null);
+    },
+    onError: (e: any) => {
+      toast.error('Erro ao cancelar análise', { description: e?.message });
+    },
+  });
+
+  const requestSnapshotCancel = (snapshot: AnalyzerSnapshot) => {
+    setSnapshotToCancel(snapshot);
+    setSnapshotCancelOpen(true);
+  };
+
   const handleRefresh = () => {
     refetchPosture();
     refetchTasks();
