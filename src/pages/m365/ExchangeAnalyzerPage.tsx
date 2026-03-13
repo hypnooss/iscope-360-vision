@@ -27,6 +27,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { M365RiskCategory } from '@/types/m365Insights';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
+import { toast } from 'sonner';
 import {
   Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Mail, Settings,
 } from 'lucide-react';
