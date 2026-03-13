@@ -320,11 +320,11 @@ export default function EntraIdAnalyzerPage() {
         )}
 
         {/* Login Origin Map */}
-        {selectedTenantId && !loading && dashboardData && (
+        {selectedTenantId && !loading && effectiveDashboardData && (
           <div className="mb-8">
             <EntraIdLoginMap
-              loginCountriesSuccess={dashboardData.loginCountriesSuccess}
-              loginCountriesFailed={dashboardData.loginCountriesFailed}
+              loginCountriesSuccess={effectiveDashboardData.loginCountriesSuccess}
+              loginCountriesFailed={effectiveDashboardData.loginCountriesFailed}
             />
           </div>
         )}
