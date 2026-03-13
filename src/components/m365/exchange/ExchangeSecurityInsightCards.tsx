@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DataSourceDot } from '@/components/m365/shared/DataSourceDot';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -41,9 +42,12 @@ export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecu
   return (
     <div className="space-y-4 mb-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-          Insights de Segurança
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Insights de Segurança
+          </h2>
+          <DataSourceDot source="analyzed" />
+        </div>
         <Badge variant="outline" className="text-xs">
           {sorted.length} {sorted.length === 1 ? 'insight' : 'insights'}
         </Badge>

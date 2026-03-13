@@ -1,5 +1,6 @@
 import { Mail, ShieldAlert, Bug, Forward } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { DataSourceDot } from '@/components/m365/shared/DataSourceDot';
 import type { ExchangeDashboardData } from '@/hooks/useExchangeDashboard';
 
 interface ExchangeAnalyzerStatsCardsProps {
@@ -17,7 +18,8 @@ export function ExchangeAnalyzerStatsCards({ data }: ExchangeAnalyzerStatsCardsP
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* Total de Mailboxes */}
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <div className="absolute top-3 right-3"><DataSourceDot source="snapshot" /></div>
         <CardContent className="p-4 flex items-center gap-3">
           <Mail className="w-8 h-8 text-teal-400" />
           <div>
@@ -33,7 +35,8 @@ export function ExchangeAnalyzerStatsCards({ data }: ExchangeAnalyzerStatsCardsP
       </Card>
 
       {/* Proteção Phishing */}
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <div className="absolute top-3 right-3"><DataSourceDot source="aggregated" /></div>
         <CardContent className="p-4 flex items-center gap-3">
           <ShieldAlert className="w-8 h-8 text-red-500" />
           <div>
@@ -47,7 +50,8 @@ export function ExchangeAnalyzerStatsCards({ data }: ExchangeAnalyzerStatsCardsP
       </Card>
 
       {/* Detecção Malware */}
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <div className="absolute top-3 right-3"><DataSourceDot source="aggregated" /></div>
         <CardContent className="p-4 flex items-center gap-3">
           <Bug className="w-8 h-8 text-amber-500" />
           <div>
@@ -61,7 +65,8 @@ export function ExchangeAnalyzerStatsCards({ data }: ExchangeAnalyzerStatsCardsP
       </Card>
 
       {/* Exposição Forwarding */}
-      <Card className="glass-card border-border/50">
+      <Card className="glass-card border-border/50 relative">
+        <div className="absolute top-3 right-3"><DataSourceDot source="snapshot" /></div>
         <CardContent className="p-4 flex items-center gap-3">
           <Forward className="w-8 h-8 text-orange-500" />
           <div>

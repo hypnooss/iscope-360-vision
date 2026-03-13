@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog';
 import { formatDateTimeBR, formatShortDateTimeBR } from '@/lib/dateUtils';
+import { DataSourceLegend } from '@/components/m365/shared/DataSourceLegend';
 
 // ─── Exchange-relevant operational categories ────────────────────────────────
 const EXCHANGE_OPERATIONAL_CATEGORIES: M365AnalyzerCategory[] = [
@@ -260,6 +261,7 @@ export default function ExchangeAnalyzerPage() {
                 {(analyzerSnapshot as any).snapshotCount} coletas
               </Badge>
             )}
+            <DataSourceLegend />
           </div>
         )}
 

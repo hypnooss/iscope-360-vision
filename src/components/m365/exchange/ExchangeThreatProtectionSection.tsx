@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DataSourceDot } from '@/components/m365/shared/DataSourceDot';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -372,8 +373,9 @@ export function ExchangeThreatProtectionSection({ data, loading }: ExchangeThrea
     <div className="space-y-4">
       {/* Policy Status */}
       <div>
-        <div className="mb-4">
+        <div className="mb-4 flex items-center gap-2">
           <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Status das Políticas de Proteção</h2>
+          <DataSourceDot source="analyzed" />
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
           {policies.map(p => (

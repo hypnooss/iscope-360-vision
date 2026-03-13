@@ -1,4 +1,6 @@
 import { ExternalLink, Mail, ShieldBan, ShieldAlert, Bug, Forward, Reply, UserX, HardDrive } from 'lucide-react';
+import { DataSourceDot } from '@/components/m365/shared/DataSourceDot';
+import type { DataSourceType } from '@/components/m365/shared/DataSourceDot';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -140,11 +142,14 @@ export function ExchangeAnalyzerCategoryGrid({ data, onCategoryClick }: Exchange
             <Card
               key={catKey}
               className={cn(
-                'border cursor-pointer transition-all duration-200 hover:shadow-md group',
+                'border cursor-pointer transition-all duration-200 hover:shadow-md group relative',
                 !hasData ? 'opacity-50 border-border/30' : 'border-border/50 hover:border-border'
               )}
               onClick={() => onCategoryClick?.(catKey)}
             >
+              <div className="absolute top-3 right-3">
+                <DataSourceDot source={(['email_traffic','anti_spam','phishing','malware'] as ExchangeOperationalCategory[]).includes(catKey) ? 'aggregated' : 'snapshot'} />
+              </div>
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: `${info.colorHex}15` }}>
