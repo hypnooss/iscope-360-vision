@@ -27,7 +27,7 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
   const mapResultToData = (result: any): EntraIdDashboardData => ({
     users: result.users || { total: 0, signInEnabled: 0, disabled: 0, guests: 0, onPremSynced: 0 },
     admins: result.admins || { total: 0, globalAdmins: 0 },
-    mfa: { ...(result.mfa || { total: 0, enabled: 0, disabled: 0 }), methodBreakdown: result.mfa?.methodBreakdown || {} },
+    mfa: { ...(result.mfa || { total: 0, enabled: 0, disabled: 0 }), methodBreakdown: result.mfa?.methodBreakdown || {}, userDetails: result.mfa?.userDetails || [] },
     risks: result.risks || { riskyUsers: 0, atRisk: 0, compromised: 0 },
     loginActivity: result.loginActivity || { total: 0, success: 0, failed: 0, mfaRequired: 0, blocked: 0 },
     userChanges: result.userChanges || { updated: 0, new: 0, enabled: 0, disabled: 0, deleted: 0 },
