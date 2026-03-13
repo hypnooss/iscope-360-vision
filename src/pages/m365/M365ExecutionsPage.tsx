@@ -748,6 +748,17 @@ export default function M365ExecutionsPage() {
                                 <Ban className="w-4 h-4 text-destructive" />
                               </Button>
                             )}
+                            {item.source === 'analyzer_snapshot' && ['pending', 'running'].includes(item.status) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => requestSnapshotCancel(item.original as AnalyzerSnapshot)}
+                                disabled={cancelSnapshotMutation.isPending}
+                                title="Cancelar análise do Analyzer"
+                              >
+                                <Ban className="w-4 h-4 text-destructive" />
+                              </Button>
+                            )}
                             <Button variant="ghost" size="icon" onClick={() => openDetails(item)}>
                               <Eye className="w-4 h-4" />
                             </Button>
