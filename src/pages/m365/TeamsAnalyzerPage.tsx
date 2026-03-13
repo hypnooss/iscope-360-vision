@@ -318,7 +318,7 @@ export default function TeamsAnalyzerPage() {
         open={opCategorySheetOpen}
         onOpenChange={setOpCategorySheetOpen}
         category={selectedOpCategory}
-        dashboardData={dashboardData}
+        dashboardData={effectiveDashboardData}
       />
       <ScheduleDialog
         open={scheduleDialogOpen}
