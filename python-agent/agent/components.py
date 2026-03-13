@@ -218,7 +218,8 @@ gpgkey=file:///etc/pki/rpm-gpg/microsoft.asc
             [
                 "pwsh", "-NoProfile", "-NonInteractive", "-Command",
                 "if ((Get-Module -ListAvailable ExchangeOnlineManagement) -and "
-                "(Get-Module -ListAvailable Microsoft.Graph.Authentication)) { exit 0 } else { exit 1 }"
+                "(Get-Module -ListAvailable Microsoft.Graph.Authentication) -and "
+                "(Get-Module -ListAvailable PnP.PowerShell)) { exit 0 } else { exit 1 }"
             ],
             capture_output=True
         )
