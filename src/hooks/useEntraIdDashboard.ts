@@ -90,7 +90,7 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
       });
 
       if (fnError) throw new Error(fnError.message);
-      if (!result?.success) throw new Error(result?.error || 'Erro ao atualizar dashboard');
+      if (!result?.success && !result?.users) throw new Error(result?.error || 'Erro ao atualizar dashboard');
 
       setData(mapResultToData(result));
       loadCache().catch(() => {});
