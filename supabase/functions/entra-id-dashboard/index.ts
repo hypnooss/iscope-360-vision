@@ -305,6 +305,18 @@ Deno.serve(async (req) => {
         enabled: mfaEnabled,
         disabled: mfaDisabled,
         methodBreakdown: mfaMethodCounts,
+        userDetails: mfaUsers.map((u: any) => {
+          const methods = u.methodsRegistered || [];
+          const hasMfa = methods.some((m: string) =>
+            ['microsoftAuthenticatorPush', 'softwareOneTimePasscode', 'hardwareOneTimePasscode', 'windowsHelloForBusiness', 'passKeyDeviceBound'].includes(m)
+          );
+          return {
+            displayName: u.userDisplayName || '',
+            upn: u.userPrincipalName || '',
+            methods,
+            hasMfa,
+          };
+        }),
       },
       risks: {
         riskyUsers: riskyUsers.length,

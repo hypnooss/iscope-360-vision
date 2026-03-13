@@ -12,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import type { EntraIdDashboardData } from '@/hooks/useEntraIdDashboard';
 import type { EntraIdOperationalCategory } from './EntraIdAnalyzerCategoryGrid';
+import { MfaUserList } from './MfaUserList';
 
 interface EntraIdCategorySheetProps {
   open: boolean;
@@ -146,48 +147,70 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
           }))
           .sort((a, b) => b.value - a.value);
 
-        return (
-          <div className="space-y-6">
-            <div className="space-y-3">
-              <Badge variant="outline" className="text-xs">Resumo MFA</Badge>
-              <div className="grid grid-cols-3 gap-3">
-                <MetricCard label="Membros Analisados" value={mfa.total} icon={Users} />
-                <MetricCard label="Com MFA" value={mfa.enabled} color="text-emerald-500" icon={ShieldCheck} />
-                <MetricCard label="Sem MFA" value={mfa.disabled} color="text-red-500" icon={AlertTriangle} />
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Cobertura MFA</span>
-                  <span>{pct.toFixed(1)}%</span>
-                </div>
-                <Progress value={pct} className="h-2" />
-              </div>
-            </div>
+        const userDetails = mfa.userDetails || [];
+        const enabledUsers = userDetails.filter((u) => u.hasMfa);
+        const disabledUsersDetail = userDetails.filter((u) => !u.hasMfa);
 
-            <div className="space-y-3">
-              <Badge variant="outline" className="text-xs">Distribuição MFA por Método</Badge>
-              {methodEntries.length > 0 ? (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    {methodEntries.map((m) => (
-                      <MetricCard key={m.key} label={m.label} value={m.value} />
-                    ))}
+        return (
+          <Tabs defaultValue="overview" className="space-y-4">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="overview" className="text-xs">Status Geral</TabsTrigger>
+              <TabsTrigger value="enabled" className="text-xs">MFA Habilitado ({enabledUsers.length})</TabsTrigger>
+              <TabsTrigger value="disabled" className="text-xs">MFA Desativado ({disabledUsersDetail.length})</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="overview">
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <Badge variant="outline" className="text-xs">Resumo MFA</Badge>
+                  <div className="grid grid-cols-3 gap-3">
+                    <MetricCard label="Membros Analisados" value={mfa.total} icon={Users} />
+                    <MetricCard label="Com MFA" value={mfa.enabled} color="text-emerald-500" icon={ShieldCheck} />
+                    <MetricCard label="Sem MFA" value={mfa.disabled} color="text-destructive" icon={AlertTriangle} />
                   </div>
-                  <ProportionalBar segments={methodEntries.map((m) => ({
-                    label: m.label,
-                    value: m.value,
-                    colorClass: m.colorClass,
-                  }))} />
-                </>
-              ) : (
-                <ProportionalBar segments={[
-                  { label: 'Com MFA', value: mfa.enabled, colorClass: 'bg-emerald-500' },
-                  { label: 'Sem MFA', value: mfa.disabled, colorClass: 'bg-red-500' },
-                ]} />
-              )}
-              <p className="text-xs text-muted-foreground">Exclui contas Guest. Um usuário pode ter mais de um método.</p>
-            </div>
-          </div>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Cobertura MFA</span>
+                      <span>{pct.toFixed(1)}%</span>
+                    </div>
+                    <Progress value={pct} className="h-2" />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <Badge variant="outline" className="text-xs">Distribuição MFA por Método</Badge>
+                  {methodEntries.length > 0 ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        {methodEntries.map((m) => (
+                          <MetricCard key={m.key} label={m.label} value={m.value} />
+                        ))}
+                      </div>
+                      <ProportionalBar segments={methodEntries.map((m) => ({
+                        label: m.label,
+                        value: m.value,
+                        colorClass: m.colorClass,
+                      }))} />
+                    </>
+                  ) : (
+                    <ProportionalBar segments={[
+                      { label: 'Com MFA', value: mfa.enabled, colorClass: 'bg-emerald-500' },
+                      { label: 'Sem MFA', value: mfa.disabled, colorClass: 'bg-destructive' },
+                    ]} />
+                  )}
+                  <p className="text-xs text-muted-foreground">Exclui contas Guest. Um usuário pode ter mais de um método.</p>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="enabled">
+              <MfaUserList users={enabledUsers} showMethods />
+            </TabsContent>
+
+            <TabsContent value="disabled">
+              <MfaUserList users={disabledUsersDetail} />
+            </TabsContent>
+          </Tabs>
         );
       }
 
