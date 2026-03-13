@@ -67,7 +67,7 @@ class PowerShellExecutor(BaseExecutor):
         },
         "PnP.PowerShell": {
             "import": "Import-Module PnP.PowerShell -ErrorAction Stop",
-            "connect_cba": 'Connect-PnPOnline -Url "https://{spo_admin_domain}-admin.sharepoint.com" -ClientId "{app_id}" -CertificatePath "{cert_path}" -Tenant "{tenant_id}"',
+            "connect_cba": 'Connect-PnPOnline -Url "https://{spo_admin_domain}-admin.sharepoint.com" -ClientId "{app_id}" -CertificatePath "{cert_path}" -CertificatePassword ([System.Security.SecureString]::new()) -Tenant "{tenant_id}"',
             "connect_credential": 'Connect-PnPOnline -Url "https://{spo_admin_domain}-admin.sharepoint.com" -Credential $cred',
             "disconnect": "Disconnect-PnPOnline -ErrorAction SilentlyContinue",
         },
