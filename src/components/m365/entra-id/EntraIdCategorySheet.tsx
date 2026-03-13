@@ -163,7 +163,7 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
           <Tabs defaultValue="overview" className="space-y-4">
             <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-0 h-auto py-0">
               <TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">Status Geral</TabsTrigger>
-              <TabsTrigger value="enabled" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">MFA Habilitado ({strongUsers.length})</TabsTrigger>
+              <TabsTrigger value="enabled" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">MFA Forte ({strongUsers.length})</TabsTrigger>
               <TabsTrigger value="weak" className="rounded-none border-b-2 border-transparent data-[state=active]:border-amber-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs text-amber-500">MFA Fraco ({weakUsers.length})</TabsTrigger>
               <TabsTrigger value="disabled" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">MFA Desativado ({disabledUsersDetail.length})</TabsTrigger>
             </TabsList>
