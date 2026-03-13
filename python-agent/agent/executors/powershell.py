@@ -164,13 +164,18 @@ class PowerShellExecutor(BaseExecutor):
                 "",
             ])
         else:
+            # Derive SPO admin domain from organization (e.g. contoso.onmicrosoft.com -> contoso)
+            spo_admin_domain = (organization or '').replace('.onmicrosoft.com', '').split('.')[0]
+            thumbprint = self._get_thumbprint() or ''
             script_parts.extend([
                 "# Connect with certificate",
                 module_config["connect_cba"].format(
                     app_id=app_id,
                     cert_path=str(self.PFX_FILE),
                     tenant_id=tenant_id,
-                    organization=organization
+                    organization=organization,
+                    spo_admin_domain=spo_admin_domain,
+                    thumbprint=thumbprint
                 ),
                 "",
             ])
