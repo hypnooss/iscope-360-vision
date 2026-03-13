@@ -281,12 +281,22 @@ Deno.serve(async (req) => {
       analyzedAt: now.toISOString(),
     };
 
-    // Save cache
+    // Save snapshot to m365_dashboard_snapshots
+    const { error: snapError } = await supabase.from('m365_dashboard_snapshots').insert({
+      tenant_record_id,
+      client_id: tenant.client_id,
+      dashboard_type: 'collaboration',
+      data: result,
+      period_start: now.toISOString(),
+      period_end: now.toISOString(),
+    });
+    if (snapError) console.error('Failed to save collaboration dashboard snapshot:', snapError);
+
+    // Save legacy cache (backward compat)
     const { error: updateError } = await supabase.from('m365_tenants').update({
       collaboration_dashboard_cache: result,
       collaboration_dashboard_cached_at: now.toISOString(),
     }).eq('id', tenant_record_id);
-
     if (updateError) console.error('Failed to save collaboration dashboard cache:', updateError);
 
     console.log('Collaboration Dashboard data aggregated and cached successfully');

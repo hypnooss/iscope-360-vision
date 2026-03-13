@@ -19,25 +19,49 @@ export function useExchangeDashboard({ tenantRecordId }: UseExchangeDashboardOpt
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const mapToData = (cache: any, cachedAt?: string): ExchangeDashboardData => ({
+    mailboxes: cache.mailboxes || { total: 0, overQuota: 0, forwardingEnabled: 0, autoReplyExternal: 0, newLast30d: 0, notLoggedIn30d: 0, notLoggedIn60d: 0, notLoggedIn90d: 0 },
+    traffic: cache.traffic || { sent: 0, received: 0 },
+    trafficRankings: cache.trafficRankings || undefined,
+    security: cache.security || { maliciousInbound: 0, phishing: 0, malware: 0, spam: 0 },
+    analyzedAt: cache.analyzedAt || cachedAt || '',
+  });
+
   const loadCache = useCallback(async () => {
     if (!tenantRecordId) return;
     setLoading(true);
     setError(null);
 
     try {
-      const { data: tenant, error: dbError } = await supabase
-        .from('m365_tenants')
-        .select('exchange_dashboard_cache, exchange_dashboard_cached_at')
-        .eq('id', tenantRecordId)
-        .single();
+      // Try loading from m365_dashboard_snapshots (new architecture)
+      const { data: snapshot, error: snapError } = await supabase
+        .from('m365_dashboard_snapshots')
+        .select('data, created_at')
+        .eq('tenant_record_id', tenantRecordId)
+        .eq('dashboard_type', 'exchange')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (dbError) throw new Error(dbError.message);
-
-      if (tenant?.exchange_dashboard_cache) {
-        const cache = tenant.exchange_dashboard_cache as any;
-        setData(mapToData(cache, tenant.exchange_dashboard_cached_at));
+      if (!snapError && snapshot?.data) {
+        const cache = snapshot.data as any;
+        setData(mapToData(cache, snapshot.created_at));
       } else {
-        setData(null);
+        // Fallback to legacy cache columns
+        const { data: tenant, error: dbError } = await supabase
+          .from('m365_tenants')
+          .select('exchange_dashboard_cache, exchange_dashboard_cached_at')
+          .eq('id', tenantRecordId)
+          .single();
+
+        if (dbError) throw new Error(dbError.message);
+
+        if (tenant?.exchange_dashboard_cache) {
+          const cache = tenant.exchange_dashboard_cache as any;
+          setData(mapToData(cache, tenant.exchange_dashboard_cached_at));
+        } else {
+          setData(null);
+        }
       }
     } catch (err) {
       console.error('useExchangeDashboard loadCache error:', err);
@@ -46,14 +70,6 @@ export function useExchangeDashboard({ tenantRecordId }: UseExchangeDashboardOpt
       setLoading(false);
     }
   }, [tenantRecordId]);
-
-  const mapToData = (cache: any, cachedAt?: string): ExchangeDashboardData => ({
-    mailboxes: cache.mailboxes || { total: 0, overQuota: 0, forwardingEnabled: 0, autoReplyExternal: 0, newLast30d: 0, notLoggedIn30d: 0, notLoggedIn60d: 0, notLoggedIn90d: 0 },
-    traffic: cache.traffic || { sent: 0, received: 0 },
-    trafficRankings: cache.trafficRankings || undefined,
-    security: cache.security || { maliciousInbound: 0, phishing: 0, malware: 0, spam: 0 },
-    analyzedAt: cache.analyzedAt || cachedAt || '',
-  });
 
   const refresh = useCallback(async () => {
     if (!tenantRecordId) return;

@@ -1766,6 +1766,54 @@ export type Database = {
           },
         ]
       }
+      m365_dashboard_snapshots: {
+        Row: {
+          client_id: string | null
+          created_at: string | null
+          dashboard_type: string
+          data: Json
+          id: string
+          period_end: string | null
+          period_start: string | null
+          tenant_record_id: string
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string | null
+          dashboard_type: string
+          data?: Json
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          tenant_record_id: string
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string | null
+          dashboard_type?: string
+          data?: Json
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          tenant_record_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "m365_dashboard_snapshots_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "m365_dashboard_snapshots_tenant_record_id_fkey"
+            columns: ["tenant_record_id"]
+            isOneToOne: false
+            referencedRelation: "m365_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       m365_external_movement_alerts: {
         Row: {
           affected_domains: string[] | null
