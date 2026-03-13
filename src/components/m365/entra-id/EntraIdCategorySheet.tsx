@@ -85,7 +85,8 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
     switch (category) {
       case 'active_users': {
         const cloudOnly = Math.max(0, users.total - users.onPremSynced - users.guests);
-        const enabledPct = users.total > 0 ? (users.signInEnabled / users.total) * 100 : 0;
+        const internalUsers = users.total - users.guests;
+        const enabledPct = internalUsers > 0 ? (users.signInEnabled / internalUsers) * 100 : 0;
 
         return (
           <div className="space-y-6">
