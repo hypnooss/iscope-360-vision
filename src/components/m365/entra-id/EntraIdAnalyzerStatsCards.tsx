@@ -1,5 +1,6 @@
 import { Users, ShieldCheck, AlertTriangle, UserCog } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { DataSourceDot } from '@/components/m365/shared';
 import type { EntraIdDashboardData } from '@/hooks/useEntraIdDashboard';
 
 interface EntraIdAnalyzerStatsCardsProps {
