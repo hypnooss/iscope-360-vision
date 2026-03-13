@@ -17,7 +17,13 @@ export function TeamsAnalyzerStatsCards({ data }: TeamsAnalyzerStatsCardsProps) 
 
   const storageUsed = sharepoint.storageUsedGB ?? 0;
   const storageAllocated = sharepoint.storageAllocatedGB ?? 0;
-  const storagePct = storageAllocated > 0 ? Math.min((storageUsed / storageAllocated) * 100, 100) : 0;
+  const quotaReliable = storageAllocated > 0 && storageAllocated < storageUsed * 100;
+  const storagePct = quotaReliable ? Math.min((storageUsed / storageAllocated) * 100, 100) : 0;
+
+  const formatStorage = (gb: number): string => {
+    if (gb >= 1024) return `${(gb / 1024).toFixed(2)} TB`;
+    return `${gb.toFixed(1)} GB`;
+  };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -87,12 +93,19 @@ export function TeamsAnalyzerStatsCards({ data }: TeamsAnalyzerStatsCardsProps) 
           <div className="flex items-center gap-3">
             <HardDrive className="w-8 h-8 text-primary" />
             <div>
-              <p className="text-2xl font-bold">{storageUsed.toFixed(1)} <span className="text-sm font-normal text-muted-foreground">/ {storageAllocated.toFixed(1)} GB</span></p>
+              <p className="text-2xl font-bold">
+                {formatStorage(storageUsed)}
+                {quotaReliable && <span className="text-sm font-normal text-muted-foreground"> / {formatStorage(storageAllocated)}</span>}
+              </p>
               <p className="text-xs text-muted-foreground">Storage SharePoint</p>
             </div>
           </div>
-          <Progress value={storagePct} className="h-2" />
-          <p className="text-xs text-muted-foreground text-right">{storagePct.toFixed(1)}% utilizado</p>
+          {quotaReliable && (
+            <>
+              <Progress value={storagePct} className="h-2" />
+              <p className="text-xs text-muted-foreground text-right">{storagePct.toFixed(1)}% utilizado</p>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
