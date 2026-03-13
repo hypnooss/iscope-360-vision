@@ -408,15 +408,19 @@ class PowerShellExecutor(BaseExecutor):
             lines.extend([
                 f'$secPassword = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force',
                 f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
-                module_config["connect_credential"].format(tenant_id=tenant_id),
+                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.onmicrosoft.com', '').split('.')[0]),
             ])
         else:
+            spo_admin_domain = (organization or '').replace('.onmicrosoft.com', '').split('.')[0]
+            thumbprint = self._get_thumbprint() or ''
             lines.extend([
                 module_config["connect_cba"].format(
                     app_id=app_id,
                     cert_path=str(self.PFX_FILE),
                     tenant_id=tenant_id,
-                    organization=organization
+                    organization=organization,
+                    spo_admin_domain=spo_admin_domain,
+                    thumbprint=thumbprint
                 ),
             ])
 
