@@ -240,8 +240,8 @@ export default function TeamsAnalyzerPage() {
           </div>
         )}
 
-        {/* Security Insights */}
-        {selectedTenantId && !analyzerLoading && dashboardData && (
+        {/* Security Insights — shown independently of dashboard cache */}
+        {selectedTenantId && !analyzerLoading && teamsInsights.length > 0 && (
           <TeamsSecurityInsightCards insights={teamsInsights} loading={analyzerLoading} />
         )}
 

@@ -269,8 +269,8 @@ export default function EntraIdAnalyzerPage() {
           </div>
         )}
 
-        {/* Security Insights (operational only) */}
-        {selectedTenantId && !analyzerLoading && dashboardData && (
+        {/* Security Insights (operational only) — shown independently of dashboard cache */}
+        {selectedTenantId && !analyzerLoading && entraInsights.length > 0 && (
           <EntraIdSecurityInsightCards insights={entraInsights} loading={analyzerLoading} />
         )}
 
