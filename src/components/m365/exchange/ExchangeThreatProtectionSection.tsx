@@ -147,9 +147,10 @@ function PolicyCard({ name, status, onClick }: { name: string; status: PolicySta
 
   return (
     <Card
-      className={cn('glass-card border cursor-pointer transition-all hover:ring-1 hover:ring-primary/30', cfg.bg)}
+      className={cn('glass-card border cursor-pointer transition-all hover:ring-1 hover:ring-primary/30 relative', cfg.bg)}
       onClick={onClick}
     >
+      <DataSourceDot source="snapshot" className="absolute top-2 right-2" />
       <CardContent className="p-3 flex items-center gap-2.5">
         <cfg.icon className={cn('w-4 h-4 shrink-0', cfg.color)} />
         <div className="min-w-0 flex-1">
@@ -310,6 +311,7 @@ function RankingList({ title, icon: Icon, items, labelKey }: {
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <Icon className="w-4 h-4 text-muted-foreground" />
           {title}
+          <DataSourceDot source="aggregated" />
         </CardTitle>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-1">
@@ -375,7 +377,6 @@ export function ExchangeThreatProtectionSection({ data, loading }: ExchangeThrea
       <div>
         <div className="mb-4 flex items-center gap-2">
           <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Status das Políticas de Proteção</h2>
-          <DataSourceDot source="analyzed" />
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
           {policies.map(p => (
