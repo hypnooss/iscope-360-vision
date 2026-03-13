@@ -104,3 +104,27 @@ Frontend (useM365AnalyzerData.ts):
   Soma contadores de snapshots consecutivos sem sobreposição
   → Dados precisos sem duplicação
 ```
+
+## Dashboard Snapshots — Arquitetura de Período Dinâmico
+
+### Status: ✅ Implementado
+
+### Problema resolvido
+Os dashboards operacionais (Exchange, Entra ID, Colaboração) salvavam KPIs numa única coluna JSONB sobrescrita a cada execução, impedindo agregação histórica para períodos dinâmicos (7 dias, 30 dias, etc.).
+
+### Mudanças implementadas
+
+| Componente | Mudança |
+|---|---|
+| **Migration SQL** | Nova tabela `m365_dashboard_snapshots` com `tenant_record_id`, `client_id`, `dashboard_type`, `data` (JSONB), `period_start`, `period_end`, `created_at`. RLS com service_role, client_access e super_admin |
+| `exchange-dashboard` Edge Function | INSERT snapshot em `m365_dashboard_snapshots` (type='exchange') + UPDATE cache legado |
+| `entra-id-dashboard` Edge Function | INSERT snapshot (type='entra_id') + UPDATE cache legado |
+| `collaboration-dashboard` Edge Function | INSERT snapshot (type='collaboration') + UPDATE cache legado |
+| `useExchangeDashboard.ts` | Carrega do último snapshot da nova tabela, fallback para cache legado |
+| `useEntraIdDashboard.ts` | Idem |
+| `useCollaborationDashboard.ts` | Idem |
+
+### Próximos passos
+- Adicionar seletor de período no frontend e agregar dados de evento de múltiplos snapshots
+- Auto-trigger dos dashboards no `agent-task-result` ao completar task m365_analyzer
+- Remover colunas de cache legado quando migração estiver consolidada
