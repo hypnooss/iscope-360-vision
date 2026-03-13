@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Maximize2, X } from 'lucide-react';
 import { EntraIdCountryMap } from './EntraIdCountryMap';
 import { getCountryCode } from '@/lib/countryUtils';
+import { DataSourceDot } from '@/components/m365/shared';
 import 'flag-icons/css/flag-icons.min.css';
 
 interface EntraIdLoginMapProps {
