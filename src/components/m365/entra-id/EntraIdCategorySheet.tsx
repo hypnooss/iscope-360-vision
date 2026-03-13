@@ -85,24 +85,12 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
     switch (category) {
       case 'active_users': {
         const cloudOnly = Math.max(0, users.total - users.onPremSynced - users.guests);
-        const members = users.total - users.guests;
         const enabledPct = users.total > 0 ? (users.signInEnabled / users.total) * 100 : 0;
 
         return (
-          <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="w-full justify-start rounded-none border-b bg-transparent p-0 h-auto">
-              <TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 gap-1.5">
-                <Eye className="w-3.5 h-3.5" /> Visão Geral
-              </TabsTrigger>
-              <TabsTrigger value="origin" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 gap-1.5">
-                <Cloud className="w-3.5 h-3.5" /> Origem ({(cloudOnly + users.onPremSynced).toLocaleString()})
-              </TabsTrigger>
-              <TabsTrigger value="external" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 gap-1.5">
-                <UserPlus className="w-3.5 h-3.5" /> Externos ({users.guests.toLocaleString()})
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="overview" className="mt-4 space-y-4">
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <Badge variant="outline" className="text-xs">Resumo do Diretório</Badge>
               <div className="grid grid-cols-3 gap-3">
                 <MetricCard label="Total" value={users.total} icon={Users} />
                 <MetricCard label="Habilitados" value={users.signInEnabled} color="text-emerald-500" icon={User} />
@@ -115,48 +103,22 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
                 </div>
                 <Progress value={enabledPct} className="h-2" />
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <MetricCard label="Cloud-Only" value={cloudOnly} icon={Cloud} />
-                <MetricCard label="Sincronizados" value={users.onPremSynced} icon={RefreshCw} />
-                <MetricCard label="Convidados" value={users.guests} icon={UserPlus} />
-              </div>
-            </TabsContent>
+            </div>
 
-            <TabsContent value="origin" className="mt-4 space-y-4">
-              <Badge variant="outline" className="text-xs">Distribuição por origem de identidade</Badge>
-              <div className="grid grid-cols-2 gap-3">
-                <MetricCard label="Cloud-Only" value={cloudOnly} icon={Cloud} color="text-sky-500" />
-                <MetricCard label="On-Prem Sync" value={users.onPremSynced} icon={RefreshCw} color="text-violet-500" />
-              </div>
+            <div className="space-y-3">
+              <Badge variant="outline" className="text-xs">Composição do Diretório</Badge>
               <ProportionalBar segments={[
                 { label: 'Cloud-Only', value: cloudOnly, colorClass: 'bg-sky-500' },
                 { label: 'Sincronizados', value: users.onPremSynced, colorClass: 'bg-violet-500' },
-              ]} />
-              <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
-                <div className="bg-secondary/30 p-3 rounded-lg">
-                  <div className="text-muted-foreground mb-1">% Cloud-Only</div>
-                  <div className="text-foreground font-semibold text-base">{users.total > 0 ? ((cloudOnly / users.total) * 100).toFixed(1) : '0.0'}%</div>
-                </div>
-                <div className="bg-secondary/30 p-3 rounded-lg">
-                  <div className="text-muted-foreground mb-1">% Sincronizados</div>
-                  <div className="text-foreground font-semibold text-base">{users.total > 0 ? ((users.onPremSynced / users.total) * 100).toFixed(1) : '0.0'}%</div>
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="external" className="mt-4 space-y-4">
-              <Badge variant="outline" className="text-xs">Usuários externos (Guest) no diretório</Badge>
-              <div className="grid grid-cols-3 gap-3">
-                <MetricCard label="Convidados" value={users.guests} icon={UserPlus} color="text-pink-500" />
-                <MetricCard label="Membros" value={members} icon={Users} />
-                <MetricCard label="% Externos" value={`${users.total > 0 ? ((users.guests / users.total) * 100).toFixed(1) : '0.0'}%`} />
-              </div>
-              <ProportionalBar segments={[
-                { label: 'Membros', value: members, colorClass: 'bg-teal-500' },
                 { label: 'Convidados', value: users.guests, colorClass: 'bg-pink-500' },
               ]} />
-            </TabsContent>
-          </Tabs>
+              <div className="grid grid-cols-3 gap-3">
+                <MetricCard label="Cloud-Only" value={cloudOnly} icon={Cloud} color="text-sky-500" />
+                <MetricCard label="Sincronizados" value={users.onPremSynced} icon={RefreshCw} color="text-violet-500" />
+                <MetricCard label="Convidados" value={users.guests} icon={UserPlus} color="text-pink-500" />
+              </div>
+            </div>
+          </div>
         );
       }
 
