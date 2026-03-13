@@ -247,10 +247,49 @@ Deno.serve(async (req) => {
       console.warn('SharePoint site usage report returned null - check Reports.Read.All permission on tenant');
     }
 
-    // Try to get tenant-level storage quota via SPO Admin API
+    // Try to get tenant-level storage quota
     let storageAllocatedBytes = 0;
+
+    // 1. Try agent-collected SPO quota from latest m365_analyzer snapshot
+    try {
+      const { data: latestSnapshot } = await supabase
+        .from('m365_analyzer_snapshots')
+        .select('agent_task_id')
+        .eq('tenant_record_id', tenant_record_id)
+        .eq('status', 'completed')
+        .not('agent_task_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestSnapshot?.agent_task_id) {
+        const { data: taskData } = await supabase
+          .from('agent_tasks')
+          .select('step_results')
+          .eq('id', latestSnapshot.agent_task_id)
+          .maybeSingle();
+
+        const stepResults = taskData?.step_results as Record<string, any> | null;
+        const spoQuotaResult = stepResults?.spo_tenant_quota;
+        
+        if (spoQuotaResult?.success) {
+          const quotaData = typeof spoQuotaResult.data === 'string' 
+            ? JSON.parse(spoQuotaResult.data) 
+            : spoQuotaResult.data;
+          const quotaMB = quotaData?.StorageQuota || (Array.isArray(quotaData) ? quotaData[0]?.StorageQuota : 0) || 0;
+          if (quotaMB > 0) {
+            storageAllocatedBytes = quotaMB * 1024 * 1024; // MB → bytes
+            console.log(`Agent SPO quota: ${quotaMB} MB (${(quotaMB / 1024).toFixed(2)} GB)`);
+          }
+        }
+      }
+    } catch (e) {
+      console.log(`Agent SPO quota lookup failed: ${e instanceof Error ? e.message : e}`);
+    }
+
+    // 2. Fallback: try SPO Admin REST API
     const tenantDomain = tenant.tenant_domain?.replace('.onmicrosoft.com', '') || '';
-    if (tenantDomain) {
+    if (storageAllocatedBytes === 0 && tenantDomain) {
       try {
         const spoAdminUrl = `https://${tenantDomain}-admin.sharepoint.com/_api/StorageQuota()`;
         const quotaRes = await fetch(spoAdminUrl, {
