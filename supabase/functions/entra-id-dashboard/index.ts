@@ -127,13 +127,12 @@ Deno.serve(async (req) => {
     const accessToken = await getAccessToken(tenant.tenant_id, globalConfig.app_id, clientSecret);
 
     const now = new Date();
-    // Contiguous window: from last successful execution to now (fallback: 1h)
     const periodStart = (tenant as any).entra_dashboard_cached_at
       ? new Date((tenant as any).entra_dashboard_cached_at).toISOString()
       : new Date(now.getTime() - 60 * 60 * 1000).toISOString();
     console.log(`[entra-id-dashboard] Contiguous window: ${periodStart} → ${now.toISOString()}`);
 
-    // Fetch all data in parallel
+    // Fetch all data in parallel (including new detail queries)
     const [
       usersCountData,
       guestCountData,
@@ -145,30 +144,25 @@ Deno.serve(async (req) => {
       auditLogs,
       auditLogs7d,
       riskyUsersData,
+      disabledUsersList,
+      guestUsersList,
     ] = await Promise.all([
-      // Total users count
       graphGet(accessToken, 'https://graph.microsoft.com/v1.0/users/$count', { 'ConsistencyLevel': 'eventual', 'Accept': 'text/plain' }).catch(() => null),
-      // Guest users count
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/users/$count?$filter=userType eq 'Guest'", { 'ConsistencyLevel': 'eventual', 'Accept': 'text/plain' }).catch(() => null),
-      // Disabled users count
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/users/$count?$filter=accountEnabled eq false", { 'ConsistencyLevel': 'eventual', 'Accept': 'text/plain' }).catch(() => null),
-      // On-prem synced users count
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/users/$count?$filter=onPremisesSyncEnabled eq true", { 'ConsistencyLevel': 'eventual', 'Accept': 'text/plain' }).catch(() => null),
-      // Directory roles with members
       graphGet(accessToken, 'https://graph.microsoft.com/v1.0/directoryRoles?$expand=members').catch(() => ({ value: [] })),
-      // MFA registration details (members only, excludes guests)
       graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$filter=userType eq 'member'&$top=999").catch(() => []),
-      // Sign-in logs (contiguous window)
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$filter=createdDateTime ge ${periodStart}&$top=500&$orderby=createdDateTime desc`, 2).catch(() => []),
-      // Directory audit logs (contiguous window)
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
-      // Directory audit logs (same contiguous window — password activity)
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
-      // Risky users (requires P2)
       graphGet(accessToken, 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=100').catch(() => null),
+      // New: disabled users list
+      graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/users?$filter=accountEnabled eq false&$select=displayName,userPrincipalName,createdDateTime&$top=999&$count=true", 3).catch(() => []),
+      // New: guest users list
+      graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/users?$filter=userType eq 'Guest'&$select=displayName,userPrincipalName,mail,createdDateTime&$top=999&$count=true", 3).catch(() => []),
     ]);
 
-    // For $count endpoints, the response is plain text number
     const parseCount = (val: any): number => {
       if (val === null || val === undefined) return 0;
       if (typeof val === 'number') return val;
@@ -182,22 +176,35 @@ Deno.serve(async (req) => {
     const syncedUsers = parseCount(syncedCountData);
     const signInEnabled = totalUsers - disabledUsers;
 
-    // Admins calculation
+    // Admins calculation + detail mapping
     const roles = directoryRoles?.value || [];
     const adminRoleNames = ['Global Administrator', 'Privileged Role Administrator', 'Security Administrator',
       'Exchange Administrator', 'SharePoint Administrator', 'User Administrator', 'Application Administrator'];
-    const allAdminUserIds = new Set<string>();
+    const adminUserMap = new Map<string, { displayName: string; upn: string; roles: string[] }>();
     let globalAdminCount = 0;
 
     roles.forEach((role: any) => {
       const members = (role.members || []).filter((m: any) => m['@odata.type'] === '#microsoft.graph.user');
       if (adminRoleNames.some(ar => role.displayName?.includes(ar))) {
-        members.forEach((m: any) => allAdminUserIds.add(m.id));
+        members.forEach((m: any) => {
+          const existing = adminUserMap.get(m.id);
+          if (existing) {
+            existing.roles.push(role.displayName);
+          } else {
+            adminUserMap.set(m.id, {
+              displayName: m.displayName || '',
+              upn: m.userPrincipalName || '',
+              roles: [role.displayName],
+            });
+          }
+        });
       }
       if (role.displayName === 'Global Administrator') {
         globalAdminCount = members.length;
       }
     });
+
+    const adminDetails = Array.from(adminUserMap.values());
 
     // MFA calculation
     const mfaUsers = mfaRegistration || [];
@@ -209,7 +216,6 @@ Deno.serve(async (req) => {
     }).length;
     const mfaDisabled = mfaUsers.length - mfaEnabled;
 
-    // MFA method breakdown
     const mfaMethodCounts: Record<string, number> = {};
     mfaUsers.forEach((u: any) => {
       (u.methodsRegistered || []).forEach((m: string) => {
@@ -217,12 +223,20 @@ Deno.serve(async (req) => {
       });
     });
 
-    // Risks
+    // Risks + detail mapping
     const riskyUsers = riskyUsersData?.value || [];
     const riskyAtRisk = riskyUsers.filter((u: any) => u.riskState === 'atRisk').length;
     const riskyConfirmedCompromised = riskyUsers.filter((u: any) => u.riskState === 'confirmedCompromised').length;
 
-    // Sign-in activity aggregation
+    const riskDetails = riskyUsers.map((u: any) => ({
+      displayName: u.userDisplayName || '',
+      upn: u.userPrincipalName || '',
+      riskLevel: u.riskLevel || 'unknown',
+      riskState: u.riskState || 'unknown',
+      lastUpdated: u.riskLastUpdatedDateTime || '',
+    }));
+
+    // Sign-in activity aggregation + detail mapping
     const successLogins = signInLogs.filter((l: any) => !l.status?.errorCode || l.status.errorCode === 0).length;
     const failedLogins = signInLogs.filter((l: any) => l.status?.errorCode && l.status.errorCode !== 0).length;
     const mfaRequiredLogins = signInLogs.filter((l: any) =>
@@ -232,7 +246,23 @@ Deno.serve(async (req) => {
       l.conditionalAccessStatus === 'failure' || l.status?.errorCode === 53003
     ).length;
 
-    // Aggregate sign-in logs by country
+    const loginDetails = signInLogs.map((l: any) => {
+      const errorCode = l.status?.errorCode || 0;
+      const isBlocked = l.conditionalAccessStatus === 'failure' || errorCode === 53003;
+      const isSuccess = !errorCode || errorCode === 0;
+      return {
+        displayName: l.userDisplayName || '',
+        upn: l.userPrincipalName || '',
+        status: isBlocked ? 'blocked' : isSuccess ? 'success' : 'failed',
+        errorCode,
+        location: l.location?.countryOrRegion || '',
+        city: l.location?.city || '',
+        app: l.appDisplayName || '',
+        createdDateTime: l.createdDateTime || '',
+      };
+    });
+
+    // Countries aggregation
     const successByCountry: Record<string, number> = {};
     const failedByCountry: Record<string, number> = {};
     signInLogs.forEach((l: any) => {
@@ -244,24 +274,13 @@ Deno.serve(async (req) => {
         failedByCountry[country] = (failedByCountry[country] || 0) + 1;
       }
     });
-    const loginCountriesSuccess = Object.entries(successByCountry)
-      .map(([country, count]) => ({ country, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 20);
-    const loginCountriesFailed = Object.entries(failedByCountry)
-      .map(([country, count]) => ({ country, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 20);
+    const loginCountriesSuccess = Object.entries(successByCountry).map(([country, count]) => ({ country, count })).sort((a, b) => b.count - a.count).slice(0, 20);
+    const loginCountriesFailed = Object.entries(failedByCountry).map(([country, count]) => ({ country, count })).sort((a, b) => b.count - a.count).slice(0, 20);
 
-    // Audit activity aggregation (30 days)
+    // Audit activity aggregation
     const userChangeActivities: Record<string, string[]> = {
-      'Update user': [],
-      'Add user': [],
-      'Enable account': [],
-      'Disable account': [],
-      'Delete user': [],
+      'Update user': [], 'Add user': [], 'Enable account': [], 'Disable account': [], 'Delete user': [],
     };
-
     auditLogs.forEach((log: any) => {
       const activity = log.activityDisplayName;
       if (activity in userChangeActivities) {
@@ -269,23 +288,50 @@ Deno.serve(async (req) => {
       }
     });
 
-    // Password activity (7 days)
-    const passwordActivities = {
-      resets: 0,
-      forcedChanges: 0,
-      selfService: 0,
-    };
+    // Password activity + detail mapping
+    const passwordActivities = { resets: 0, forcedChanges: 0, selfService: 0 };
+    const passwordDetails: any[] = [];
 
     auditLogs7d.forEach((log: any) => {
       const activity = log.activityDisplayName;
+      let type: string | null = null;
       if (activity === 'Reset password (by admin)' || activity === 'Reset user password') {
         passwordActivities.resets++;
+        type = 'reset';
       } else if (activity === 'Change password (self-service)' || activity === 'Change user password') {
         passwordActivities.selfService++;
+        type = 'selfService';
       } else if (activity === 'Force change password') {
         passwordActivities.forcedChanges++;
+        type = 'forced';
+      }
+      if (type) {
+        const targets = log.targetResources || [];
+        const initiator = log.initiatedBy?.user?.displayName || log.initiatedBy?.app?.displayName || '';
+        passwordDetails.push({
+          activity: activity,
+          type,
+          targetUser: targets[0]?.userPrincipalName || targets[0]?.displayName || '',
+          initiatedBy: initiator,
+          activityDateTime: log.activityDateTime || '',
+        });
       }
     });
+
+    // Disabled users details
+    const disabledDetails = (disabledUsersList || []).map((u: any) => ({
+      displayName: u.displayName || '',
+      upn: u.userPrincipalName || '',
+      createdDateTime: u.createdDateTime || '',
+    }));
+
+    // Guest users details
+    const guestDetails = (guestUsersList || []).map((u: any) => ({
+      displayName: u.displayName || '',
+      upn: u.userPrincipalName || '',
+      mail: u.mail || '',
+      createdDateTime: u.createdDateTime || '',
+    }));
 
     const result = {
       success: true,
@@ -295,10 +341,13 @@ Deno.serve(async (req) => {
         disabled: disabledUsers,
         guests: guestUsers,
         onPremSynced: syncedUsers,
+        disabledDetails,
+        guestDetails,
       },
       admins: {
-        total: allAdminUserIds.size,
+        total: adminUserMap.size,
         globalAdmins: globalAdminCount,
+        details: adminDetails,
       },
       mfa: {
         total: mfaUsers.length,
@@ -321,6 +370,7 @@ Deno.serve(async (req) => {
         riskyUsers: riskyUsers.length,
         atRisk: riskyAtRisk,
         compromised: riskyConfirmedCompromised,
+        details: riskDetails,
       },
       loginActivity: {
         total: signInLogs.length,
@@ -328,6 +378,7 @@ Deno.serve(async (req) => {
         failed: failedLogins,
         mfaRequired: mfaRequiredLogins,
         blocked: blockedLogins,
+        details: loginDetails,
       },
       userChanges: {
         updated: userChangeActivities['Update user'].length,
@@ -340,6 +391,7 @@ Deno.serve(async (req) => {
         resets: passwordActivities.resets,
         forcedChanges: passwordActivities.forcedChanges,
         selfService: passwordActivities.selfService,
+        details: passwordDetails,
       },
       loginCountriesSuccess,
       loginCountriesFailed,
@@ -348,7 +400,7 @@ Deno.serve(async (req) => {
       periodEnd: now.toISOString(),
     };
 
-    // Save snapshot to m365_dashboard_snapshots
+    // Save snapshot
     const { error: snapError } = await supabase.from('m365_dashboard_snapshots').insert({
       tenant_record_id,
       client_id: tenant.client_id,
@@ -359,7 +411,7 @@ Deno.serve(async (req) => {
     });
     if (snapError) console.error('Failed to save entra dashboard snapshot:', snapError);
 
-    // Save legacy cache (backward compat)
+    // Save legacy cache
     const { error: updateError } = await supabase.from('m365_tenants').update({
       entra_dashboard_cache: result,
       entra_dashboard_cached_at: now.toISOString(),
