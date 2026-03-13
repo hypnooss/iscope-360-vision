@@ -153,10 +153,10 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
 
         return (
           <Tabs defaultValue="overview" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="overview" className="text-xs">Status Geral</TabsTrigger>
-              <TabsTrigger value="enabled" className="text-xs">MFA Habilitado ({enabledUsers.length})</TabsTrigger>
-              <TabsTrigger value="disabled" className="text-xs">MFA Desativado ({disabledUsersDetail.length})</TabsTrigger>
+            <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-0 h-auto py-0">
+              <TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">Status Geral</TabsTrigger>
+              <TabsTrigger value="enabled" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">MFA Habilitado ({enabledUsers.length})</TabsTrigger>
+              <TabsTrigger value="disabled" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs">MFA Desativado ({disabledUsersDetail.length})</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview">
