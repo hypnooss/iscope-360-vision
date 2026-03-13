@@ -264,9 +264,9 @@ export default function TeamsAnalyzerPage() {
         )}
 
         {/* Stats Cards */}
-        {selectedTenantId && !loading && dashboardData && (
+        {selectedTenantId && !loading && effectiveDashboardData && (
           <div className="mb-8">
-            <TeamsAnalyzerStatsCards data={dashboardData} />
+            <TeamsAnalyzerStatsCards data={effectiveDashboardData} />
           </div>
         )}
 
