@@ -304,6 +304,7 @@ Deno.serve(async (req) => {
         total: mfaUsers.length,
         enabled: mfaEnabled,
         disabled: mfaDisabled,
+        methodBreakdown: mfaMethodCounts,
       },
       risks: {
         riskyUsers: riskyUsers.length,
