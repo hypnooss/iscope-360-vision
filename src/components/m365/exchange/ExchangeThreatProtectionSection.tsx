@@ -311,6 +311,7 @@ function RankingList({ title, icon: Icon, items, labelKey }: {
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <Icon className="w-4 h-4 text-muted-foreground" />
           {title}
+          <DataSourceDot source="aggregated" />
         </CardTitle>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-1">
