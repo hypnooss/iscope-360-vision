@@ -95,7 +95,7 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
               <div className="grid grid-cols-3 gap-3">
                 <MetricCard label="Total" value={users.total} icon={Users} />
                 <MetricCard label="Habilitados" value={users.signInEnabled} color="text-emerald-500" icon={User} />
-                <MetricCard label="Desabilitados" value={users.disabled} color="text-red-500" icon={UserX} />
+                <MetricCard label="Desabilitados" value={users.disabled} color="text-indigo-500" icon={UserX} />
               </div>
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs text-muted-foreground">
