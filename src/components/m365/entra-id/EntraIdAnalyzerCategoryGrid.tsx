@@ -187,7 +187,14 @@ export function EntraIdAnalyzerCategoryGrid({ data, onCategoryClick }: EntraIdAn
                   </div>
                 </div>
 
-                {hasSplit && hasData ? (
+                {hasSplits && hasData ? (
+                  <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden flex">
+                    {stats.splits!.map((seg, i) => {
+                      const splitsTotal = stats.splits!.reduce((s, x) => s + x.value, 0) || 1;
+                      return <div key={i} className="h-full transition-all" style={{ width: `${(seg.value / splitsTotal) * 100}%`, backgroundColor: seg.color }} />;
+                    })}
+                  </div>
+                ) : hasSplit && hasData ? (
                   <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden flex">
                     <div className="h-full transition-all" style={{ width: `${(stats.splitA!.value / (stats.splitA!.value + stats.splitB!.value)) * 100}%`, backgroundColor: stats.splitA!.color }} />
                     <div className="h-full transition-all" style={{ width: `${(stats.splitB!.value / (stats.splitA!.value + stats.splitB!.value)) * 100}%`, backgroundColor: stats.splitB!.color }} />
@@ -198,7 +205,17 @@ export function EntraIdAnalyzerCategoryGrid({ data, onCategoryClick }: EntraIdAn
                   </div>
                 )}
 
-                {hasData && hasSplit && (
+                {hasData && hasSplits && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {stats.splits!.map((seg, i) => (
+                      <Badge key={i} variant="outline" className="text-[10px] px-1.5 py-0" style={{ backgroundColor: `${seg.color}20`, color: seg.color, borderColor: `${seg.color}40` }}>
+                        {seg.value.toLocaleString()} {seg.label}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                {hasData && !hasSplits && hasSplit && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0" style={{ backgroundColor: `${stats.splitA!.color}20`, color: stats.splitA!.color, borderColor: `${stats.splitA!.color}40` }}>
                       {stats.splitA!.value.toLocaleString()} {stats.splitA!.label}
@@ -209,7 +226,7 @@ export function EntraIdAnalyzerCategoryGrid({ data, onCategoryClick }: EntraIdAn
                   </div>
                 )}
 
-                {hasData && !hasSplit && stats.badgeLabel && (
+                {hasData && !hasSplits && !hasSplit && stats.badgeLabel && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Badge variant="outline" className={cn(
                       "text-[10px] px-1.5 py-0",
