@@ -74,9 +74,7 @@ function getCategoryStats(cat: EntraIdOperationalCategory, data: EntraIdDashboar
       const enabledUsers = userDetails.filter((u) => u.hasMfa);
       const disabledCount = mfa.disabled;
       const WEAK_METHODS = new Set(['mobilePhone', 'email']);
-      const weakCount = enabledUsers.filter(
-        (u) => u.methods.length > 0 && u.methods.every((m) => WEAK_METHODS.has(m))
-      ).length;
+      const weakCount = enabledUsers.filter((u) => u.methods.length > 0 && u.methods.every((m) => WEAK_METHODS.has(m))).length;
       const strongCount = enabledUsers.length - weakCount;
       return {
         total: mfa.enabled,
@@ -94,23 +92,33 @@ function getCategoryStats(cat: EntraIdOperationalCategory, data: EntraIdDashboar
       return {
         total: v,
         severity: risks.compromised > 0 ? 'critical' : v > 10 ? 'critical' : v > 5 ? 'high' : v > 0 ? 'medium' : 'none',
-        badgeLabel: v > 0 ? `${risks.atRisk} em risco, ${risks.compromised} comprometidos` : undefined,
+        splits: [
+          { label: 'Em Risco', value: risks.atRisk, color: '#f97316' },
+          { label: 'Comprometidos', value: risks.compromised, color: '#ef4444' },
+        ],
       };
     }
     case 'failed_logins': {
-      const v = loginActivity.failed;
       return {
-        total: v,
-        severity: v > 100 ? 'high' : v > 30 ? 'medium' : v > 0 ? 'low' : 'none',
-        badgeLabel: v > 0 ? `${loginActivity.blocked} bloqueados` : undefined,
+        total: loginActivity.total,
+        severity: loginActivity.failed > 100 ? 'high' : loginActivity.failed > 30 ? 'medium' : loginActivity.failed > 0 ? 'low' : 'none',
+        splits: [
+          { label: 'Sucesso', value: loginActivity.success, color: '#10b981' },
+          { label: 'Falhas', value: loginActivity.failed, color: '#f59e0b' },
+          { label: 'Bloqueados', value: loginActivity.blocked, color: '#ef4444' },
+        ],
       };
     }
     case 'administrators': {
       const ga = admins.globalAdmins;
+      const others = Math.max(0, admins.total - ga);
       return {
         total: admins.total,
         severity: ga > 5 ? 'high' : ga > 3 ? 'medium' : 'low',
-        badgeLabel: `${ga} Global Admins`,
+        splits: [
+          { label: 'Global', value: ga, color: '#f59e0b' },
+          { label: 'Outros', value: others, color: '#8b5cf6' },
+        ],
       };
     }
     case 'disabled_accounts': {
@@ -120,7 +128,10 @@ function getCategoryStats(cat: EntraIdOperationalCategory, data: EntraIdDashboar
         total: v,
         pct,
         severity: pct > 20 ? 'medium' : v > 0 ? 'low' : 'none',
-        badgeLabel: v > 0 ? `${v} desabilitadas` : undefined,
+        splits: [
+          { label: 'Habilitados', value: users.signInEnabled, color: '#10b981' },
+          { label: 'Desabilitados', value: v, color: '#6366f1' },
+        ],
       };
     }
     case 'guest_users': {
@@ -128,7 +139,10 @@ function getCategoryStats(cat: EntraIdOperationalCategory, data: EntraIdDashboar
       return {
         total: v,
         severity: v > 50 ? 'medium' : v > 0 ? 'low' : 'none',
-        badgeLabel: v > 0 ? `${v} convidados` : undefined,
+        splits: [
+          { label: 'Membros', value: users.total - v, color: '#14b8a6' },
+          { label: 'Convidados', value: v, color: '#ec4899' },
+        ],
       };
     }
     case 'password_activity': {
@@ -136,7 +150,11 @@ function getCategoryStats(cat: EntraIdOperationalCategory, data: EntraIdDashboar
       return {
         total: v,
         severity: v > 20 ? 'medium' : v > 0 ? 'low' : 'none',
-        badgeLabel: v > 0 ? `${passwordActivity.resets} resets, ${passwordActivity.selfService} self-service` : undefined,
+        splits: [
+          { label: 'Resets', value: passwordActivity.resets, color: '#f97316' },
+          { label: 'Self-Service', value: passwordActivity.selfService, color: '#3b82f6' },
+          { label: 'Forçados', value: passwordActivity.forcedChanges, color: '#ef4444' },
+        ],
       };
     }
     default:
@@ -162,8 +180,8 @@ export function EntraIdAnalyzerCategoryGrid({ data, onCategoryClick }: EntraIdAn
           const stats = getCategoryStats(catKey, data);
           const hasData = stats.total > 0;
           const Icon = info.icon;
-          const hasSplit = stats.splitA && stats.splitB;
           const hasSplits = stats.splits && stats.splits.length > 0;
+          const hasSplit = !hasSplits && stats.splitA && stats.splitB;
           return (
             <Card
               key={catKey}
@@ -215,27 +233,13 @@ export function EntraIdAnalyzerCategoryGrid({ data, onCategoryClick }: EntraIdAn
                   </div>
                 )}
 
-                {hasData && !hasSplits && hasSplit && (
+                {hasData && hasSplit && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0" style={{ backgroundColor: `${stats.splitA!.color}20`, color: stats.splitA!.color, borderColor: `${stats.splitA!.color}40` }}>
                       {stats.splitA!.value.toLocaleString()} {stats.splitA!.label}
                     </Badge>
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0" style={{ backgroundColor: `${stats.splitB!.color}20`, color: stats.splitB!.color, borderColor: `${stats.splitB!.color}40` }}>
                       {stats.splitB!.value.toLocaleString()} {stats.splitB!.label}
-                    </Badge>
-                  </div>
-                )}
-
-                {hasData && !hasSplits && !hasSplit && stats.badgeLabel && (
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <Badge variant="outline" className={cn(
-                      "text-[10px] px-1.5 py-0",
-                      stats.severity === 'critical' && "bg-red-500/20 text-red-500 border-red-500/30",
-                      stats.severity === 'high' && "bg-orange-500/20 text-orange-500 border-orange-500/30",
-                      stats.severity === 'medium' && "bg-yellow-500/20 text-yellow-500 border-yellow-500/30",
-                      stats.severity === 'low' && "bg-blue-400/20 text-blue-400 border-blue-400/30",
-                    )}>
-                      {stats.badgeLabel}
                     </Badge>
                   </div>
                 )}
