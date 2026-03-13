@@ -24,6 +24,7 @@ import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
+import { toast } from 'sonner';
 import {
   Building2, Play, Loader2, Clock, Info, AlertTriangle, LinkIcon, Users, Settings,
 } from 'lucide-react';
@@ -96,8 +97,21 @@ export default function TeamsAnalyzerPage() {
         }),
       ]);
       if (analyzerResult.error) throw analyzerResult.error;
+      if (analyzerResult.data && !analyzerResult.data.success) {
+        const code = analyzerResult.data.code;
+        const msg = analyzerResult.data.error || 'Erro ao disparar análise';
+        toast.error(
+          code === 'ALREADY_RUNNING' ? 'Análise já em andamento' :
+          code === 'AGENT_OFFLINE'   ? 'Agent offline — verifique a conectividade' : msg,
+          { description: analyzerResult.data.message || msg }
+        );
+        setTriggering(false);
+        return;
+      }
+      toast.success('Análise iniciada', { description: 'A coleta de dados será processada em breve.' });
       refreshDashboard();
-    } finally {
+    } catch (e: any) {
+      toast.error('Erro ao disparar análise', { description: e.message });
       setTriggering(false);
     }
   };
