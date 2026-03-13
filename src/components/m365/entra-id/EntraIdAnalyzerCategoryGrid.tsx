@@ -70,11 +70,23 @@ function getCategoryStats(cat: EntraIdOperationalCategory, data: EntraIdDashboar
     }
     case 'mfa_coverage': {
       const pct = mfa.total > 0 ? (mfa.enabled / mfa.total) * 100 : 0;
+      const userDetails = mfa.userDetails || [];
+      const enabledUsers = userDetails.filter((u) => u.hasMfa);
+      const disabledCount = mfa.disabled;
+      const WEAK_METHODS = new Set(['mobilePhone', 'email']);
+      const weakCount = enabledUsers.filter(
+        (u) => u.methods.length > 0 && u.methods.every((m) => WEAK_METHODS.has(m))
+      ).length;
+      const strongCount = enabledUsers.length - weakCount;
       return {
         total: mfa.enabled,
         pct,
         severity: pct < 50 ? 'critical' : pct < 70 ? 'high' : pct < 85 ? 'medium' : pct < 100 ? 'low' : 'none',
-        badgeLabel: `${mfa.disabled} sem MFA`,
+        splits: [
+          { label: 'MFA Forte', value: strongCount, color: '#10b981' },
+          { label: 'MFA Fraco', value: weakCount, color: '#f59e0b' },
+          { label: 'Sem MFA', value: disabledCount, color: '#ef4444' },
+        ],
       };
     }
     case 'identity_risk': {
