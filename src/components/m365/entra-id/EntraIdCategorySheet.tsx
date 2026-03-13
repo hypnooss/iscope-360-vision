@@ -12,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import type { EntraIdDashboardData } from '@/hooks/useEntraIdDashboard';
 import type { EntraIdOperationalCategory } from './EntraIdAnalyzerCategoryGrid';
+import { MfaUserList } from './MfaUserList';
 
 interface EntraIdCategorySheetProps {
   open: boolean;
