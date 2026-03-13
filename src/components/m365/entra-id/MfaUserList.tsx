@@ -82,11 +82,24 @@ export function MfaUserList({ users, showMethods = false }: MfaUserListProps) {
                 <div className="text-xs text-muted-foreground truncate">{user.upn}</div>
                 {showMethods && user.methods.length > 0 && (
                   <div className="flex flex-wrap gap-1 pt-0.5">
-                    {user.methods.map((m) => (
-                      <Badge key={m} variant="secondary" className="text-[10px] px-1.5 py-0">
-                        {METHOD_LABELS[m] || m}
-                      </Badge>
-                    ))}
+                    {user.methods.map((m) => {
+                      const isDefault = user.defaultMethod === m;
+                      return (
+                        <Badge
+                          key={m}
+                          variant={isDefault ? 'default' : 'secondary'}
+                          className={
+                            isDefault
+                              ? 'text-[10px] px-1.5 py-0 bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
+                              : 'text-[10px] px-1.5 py-0'
+                          }
+                        >
+                          {isDefault && <Star className="w-2.5 h-2.5 mr-0.5 fill-primary" />}
+                          {METHOD_LABELS[m] || m}
+                          {isDefault && ' (padrão)'}
+                        </Badge>
+                      );
+                    })}
                   </div>
                 )}
               </div>

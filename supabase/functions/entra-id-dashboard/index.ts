@@ -315,6 +315,7 @@ Deno.serve(async (req) => {
             upn: u.userPrincipalName || '',
             methods,
             hasMfa,
+            defaultMethod: u.systemPreferredAuthenticationMethods?.[0] || null,
           };
         }),
       },
