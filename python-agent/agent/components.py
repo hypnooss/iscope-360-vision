@@ -218,7 +218,8 @@ gpgkey=file:///etc/pki/rpm-gpg/microsoft.asc
             [
                 "pwsh", "-NoProfile", "-NonInteractive", "-Command",
                 "if ((Get-Module -ListAvailable ExchangeOnlineManagement) -and "
-                "(Get-Module -ListAvailable Microsoft.Graph.Authentication)) { exit 0 } else { exit 1 }"
+                "(Get-Module -ListAvailable Microsoft.Graph.Authentication) -and "
+                "(Get-Module -ListAvailable PnP.PowerShell)) { exit 0 } else { exit 1 }"
             ],
             capture_output=True
         )
@@ -234,7 +235,8 @@ gpgkey=file:///etc/pki/rpm-gpg/microsoft.asc
         install_cmd = (
             "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; "
             "Install-Module -Name ExchangeOnlineManagement -Scope AllUsers -Force -AllowClobber; "
-            "Install-Module -Name Microsoft.Graph.Authentication -Scope AllUsers -Force -AllowClobber"
+            "Install-Module -Name Microsoft.Graph.Authentication -Scope AllUsers -Force -AllowClobber; "
+            "Install-Module -Name PnP.PowerShell -Scope AllUsers -Force -AllowClobber"
         )
 
         result = subprocess.run(
