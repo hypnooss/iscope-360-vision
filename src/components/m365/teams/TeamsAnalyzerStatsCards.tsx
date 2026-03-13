@@ -93,12 +93,19 @@ export function TeamsAnalyzerStatsCards({ data }: TeamsAnalyzerStatsCardsProps) 
           <div className="flex items-center gap-3">
             <HardDrive className="w-8 h-8 text-primary" />
             <div>
-              <p className="text-2xl font-bold">{storageUsed.toFixed(1)} <span className="text-sm font-normal text-muted-foreground">/ {storageAllocated.toFixed(1)} GB</span></p>
+              <p className="text-2xl font-bold">
+                {formatStorage(storageUsed)}
+                {quotaReliable && <span className="text-sm font-normal text-muted-foreground"> / {formatStorage(storageAllocated)}</span>}
+              </p>
               <p className="text-xs text-muted-foreground">Storage SharePoint</p>
             </div>
           </div>
-          <Progress value={storagePct} className="h-2" />
-          <p className="text-xs text-muted-foreground text-right">{storagePct.toFixed(1)}% utilizado</p>
+          {quotaReliable && (
+            <>
+              <Progress value={storagePct} className="h-2" />
+              <p className="text-xs text-muted-foreground text-right">{storagePct.toFixed(1)}% utilizado</p>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
