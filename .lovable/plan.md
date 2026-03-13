@@ -128,3 +128,27 @@ Os dashboards operacionais (Exchange, Entra ID, Colaboração) salvavam KPIs num
 - Adicionar seletor de período no frontend e agregar dados de evento de múltiplos snapshots
 - Auto-trigger dos dashboards no `agent-task-result` ao completar task m365_analyzer
 - Remover colunas de cache legado quando migração estiver consolidada
+
+## StorageQuota SharePoint via Agent PowerShell
+
+### Status: ✅ Implementado
+
+### Problema resolvido
+A REST API do SPO Admin (`/_api/StorageQuota()`) frequentemente falha por falta de permissões. O comando PowerShell `Get-PnPTenant | Select StorageQuota` é confiável e retorna o valor em MB.
+
+### Mudanças implementadas
+
+| Componente | Mudança |
+|---|---|
+| `python-agent/agent/executors/powershell.py` | Novo módulo `PnP.PowerShell` no dict `MODULES` com suporte a CBA via thumbprint. Params `spo_admin_domain` e `thumbprint` adicionados a todos os `.format()` de conexão |
+| Blueprint M365 hybrid (DB) | Novo step `spo_tenant_quota` (optional) usando `PnP.PowerShell` com comando `Get-PnPTenant \| Select StorageQuota, StorageQuotaAllocated` |
+| `collaboration-dashboard` Edge Function | Busca quota do agent (`step_results.spo_tenant_quota`) antes do fallback REST API. Converte MB→bytes |
+
+### Fluxo
+```text
+Agent (PnP.PowerShell) → Get-PnPTenant → StorageQuota (MB)
+  ↓ salvo em step_results do agent_task
+collaboration-dashboard → lê step_results do último snapshot completed
+  → storageAllocatedBytes = quotaMB * 1024 * 1024
+  → fallback: REST API SPO Admin (se agent não coletou)
+```
