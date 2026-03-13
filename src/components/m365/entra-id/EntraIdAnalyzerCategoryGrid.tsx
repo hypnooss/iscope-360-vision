@@ -44,6 +44,7 @@ interface CategoryStats {
   badgeLabel?: string;
   splitA?: { label: string; value: number; color: string };
   splitB?: { label: string; value: number; color: string };
+  splits?: Array<{ label: string; value: number; color: string }>;
 }
 
 const SEVERITY_COLORS = {
@@ -69,11 +70,23 @@ function getCategoryStats(cat: EntraIdOperationalCategory, data: EntraIdDashboar
     }
     case 'mfa_coverage': {
       const pct = mfa.total > 0 ? (mfa.enabled / mfa.total) * 100 : 0;
+      const userDetails = mfa.userDetails || [];
+      const enabledUsers = userDetails.filter((u) => u.hasMfa);
+      const disabledCount = mfa.disabled;
+      const WEAK_METHODS = new Set(['mobilePhone', 'email']);
+      const weakCount = enabledUsers.filter(
+        (u) => u.methods.length > 0 && u.methods.every((m) => WEAK_METHODS.has(m))
+      ).length;
+      const strongCount = enabledUsers.length - weakCount;
       return {
         total: mfa.enabled,
         pct,
         severity: pct < 50 ? 'critical' : pct < 70 ? 'high' : pct < 85 ? 'medium' : pct < 100 ? 'low' : 'none',
-        badgeLabel: `${mfa.disabled} sem MFA`,
+        splits: [
+          { label: 'MFA Forte', value: strongCount, color: '#10b981' },
+          { label: 'MFA Fraco', value: weakCount, color: '#f59e0b' },
+          { label: 'Sem MFA', value: disabledCount, color: '#ef4444' },
+        ],
       };
     }
     case 'identity_risk': {
@@ -150,7 +163,7 @@ export function EntraIdAnalyzerCategoryGrid({ data, onCategoryClick }: EntraIdAn
           const hasData = stats.total > 0;
           const Icon = info.icon;
           const hasSplit = stats.splitA && stats.splitB;
-
+          const hasSplits = stats.splits && stats.splits.length > 0;
           return (
             <Card
               key={catKey}
@@ -174,7 +187,14 @@ export function EntraIdAnalyzerCategoryGrid({ data, onCategoryClick }: EntraIdAn
                   </div>
                 </div>
 
-                {hasSplit && hasData ? (
+                {hasSplits && hasData ? (
+                  <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden flex">
+                    {stats.splits!.map((seg, i) => {
+                      const splitsTotal = stats.splits!.reduce((s, x) => s + x.value, 0) || 1;
+                      return <div key={i} className="h-full transition-all" style={{ width: `${(seg.value / splitsTotal) * 100}%`, backgroundColor: seg.color }} />;
+                    })}
+                  </div>
+                ) : hasSplit && hasData ? (
                   <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden flex">
                     <div className="h-full transition-all" style={{ width: `${(stats.splitA!.value / (stats.splitA!.value + stats.splitB!.value)) * 100}%`, backgroundColor: stats.splitA!.color }} />
                     <div className="h-full transition-all" style={{ width: `${(stats.splitB!.value / (stats.splitA!.value + stats.splitB!.value)) * 100}%`, backgroundColor: stats.splitB!.color }} />
@@ -185,7 +205,17 @@ export function EntraIdAnalyzerCategoryGrid({ data, onCategoryClick }: EntraIdAn
                   </div>
                 )}
 
-                {hasData && hasSplit && (
+                {hasData && hasSplits && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {stats.splits!.map((seg, i) => (
+                      <Badge key={i} variant="outline" className="text-[10px] px-1.5 py-0" style={{ backgroundColor: `${seg.color}20`, color: seg.color, borderColor: `${seg.color}40` }}>
+                        {seg.value.toLocaleString()} {seg.label}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                {hasData && !hasSplits && hasSplit && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0" style={{ backgroundColor: `${stats.splitA!.color}20`, color: stats.splitA!.color, borderColor: `${stats.splitA!.color}40` }}>
                       {stats.splitA!.value.toLocaleString()} {stats.splitA!.label}
@@ -196,7 +226,7 @@ export function EntraIdAnalyzerCategoryGrid({ data, onCategoryClick }: EntraIdAn
                   </div>
                 )}
 
-                {hasData && !hasSplit && stats.badgeLabel && (
+                {hasData && !hasSplits && !hasSplit && stats.badgeLabel && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Badge variant="outline" className={cn(
                       "text-[10px] px-1.5 py-0",
