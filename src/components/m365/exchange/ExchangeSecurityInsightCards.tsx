@@ -46,7 +46,6 @@ export function ExchangeSecurityInsightCards({ insights, loading }: ExchangeSecu
           <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             Insights de Segurança
           </h2>
-          <DataSourceDot source="analyzed" />
         </div>
         <Badge variant="outline" className="text-xs">
           {sorted.length} {sorted.length === 1 ? 'insight' : 'insights'}
