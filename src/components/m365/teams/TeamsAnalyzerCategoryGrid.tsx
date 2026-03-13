@@ -2,6 +2,7 @@ import { ExternalLink, Eye, Lock, UserPlus, Hash, Share, Globe, Share2, FolderX 
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { DataSourceDot } from '@/components/m365/shared';
 import type { CollaborationDashboardData } from '@/hooks/useCollaborationDashboard';
 
 export type TeamsOperationalCategory =
