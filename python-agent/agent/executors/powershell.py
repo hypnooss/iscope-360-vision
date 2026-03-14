@@ -77,6 +77,20 @@ class PowerShellExecutor(BaseExecutor):
         super().__init__(logger)
         self._pwsh_path: Optional[str] = None
     
+    @staticmethod
+    def _derive_spo_domain(organization: Optional[str], spo_domain: Optional[str] = None) -> str:
+        """Derive the SharePoint Online admin domain prefix.
+        
+        Priority:
+        1. Explicit spo_domain from m365_tenants table (most reliable)
+        2. Derived from organization/tenant_domain (fallback)
+        
+        Handles .mail.onmicrosoft.com domains correctly.
+        """
+        if spo_domain:
+            return spo_domain
+        return (organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]
+    
     def _find_pwsh(self) -> Optional[str]:
         """Find PowerShell Core executable."""
         if self._pwsh_path:
@@ -160,12 +174,12 @@ class PowerShellExecutor(BaseExecutor):
                 f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
                 "",
                 "# Connect with credentials",
-                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.onmicrosoft.com', '').split('.')[0]),
+                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]),
                 "",
             ])
         else:
             # Derive SPO admin domain from organization (e.g. contoso.onmicrosoft.com -> contoso)
-            spo_admin_domain = (organization or '').replace('.onmicrosoft.com', '').split('.')[0]
+            spo_admin_domain = (organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]
             thumbprint = self._get_thumbprint() or ''
             script_parts.extend([
                 "# Connect with certificate",
@@ -259,10 +273,10 @@ class PowerShellExecutor(BaseExecutor):
             lines.extend([
                 f'$secPassword = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force',
                 f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
-                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.onmicrosoft.com', '').split('.')[0]),
+                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]),
             ])
         else:
-            spo_admin_domain = (organization or '').replace('.onmicrosoft.com', '').split('.')[0]
+            spo_admin_domain = (organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]
             thumbprint = self._get_thumbprint() or ''
             lines.extend([
                 module_config["connect_cba"].format(
@@ -379,6 +393,7 @@ class PowerShellExecutor(BaseExecutor):
         auth_mode: str = "cba",
         username: Optional[str] = None,
         password: Optional[str] = None,
+        spo_domain: Optional[str] = None,
     ) -> Path:
         """
         Build a temporary .ps1 script file containing the full preamble + all commands.
@@ -408,10 +423,10 @@ class PowerShellExecutor(BaseExecutor):
             lines.extend([
                 f'$secPassword = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force',
                 f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
-                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.onmicrosoft.com', '').split('.')[0]),
+                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=self._derive_spo_domain(organization, spo_domain)),
             ])
         else:
-            spo_admin_domain = (organization or '').replace('.onmicrosoft.com', '').split('.')[0]
+            spo_admin_domain = self._derive_spo_domain(organization, spo_domain)
             thumbprint = self._get_thumbprint() or ''
             lines.extend([
                 module_config["connect_cba"].format(
@@ -479,6 +494,7 @@ class PowerShellExecutor(BaseExecutor):
         app_id = first_params.get('app_id') or context.get('app_id') or ''
         tenant_id = first_params.get('tenant_id') or context.get('tenant_id') or ''
         organization = first_params.get('organization') or context.get('organization')
+        spo_domain_override = context.get('spo_domain')
         auth_mode = first_params.get('auth_mode', self.AUTH_MODE_CBA)
         username = first_params.get('username')
         password = first_params.get('password')
@@ -547,6 +563,7 @@ class PowerShellExecutor(BaseExecutor):
                 auth_mode=auth_mode,
                 username=username,
                 password=password,
+                spo_domain=spo_domain_override,
             )
         except Exception as e:
             error = f"Failed to build script file: {e}"

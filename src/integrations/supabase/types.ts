@@ -2265,6 +2265,7 @@ export type Database = {
           exchange_sp_registered: boolean | null
           id: string
           last_validated_at: string | null
+          spo_domain: string | null
           tenant_domain: string | null
           tenant_id: string
           updated_at: string
@@ -2285,6 +2286,7 @@ export type Database = {
           exchange_sp_registered?: boolean | null
           id?: string
           last_validated_at?: string | null
+          spo_domain?: string | null
           tenant_domain?: string | null
           tenant_id: string
           updated_at?: string
@@ -2305,6 +2307,7 @@ export type Database = {
           exchange_sp_registered?: boolean | null
           id?: string
           last_validated_at?: string | null
+          spo_domain?: string | null
           tenant_domain?: string | null
           tenant_id?: string
           updated_at?: string
