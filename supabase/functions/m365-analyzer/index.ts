@@ -1569,6 +1569,18 @@ function analyzeSecurityRisk(
     }
   }
 
+  // Pass insight when no security risks detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'security_risk_ok',
+      category: 'security_risk',
+      name: 'Nenhum Risco de Segurança Detectado',
+      description: 'Nenhum sign-in de alto risco, falha de MFA ou impossible travel detectado no período.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
   return { insights, metrics };
 }
 
