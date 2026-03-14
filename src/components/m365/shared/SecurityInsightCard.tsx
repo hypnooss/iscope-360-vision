@@ -197,12 +197,6 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                   })}
                 </div>
 
-                {/* Description preview for pass insights */}
-                {isPass && insight.description && (
-                  <p className="text-[11px] text-muted-foreground mt-2 line-clamp-1">
-                    {insight.description}
-                  </p>
-                )}
               </CardContent>
             </Card>
           );
