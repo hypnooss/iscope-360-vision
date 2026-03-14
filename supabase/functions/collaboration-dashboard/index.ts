@@ -341,6 +341,114 @@ Deno.serve(async (req) => {
     const storageUsedGB = parseFloat((storageUsedBytes / (1024 ** 3)).toFixed(2));
     const storageAllocatedGB = parseFloat((storageAllocatedBytes / (1024 ** 3)).toFixed(2));
 
+    // === GENERATE COLLABORATION INSIGHTS ===
+    const collaborationInsights: any[] = [];
+
+    // Teams governance
+    if (publicTeams > 0 && publicTeams > totalTeams * 0.5) {
+      collaborationInsights.push({
+        id: 'teams_public_majority',
+        category: 'teams_governance',
+        name: 'Maioria dos Teams são Públicos',
+        description: `${publicTeams} de ${totalTeams} teams (${Math.round(publicTeams / totalTeams * 100)}%) são públicos, permitindo acesso irrestrito.`,
+        severity: publicTeams > totalTeams * 0.7 ? 'high' : 'medium',
+        status: 'fail',
+        count: publicTeams,
+        recommendation: 'Revise a visibilidade dos teams e restrinja aqueles com dados sensíveis para privado.',
+      });
+    } else {
+      collaborationInsights.push({
+        id: 'teams_governance_ok',
+        category: 'teams_governance',
+        name: 'Governança de Teams Adequada',
+        description: `${privateTeams} de ${totalTeams} teams são privados. Configuração de visibilidade adequada.`,
+        severity: 'info',
+        status: 'pass',
+      });
+    }
+
+    // Guest access
+    if (teamsWithGuests > 0) {
+      collaborationInsights.push({
+        id: 'teams_with_guests',
+        category: 'guest_access',
+        name: 'Teams com Convidados Externos',
+        description: `${teamsWithGuests} team(s) possuem membros convidados (guests) com acesso a conteúdo interno.`,
+        severity: teamsWithGuests > 10 ? 'high' : 'medium',
+        status: 'fail',
+        count: teamsWithGuests,
+        recommendation: 'Revise periodicamente os convidados e remova acessos desnecessários.',
+      });
+    } else {
+      collaborationInsights.push({
+        id: 'guest_access_ok',
+        category: 'guest_access',
+        name: 'Sem Convidados Externos em Teams',
+        description: 'Nenhum team possui membros convidados externos.',
+        severity: 'info',
+        status: 'pass',
+      });
+    }
+
+    // Private/shared channels
+    if (privateChannels > 0 || sharedChannels > 0) {
+      collaborationInsights.push({
+        id: 'channels_special',
+        category: 'collaboration_risk',
+        name: 'Canais Privados e Compartilhados',
+        description: `${privateChannels} canais privados e ${sharedChannels} canais compartilhados detectados.`,
+        severity: sharedChannels > 5 ? 'medium' : 'info',
+        status: sharedChannels > 5 ? 'fail' : 'pass',
+        count: privateChannels + sharedChannels,
+        recommendation: 'Canais compartilhados entre organizações devem ser monitorados para vazamento de dados.',
+      });
+    }
+
+    // SharePoint exposure
+    if (inactiveSites > activeSites && inactiveSites > 10) {
+      collaborationInsights.push({
+        id: 'sharepoint_inactive',
+        category: 'sharepoint_exposure',
+        name: 'Sites SharePoint Inativos',
+        description: `${inactiveSites} sites inativos de ${totalSites} totais. Sites abandonados podem conter dados sensíveis sem supervisão.`,
+        severity: 'medium',
+        status: 'fail',
+        count: inactiveSites,
+        recommendation: 'Revise e arquive sites inativos para reduzir superfície de exposição.',
+      });
+    } else {
+      collaborationInsights.push({
+        id: 'sharepoint_exposure_ok',
+        category: 'sharepoint_exposure',
+        name: 'Sites SharePoint Ativos',
+        description: `${activeSites} de ${totalSites} sites estão ativos. Boa higiene de sites.`,
+        severity: 'info',
+        status: 'pass',
+      });
+    }
+
+    // Storage usage
+    if (storageAllocatedGB > 0 && storageUsedGB / storageAllocatedGB > 0.85) {
+      collaborationInsights.push({
+        id: 'sharepoint_storage_high',
+        category: 'sharepoint_exposure',
+        name: 'Storage SharePoint Próximo do Limite',
+        description: `${storageUsedGB} GB de ${storageAllocatedGB} GB utilizados (${Math.round(storageUsedGB / storageAllocatedGB * 100)}%).`,
+        severity: storageUsedGB / storageAllocatedGB > 0.95 ? 'high' : 'medium',
+        status: 'fail',
+        recommendation: 'Considere expandir a quota ou limpar dados desnecessários.',
+      });
+    } else if (storageAllocatedGB > 0) {
+      collaborationInsights.push({
+        id: 'sharepoint_storage_ok',
+        category: 'external_sharing',
+        name: 'Storage SharePoint Adequado',
+        description: `${storageUsedGB} GB de ${storageAllocatedGB} GB utilizados (${Math.round(storageUsedGB / storageAllocatedGB * 100)}%).`,
+        severity: 'info',
+        status: 'pass',
+      });
+    }
+
     const result = {
       success: true,
       teams: {
@@ -362,6 +470,7 @@ Deno.serve(async (req) => {
         storageAllocatedGB,
         siteDetails,
       },
+      insights: collaborationInsights,
       analyzedAt: now.toISOString(),
     };
 

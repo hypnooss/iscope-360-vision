@@ -102,8 +102,12 @@ export default function TeamsAnalyzerPage() {
   const [selectedOpCategory, setSelectedOpCategory] = useState<TeamsOperationalCategory | null>(null);
   const [opCategorySheetOpen, setOpCategorySheetOpen] = useState(false);
 
-  const teamsInsights: M365AnalyzerInsight[] = (analyzerSnapshot?.insights ?? [])
+  const analyzerTeamsInsights: M365AnalyzerInsight[] = (analyzerSnapshot?.insights ?? [])
     .filter(i => TEAMS_OPERATIONAL_CATEGORIES.includes(i.category as M365AnalyzerCategory));
+  
+  // Merge insights from collaboration-dashboard (teams_governance, guest_access, etc.)
+  const collaborationInsights: M365AnalyzerInsight[] = (effectiveDashboardData?.insights ?? []) as M365AnalyzerInsight[];
+  const teamsInsights = [...analyzerTeamsInsights, ...collaborationInsights];
 
   const analyzedAt = analyzerSnapshot?.created_at;
 

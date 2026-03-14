@@ -606,6 +606,19 @@ function analyzeBehavioralBaseline(
   // Save effective activity for baseline creation later
   (metrics as any)._effectiveActivity = effectiveActivity;
 
+  // Pass insight when no anomalies detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'behavioral_baseline_ok',
+      category: 'behavioral_baseline',
+      name: 'Comportamento Dentro do Baseline',
+      description: 'Nenhum desvio significativo foi detectado em relação ao baseline de envio de emails.',
+      severity: 'info',
+      status: 'pass',
+      recommendation: 'Continue monitorando o baseline comportamental.',
+    });
+  }
+
   return { insights, metrics };
 }
 
@@ -885,6 +898,19 @@ function analyzeSuspiciousRules(
     }
   }
 
+  // Pass insights when no suspicious rules found
+  if (insights.length === 0) {
+    insights.push({
+      id: 'suspicious_rules_ok',
+      category: 'suspicious_rules',
+      name: 'Nenhuma Regra Suspeita Detectada',
+      description: 'Não foram encontrados encaminhamentos, regras de exclusão automática ou redirecionamentos suspeitos.',
+      severity: 'info',
+      status: 'pass',
+      recommendation: 'Continue monitorando periodicamente.',
+    });
+  }
+
   return { insights, metrics };
 }
 
@@ -990,6 +1016,19 @@ function analyzeExfiltration(
         });
       }
     }
+  }
+
+  // Pass insight when no exfiltration detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'exfiltration_ok',
+      category: 'exfiltration',
+      name: 'Nenhuma Exfiltração Detectada',
+      description: 'Não foram identificados padrões de envio externo anômalo ou volume suspeito de dados.',
+      severity: 'info',
+      status: 'pass',
+      recommendation: 'Continue monitorando os padrões de envio externo.',
+    });
   }
 
   return { insights, metrics };
