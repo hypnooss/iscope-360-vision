@@ -50,6 +50,7 @@ const CONFIG_KEYWORDS = [
 ];
 
 function isConfigurationalInsight(insight: M365AnalyzerInsight): boolean {
+  if (insight.status === 'pass') return false;
   const name = insight.name.toLowerCase();
   if (CONFIG_KEYWORDS.some(kw => name.includes(kw))) return true;
   if ((insight.count === undefined || insight.count === 0) && (!insight.affectedUsers || insight.affectedUsers.length === 0)) return true;

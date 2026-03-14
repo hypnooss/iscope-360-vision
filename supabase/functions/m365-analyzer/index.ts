@@ -1005,6 +1005,19 @@ function analyzeExfiltration(
     }
   }
 
+  // Pass insight when no exfiltration detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'exfiltration_ok',
+      category: 'exfiltration',
+      name: 'Nenhuma Exfiltração Detectada',
+      description: 'Não foram identificados padrões de envio externo anômalo ou volume suspeito de dados.',
+      severity: 'info',
+      status: 'pass',
+      recommendation: 'Continue monitorando os padrões de envio externo.',
+    });
+  }
+
   return { insights, metrics };
 }
 
