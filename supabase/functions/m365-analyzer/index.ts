@@ -1204,6 +1204,40 @@ function analyzeOperationalRisks(
     }
   }
 
+  // Granular pass insights per sub-check
+  if (metrics.smtpAuthEnabled === 0 && exoOrgConfig.length > 0) {
+    insights.push({
+      id: 'smtp_auth_disabled',
+      category: 'operational_risks',
+      name: 'SMTP Auth Desabilitado',
+      description: 'SMTP Auth está desabilitado no nível organizacional — configuração segura.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.legacyProtocols === 0 && exoAuthPolicy.length > 0) {
+    insights.push({
+      id: 'no_legacy_protocols',
+      category: 'operational_risks',
+      name: 'Sem Protocolos Legados',
+      description: 'Nenhum protocolo legado (SMTP/IMAP/POP) habilitado nas políticas de autenticação.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.fullAccessGrants === 0) {
+    insights.push({
+      id: 'no_fullaccess_grants',
+      category: 'operational_risks',
+      name: 'Nenhuma Permissão FullAccess',
+      description: 'Nenhuma concessão de permissão FullAccess detectada no período.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
   return { insights, metrics };
 }
 
@@ -1582,13 +1616,47 @@ function analyzeSecurityRisk(
     }
   }
 
-  // Pass insight when no security risks detected
-  if (insights.length === 0) {
+  // Granular pass insights per sub-check
+  const hasHighRisk = riskyUsersData.some((u: any) => u.riskLevel === 'high');
+  if (!hasHighRisk) {
     insights.push({
-      id: 'security_risk_ok',
+      id: 'no_high_risk_users',
       category: 'security_risk',
-      name: 'Nenhum Risco de Segurança Detectado',
-      description: 'Nenhum sign-in de alto risco, falha de MFA ou impossible travel detectado no período.',
+      name: 'Nenhum Usuário de Alto Risco',
+      description: 'Nenhum usuário com nível de risco ALTO no Identity Protection.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.impossibleTravel === 0) {
+    insights.push({
+      id: 'no_impossible_travel',
+      category: 'security_risk',
+      name: 'Nenhum Impossible Travel',
+      description: 'Nenhum login de locais geograficamente impossíveis detectado no período.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.blockedAccounts === 0) {
+    insights.push({
+      id: 'no_blocked_accounts',
+      category: 'security_risk',
+      name: 'Nenhuma Conta Bloqueada',
+      description: 'Nenhuma conta bloqueada por tentativas de brute force no período.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.mfaFailures === 0) {
+    insights.push({
+      id: 'no_mfa_failures',
+      category: 'security_risk',
+      name: 'Nenhuma Falha de MFA',
+      description: 'Nenhuma falha de autenticação multifator detectada no período.',
       severity: 'info',
       status: 'pass',
     });
@@ -1708,13 +1776,39 @@ function analyzeIdentityAccess(
     }
   }
 
-  // Pass insight when no identity issues detected
-  if (insights.length === 0) {
+  // Granular pass insights per sub-check
+  if (metrics.serviceAccountInteractive === 0) {
     insights.push({
-      id: 'identity_access_ok',
+      id: 'no_service_account_interactive',
       category: 'identity_access',
-      name: 'Identidades em Conformidade',
-      description: 'Nenhuma anomalia de identidade detectada no período.',
+      name: 'Nenhum Service Account Interativo',
+      description: 'Nenhum service account com login interativo detectado.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.noMfaUsers === 0 && credentialRegistration.length > 0) {
+    insights.push({
+      id: 'all_users_mfa',
+      category: 'identity_access',
+      name: 'Todos Usuários com MFA',
+      description: 'Todos os usuários possuem MFA configurado.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  const recentAppsCount = recentApps.filter((app: any) => {
+    const created = new Date(app.createdDateTime || 0).getTime();
+    return Date.now() - created < 7 * 24 * 60 * 60 * 1000;
+  }).length;
+  if (recentAppsCount === 0) {
+    insights.push({
+      id: 'no_recent_app_registrations',
+      category: 'identity_access',
+      name: 'App Registrations em Conformidade',
+      description: 'Nenhum registro de aplicação nos últimos 7 dias.',
       severity: 'info',
       status: 'pass',
     });
@@ -1819,13 +1913,24 @@ function analyzeConditionalAccess(
     }
   }
 
-  // Pass insight when no CA issues detected
-  if (insights.length === 0) {
+  // Granular pass insights per sub-check
+  if (metrics.disabledPolicies === 0 && caPolicies.length > 0) {
     insights.push({
-      id: 'conditional_access_ok',
+      id: 'no_disabled_ca_policies',
       category: 'conditional_access',
-      name: 'Políticas de Conditional Access em Conformidade',
-      description: 'Todas as políticas de CA estão ativas e sem problemas detectados.',
+      name: 'Nenhuma Política de CA Desabilitada',
+      description: 'Todas as políticas de Conditional Access estão ativas.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.excludedUsers === 0 && caPolicies.length > 0) {
+    insights.push({
+      id: 'no_excessive_ca_exclusions',
+      category: 'conditional_access',
+      name: 'Sem Exclusões Excessivas em CA',
+      description: 'Nenhuma política de CA possui exclusões excessivas de usuários.',
       severity: 'info',
       status: 'pass',
     });
