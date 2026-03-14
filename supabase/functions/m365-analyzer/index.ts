@@ -1742,13 +1742,39 @@ function analyzeIdentityAccess(
     }
   }
 
-  // Pass insight when no identity issues detected
-  if (insights.length === 0) {
+  // Granular pass insights per sub-check
+  if (metrics.serviceAccountInteractive === 0) {
     insights.push({
-      id: 'identity_access_ok',
+      id: 'no_service_account_interactive',
       category: 'identity_access',
-      name: 'Identidades em Conformidade',
-      description: 'Nenhuma anomalia de identidade detectada no período.',
+      name: 'Nenhum Service Account Interativo',
+      description: 'Nenhum service account com login interativo detectado.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.noMfaUsers === 0 && credentialRegistration.length > 0) {
+    insights.push({
+      id: 'all_users_mfa',
+      category: 'identity_access',
+      name: 'Todos Usuários com MFA',
+      description: 'Todos os usuários possuem MFA configurado.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  const recentAppsCount = recentApps.filter((app: any) => {
+    const created = new Date(app.createdDateTime || 0).getTime();
+    return Date.now() - created < 7 * 24 * 60 * 60 * 1000;
+  }).length;
+  if (recentAppsCount === 0) {
+    insights.push({
+      id: 'no_recent_app_registrations',
+      category: 'identity_access',
+      name: 'App Registrations em Conformidade',
+      description: 'Nenhum registro de aplicação nos últimos 7 dias.',
       severity: 'info',
       status: 'pass',
     });
