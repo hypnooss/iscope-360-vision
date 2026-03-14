@@ -12,6 +12,7 @@ interface M365AnalyzerInsight {
   name: string;
   description: string;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  status?: 'pass' | 'fail';
   details?: string;
   affectedUsers?: string[];
   count?: number;
