@@ -316,39 +316,57 @@ function analyzePhishingThreats(
   }
 
   // --- Safe Links ---
+  let safeLinksOk = true;
   if (exoSafeLinks.length === 0) {
+    safeLinksOk = false;
     insights.push({
       id: 'safe_links_missing',
       category: 'phishing_threats',
       name: 'Safe Links Não Configurado',
       description: 'Nenhuma política de Safe Links encontrada. URLs maliciosas não serão verificadas.',
       severity: 'high',
+      status: 'fail',
       recommendation: 'Configure políticas de Safe Links no Microsoft Defender for Office 365.',
     });
   } else {
     for (const policy of exoSafeLinks) {
       const name = policy.Name || policy.Identity || 'Default';
       if (policy.EnableSafeLinksForEmail === false) {
+        safeLinksOk = false;
         insights.push({
           id: `safe_links_disabled_${name.replace(/[^a-z0-9]/gi, '_')}`,
           category: 'phishing_threats',
           name: 'Safe Links Desabilitado para Email',
           description: `Safe Links desabilitado na política "${name}"`,
           severity: 'high',
+          status: 'fail',
           recommendation: 'Habilite Safe Links para proteção contra URLs maliciosas.',
         });
       }
     }
   }
+  if (safeLinksOk) {
+    insights.push({
+      id: 'safe_links_ok',
+      category: 'phishing_threats',
+      name: 'Safe Links Configurado Corretamente',
+      description: 'Todas as políticas de Safe Links estão habilitadas e protegendo contra URLs maliciosas.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
 
   // --- Safe Attachments ---
+  let safeAttachOk = true;
   if (exoSafeAttach.length === 0) {
+    safeAttachOk = false;
     insights.push({
       id: 'safe_attachments_missing',
       category: 'phishing_threats',
       name: 'Safe Attachments Não Configurado',
       description: 'Nenhuma política de Safe Attachments encontrada. Anexos maliciosos não serão verificados.',
       severity: 'high',
+      status: 'fail',
       recommendation: 'Configure políticas de Safe Attachments no Microsoft Defender for Office 365.',
     });
   } else {
@@ -356,16 +374,28 @@ function analyzePhishingThreats(
       const name = policy.Name || policy.Identity || 'Default';
       const action = (policy.Action || '').toLowerCase();
       if (action === 'allow' || policy.Enable === false) {
+        safeAttachOk = false;
         insights.push({
           id: `safe_attach_weak_${name.replace(/[^a-z0-9]/gi, '_')}`,
           category: 'phishing_threats',
           name: 'Safe Attachments com Ação Fraca',
           description: `Política "${name}" configurada como "${action}" — anexos maliciosos podem passar`,
           severity: 'high',
+          status: 'fail',
           recommendation: 'Configure a ação para "Block" ou "Replace" para proteção adequada.',
         });
       }
     }
+  }
+  if (safeAttachOk) {
+    insights.push({
+      id: 'safe_attachments_ok',
+      category: 'phishing_threats',
+      name: 'Safe Attachments Configurado Corretamente',
+      description: 'Políticas de Safe Attachments ativas com ações de bloqueio adequadas.',
+      severity: 'info',
+      status: 'pass',
+    });
   }
 
   // --- Content Filter (anti-spam) ---
