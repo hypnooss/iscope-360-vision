@@ -388,6 +388,7 @@ serve(async (req) => {
           tenant_id: orgInfo.tenantId,
           tenant_domain: orgInfo.primaryDomain,
           display_name: orgInfo.displayName,
+          spo_domain: orgInfo.spoDomain,
           connection_status: 'connected',
           created_by: user.id,
           last_validated_at: new Date().toISOString(),
