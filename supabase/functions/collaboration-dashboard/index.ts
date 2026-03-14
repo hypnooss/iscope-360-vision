@@ -350,6 +350,7 @@ Deno.serve(async (req) => {
         withGuests: teamsWithGuests,
         privateChannels,
         sharedChannels,
+        teamDetails,
       },
       sharepoint: {
         totalSites,
@@ -359,6 +360,7 @@ Deno.serve(async (req) => {
         totalLists: 0,
         storageUsedGB,
         storageAllocatedGB,
+        siteDetails,
       },
       analyzedAt: now.toISOString(),
     };
