@@ -526,6 +526,17 @@ function analyzeMailboxCapacity(
     });
   }
 
+  if (critical.length === 0 && warning.length === 0) {
+    insights.push({
+      id: 'mailbox_capacity_ok',
+      category: 'mailbox_capacity',
+      name: 'Capacidade de Caixas Postais Saudável',
+      description: 'Todas as caixas postais estão abaixo de 80% da capacidade.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
   return { insights, metrics };
 }
 
