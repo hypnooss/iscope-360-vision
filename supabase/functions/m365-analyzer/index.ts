@@ -1879,13 +1879,24 @@ function analyzeConditionalAccess(
     }
   }
 
-  // Pass insight when no CA issues detected
-  if (insights.length === 0) {
+  // Granular pass insights per sub-check
+  if (metrics.disabledPolicies === 0 && caPolicies.length > 0) {
     insights.push({
-      id: 'conditional_access_ok',
+      id: 'no_disabled_ca_policies',
       category: 'conditional_access',
-      name: 'Políticas de Conditional Access em Conformidade',
-      description: 'Todas as políticas de CA estão ativas e sem problemas detectados.',
+      name: 'Nenhuma Política de CA Desabilitada',
+      description: 'Todas as políticas de Conditional Access estão ativas.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.excludedUsers === 0 && caPolicies.length > 0) {
+    insights.push({
+      id: 'no_excessive_ca_exclusions',
+      category: 'conditional_access',
+      name: 'Sem Exclusões Excessivas em CA',
+      description: 'Nenhuma política de CA possui exclusões excessivas de usuários.',
       severity: 'info',
       status: 'pass',
     });
