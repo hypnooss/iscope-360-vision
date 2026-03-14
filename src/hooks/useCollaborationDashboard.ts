@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import type { M365AnalyzerInsight } from '@/types/m365AnalyzerInsights';
 
 export interface TeamDetail {
   displayName: string;
@@ -28,6 +29,7 @@ export interface CollaborationDashboardData {
     storageUsedGB: number; storageAllocatedGB: number;
     siteDetails?: SiteDetail[];
   };
+  insights?: M365AnalyzerInsight[];
   analyzedAt: string;
 }
 
@@ -51,6 +53,7 @@ export function useCollaborationDashboard({ tenantRecordId }: UseCollaborationDa
       totalLists: 0, storageUsedGB: 0, storageAllocatedGB: 0,
       ...(cache.sharepoint || {}),
     },
+    insights: cache.insights || [],
     analyzedAt: cache.analyzedAt || cachedAt || '',
   });
 
