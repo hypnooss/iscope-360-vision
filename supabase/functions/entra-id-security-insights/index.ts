@@ -729,9 +729,11 @@ Deno.serve(async (req) => {
     // Identity Security insights
     const riskySignIns = analyzeRiskySignIns(signInLogs, timeRange);
     if (riskySignIns) insights.push(riskySignIns);
+    else insights.push({ id: 'risky_signins_ok', category: 'identity_access', name: 'Sign-ins de Risco Controlados', description: 'Nenhum sign-in de risco elevado detectado no período.', severity: 'info', status: 'pass' });
 
     const failedLogins = analyzeFailedLoginAttempts(signInLogs, timeRange);
     if (failedLogins) insights.push(failedLogins);
+    else insights.push({ id: 'failed_logins_ok', category: 'identity_access', name: 'Tentativas de Login Normais', description: 'Nenhum padrão anômalo de tentativas de login detectado.', severity: 'info', status: 'pass' });
 
     const unusualLocations = analyzeUnusualLocations(signInLogs, timeRange);
     if (unusualLocations) insights.push(unusualLocations);
@@ -741,9 +743,11 @@ Deno.serve(async (req) => {
 
     const usersWithoutMfa = analyzeUsersWithoutMfa(mfaStatus, timeRange);
     if (usersWithoutMfa) insights.push(usersWithoutMfa);
+    else insights.push({ id: 'mfa_ok', category: 'identity_access', name: 'MFA Habilitado para Todos', description: 'Todos os usuários possuem MFA configurado.', severity: 'info', status: 'pass' });
 
     const privilegedWithoutMfa = analyzePrivilegedWithoutMfa(mfaStatus, directoryRoles, timeRange);
     if (privilegedWithoutMfa) insights.push(privilegedWithoutMfa);
+    else insights.push({ id: 'priv_mfa_ok', category: 'identity_access', name: 'Admins com MFA Ativo', description: 'Todos os usuários privilegiados possuem MFA habilitado.', severity: 'info', status: 'pass' });
 
     // Behavior insights
     const offHoursLogins = analyzeOffHoursLogins(signInLogs, timeRange);
