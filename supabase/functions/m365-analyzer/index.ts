@@ -606,6 +606,19 @@ function analyzeBehavioralBaseline(
   // Save effective activity for baseline creation later
   (metrics as any)._effectiveActivity = effectiveActivity;
 
+  // Pass insight when no anomalies detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'behavioral_baseline_ok',
+      category: 'behavioral_baseline',
+      name: 'Comportamento Dentro do Baseline',
+      description: 'Nenhum desvio significativo foi detectado em relação ao baseline de envio de emails.',
+      severity: 'info',
+      status: 'pass',
+      recommendation: 'Continue monitorando o baseline comportamental.',
+    });
+  }
+
   return { insights, metrics };
 }
 
