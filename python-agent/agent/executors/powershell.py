@@ -562,6 +562,7 @@ class PowerShellExecutor(BaseExecutor):
                 auth_mode=auth_mode,
                 username=username,
                 password=password,
+                spo_domain=spo_domain_override,
             )
         except Exception as e:
             error = f"Failed to build script file: {e}"
