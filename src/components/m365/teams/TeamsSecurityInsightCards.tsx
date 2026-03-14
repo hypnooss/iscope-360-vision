@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { SEVERITY_CONFIG } from '@/types/m365Insights';
 import type { M365AnalyzerInsight } from '@/types/m365AnalyzerInsights';
-import { AlertTriangle, AlertCircle, Info, Shield, Users } from 'lucide-react';
+import { AlertTriangle, AlertCircle, Info, Shield } from 'lucide-react';
 import { DataSourceDot } from '@/components/m365/shared';
+import { IncidentDetailSheet } from '@/components/m365/analyzer/IncidentDetailSheet';
 
 interface TeamsSecurityInsightCardsProps {
   insights: M365AnalyzerInsight[];
