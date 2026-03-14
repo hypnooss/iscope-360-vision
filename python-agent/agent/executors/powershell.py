@@ -411,7 +411,7 @@ class PowerShellExecutor(BaseExecutor):
                 module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.onmicrosoft.com', '').split('.')[0]),
             ])
         else:
-            spo_admin_domain = (organization or '').replace('.onmicrosoft.com', '').split('.')[0]
+            spo_admin_domain = (organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]
             thumbprint = self._get_thumbprint() or ''
             lines.extend([
                 module_config["connect_cba"].format(
