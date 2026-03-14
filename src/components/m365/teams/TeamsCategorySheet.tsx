@@ -162,7 +162,7 @@ export function TeamsCategorySheet({ open, onOpenChange, category, dashboardData
                     columns={[
                       { label: 'Nome', accessor: t => t.displayName },
                       { label: 'Membros', accessor: t => String(t.memberCount ?? '-') },
-                      { label: 'Convidados', accessor: t => t.hasGuests ? 'Sim' : 'Não', badge: true, badgeColor: t => t.hasGuests ? '#f59e0b' : '#10b981' },
+                      { label: 'Convidados', accessor: t => t.hasGuests ? 'Sim' : 'Não', badge: true, badgeColor: '#f59e0b' },
                     ]}
                     searchKeys={[t => t.displayName]}
                     icon={Eye}
@@ -175,7 +175,7 @@ export function TeamsCategorySheet({ open, onOpenChange, category, dashboardData
                     columns={[
                       { label: 'Nome', accessor: t => t.displayName },
                       { label: 'Membros', accessor: t => String(t.memberCount ?? '-') },
-                      { label: 'Convidados', accessor: t => t.hasGuests ? 'Sim' : 'Não', badge: true, badgeColor: t => t.hasGuests ? '#f59e0b' : '#10b981' },
+                      { label: 'Convidados', accessor: t => t.hasGuests ? 'Sim' : 'Não', badge: true, badgeColor: '#10b981' },
                     ]}
                     searchKeys={[t => t.displayName]}
                     icon={Lock}
