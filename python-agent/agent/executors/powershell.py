@@ -393,6 +393,7 @@ class PowerShellExecutor(BaseExecutor):
         auth_mode: str = "cba",
         username: Optional[str] = None,
         password: Optional[str] = None,
+        spo_domain: Optional[str] = None,
     ) -> Path:
         """
         Build a temporary .ps1 script file containing the full preamble + all commands.
