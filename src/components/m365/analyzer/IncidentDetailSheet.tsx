@@ -11,8 +11,10 @@ import {
   AlertOctagon, AlertTriangle, Shield, Info,
   Search, Layers, FileText, Wrench, Users, UserX,
   Activity, TrendingUp, TrendingDown, Minus, Lightbulb,
+  Building2,
 } from 'lucide-react';
-import type { M365AnalyzerInsight } from '@/types/m365AnalyzerInsights';
+import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
+import { M365_ANALYZER_CATEGORY_LABELS } from '@/types/m365AnalyzerInsights';
 
 // ─── Severity config ─────────────────────────────────────────────────────────
 const SEV_CFG = {
@@ -22,12 +24,23 @@ const SEV_CFG = {
   low: { label: 'Low', icon: Info, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/30' },
 } as const;
 
+// ─── Severity labels in PT ───────────────────────────────────────────────────
+const SEV_LABELS_PT: Record<string, string> = {
+  critical: 'Crítica',
+  high: 'Alta',
+  medium: 'Média',
+  low: 'Baixa',
+  info: 'Informativa',
+};
+
 // ─── Section ─────────────────────────────────────────────────────────────────
 function Section({ title, icon: Icon, variant = 'default', children }: {
-  title: string; icon: typeof FileText; variant?: 'default' | 'warning'; children: React.ReactNode;
+  title: string; icon: typeof FileText; variant?: 'default' | 'warning' | 'destructive'; children: React.ReactNode;
 }) {
   const styles = variant === 'warning'
     ? { bg: 'bg-warning/10 border-warning/30', icon: 'text-warning' }
+    : variant === 'destructive'
+    ? { bg: 'bg-destructive/10 border-destructive/30', icon: 'text-destructive' }
     : { bg: 'bg-muted/30 border-border/30', icon: 'text-muted-foreground' };
   return (
     <div className="space-y-2">
@@ -40,6 +53,51 @@ function Section({ title, icon: Icon, variant = 'default', children }: {
       </div>
     </div>
   );
+}
+
+// ─── Fallback generators ─────────────────────────────────────────────────────
+function generateAnalysisFallback(insight: M365AnalyzerInsight): string {
+  const sevPt = SEV_LABELS_PT[insight.severity] || insight.severity;
+  const catLabel = M365_ANALYZER_CATEGORY_LABELS[insight.category] || insight.category;
+  const userCount = insight.affectedUsers?.length || 0;
+  const parts: string[] = [];
+
+  if (insight.count && insight.count > 0) {
+    parts.push(`Foram identificadas ${insight.count} ocorrência(s) classificadas como severidade ${sevPt}.`);
+  } else {
+    parts.push(`Incidente classificado como severidade ${sevPt}.`);
+  }
+
+  parts.push(`A análise correlacionou dados de telemetria na categoria "${catLabel}" para identificar este padrão.`);
+
+  if (userCount > 0) {
+    parts.push(`${userCount} usuário(s) foram identificados como afetados durante o período de coleta.`);
+  }
+
+  const prevCount = (insight.metadata as any)?.previousCount;
+  if (prevCount !== undefined && insight.count !== undefined) {
+    if (insight.count > prevCount) {
+      parts.push(`Houve um aumento de ${insight.count - prevCount} ocorrência(s) em relação à análise anterior, indicando tendência de crescimento.`);
+    } else if (insight.count < prevCount) {
+      parts.push(`Houve uma redução de ${prevCount - insight.count} ocorrência(s) em relação à análise anterior.`);
+    } else {
+      parts.push(`O número de ocorrências permanece estável em relação à análise anterior.`);
+    }
+  }
+
+  return parts.join(' ');
+}
+
+function generateBusinessImpactFallback(insight: M365AnalyzerInsight): string {
+  const sevMap: Record<string, string> = {
+    critical: 'Este incidente apresenta risco crítico para a organização. A exploração ativa pode resultar em comprometimento total do ambiente, perda de dados sensíveis e violação de conformidade regulatória. Ação imediata é necessária.',
+    high: 'Este incidente apresenta alto risco operacional. Se não tratado, pode resultar em interrupção de serviços, exposição de dados corporativos e impacto na produtividade dos usuários.',
+    medium: 'Este incidente apresenta risco moderado. Embora não represente uma ameaça imediata, pode escalar se não for monitorado e tratado dentro do ciclo operacional.',
+    low: 'Este incidente apresenta baixo risco direto, porém indica oportunidades de melhoria na postura de segurança da organização.',
+    info: 'Este item é informativo e não apresenta risco direto, mas deve ser considerado para melhoria contínua.',
+  };
+
+  return insight.businessImpact || sevMap[insight.severity] || sevMap.medium;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -58,6 +116,10 @@ export function IncidentDetailSheet({ insight, open, onOpenChange }: IncidentDet
   const hasEvidence = (insight.affectedUsers && insight.affectedUsers.length > 0) ||
     ((insight.metadata as any)?.userDetails?.length > 0) ||
     (insight.metadata && Object.keys(insight.metadata).filter(k => k !== 'previousCount' && k !== 'userDetails').length > 0);
+
+  const analysisText = insight.analysis || generateAnalysisFallback(insight);
+  const businessImpactText = insight.businessImpact || generateBusinessImpactFallback(insight);
+  const impactVariant = insight.severity === 'critical' || insight.severity === 'high' ? 'destructive' as const : 'warning' as const;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -129,21 +191,13 @@ export function IncidentDetailSheet({ insight, open, onOpenChange }: IncidentDet
               {insight.description || 'Sem descrição disponível.'}
             </Section>
 
-            {insight.details && (
-              <Section title="IMPACTO" icon={FileText} variant="warning">
-                {insight.details}
-              </Section>
-            )}
+            <Section title="ANÁLISE EFETUADA" icon={Search}>
+              {analysisText}
+            </Section>
 
-            {!insight.details && insight.count !== undefined && insight.count > 0 && (
-              <Section title="IMPACTO" icon={FileText} variant="warning">
-                {`Foram detectadas ${insight.count} ocorrência(s) deste incidente`}
-                {insight.affectedUsers && insight.affectedUsers.length > 0
-                  ? `, afetando ${insight.affectedUsers.length} usuário(s) da organização.`
-                  : '.'}
-                {' '}Monitoramento contínuo é recomendado para detectar recorrências.
-              </Section>
-            )}
+            <Section title="IMPACTO NO NEGÓCIO" icon={Building2} variant={impactVariant}>
+              {businessImpactText}
+            </Section>
 
             {insight.recommendation && (
               <div className="space-y-2">
