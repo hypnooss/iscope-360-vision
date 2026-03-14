@@ -732,6 +732,18 @@ function analyzeAccountCompromise(signInLogs: any[], emailActivity: any[], inbox
     }
   }
 
+  // Pass insight when no account compromise detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'account_compromise_ok',
+      category: 'account_compromise',
+      name: 'Nenhuma Conta Comprometida',
+      description: 'Nenhuma correlação de comprometimento de conta detectada no período.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
   return { insights, metrics };
 }
 
