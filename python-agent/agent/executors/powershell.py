@@ -408,7 +408,7 @@ class PowerShellExecutor(BaseExecutor):
             lines.extend([
                 f'$secPassword = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force',
                 f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
-                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.onmicrosoft.com', '').split('.')[0]),
+                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]),
             ])
         else:
             spo_admin_domain = (organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]
