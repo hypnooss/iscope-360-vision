@@ -1,154 +1,69 @@
-1: # Status: ✅ Implementado
 
-## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-### Problema resolvido
-Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
+## Correção do `spo_tenant_quota` — URL admin incorreta
 
-### Mudanças implementadas
+### Diagnóstico
 
-| Componente | Mudança |
-|---|---|
-| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
-| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
-| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
-| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
+O campo `tenant_domain` em `m365_tenants` armazena o domínio de e-mail (ex: `deployitgroup.mail.onmicrosoft.com`, `TASCHIBRA.mail.onmicrosoft.com`), mas o domínio do SharePoint Admin é derivado do domínio **principal** do tenant, que frequentemente difere.
 
-## Correção de Dados — scheduled_hour UTC→BRT
-
-### Problema resolvido
-Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
-
-### Solução aplicada
-1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
-2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
-3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
-
-## Paralelização do run-scheduled-analyses
-
-### Problema resolvido
-A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
-
-### Solução aplicada
-Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
-- `processFirewallComplianceSchedules`
-- `processExternalDomainSchedules`
-- `processAnalyzerSchedules`
-- `processAttackSurfaceSchedules`
-- `processM365AnalyzerSchedules`
-- `processM365ComplianceSchedules`
-
-CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
-
-## Timezone Dinâmico — Preferência do Usuário
-
-### Problema resolvido
-O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
-
-### Solução implementada
-
-| Componente | Mudança |
-|---|---|
-| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
-| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
-| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
-| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
-| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
-| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
-
-### Arquitetura
-
-```text
-┌─────────────────────────────────────────────────────┐
-│  Banco: tudo em UTC + coluna timezone por schedule  │
-├─────────────────────────────────────────────────────┤
-│  Frontend: dateUtils usa timezone do perfil         │
-│  ScheduleDialog: converte dinamicamente para UTC    │
-├─────────────────────────────────────────────────────┤
-│  Edge Function: lê timezone de cada registro        │
-│  e calcula offset via Intl.DateTimeFormat           │
-└─────────────────────────────────────────────────────┘
+O código atual:
+```python
+spo_admin_domain = (organization or '').replace('.onmicrosoft.com', '').split('.')[0]
 ```
 
-## Correção de Dados Duplicados — Exchange Analyzer
+Para `deployitgroup.mail.onmicrosoft.com` gera `deployitgroup`, mas o SPO admin pode estar em outro subdomínio. Além disso, tenants com domínios customizados (ex: `precisioglobal.com.br`) não seguem esse padrão.
 
-### Status: ✅ Implementado
+### Solução proposta
 
-### Problema resolvido
-O Exchange Analyzer usava janelas temporais fixas de 24h tanto no PowerShell (blueprint) quanto nas queries Graph API (edge function), causando sobreposição de dados entre snapshots consecutivos e contagem duplicada de eventos.
+**1. Adicionar campo `spo_domain` à tabela `m365_tenants`**
 
-### Mudanças implementadas
+Um novo campo opcional que armazena explicitamente o subdomínio SPO (ex: `precisioglobal`), permitindo que cada tenant tenha a URL admin correta independente do `tenant_domain`.
 
-| Componente | Mudança |
-|---|---|
-| **Blueprint `m365` (hybrid)** | Comando `exo_message_trace` alterado de `-StartDate (Get-Date).AddHours(-24)` para `-StartDate "{period_start}" -EndDate "{period_end}"`, usando os valores do payload da task |
-| **`supabase/functions/m365-analyzer/index.ts`** | Duas janelas fixas de 24h (fallback Graph API ~linha 2147 e enriquecimento ~linha 2197) substituídas por `snapshot.period_start`/`period_end` com fallback para 24h se ausentes. Filtro `createdDateTime le` adicionado para limite superior |
-| **Frontend** | Sem alteração necessária — agregação já funciona corretamente com snapshots não-sobrepostos |
+**2. Popular `spo_domain` automaticamente no onboarding**
 
-### Arquitetura final
-```text
-trigger-m365-analyzer:
-  period_start = last_snapshot.period_end (ou now - 2h)
-  period_end = now
-  → Cria snapshot + agent_task com period_start/period_end no payload
+Na Edge Function `connect-m365-tenant` (e `m365-oauth-callback`), ao conectar um tenant, consultar a Graph API para obter o domínio inicial verificado do tenant:
+```
+GET /organization?$select=verifiedDomains
+```
+Filtrar pelo domínio `.onmicrosoft.com` (sem `.mail`) e extrair o prefixo. Salvar em `spo_domain`.
 
-Blueprint (PowerShell):
-  Get-MessageTraceV2 -StartDate "{period_start}" -EndDate "{period_end}"
-  → Agente interpola placeholders do payload
+**3. Atualizar o agente para usar `spo_domain`**
 
-Edge Function (Graph API):
-  $filter=createdDateTime ge {period_start} and createdDateTime le {period_end}
-  → Usa snapshot.period_start/period_end
+No `tasks.py`, incluir `spo_domain` no contexto M365. No `powershell.py`, usar `spo_domain` quando disponível, com fallback para a lógica atual.
 
-Frontend (useM365AnalyzerData.ts):
-  Soma contadores de snapshots consecutivos sem sobreposição
-  → Dados precisos sem duplicação
+**4. Adicionar campo no `rpc_get_agent_tasks`**
+
+Incluir `spo_domain` no payload de target para que o agente receba o valor correto.
+
+### Alternativa mais simples (recomendada)
+
+Em vez de criar um novo campo, **ajustar a lógica de derivação** no `powershell.py` para tratar corretamente domínios `.mail.onmicrosoft.com`:
+
+```python
+# Antes (incorreto para .mail.onmicrosoft.com):
+spo_admin_domain = (organization or '').replace('.onmicrosoft.com', '').split('.')[0]
+
+# Depois (remove .mail antes):
+raw = (organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]
 ```
 
-## Dashboard Snapshots — Arquitetura de Período Dinâmico
+Isso resolve `TASCHIBRA.mail.onmicrosoft.com` → `TASCHIBRA` e `precisioglobal.onmicrosoft.com` → `precisioglobal`.
 
-### Status: ✅ Implementado
+**Porém**, se o domínio SPO admin de um tenant não corresponder ao prefixo do `tenant_domain` (ex: tenant_domain é `deployitgroup.mail.onmicrosoft.com` mas o SPO admin é `precisioglobal-admin.sharepoint.com`), a solução com campo explícito `spo_domain` é necessária.
 
-### Problema resolvido
-Os dashboards operacionais (Exchange, Entra ID, Colaboração) salvavam KPIs numa única coluna JSONB sobrescrita a cada execução, impedindo agregação histórica para períodos dinâmicos (7 dias, 30 dias, etc.).
+### Arquivos alterados
 
-### Mudanças implementadas
-
-| Componente | Mudança |
+| Arquivo | Ação |
 |---|---|
-| **Migration SQL** | Nova tabela `m365_dashboard_snapshots` com `tenant_record_id`, `client_id`, `dashboard_type`, `data` (JSONB), `period_start`, `period_end`, `created_at`. RLS com service_role, client_access e super_admin |
-| `exchange-dashboard` Edge Function | INSERT snapshot em `m365_dashboard_snapshots` (type='exchange') + UPDATE cache legado |
-| `entra-id-dashboard` Edge Function | INSERT snapshot (type='entra_id') + UPDATE cache legado |
-| `collaboration-dashboard` Edge Function | INSERT snapshot (type='collaboration') + UPDATE cache legado |
-| `useExchangeDashboard.ts` | Carrega do último snapshot da nova tabela, fallback para cache legado |
-| `useEntraIdDashboard.ts` | Idem |
-| `useCollaborationDashboard.ts` | Idem |
+| `python-agent/agent/executors/powershell.py` | Ajustar derivação do `spo_admin_domain` para remover `.mail` |
 
-### Próximos passos
-- Adicionar seletor de período no frontend e agregar dados de evento de múltiplos snapshots
-- Auto-trigger dos dashboards no `agent-task-result` ao completar task m365_analyzer
-- Remover colunas de cache legado quando migração estiver consolidada
+Caso opte pela solução completa com campo dedicado:
 
-## StorageQuota SharePoint via Agent PowerShell
-
-### Status: ✅ Implementado
-
-### Problema resolvido
-A REST API do SPO Admin (`/_api/StorageQuota()`) frequentemente falha por falta de permissões. O comando PowerShell `Get-PnPTenant | Select StorageQuota` é confiável e retorna o valor em MB.
-
-### Mudanças implementadas
-
-| Componente | Mudança |
+| Arquivo | Ação |
 |---|---|
-| `python-agent/agent/executors/powershell.py` | Novo módulo `PnP.PowerShell` no dict `MODULES` com suporte a CBA via thumbprint. Params `spo_admin_domain` e `thumbprint` adicionados a todos os `.format()` de conexão |
-| Blueprint M365 hybrid (DB) | Novo step `spo_tenant_quota` (optional) usando `PnP.PowerShell` com comando `Get-PnPTenant \| Select StorageQuota, StorageQuotaAllocated` |
-| `collaboration-dashboard` Edge Function | Busca quota do agent (`step_results.spo_tenant_quota`) antes do fallback REST API. Converte MB→bytes |
+| `python-agent/agent/executors/powershell.py` | Usar `spo_domain` do contexto quando disponível |
+| `python-agent/agent/tasks.py` | Incluir `spo_domain` no contexto M365 |
+| `supabase/functions/connect-m365-tenant/index.ts` | Popular `spo_domain` via Graph API `verifiedDomains` |
+| `supabase/functions/m365-oauth-callback/index.ts` | Popular `spo_domain` via Graph API `verifiedDomains` |
+| Edge Function `rpc_get_agent_tasks` ou SQL correspondente | Incluir `spo_domain` no target |
 
-### Fluxo
-```text
-Agent (PnP.PowerShell) → Get-PnPTenant → StorageQuota (MB)
-  ↓ salvo em step_results do agent_task
-collaboration-dashboard → lê step_results do último snapshot completed
-  → storageAllocatedBytes = quotaMB * 1024 * 1024
-  → fallback: REST API SPO Admin (se agent não coletou)
-```
