@@ -260,6 +260,16 @@ function analyzePhishingThreats(
         status: 'fail',
         recommendation: 'Revise as políticas de anti-phishing e considere treinamento de conscientização.',
       });
+    } else {
+      insights.push({
+        id: 'phishing_volume_ok',
+        category: 'phishing_threats',
+        name: 'Volume de Phishing Controlado',
+        description: `Apenas ${phishingMessages.length} emails de phishing detectados — dentro do esperado.`,
+        severity: 'info',
+        status: 'pass',
+        count: phishingMessages.length,
+      });
     }
   }
 
