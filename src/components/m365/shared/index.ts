@@ -5,3 +5,4 @@ export type { DonutSegment } from './M365DonutChart';
 export { DataSourceDot } from './DataSourceDot';
 export type { DataSourceType } from './DataSourceDot';
 export { DataSourceLegend } from './DataSourceLegend';
+export { SecurityInsightCards } from './SecurityInsightCard';
