@@ -885,6 +885,19 @@ function analyzeSuspiciousRules(
     }
   }
 
+  // Pass insights when no suspicious rules found
+  if (insights.length === 0) {
+    insights.push({
+      id: 'suspicious_rules_ok',
+      category: 'suspicious_rules',
+      name: 'Nenhuma Regra Suspeita Detectada',
+      description: 'Não foram encontrados encaminhamentos, regras de exclusão automática ou redirecionamentos suspeitos.',
+      severity: 'info',
+      status: 'pass',
+      recommendation: 'Continue monitorando periodicamente.',
+    });
+  }
+
   return { insights, metrics };
 }
 
