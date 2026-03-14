@@ -77,6 +77,20 @@ class PowerShellExecutor(BaseExecutor):
         super().__init__(logger)
         self._pwsh_path: Optional[str] = None
     
+    @staticmethod
+    def _derive_spo_domain(organization: Optional[str], spo_domain: Optional[str] = None) -> str:
+        """Derive the SharePoint Online admin domain prefix.
+        
+        Priority:
+        1. Explicit spo_domain from m365_tenants table (most reliable)
+        2. Derived from organization/tenant_domain (fallback)
+        
+        Handles .mail.onmicrosoft.com domains correctly.
+        """
+        if spo_domain:
+            return spo_domain
+        return (organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]
+    
     def _find_pwsh(self) -> Optional[str]:
         """Find PowerShell Core executable."""
         if self._pwsh_path:
