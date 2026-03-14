@@ -1582,13 +1582,47 @@ function analyzeSecurityRisk(
     }
   }
 
-  // Pass insight when no security risks detected
-  if (insights.length === 0) {
+  // Granular pass insights per sub-check
+  const hasHighRisk = riskyUsersData.some((u: any) => u.riskLevel === 'high');
+  if (!hasHighRisk) {
     insights.push({
-      id: 'security_risk_ok',
+      id: 'no_high_risk_users',
       category: 'security_risk',
-      name: 'Nenhum Risco de Segurança Detectado',
-      description: 'Nenhum sign-in de alto risco, falha de MFA ou impossible travel detectado no período.',
+      name: 'Nenhum Usuário de Alto Risco',
+      description: 'Nenhum usuário com nível de risco ALTO no Identity Protection.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.impossibleTravel === 0) {
+    insights.push({
+      id: 'no_impossible_travel',
+      category: 'security_risk',
+      name: 'Nenhum Impossible Travel',
+      description: 'Nenhum login de locais geograficamente impossíveis detectado no período.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.blockedAccounts === 0) {
+    insights.push({
+      id: 'no_blocked_accounts',
+      category: 'security_risk',
+      name: 'Nenhuma Conta Bloqueada',
+      description: 'Nenhuma conta bloqueada por tentativas de brute force no período.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.mfaFailures === 0) {
+    insights.push({
+      id: 'no_mfa_failures',
+      category: 'security_risk',
+      name: 'Nenhuma Falha de MFA',
+      description: 'Nenhuma falha de autenticação multifator detectada no período.',
       severity: 'info',
       status: 'pass',
     });
