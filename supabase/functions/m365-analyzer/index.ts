@@ -1204,6 +1204,40 @@ function analyzeOperationalRisks(
     }
   }
 
+  // Granular pass insights per sub-check
+  if (metrics.smtpAuthEnabled === 0 && exoOrgConfig.length > 0) {
+    insights.push({
+      id: 'smtp_auth_disabled',
+      category: 'operational_risks',
+      name: 'SMTP Auth Desabilitado',
+      description: 'SMTP Auth está desabilitado no nível organizacional — configuração segura.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.legacyProtocols === 0 && exoAuthPolicy.length > 0) {
+    insights.push({
+      id: 'no_legacy_protocols',
+      category: 'operational_risks',
+      name: 'Sem Protocolos Legados',
+      description: 'Nenhum protocolo legado (SMTP/IMAP/POP) habilitado nas políticas de autenticação.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
+  if (metrics.fullAccessGrants === 0) {
+    insights.push({
+      id: 'no_fullaccess_grants',
+      category: 'operational_risks',
+      name: 'Nenhuma Permissão FullAccess',
+      description: 'Nenhuma concessão de permissão FullAccess detectada no período.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
   return { insights, metrics };
 }
 
