@@ -12,6 +12,7 @@ interface M365AnalyzerInsight {
   name: string;
   description: string;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  status?: 'pass' | 'fail';
   details?: string;
   affectedUsers?: string[];
   count?: number;
@@ -729,6 +730,18 @@ function analyzeAccountCompromise(signInLogs: any[], emailActivity: any[], inbox
         recommendation: 'Verifique se as regras de inbox são legítimas e autorizadas.',
       });
     }
+  }
+
+  // Pass insight when no account compromise detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'account_compromise_ok',
+      category: 'account_compromise',
+      name: 'Nenhuma Conta Comprometida',
+      description: 'Nenhuma correlação de comprometimento de conta detectada no período.',
+      severity: 'info',
+      status: 'pass',
+    });
   }
 
   return { insights, metrics };
@@ -1569,6 +1582,18 @@ function analyzeSecurityRisk(
     }
   }
 
+  // Pass insight when no security risks detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'security_risk_ok',
+      category: 'security_risk',
+      name: 'Nenhum Risco de Segurança Detectado',
+      description: 'Nenhum sign-in de alto risco, falha de MFA ou impossible travel detectado no período.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
   return { insights, metrics };
 }
 
@@ -1683,6 +1708,18 @@ function analyzeIdentityAccess(
     }
   }
 
+  // Pass insight when no identity issues detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'identity_access_ok',
+      category: 'identity_access',
+      name: 'Identidades em Conformidade',
+      description: 'Nenhuma anomalia de identidade detectada no período.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
   return { insights, metrics };
 }
 
@@ -1780,6 +1817,18 @@ function analyzeConditionalAccess(
         recommendation: 'Verifique se as mudanças foram planejadas.',
       });
     }
+  }
+
+  // Pass insight when no CA issues detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'conditional_access_ok',
+      category: 'conditional_access',
+      name: 'Políticas de Conditional Access em Conformidade',
+      description: 'Todas as políticas de CA estão ativas e sem problemas detectados.',
+      severity: 'info',
+      status: 'pass',
+    });
   }
 
   return { insights, metrics };
