@@ -34,6 +34,7 @@ export interface M365AnalyzerInsight {
   recommendation?: string;
   analysis?: string;
   businessImpact?: string;
+  status?: 'fail' | 'pass';
   metadata?: Record<string, unknown>;
 }
 
