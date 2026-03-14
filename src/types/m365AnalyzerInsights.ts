@@ -32,6 +32,8 @@ export interface M365AnalyzerInsight {
   affectedUsers?: string[];
   count?: number;
   recommendation?: string;
+  analysis?: string;
+  businessImpact?: string;
   metadata?: Record<string, unknown>;
 }
 
