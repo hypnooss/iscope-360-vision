@@ -118,6 +118,7 @@ async function fetchOrganizationInfo(accessToken: string): Promise<{
   displayName: string;
   primaryDomain: string;
   tenantId: string;
+  spoDomain: string | null;
 }> {
   const response = await fetch('https://graph.microsoft.com/v1.0/organization', {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -139,10 +140,28 @@ async function fetchOrganizationInfo(accessToken: string): Promise<{
                         verifiedDomains[0]?.name || 
                         `${org.id}.onmicrosoft.com`;
 
+  // Extract SPO domain: find the .onmicrosoft.com domain (without .mail) to derive SharePoint admin URL
+  let spoDomain: string | null = null;
+  const onmicrosoftDomain = verifiedDomains.find(
+    (d: any) => d.name?.endsWith('.onmicrosoft.com') && !d.name?.includes('.mail.')
+  );
+  if (onmicrosoftDomain) {
+    spoDomain = onmicrosoftDomain.name.replace('.onmicrosoft.com', '');
+    console.log(`[connect-m365-tenant] SPO domain extracted: ${spoDomain} (from ${onmicrosoftDomain.name})`);
+  } else {
+    // Fallback: try to derive from any onmicrosoft domain
+    const anyOnmicrosoft = verifiedDomains.find((d: any) => d.name?.endsWith('.onmicrosoft.com'));
+    if (anyOnmicrosoft) {
+      spoDomain = anyOnmicrosoft.name.replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0];
+      console.log(`[connect-m365-tenant] SPO domain derived from fallback: ${spoDomain}`);
+    }
+  }
+
   return {
     displayName: org.displayName || 'Unknown Organization',
     primaryDomain,
     tenantId: org.id,
+    spoDomain,
   };
 }
 
