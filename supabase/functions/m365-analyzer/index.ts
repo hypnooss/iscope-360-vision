@@ -1695,6 +1695,18 @@ function analyzeIdentityAccess(
     }
   }
 
+  // Pass insight when no identity issues detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'identity_access_ok',
+      category: 'identity_access',
+      name: 'Identidades em Conformidade',
+      description: 'Nenhuma anomalia de identidade detectada no período.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
   return { insights, metrics };
 }
 
