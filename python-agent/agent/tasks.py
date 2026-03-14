@@ -886,6 +886,7 @@ class TaskExecutor:
                 'app_id': credentials.get('azure_app_id'),
                 'tenant_id': target.get('tenant_id'),
                 'organization': target.get('tenant_domain'),
+                'spo_domain': target.get('spo_domain'),
                 'certificate_thumbprint': credentials.get('certificate_thumbprint'),
             })
         
