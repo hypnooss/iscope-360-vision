@@ -257,6 +257,7 @@ function analyzePhishingThreats(
         description: `${phishingMessages.length} emails de phishing detectados no período`,
         severity: phishingMessages.length > 200 ? 'critical' : 'high',
         count: phishingMessages.length,
+        status: 'fail',
         recommendation: 'Revise as políticas de anti-phishing e considere treinamento de conscientização.',
       });
     }
