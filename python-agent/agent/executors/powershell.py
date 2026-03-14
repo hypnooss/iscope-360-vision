@@ -493,6 +493,7 @@ class PowerShellExecutor(BaseExecutor):
         app_id = first_params.get('app_id') or context.get('app_id') or ''
         tenant_id = first_params.get('tenant_id') or context.get('tenant_id') or ''
         organization = first_params.get('organization') or context.get('organization')
+        spo_domain_override = context.get('spo_domain')
         auth_mode = first_params.get('auth_mode', self.AUTH_MODE_CBA)
         username = first_params.get('username')
         password = first_params.get('password')
