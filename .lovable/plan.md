@@ -152,3 +152,35 @@ collaboration-dashboard → lê step_results do último snapshot completed
   → storageAllocatedBytes = quotaMB * 1024 * 1024
   → fallback: REST API SPO Admin (se agent não coletou)
 ```
+
+## Correção do `spo_tenant_quota` — URL admin incorreta
+
+### Status: ✅ Implementado
+
+### Problema resolvido
+O campo `tenant_domain` armazenava domínios como `deployitgroup.mail.onmicrosoft.com`, mas a lógica de derivação do SPO admin URL não removia `.mail`, gerando URLs incorretas.
+
+### Mudanças implementadas
+
+| Componente | Mudança |
+|---|---|
+| **Migration SQL** | Adicionada coluna `spo_domain TEXT` em `m365_tenants` para armazenar o prefixo SPO explícito (ex: `precisioglobal`) |
+| **`rpc_get_agent_tasks`** | Incluído `spo_domain` no payload `target` para tasks M365 |
+| `python-agent/agent/tasks.py` | Inclui `spo_domain` no contexto M365 do agente |
+| `python-agent/agent/executors/powershell.py` | Novo método `_derive_spo_domain()` com prioridade: `spo_domain` explícito > derivação de `organization`. Todas as 6 derivações corrigidas para remover `.mail` |
+| `connect-m365-tenant` Edge Function | `fetchOrganizationInfo` extrai `spoDomain` de `verifiedDomains` (domínio `.onmicrosoft.com` sem `.mail`). Salva em `spo_domain` no INSERT |
+
+### Fluxo
+```text
+Onboarding (connect-m365-tenant):
+  GET /organization → verifiedDomains → encontra *.onmicrosoft.com (sem .mail)
+  → Extrai prefixo → salva em m365_tenants.spo_domain
+
+Agent (rpc_get_agent_tasks):
+  target.spo_domain → contexto → _derive_spo_domain(organization, spo_domain)
+  → Prioriza spo_domain explícito, fallback para derivação corrigida
+
+PowerShell:
+  Connect-PnPOnline -Url "https://{spo_domain}-admin.sharepoint.com" ...
+  → URL correta para Get-PnPTenant
+```
