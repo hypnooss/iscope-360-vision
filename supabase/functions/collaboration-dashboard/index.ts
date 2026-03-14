@@ -168,12 +168,17 @@ Deno.serve(async (req) => {
     // Check for guest members (sample first 50 teams for performance)
     let teamsWithGuests = 0;
     const teamsToCheck = allTeamGroups.slice(0, 50);
+    const teamGuestMap = new Map<string, boolean>();
+    const teamMemberCountMap = new Map<string, number>();
     
     const guestChecks = await Promise.allSettled(
       teamsToCheck.map(async (team: any) => {
         const members = await graphGet(accessToken, `https://graph.microsoft.com/v1.0/groups/${team.id}/members?$select=id,userType&$top=100`);
-        if (members?.value?.some((m: any) => m.userType === 'Guest')) return true;
-        return false;
+        const memberList = members?.value || [];
+        teamMemberCountMap.set(team.id, memberList.length);
+        const hasGuest = memberList.some((m: any) => m.userType === 'Guest');
+        teamGuestMap.set(team.id, hasGuest);
+        return hasGuest;
       })
     );
     
@@ -182,6 +187,14 @@ Deno.serve(async (req) => {
     if (allTeamGroups.length > 50 && teamsToCheck.length > 0) {
       teamsWithGuests = Math.round((teamsWithGuests / teamsToCheck.length) * allTeamGroups.length);
     }
+
+    // Build teamDetails array
+    const teamDetails = allTeamGroups.map((g: any) => ({
+      displayName: g.displayName || '',
+      visibility: g.visibility === 'Public' ? 'Public' : 'Private',
+      hasGuests: teamGuestMap.get(g.id) ?? false,
+      memberCount: teamMemberCountMap.get(g.id) ?? null,
+    }));
 
     // Channels (sample first 30 teams)
     let privateChannels = 0;
@@ -220,6 +233,7 @@ Deno.serve(async (req) => {
     let activeSites = 0;
     let inactiveSites = 0;
     let storageUsedBytes = 0;
+    const siteDetails: Array<{ displayName: string; webUrl: string; lastActivity: string | null; storageUsedGB: number; externalSharing: boolean }> = [];
 
     // SharePoint usage report — state data, D7 to avoid duplication across cache refreshes
     const siteUsageText = await graphGetText(
@@ -234,13 +248,21 @@ Deno.serve(async (req) => {
       rows.forEach((row: any) => {
         const used = parseInt(row['Storage Used (Byte)'] || '0', 10);
         if (!isNaN(used)) storageUsedBytes += used;
-        if (row['Last Activity Date']) {
-          const lastActivity = new Date(row['Last Activity Date']);
+        const lastActivityDate = row['Last Activity Date'] || null;
+        if (lastActivityDate) {
+          const lastActivity = new Date(lastActivityDate);
           if (lastActivity >= sevenDaysAgo) activeSites++;
           else inactiveSites++;
         } else {
           inactiveSites++;
         }
+        siteDetails.push({
+          displayName: row['Site URL']?.split('/').pop() || row['Owner Display Name'] || 'Site',
+          webUrl: row['Site URL'] || '',
+          lastActivity: lastActivityDate,
+          storageUsedGB: parseFloat(((used || 0) / (1024 ** 3)).toFixed(4)),
+          externalSharing: false, // will be enriched if admin API available
+        });
       });
       console.log(`SharePoint storage: usedBytes=${storageUsedBytes}, active=${activeSites}, inactive=${inactiveSites}`);
     } else {
@@ -328,6 +350,7 @@ Deno.serve(async (req) => {
         withGuests: teamsWithGuests,
         privateChannels,
         sharedChannels,
+        teamDetails,
       },
       sharepoint: {
         totalSites,
@@ -337,6 +360,7 @@ Deno.serve(async (req) => {
         totalLists: 0,
         storageUsedGB,
         storageAllocatedGB,
+        siteDetails,
       },
       analyzedAt: now.toISOString(),
     };

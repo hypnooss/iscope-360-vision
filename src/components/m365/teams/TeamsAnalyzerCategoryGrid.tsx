@@ -41,7 +41,7 @@ interface CategoryStats {
   total: number;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'none';
   pct?: number;
-  badgeLabel?: string;
+  splits?: Array<{ label: string; value: number; color: string }>;
 }
 
 const SEVERITY_COLORS = {
@@ -60,27 +60,91 @@ function getCategoryStats(cat: TeamsOperationalCategory, data: CollaborationDash
   switch (cat) {
     case 'public_teams': {
       const pct = (teams.public / totalTeams) * 100;
-      return { total: teams.public, pct, severity: pct > 50 ? 'critical' : pct > 30 ? 'high' : pct > 10 ? 'medium' : teams.public > 0 ? 'low' : 'none', badgeLabel: `${teams.public} públicas` };
+      return {
+        total: teams.public,
+        pct,
+        severity: pct > 50 ? 'critical' : pct > 30 ? 'high' : pct > 10 ? 'medium' : teams.public > 0 ? 'low' : 'none',
+        splits: [
+          { label: 'Públicas', value: teams.public, color: '#ef4444' },
+          { label: 'Privadas', value: teams.private, color: '#14b8a6' },
+        ],
+      };
     }
-    case 'private_teams':
-      return { total: teams.private, severity: 'none', badgeLabel: `${teams.private} privadas` };
+    case 'private_teams': {
+      return {
+        total: teams.private,
+        severity: 'none',
+        splits: [
+          { label: 'Privadas', value: teams.private, color: '#14b8a6' },
+          { label: 'Públicas', value: teams.public, color: '#ef4444' },
+        ],
+      };
+    }
     case 'guest_access': {
       const pct = (teams.withGuests / totalTeams) * 100;
-      return { total: teams.withGuests, pct, severity: pct > 40 ? 'high' : pct > 20 ? 'medium' : teams.withGuests > 0 ? 'low' : 'none', badgeLabel: `${teams.withGuests} com convidados` };
+      const withoutGuests = Math.max(0, teams.total - teams.withGuests);
+      return {
+        total: teams.withGuests,
+        pct,
+        severity: pct > 40 ? 'high' : pct > 20 ? 'medium' : teams.withGuests > 0 ? 'low' : 'none',
+        splits: [
+          { label: 'Com Convidados', value: teams.withGuests, color: '#f59e0b' },
+          { label: 'Sem Convidados', value: withoutGuests, color: '#10b981' },
+        ],
+      };
     }
     case 'private_channels':
-      return { total: teams.privateChannels, severity: teams.privateChannels > 50 ? 'medium' : teams.privateChannels > 0 ? 'low' : 'none', badgeLabel: `${teams.privateChannels} canais` };
+      return {
+        total: teams.privateChannels,
+        severity: teams.privateChannels > 50 ? 'medium' : teams.privateChannels > 0 ? 'low' : 'none',
+        splits: [
+          { label: 'Privados', value: teams.privateChannels, color: '#8b5cf6' },
+          { label: 'Compartilhados', value: teams.sharedChannels, color: '#f97316' },
+        ],
+      };
     case 'shared_channels':
-      return { total: teams.sharedChannels, severity: teams.sharedChannels > 20 ? 'high' : teams.sharedChannels > 5 ? 'medium' : teams.sharedChannels > 0 ? 'low' : 'none', badgeLabel: `${teams.sharedChannels} canais` };
-    case 'sharepoint_sites':
-      return { total: sharepoint.totalSites, severity: 'none', badgeLabel: `${sharepoint.totalSites} sites` };
+      return {
+        total: teams.sharedChannels,
+        severity: teams.sharedChannels > 20 ? 'high' : teams.sharedChannels > 5 ? 'medium' : teams.sharedChannels > 0 ? 'low' : 'none',
+        splits: [
+          { label: 'Compartilhados', value: teams.sharedChannels, color: '#f97316' },
+          { label: 'Privados', value: teams.privateChannels, color: '#8b5cf6' },
+        ],
+      };
+    case 'sharepoint_sites': {
+      return {
+        total: sharepoint.totalSites,
+        severity: 'none',
+        splits: [
+          { label: 'Ativos', value: sharepoint.activeSites, color: '#10b981' },
+          { label: 'Inativos', value: sharepoint.inactiveSites, color: '#6366f1' },
+        ],
+      };
+    }
     case 'external_sharing': {
       const pct = (sharepoint.externalSharingEnabled / totalSites) * 100;
-      return { total: sharepoint.externalSharingEnabled, pct, severity: pct > 50 ? 'critical' : pct > 30 ? 'high' : pct > 10 ? 'medium' : sharepoint.externalSharingEnabled > 0 ? 'low' : 'none', badgeLabel: `${sharepoint.externalSharingEnabled} habilitados` };
+      const disabled = Math.max(0, sharepoint.totalSites - sharepoint.externalSharingEnabled);
+      return {
+        total: sharepoint.externalSharingEnabled,
+        pct,
+        severity: pct > 50 ? 'critical' : pct > 30 ? 'high' : pct > 10 ? 'medium' : sharepoint.externalSharingEnabled > 0 ? 'low' : 'none',
+        splits: [
+          { label: 'Habilitados', value: sharepoint.externalSharingEnabled, color: '#dc2626' },
+          { label: 'Desabilitados', value: disabled, color: '#10b981' },
+        ],
+      };
     }
     case 'inactive_sites': {
       const pct = (sharepoint.inactiveSites / totalSites) * 100;
-      return { total: sharepoint.inactiveSites, pct, severity: pct > 40 ? 'high' : pct > 20 ? 'medium' : sharepoint.inactiveSites > 0 ? 'low' : 'none', badgeLabel: `${sharepoint.inactiveSites} inativos` };
+      return {
+        total: sharepoint.inactiveSites,
+        pct,
+        severity: pct > 40 ? 'high' : pct > 20 ? 'medium' : sharepoint.inactiveSites > 0 ? 'low' : 'none',
+        splits: [
+          { label: 'Inativos', value: sharepoint.inactiveSites, color: '#6366f1' },
+          { label: 'Ativos', value: sharepoint.activeSites, color: '#10b981' },
+        ],
+      };
     }
     default:
       return { total: 0, severity: 'none' };
@@ -105,6 +169,7 @@ export function TeamsAnalyzerCategoryGrid({ data, onCategoryClick }: TeamsAnalyz
           const stats = getCategoryStats(catKey, data);
           const hasData = stats.total > 0;
           const Icon = info.icon;
+          const hasSplits = stats.splits && stats.splits.length > 0;
 
           return (
             <Card
@@ -129,22 +194,26 @@ export function TeamsAnalyzerCategoryGrid({ data, onCategoryClick }: TeamsAnalyz
                   </div>
                 </div>
 
-                <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden">
-                  {hasData && <div className={cn('h-full rounded-full transition-all', SEVERITY_COLORS[stats.severity])} style={{ width: '100%' }} />}
-                </div>
+                {hasSplits && hasData ? (
+                  <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden flex">
+                    {stats.splits!.map((seg, i) => {
+                      const splitsTotal = stats.splits!.reduce((s, x) => s + x.value, 0) || 1;
+                      return <div key={i} className="h-full transition-all" style={{ width: `${(seg.value / splitsTotal) * 100}%`, backgroundColor: seg.color }} />;
+                    })}
+                  </div>
+                ) : (
+                  <div className="w-full h-2 rounded-full bg-muted/50 overflow-hidden">
+                    {hasData && <div className={cn('h-full rounded-full transition-all', SEVERITY_COLORS[stats.severity])} style={{ width: '100%' }} />}
+                  </div>
+                )}
 
-                {hasData && stats.badgeLabel && (
+                {hasData && hasSplits && (
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <Badge variant="outline" className={cn(
-                      "text-[10px] px-1.5 py-0",
-                      stats.severity === 'critical' && "bg-red-500/20 text-red-500 border-red-500/30",
-                      stats.severity === 'high' && "bg-orange-500/20 text-orange-500 border-orange-500/30",
-                      stats.severity === 'medium' && "bg-yellow-500/20 text-yellow-500 border-yellow-500/30",
-                      stats.severity === 'low' && "bg-blue-400/20 text-blue-400 border-blue-400/30",
-                      stats.severity === 'none' && "bg-muted/20 text-muted-foreground border-border/30",
-                    )}>
-                      {stats.badgeLabel}
-                    </Badge>
+                    {stats.splits!.map((seg, i) => (
+                      <Badge key={i} variant="outline" className="text-[10px] px-1.5 py-0" style={{ backgroundColor: `${seg.color}20`, color: seg.color, borderColor: `${seg.color}40` }}>
+                        {seg.value.toLocaleString()} {seg.label}
+                      </Badge>
+                    ))}
                   </div>
                 )}
 

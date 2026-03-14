@@ -1,9 +1,33 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
+export interface TeamDetail {
+  displayName: string;
+  visibility: 'Public' | 'Private';
+  hasGuests: boolean;
+  memberCount?: number;
+}
+
+export interface SiteDetail {
+  displayName: string;
+  webUrl?: string;
+  lastActivity?: string;
+  storageUsedGB?: number;
+  externalSharing?: boolean;
+}
+
 export interface CollaborationDashboardData {
-  teams: { total: number; public: number; private: number; withGuests: number; privateChannels: number; sharedChannels: number };
-  sharepoint: { totalSites: number; activeSites: number; inactiveSites: number; externalSharingEnabled: number; totalLists: number; storageUsedGB: number; storageAllocatedGB: number };
+  teams: {
+    total: number; public: number; private: number; withGuests: number;
+    privateChannels: number; sharedChannels: number;
+    teamDetails?: TeamDetail[];
+  };
+  sharepoint: {
+    totalSites: number; activeSites: number; inactiveSites: number;
+    externalSharingEnabled: number; totalLists: number;
+    storageUsedGB: number; storageAllocatedGB: number;
+    siteDetails?: SiteDetail[];
+  };
   analyzedAt: string;
 }
 
@@ -18,8 +42,15 @@ export function useCollaborationDashboard({ tenantRecordId }: UseCollaborationDa
   const [error, setError] = useState<string | null>(null);
 
   const mapToData = (cache: any, cachedAt?: string): CollaborationDashboardData => ({
-    teams: cache.teams || { total: 0, public: 0, private: 0, withGuests: 0, privateChannels: 0, sharedChannels: 0 },
-    sharepoint: { totalSites: 0, activeSites: 0, inactiveSites: 0, externalSharingEnabled: 0, totalLists: 0, storageUsedGB: 0, storageAllocatedGB: 0, ...(cache.sharepoint || {}) },
+    teams: {
+      total: 0, public: 0, private: 0, withGuests: 0, privateChannels: 0, sharedChannels: 0,
+      ...(cache.teams || {}),
+    },
+    sharepoint: {
+      totalSites: 0, activeSites: 0, inactiveSites: 0, externalSharingEnabled: 0,
+      totalLists: 0, storageUsedGB: 0, storageAllocatedGB: 0,
+      ...(cache.sharepoint || {}),
+    },
     analyzedAt: cache.analyzedAt || cachedAt || '',
   });
 
@@ -29,7 +60,6 @@ export function useCollaborationDashboard({ tenantRecordId }: UseCollaborationDa
     setError(null);
 
     try {
-      // Try loading from m365_dashboard_snapshots (new architecture)
       const { data: snapshot, error: snapError } = await supabase
         .from('m365_dashboard_snapshots')
         .select('data, created_at')
@@ -43,7 +73,6 @@ export function useCollaborationDashboard({ tenantRecordId }: UseCollaborationDa
         const cache = snapshot.data as any;
         setData(mapToData(cache, snapshot.created_at));
       } else {
-        // Fallback to legacy cache columns
         const { data: tenant, error: dbError } = await supabase
           .from('m365_tenants')
           .select('collaboration_dashboard_cache, collaboration_dashboard_cached_at')
