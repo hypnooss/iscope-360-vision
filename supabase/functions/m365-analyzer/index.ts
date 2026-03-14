@@ -1806,6 +1806,18 @@ function analyzeConditionalAccess(
     }
   }
 
+  // Pass insight when no CA issues detected
+  if (insights.length === 0) {
+    insights.push({
+      id: 'conditional_access_ok',
+      category: 'conditional_access',
+      name: 'Políticas de Conditional Access em Conformidade',
+      description: 'Todas as políticas de CA estão ativas e sem problemas detectados.',
+      severity: 'info',
+      status: 'pass',
+    });
+  }
+
   return { insights, metrics };
 }
 
