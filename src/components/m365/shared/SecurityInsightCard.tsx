@@ -7,7 +7,7 @@ import { M365_ANALYZER_CATEGORY_LABELS } from '@/types/m365AnalyzerInsights';
 import type { M365AnalyzerInsight } from '@/types/m365AnalyzerInsights';
 import {
   AlertTriangle, AlertCircle, Info, Shield, CheckCircle2,
-  TrendingUp, TrendingDown, Users, Hash, Tag,
+  TrendingUp, TrendingDown, Users, Hash, Tag, MinusCircle,
 } from 'lucide-react';
 import { DataSourceDot } from './DataSourceDot';
 import { IncidentDetailSheet } from '@/components/m365/analyzer/IncidentDetailSheet';
