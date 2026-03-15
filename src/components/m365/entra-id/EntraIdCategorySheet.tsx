@@ -171,18 +171,6 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
 
         return (
           <Tabs defaultValue="overview" className="space-y-4">
-            {sharedCount > 0 && (
-              <div className="flex items-center gap-2 px-1 py-2 rounded-lg bg-blue-500/5 border border-blue-500/20">
-                <Inbox className="w-4 h-4 text-blue-400 shrink-0 ml-2" />
-                <span className="text-xs text-muted-foreground flex-1">
-                  {sharedCount} caixa{sharedCount !== 1 ? 's' : ''} compartilhada{sharedCount !== 1 ? 's' : ''} detectada{sharedCount !== 1 ? 's' : ''}
-                </span>
-                <div className="flex items-center gap-1.5 mr-2">
-                  <Switch id="exclude-shared" checked={excludeShared} onCheckedChange={setExcludeShared} className="scale-75" />
-                  <Label htmlFor="exclude-shared" className="text-xs cursor-pointer whitespace-nowrap">Excluir shared</Label>
-                </div>
-              </div>
-            )}
             <TabsList className="w-full justify-start rounded-none border-b border-border/50 bg-transparent px-0 h-auto py-0">
               <TabsTrigger value="overview" className={TAB_CLASS}>Status Geral</TabsTrigger>
               <TabsTrigger value="enabled" className={TAB_CLASS}>MFA Forte ({strongUsers.length})</TabsTrigger>
@@ -194,13 +182,12 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
                   const isStrong = u.hasMfa && !isWeak;
                   return {
                     'Nome': u.displayName, 'UPN': u.upn,
-                    'Tipo': u.isSharedMailbox ? 'Shared Mailbox' : 'Usuário',
                     'Classificação': isStrong ? 'MFA Forte' : isWeak ? 'MFA Fraco' : 'Sem MFA',
                     'Métodos': u.methods.map((m) => methodLabels[m]?.label || m).join(', '),
                     'Método Padrão': u.defaultMethod ? (methodLabels[u.defaultMethod]?.label || u.defaultMethod) : '',
                   };
                 });
-                downloadXlsx(rows, 'Cobertura MFA', `cobertura-mfa-${date}.xlsx`, [30, 35, 16, 14, 40, 28]);
+                downloadXlsx(rows, 'Cobertura MFA', `cobertura-mfa-${date}.xlsx`, [30, 35, 14, 40, 28]);
               }} />
             </TabsList>
 
