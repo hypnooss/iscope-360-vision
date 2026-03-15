@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
@@ -6,13 +5,11 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Users, ShieldCheck, AlertTriangle, LogIn, UserCog, UserX, UserPlus, KeyRound, User,
-  Cloud, RefreshCw, Download, Inbox,
+  Cloud, RefreshCw, Download,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import * as XLSX from 'xlsx';
 import type { EntraIdDashboardData } from '@/hooks/useEntraIdDashboard';
 import type { EntraIdOperationalCategory } from './EntraIdAnalyzerCategoryGrid';
