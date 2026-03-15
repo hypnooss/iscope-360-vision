@@ -5,11 +5,8 @@ interface Particle {
   phi: number;
   radiusMul: number;
   baseSize: number;
-  colorR: number;
-  colorG: number;
-  colorB: number;
+  colorSeed: number;
   brightnessBoost: number;
-  // For disperse phase: random target position (normalized -1 to 1)
   disperseX: number;
   disperseY: number;
 }
@@ -46,7 +43,6 @@ function createParticles(): Particle[] {
       radiusMul = 1.15 + Math.random() * 0.15;
     }
 
-    // Size variation
     const sizeRoll = Math.random();
     let baseSize: number;
     if (sizeRoll < 0.5) {
@@ -57,34 +53,12 @@ function createParticles(): Particle[] {
       baseSize = 1.6 + Math.random() * 1.0;
     }
 
-    // Color palette with magenta
-    const colorRoll = Math.random();
-    let colorR: number, colorG: number, colorB: number;
-    let brightnessBoost = 0;
-    if (colorRoll < 0.45) {
-      // Dark teal
-      colorR = 15; colorG = 140; colorB = 130;
-    } else if (colorRoll < 0.70) {
-      // Bright teal
-      colorR = 20; colorG = 184; colorB = 166;
-      brightnessBoost = 0.05;
-    } else if (colorRoll < 0.85) {
-      // Cyan
-      colorR = 30; colorG = 200; colorB = 220;
-      brightnessBoost = 0.12;
-    } else if (colorRoll < 0.95) {
-      // Magenta/pink
-      colorR = 180; colorG = 60; colorB = 180;
-      brightnessBoost = 0.1;
-    } else {
-      // Bright white-cyan highlights
-      colorR = 140; colorG = 235; colorB = 245;
-      brightnessBoost = 0.3;
-    }
+    const brightnessBoost = Math.random() < 0.05 ? 0.3 : (Math.random() < 0.3 ? 0.08 : 0);
 
     particles.push({
       theta, phi, radiusMul, baseSize,
-      colorR, colorG, colorB, brightnessBoost,
+      colorSeed: Math.random(),
+      brightnessBoost,
       disperseX: (Math.random() - 0.5) * 2,
       disperseY: (Math.random() - 0.5) * 2,
     });
@@ -202,7 +176,26 @@ export function NetworkAnimation() {
         const frontSizeMul = normalizedZ > 0.5 ? 1 + (normalizedZ - 0.5) * 1.5 : 1;
         const size = Math.max(0.3, p.baseSize * scale * 1.2 * frontSizeMul);
 
-        ctx.fillStyle = `rgba(${p.colorR}, ${p.colorG}, ${p.colorB}, ${clampedAlpha})`;
+        // Dynamic color based on rotated horizontal angle
+        const angle = Math.atan2(z, x); // -PI to PI
+        const norm = (angle + Math.PI) / (2 * Math.PI); // 0 to 1
+        const shifted = (norm + p.colorSeed * 0.15) % 1; // slight per-particle variation
+        
+        // Three-zone gradient: teal → cyan → magenta → teal
+        const zone = shifted * 3;
+        let cR: number, cG: number, cB: number;
+        if (zone < 1) {
+          const t = zone; // teal → cyan
+          cR = lerp(20, 30, t); cG = lerp(184, 200, t); cB = lerp(166, 230, t);
+        } else if (zone < 2) {
+          const t = zone - 1; // cyan → magenta
+          cR = lerp(30, 170, t); cG = lerp(200, 60, t); cB = lerp(230, 180, t);
+        } else {
+          const t = zone - 2; // magenta → teal
+          cR = lerp(170, 20, t); cG = lerp(60, 184, t); cB = lerp(180, 166, t);
+        }
+
+        ctx.fillStyle = `rgba(${cR | 0}, ${cG | 0}, ${cB | 0}, ${clampedAlpha})`;
         ctx.beginPath();
         ctx.arc(sx, sy, size, 0, Math.PI * 2);
         ctx.fill();
@@ -213,8 +206,8 @@ export function NetworkAnimation() {
           const glowAlpha = glowIntensity * 0.18 * globalAlpha;
           const glowR = size * 5;
           const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
-          grad.addColorStop(0, `rgba(${p.colorR}, ${p.colorG}, ${p.colorB}, ${glowAlpha})`);
-          grad.addColorStop(1, `rgba(${p.colorR}, ${p.colorG}, ${p.colorB}, 0)`);
+          grad.addColorStop(0, `rgba(${cR | 0}, ${cG | 0}, ${cB | 0}, ${glowAlpha})`);
+          grad.addColorStop(1, `rgba(${cR | 0}, ${cG | 0}, ${cB | 0}, 0)`);
           ctx.fillStyle = grad;
           ctx.beginPath();
           ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
