@@ -133,6 +133,15 @@ export function NetworkAnimation() {
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
 
+        // Individual particle movement
+        p.theta += p.thetaSpeed;
+        p.phi += p.phiSpeed;
+        // Bounce phi within [0.05, PI-0.05]
+        if (p.phi < 0.05 || p.phi > Math.PI - 0.05) {
+          p.phiSpeed = -p.phiSpeed;
+          p.phi = clamp(p.phi, 0.05, Math.PI - 0.05);
+        }
+
         // Apply morphing to phi: flatten toward equator
         const morphedPhi = lerp(p.phi, Math.PI * 0.5, flattenAmount * 0.85);
 
