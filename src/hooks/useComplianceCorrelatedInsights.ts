@@ -270,28 +270,46 @@ export function useComplianceCorrelatedInsights(
     if (!snapshot || !latestReport) return [];
 
     const failedCodes = extractFailedCodes(latestReport);
-    if (failedCodes.size === 0) return [];
-
     const m = snapshot.metrics as unknown as Record<string, unknown>;
     const result: FirewallSecurityInsight[] = [];
 
     for (const rule of CORRELATION_RULES) {
-      if (!failedCodes.has(rule.complianceCode)) continue;
-      if (!rule.metricCondition(m)) continue;
+      const isFailed = failedCodes.has(rule.complianceCode);
+      const conditionMet = rule.metricCondition(m);
 
-      result.push({
-        id: `compliance-${rule.complianceCode}`,
-        title: rule.title,
-        severity: rule.severity,
-        icon: rule.icon,
-        what: rule.what(m),
-        why: rule.why,
-        bestPractice: rule.bestPractice,
-        businessImpact: rule.businessImpact,
-        metrics: rule.metricExtractor(m),
-        source: 'compliance_correlation',
-        complianceCode: rule.complianceCode,
-      });
+      if (isFailed && conditionMet) {
+        // Fail: compliance failed + traffic evidence confirms
+        result.push({
+          id: `compliance-${rule.complianceCode}`,
+          title: rule.title,
+          severity: rule.severity,
+          icon: rule.icon,
+          what: rule.what(m),
+          why: rule.why,
+          bestPractice: rule.bestPractice,
+          businessImpact: rule.businessImpact,
+          metrics: rule.metricExtractor(m),
+          source: 'compliance_correlation',
+          complianceCode: rule.complianceCode,
+          status: 'fail',
+        });
+      } else if (!isFailed) {
+        // Pass: compliance check passed
+        result.push({
+          id: `compliance-${rule.complianceCode}`,
+          title: rule.title,
+          severity: 'low',
+          icon: rule.icon,
+          what: `A configuração ${rule.complianceCode.toUpperCase()} está em conformidade.`,
+          why: 'Este controle de segurança está configurado corretamente.',
+          bestPractice: ['Manter a configuração atual e monitorar regularmente'],
+          businessImpact: 'Nenhum risco identificado no momento.',
+          metrics: rule.metricExtractor(m),
+          source: 'compliance_correlation',
+          complianceCode: rule.complianceCode,
+          status: 'pass',
+        });
+      }
     }
 
     return result;
