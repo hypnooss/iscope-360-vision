@@ -117,9 +117,10 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {sorted.map(insight => {
           const isPass = insight.status === 'pass';
+          const isNA = !isPass && isNAInsight(insight);
           const sevConfig = SEVERITY_CONFIG[insight.severity];
-          const Icon = isPass ? CheckCircle2 : (severityIcons[insight.severity] || Shield);
-          const borderColor = isPass ? 'border-l-emerald-500' : severityBorderColors[insight.severity];
+          const Icon = isNA ? MinusCircle : isPass ? CheckCircle2 : (severityIcons[insight.severity] || Shield);
+          const borderColor = isNA ? 'border-l-slate-400' : isPass ? 'border-l-emerald-500' : severityBorderColors[insight.severity];
           const categoryLabel = M365_ANALYZER_CATEGORY_LABELS[insight.category];
           const trend = insight.metadata?.trend as string | undefined;
           const TrendIcon = trend ? trendIcons[trend] : undefined;
@@ -130,7 +131,8 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
               className={cn(
                 'border-l-4 cursor-pointer transition-all hover:shadow-md hover:scale-[1.01]',
                 borderColor,
-                isPass && 'opacity-80 hover:opacity-100'
+                isPass && 'opacity-80 hover:opacity-100',
+                isNA && 'opacity-70 hover:opacity-90'
               )}
               onClick={() => setSelectedInsight(insight)}
             >
