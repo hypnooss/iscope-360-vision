@@ -1,4 +1,4 @@
-import { LogIn, Menu, X } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { useNavigate } from 'react-router-dom';
 import logoIscope from '@/assets/logo-iscope.png';
@@ -6,7 +6,6 @@ import { useState } from 'react';
 
 const NAV_LINKS = [
   { label: 'Produto', href: '#features' },
-  { label: 'Segurança', href: '#security' },
   { label: 'Como Funciona', href: '#how-it-works' },
 ];
 
@@ -21,7 +20,7 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/20 bg-background/60 backdrop-blur-2xl">
+    <header className="sticky top-0 z-50 border-b border-border/10 bg-background/40 backdrop-blur-2xl">
       <div className="max-w-[1200px] mx-auto px-6 h-[72px] flex items-center justify-between">
         {/* Logo */}
         <div className="flex items-center gap-3 shrink-0">
@@ -29,7 +28,7 @@ export function Header() {
           <span className="text-lg font-bold font-heading text-foreground">iScope 360</span>
         </div>
 
-        {/* Desktop Nav — centered */}
+        {/* Desktop Nav */}
         <nav className="hidden md:flex items-center gap-8 absolute left-1/2 -translate-x-1/2">
           {NAV_LINKS.map((link) => (
             <button
@@ -47,9 +46,8 @@ export function Header() {
           <Button
             onClick={() => navigate('/auth')}
             size="sm"
-            className="gap-2 shadow-[0_0_20px_hsl(175_80%_45%/0.15)] hover:shadow-[0_0_30px_hsl(175_80%_45%/0.3)] transition-shadow duration-300"
+            className="shadow-[0_0_20px_hsl(175_80%_45%/0.15)] hover:shadow-[0_0_30px_hsl(175_80%_45%/0.3)] transition-shadow duration-300"
           >
-            <LogIn className="w-4 h-4" />
             Acessar Plataforma
           </Button>
         </div>
@@ -75,8 +73,7 @@ export function Header() {
               {link.label}
             </button>
           ))}
-          <Button onClick={() => navigate('/auth')} className="w-full gap-2 mt-2">
-            <LogIn className="w-4 h-4" />
+          <Button onClick={() => navigate('/auth')} className="w-full mt-2">
             Acessar Plataforma
           </Button>
         </div>

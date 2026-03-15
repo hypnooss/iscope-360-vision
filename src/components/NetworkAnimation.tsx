@@ -1,67 +1,29 @@
 import { useEffect, useRef } from 'react';
 
-interface Node {
-  x: number;
-  y: number;
-  z: number;
+interface Particle {
   baseTheta: number;
   basePhi: number;
-  radius: number;
-  speed: number;
-  phase: number;
 }
 
-const NODE_COUNT = 120;
-const CONNECTION_DIST = 180;
-const SPHERE_RADIUS = 320;
-const ROTATION_SPEED = 0.00015;
-const PERSPECTIVE = 800;
+const PARTICLE_COUNT = 2500;
+const ROTATION_SPEED = 0.00012;
+const PERSPECTIVE = 900;
 
-function createNodes(): Node[] {
-  const nodes: Node[] = [];
-  // Fibonacci sphere distribution
+function createParticles(): Particle[] {
+  const particles: Particle[] = [];
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-  for (let i = 0; i < NODE_COUNT; i++) {
-    const t = i / NODE_COUNT;
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const t = i / PARTICLE_COUNT;
     const theta = goldenAngle * i;
     const phi = Math.acos(1 - 2 * t);
-    const r = SPHERE_RADIUS * (0.6 + Math.random() * 0.4);
-    nodes.push({
-      x: 0, y: 0, z: 0,
-      baseTheta: theta,
-      basePhi: phi,
-      radius: r,
-      speed: 0.8 + Math.random() * 0.4,
-      phase: Math.random() * Math.PI * 2,
-    });
+    particles.push({ baseTheta: theta, basePhi: phi });
   }
-  return nodes;
-}
-
-function projectNode(node: Node, time: number, cx: number, cy: number) {
-  const theta = node.baseTheta + time * ROTATION_SPEED * node.speed;
-  const phi = node.basePhi + Math.sin(time * 0.0003 + node.phase) * 0.1;
-  const r = node.radius + Math.sin(time * 0.0005 + node.phase) * 15;
-
-  const x3d = r * Math.sin(phi) * Math.cos(theta);
-  const y3d = r * Math.cos(phi);
-  const z3d = r * Math.sin(phi) * Math.sin(theta);
-
-  const depth = z3d + PERSPECTIVE + SPHERE_RADIUS;
-  const scale = PERSPECTIVE / depth;
-
-  return {
-    sx: cx + x3d * scale,
-    sy: cy + y3d * scale,
-    scale,
-    z: z3d,
-    alpha: Math.max(0.15, Math.min(1, (z3d + SPHERE_RADIUS) / (2 * SPHERE_RADIUS))),
-  };
+  return particles;
 }
 
 export function NetworkAnimation() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const nodesRef = useRef<Node[]>(createNodes());
+  const particlesRef = useRef<Particle[]>(createParticles());
   const animRef = useRef<number>(0);
 
   useEffect(() => {
@@ -83,8 +45,8 @@ export function NetworkAnimation() {
     resize();
     window.addEventListener('resize', resize);
 
-    const nodes = nodesRef.current;
-    let startTime = performance.now();
+    const particles = particlesRef.current;
+    const startTime = performance.now();
 
     const draw = (now: number) => {
       const time = now - startTime;
@@ -92,52 +54,70 @@ export function NetworkAnimation() {
       const h = window.innerHeight;
       const cx = w * 0.5;
       const cy = h * 0.45;
+      const sphereRadius = Math.min(w, h) * 0.35;
 
       ctx.clearRect(0, 0, w, h);
 
-      // Project all nodes
-      const projected = nodes.map(n => projectNode(n, time, cx, cy));
+      // Rotation angles
+      const rotY = time * ROTATION_SPEED;
+      const rotX = Math.sin(time * 0.00008) * 0.15;
 
-      // Draw connections
-      ctx.lineWidth = 1;
-      for (let i = 0; i < projected.length; i++) {
-        for (let j = i + 1; j < projected.length; j++) {
-          const a = projected[i];
-          const b = projected[j];
-          const dx = a.sx - b.sx;
-          const dy = a.sy - b.sy;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < CONNECTION_DIST) {
-            const lineAlpha = (1 - dist / CONNECTION_DIST) * Math.min(a.alpha, b.alpha) * 0.35;
-            ctx.strokeStyle = `rgba(20, 184, 166, ${lineAlpha})`;
-            ctx.beginPath();
-            ctx.moveTo(a.sx, a.sy);
-            ctx.lineTo(b.sx, b.sy);
-            ctx.stroke();
-          }
+      // Precompute rotation matrix
+      const cosY = Math.cos(rotY);
+      const sinY = Math.sin(rotY);
+      const cosX = Math.cos(rotX);
+      const sinX = Math.sin(rotX);
+
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+
+        // Spherical to cartesian
+        const sp = Math.sin(p.basePhi);
+        let x = sphereRadius * sp * Math.cos(p.baseTheta);
+        let y = sphereRadius * Math.cos(p.basePhi);
+        let z = sphereRadius * sp * Math.sin(p.baseTheta);
+
+        // Rotate Y
+        const rx = x * cosY - z * sinY;
+        const rz = x * sinY + z * cosY;
+        x = rx;
+        z = rz;
+
+        // Rotate X
+        const ry = y * cosX - z * sinX;
+        const rz2 = y * sinX + z * cosX;
+        y = ry;
+        z = rz2;
+
+        // Perspective projection
+        const depth = z + PERSPECTIVE + sphereRadius;
+        const scale = PERSPECTIVE / depth;
+        const sx = cx + x * scale;
+        const sy = cy + y * scale;
+
+        // Depth-based alpha and size
+        const normalizedZ = (z + sphereRadius) / (2 * sphereRadius);
+        const alpha = Math.max(0.03, normalizedZ * normalizedZ * 0.85);
+        const size = Math.max(0.4, 1.8 * scale);
+
+        // Draw particle
+        ctx.fillStyle = `rgba(20, 184, 166, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, size, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Glow on front-facing particles (top 25% depth)
+        if (normalizedZ > 0.75) {
+          const glowAlpha = (normalizedZ - 0.75) * 4 * 0.15;
+          const glowR = size * 5;
+          const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
+          grad.addColorStop(0, `rgba(20, 184, 166, ${glowAlpha})`);
+          grad.addColorStop(1, 'rgba(20, 184, 166, 0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
+          ctx.fill();
         }
-      }
-
-      // Draw nodes (sorted by z for depth)
-      const sorted = [...projected].sort((a, b) => a.z - b.z);
-      for (const p of sorted) {
-        const r = Math.max(1, 2.5 * p.scale);
-        const glowR = r * 4;
-
-        // Glow
-        const grad = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, glowR);
-        grad.addColorStop(0, `rgba(20, 184, 166, ${p.alpha * 0.3})`);
-        grad.addColorStop(1, 'rgba(20, 184, 166, 0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(p.sx, p.sy, glowR, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Core dot
-        ctx.fillStyle = `rgba(20, 184, 166, ${p.alpha * 0.9})`;
-        ctx.beginPath();
-        ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
-        ctx.fill();
       }
 
       animRef.current = requestAnimationFrame(draw);
@@ -155,7 +135,7 @@ export function NetworkAnimation() {
     <canvas
       ref={canvasRef}
       className="pointer-events-none fixed inset-0 z-0"
-      style={{ opacity: 0.9 }}
+      style={{ opacity: 0.95 }}
     />
   );
 }
