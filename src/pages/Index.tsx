@@ -243,7 +243,7 @@ const Index = () => {
         </section>
 
         {/* ═══ TESTIMONIALS ═══ */}
-        <section className="min-h-screen flex items-center justify-center px-6 bg-card/20">
+        <section className="min-h-screen flex items-center justify-center px-6 bg-background/60">
           <div className="max-w-[1100px] mx-auto w-full">
             <SectionReveal>
               <div className="text-center mb-16">
