@@ -1674,6 +1674,7 @@ function analyzeIdentityAccess(
   credentialRegistration: any[],
   recentApps: any[],
   signInLogs: any[],
+  exoSharedMailboxes: any[] = [],
 ): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
   const insights: M365AnalyzerInsight[] = [];
   const metrics: Record<string, any> = {
@@ -1709,9 +1710,30 @@ function analyzeIdentityAccess(
     }
   }
 
-  // MFA registration status
+  // MFA registration status — filter out guests and shared mailboxes
   if (credentialRegistration.length > 0) {
-    const noMfa = credentialRegistration.filter((u: any) =>
+    // Build shared mailbox Sets for UPN and DisplayName matching
+    const sharedMailboxUpns = new Set<string>();
+    const sharedMailboxNames = new Set<string>();
+    for (const m of exoSharedMailboxes) {
+      const upn = (m.UserPrincipalName || m.PrimarySmtpAddress || '').toLowerCase();
+      if (upn) sharedMailboxUpns.add(upn);
+      const name = (m.DisplayName || m.displayName || '').toLowerCase().trim();
+      if (name) sharedMailboxNames.add(name);
+    }
+
+    // Filter to member users only (exclude guests and shared mailboxes)
+    const memberUsers = credentialRegistration.filter((u: any) => {
+      // Exclude guests
+      if (u.userType && u.userType.toLowerCase() !== 'member') return false;
+      // Exclude shared mailboxes by UPN or DisplayName
+      const upn = (u.userPrincipalName || '').toLowerCase();
+      const displayName = (u.userDisplayName || '').toLowerCase().trim();
+      if (sharedMailboxUpns.has(upn) || sharedMailboxNames.has(displayName)) return false;
+      return true;
+    });
+
+    const noMfa = memberUsers.filter((u: any) =>
       u.isMfaRegistered === false || u.isMfaCapable === false
     );
     metrics.noMfaUsers = noMfa.length;
@@ -2512,7 +2534,7 @@ Deno.serve(async (req) => {
     const securityRisk = analyzeSecurityRisk(signInLogs, riskyUsersData);
     allInsights.push(...securityRisk.insights);
 
-    const identityAccess = analyzeIdentityAccess(auditLogs, credentialRegistration, recentApps, signInLogs);
+    const identityAccess = analyzeIdentityAccess(auditLogs, credentialRegistration, recentApps, signInLogs, exoSharedMailboxes);
     allInsights.push(...identityAccess.insights);
 
     const conditionalAccessResult = analyzeConditionalAccess(caPolicies, auditLogs);
