@@ -9,6 +9,9 @@ interface Particle {
   brightnessBoost: number;
   disperseX: number;
   disperseY: number;
+  // Individual movement
+  thetaSpeed: number;
+  phiSpeed: number;
 }
 
 const PARTICLE_COUNT = 10000;
