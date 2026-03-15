@@ -54,6 +54,7 @@ interface SecurityInsightCardsProps {
   insights: M365AnalyzerInsight[];
   loading?: boolean;
   title?: string;
+  hideHeader?: boolean;
 }
 
 // ─── N/A Detection ───────────────────────────────────────────────────────────
