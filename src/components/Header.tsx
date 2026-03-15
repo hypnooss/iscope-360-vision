@@ -75,12 +75,6 @@ export function Header() {
               {link.label}
             </button>
           ))}
-          <button
-            onClick={() => { setMobileOpen(false); navigate('/auth'); }}
-            className="block w-full text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Login
-          </button>
           <Button onClick={() => navigate('/auth')} className="w-full gap-2 mt-2">
             <LogIn className="w-4 h-4" />
             Acessar Plataforma
