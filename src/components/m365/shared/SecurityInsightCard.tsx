@@ -60,6 +60,7 @@ interface SecurityInsightCardsProps {
 
 function isNAInsight(insight: M365AnalyzerInsight): boolean {
   if (insight.status === 'pass') return false;
+  if (insight.status === 'fail') return false;
   if (insight.status === 'not_applicable') return true;
   const name = insight.name.toLowerCase();
   const configKeywords = ['desabilitado', 'disabled', 'configuração', 'configuracao', 'policy', 'habilitado', 'enabled'];
