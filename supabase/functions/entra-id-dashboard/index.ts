@@ -335,6 +335,7 @@ Deno.serve(async (req) => {
 
     // Fetch shared mailbox UPNs from Exchange analyzer snapshot
     let sharedMailboxUpns = new Set<string>();
+    let sharedMailboxNames = new Set<string>();
     try {
       const { data: exoSnapshot } = await supabase
         .from('m365_analyzer_snapshots')
@@ -351,8 +352,10 @@ Deno.serve(async (req) => {
         sharedMailboxes.forEach((m: any) => {
           const upn = m.UserPrincipalName || m.userPrincipalName || m.upn || '';
           if (upn) sharedMailboxUpns.add(upn.toLowerCase());
+          const name = m.DisplayName || m.displayName || '';
+          if (name) sharedMailboxNames.add(name.toLowerCase().trim());
         });
-        console.log(`[entra-id-dashboard] Found ${sharedMailboxUpns.size} shared mailbox UPNs from Exchange snapshot`);
+        console.log(`[entra-id-dashboard] Found ${sharedMailboxUpns.size} shared mailbox UPNs and ${sharedMailboxNames.size} DisplayNames from Exchange snapshot`);
       }
     } catch (e) {
       console.warn('[entra-id-dashboard] Could not fetch shared mailbox data:', e);
