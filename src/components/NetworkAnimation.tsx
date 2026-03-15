@@ -64,6 +64,8 @@ function createParticles(): Particle[] {
       brightnessBoost,
       disperseX: (Math.random() - 0.5) * 2,
       disperseY: (Math.random() - 0.5) * 2,
+      thetaSpeed: (Math.random() - 0.5) * 0.0003,
+      phiSpeed: (Math.random() - 0.5) * 0.00015,
     });
   }
 
