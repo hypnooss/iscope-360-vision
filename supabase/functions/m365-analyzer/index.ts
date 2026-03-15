@@ -2692,6 +2692,11 @@ Deno.serve(async (req) => {
           .slice(0, 15);
         return { topForwarding, topInactive, topOverQuota };
       })(),
+      // Shared mailbox UPNs for cross-referencing by entra-id-dashboard
+      exoSharedMailboxes: exoSharedMailboxes.map((m: any) => ({
+        UserPrincipalName: m.UserPrincipalName || m.PrimarySmtpAddress || '',
+        DisplayName: m.DisplayName || '',
+      })),
       dataSource,
       normalizationVersion: 4,
       stepsReceived,
