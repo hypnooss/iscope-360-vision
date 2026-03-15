@@ -141,7 +141,7 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                   <div className="flex items-start gap-2 flex-1 min-w-0">
                     <Icon className={cn(
                       'w-4 h-4 shrink-0 mt-0.5',
-                      isPass ? 'text-emerald-400' : sevConfig?.color
+                      isNA ? 'text-slate-400' : isPass ? 'text-emerald-400' : sevConfig?.color
                     )} />
                     <div className="min-w-0">
                       <CardTitle className="text-sm font-semibold leading-tight line-clamp-2">
