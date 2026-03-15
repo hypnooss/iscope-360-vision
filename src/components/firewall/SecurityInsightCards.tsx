@@ -22,7 +22,7 @@ function mapFirewallToAnalyzerInsight(fw: FirewallSecurityInsight): M365Analyzer
     analysis: fw.why,
     recommendation: fw.bestPractice.join('\n'),
     businessImpact: fw.businessImpact,
-    status: 'fail',
+    status: fw.status || 'fail',
     metadata: {
       ...Object.fromEntries(fw.metrics.map(m => [m.label, m.value])),
       source: fw.source,
