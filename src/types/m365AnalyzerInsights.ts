@@ -212,6 +212,7 @@ export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
   'guest_access',
   'external_sharing',
   'collaboration_risk',
+  'firewall_security',
 ];
 
 export function groupM365AnalyzerInsightsByCategory(
