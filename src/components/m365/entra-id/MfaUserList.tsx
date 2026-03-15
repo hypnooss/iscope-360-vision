@@ -9,7 +9,6 @@ interface MfaUserDetail {
   methods: string[];
   hasMfa: boolean;
   defaultMethod?: string | null;
-  isSharedMailbox?: boolean;
 }
 
 const METHOD_LABELS: Record<string, string> = {
