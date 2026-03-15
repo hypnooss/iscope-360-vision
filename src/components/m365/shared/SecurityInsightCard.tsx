@@ -56,6 +56,18 @@ interface SecurityInsightCardsProps {
   title?: string;
 }
 
+// ─── N/A Detection ───────────────────────────────────────────────────────────
+
+function isNAInsight(insight: M365AnalyzerInsight): boolean {
+  if (insight.status === 'pass' || insight.status === 'not_applicable') return false;
+  if (insight.status === 'not_applicable') return true;
+  const name = insight.name.toLowerCase();
+  const configKeywords = ['desabilitado', 'disabled', 'configuração', 'configuracao', 'policy', 'habilitado', 'enabled'];
+  if (configKeywords.some(kw => name.includes(kw))) return true;
+  if ((insight.count === undefined || insight.count === 0) && (!insight.affectedUsers || insight.affectedUsers.length === 0)) return true;
+  return false;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function SecurityInsightCards({ insights, loading, title = 'Insights de Segurança' }: SecurityInsightCardsProps) {
@@ -63,15 +75,17 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
 
   const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 
-  // Separate fail/pass, sort fail by severity, pass at end
+  // Classify insights into fail, pass, NA
   const failInsights = insights
-    .filter(i => i.status !== 'pass')
+    .filter(i => i.status !== 'pass' && !isNAInsight(i))
     .sort((a, b) => (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5));
   const passInsights = insights.filter(i => i.status === 'pass');
-  const sorted = [...failInsights, ...passInsights];
+  const naInsights = insights.filter(i => i.status !== 'pass' && isNAInsight(i));
+  const sorted = [...failInsights, ...passInsights, ...naInsights];
 
   const failCount = failInsights.length;
   const passCount = passInsights.length;
+  const naCount = naInsights.length;
 
   if (loading || sorted.length === 0) return null;
 
