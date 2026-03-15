@@ -20,7 +20,8 @@ export type M365AnalyzerCategory =
   | 'sharepoint_exposure'
   | 'guest_access'
   | 'external_sharing'
-  | 'collaboration_risk';
+  | 'collaboration_risk'
+  | 'firewall_security';
 
 export interface M365AnalyzerInsight {
   id: string;
