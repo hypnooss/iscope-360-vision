@@ -5,11 +5,8 @@ interface Particle {
   phi: number;
   radiusMul: number;
   baseSize: number;
-  colorR: number;
-  colorG: number;
-  colorB: number;
+  colorSeed: number;
   brightnessBoost: number;
-  // For disperse phase: random target position (normalized -1 to 1)
   disperseX: number;
   disperseY: number;
 }
