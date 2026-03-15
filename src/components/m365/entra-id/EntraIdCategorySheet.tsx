@@ -93,7 +93,7 @@ function downloadXlsx(rows: Record<string, any>[], sheetName: string, fileName: 
 const TAB_CLASS = "rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none py-3 text-xs";
 
 export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardData }: EntraIdCategorySheetProps) {
-  const [excludeShared, setExcludeShared] = useState(false);
+  
   
   if (!category || !dashboardData) return null;
 
