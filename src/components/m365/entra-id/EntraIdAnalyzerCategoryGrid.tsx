@@ -70,13 +70,15 @@ function getCategoryStats(cat: EntraIdOperationalCategory, data: EntraIdDashboar
     }
     case 'mfa_coverage': {
       const pct = mfa.total > 0 ? (mfa.enabled / mfa.total) * 100 : 0;
+      const strong = mfa.strong ?? 0;
+      const weak = mfa.weak ?? 0;
       return {
         total: mfa.enabled,
         pct,
         severity: pct < 50 ? 'critical' : pct < 70 ? 'high' : pct < 85 ? 'medium' : pct < 100 ? 'low' : 'none',
         splits: [
-          { label: 'MFA Forte', value: mfa.strong, color: '#10b981' },
-          { label: 'MFA Fraco', value: mfa.weak, color: '#f59e0b' },
+          { label: 'MFA Forte', value: strong, color: '#10b981' },
+          { label: 'MFA Fraco', value: weak, color: '#f59e0b' },
           { label: 'Sem MFA', value: mfa.disabled, color: '#ef4444' },
         ],
       };
