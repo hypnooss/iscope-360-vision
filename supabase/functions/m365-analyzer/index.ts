@@ -1674,6 +1674,7 @@ function analyzeIdentityAccess(
   credentialRegistration: any[],
   recentApps: any[],
   signInLogs: any[],
+  exoSharedMailboxes: any[] = [],
 ): { insights: M365AnalyzerInsight[]; metrics: Record<string, any> } {
   const insights: M365AnalyzerInsight[] = [];
   const metrics: Record<string, any> = {
