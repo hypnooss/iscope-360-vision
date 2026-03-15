@@ -21,15 +21,16 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/30 bg-background/70 backdrop-blur-xl">
-      <div className="max-w-[1200px] mx-auto px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <img src={logoIscope} alt="iScope 360" className="h-9 w-auto" />
+    <header className="sticky top-0 z-50 border-b border-border/20 bg-background/60 backdrop-blur-2xl">
+      <div className="max-w-[1200px] mx-auto px-6 h-[72px] flex items-center justify-between">
+        {/* Logo */}
+        <div className="flex items-center gap-3 shrink-0">
+          <img src={logoIscope} alt="iScope 360" className="h-8 w-auto" />
           <span className="text-lg font-bold font-heading text-foreground">iScope 360</span>
         </div>
 
-        {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center gap-8">
+        {/* Desktop Nav — centered */}
+        <nav className="hidden md:flex items-center gap-8 absolute left-1/2 -translate-x-1/2">
           {NAV_LINKS.map((link) => (
             <button
               key={link.href}
@@ -45,11 +46,19 @@ export function Header() {
           >
             Login
           </button>
-          <Button onClick={() => navigate('/auth')} size="sm" className="gap-2">
+        </nav>
+
+        {/* Desktop CTA */}
+        <div className="hidden md:block shrink-0">
+          <Button
+            onClick={() => navigate('/auth')}
+            size="sm"
+            className="gap-2 shadow-[0_0_20px_hsl(175_80%_45%/0.15)] hover:shadow-[0_0_30px_hsl(175_80%_45%/0.3)] transition-shadow duration-300"
+          >
             <LogIn className="w-4 h-4" />
             Acessar Plataforma
           </Button>
-        </nav>
+        </div>
 
         {/* Mobile toggle */}
         <button
@@ -62,7 +71,7 @@ export function Header() {
 
       {/* Mobile Nav */}
       {mobileOpen && (
-        <div className="md:hidden border-t border-border/30 bg-background/95 backdrop-blur-xl px-6 py-4 space-y-3 animate-fade-in">
+        <div className="md:hidden border-t border-border/20 bg-background/95 backdrop-blur-xl px-6 py-4 space-y-3 animate-fade-in">
           {NAV_LINKS.map((link) => (
             <button
               key={link.href}

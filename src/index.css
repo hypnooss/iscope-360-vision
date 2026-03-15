@@ -173,14 +173,14 @@
   }
 
   .feature-card {
-    @apply bg-card/50 backdrop-blur-xl border border-border/30 rounded-xl p-6;
-    transition: all 0.3s ease;
+    @apply bg-card/50 backdrop-blur-xl border border-border/30 rounded-xl p-7;
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .feature-card:hover {
     @apply border-primary/30;
-    transform: translateY(-2px) scale(1.02);
-    box-shadow: 0 12px 40px hsl(175 80% 45% / 0.1), 0 0 0 1px hsl(175 80% 45% / 0.1);
+    transform: translateY(-4px);
+    box-shadow: 0 16px 48px hsl(175 80% 45% / 0.08), 0 0 0 1px hsl(175 80% 45% / 0.1);
   }
 
   .glow-border {
