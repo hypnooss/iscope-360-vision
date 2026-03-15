@@ -723,35 +723,99 @@ Deno.serve(async (req) => {
 
     console.log(`Fetched: ${signInLogs.length} sign-ins, ${auditLogs.length} audits, ${mfaStatus.length} MFA records, ${directoryRoles.length} roles`);
 
+    // ── Fetch compliance correlation data ──────────────────────────────────
+    let failedComplianceCodes = new Set<string>();
+    try {
+      const { data: lastCompliance } = await supabase
+        .from('m365_posture_history')
+        .select('insights')
+        .eq('tenant_record_id', request.tenant_record_id)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (lastCompliance?.insights && Array.isArray(lastCompliance.insights)) {
+        failedComplianceCodes = new Set(
+          (lastCompliance.insights as any[])
+            .filter((r: any) => r.status === 'fail')
+            .map((r: any) => r.code || r.id)
+            .filter(Boolean)
+        );
+        console.log(`Compliance correlation: ${failedComplianceCodes.size} failed codes found`);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch compliance data for correlation:', e);
+    }
+
+    // Helper to enrich an insight with compliance correlation
+    function enrichWithCompliance(insight: any, codes: string[], context: string): void {
+      const matchedCodes = codes.filter(c => failedComplianceCodes.has(c));
+      if (matchedCodes.length > 0) {
+        insight.description += `\n\n⚠️ Correlação de Compliance: ${context}`;
+        insight.metadata = {
+          ...(insight.metadata || {}),
+          complianceCorrelation: true,
+          complianceCodes: matchedCodes,
+          complianceContext: context,
+        };
+      }
+    }
+
     // Generate insights
     const insights: SecurityInsight[] = [];
 
     // Identity Security insights
     const riskySignIns = analyzeRiskySignIns(signInLogs, timeRange);
-    if (riskySignIns) insights.push(riskySignIns);
-    else insights.push({ id: 'risky_signins_ok', category: 'identity_access', name: 'Sign-ins de Risco Controlados', description: 'Nenhum sign-in de risco elevado detectado no período.', severity: 'info', status: 'pass' });
+    if (riskySignIns) {
+      enrichWithCompliance(riskySignIns, ['AUT-010', 'AUT-011'], 'Não existe política de Acesso Condicional baseada em risco de sign-in (AUT-010/011).');
+      insights.push(riskySignIns);
+    } else {
+      insights.push({ id: 'risky_signins_ok', category: 'identity_access', name: 'Sign-ins de Risco Controlados', description: 'Nenhum sign-in de risco elevado detectado no período.', severity: 'info', status: 'pass' });
+    }
 
     const failedLogins = analyzeFailedLoginAttempts(signInLogs, timeRange);
-    if (failedLogins) insights.push(failedLogins);
-    else insights.push({ id: 'failed_logins_ok', category: 'identity_access', name: 'Tentativas de Login Normais', description: 'Nenhum padrão anômalo de tentativas de login detectado.', severity: 'info', status: 'pass' });
+    if (failedLogins) {
+      enrichWithCompliance(failedLogins, ['AUT-003'], 'Não há política de bloqueio de conta após tentativas falhas (AUT-003).');
+      insights.push(failedLogins);
+    } else {
+      insights.push({ id: 'failed_logins_ok', category: 'identity_access', name: 'Tentativas de Login Normais', description: 'Nenhum padrão anômalo de tentativas de login detectado.', severity: 'info', status: 'pass' });
+    }
 
     const unusualLocations = analyzeUnusualLocations(signInLogs, timeRange);
-    if (unusualLocations) insights.push(unusualLocations);
+    if (unusualLocations) {
+      enrichWithCompliance(unusualLocations, ['AUT-010', 'AUT-011'], 'Não existe Conditional Access restringindo origem geográfica dos logins (AUT-010/011).');
+      insights.push(unusualLocations);
+    }
 
     const successAfterFailures = analyzeSuccessAfterFailures(signInLogs, timeRange);
-    if (successAfterFailures) insights.push(successAfterFailures);
+    if (successAfterFailures) {
+      enrichWithCompliance(successAfterFailures, ['AUT-003', 'AUT-010'], 'Sem política de bloqueio de conta (AUT-003) ou Acesso Condicional baseado em risco (AUT-010).');
+      insights.push(successAfterFailures);
+    }
 
     const usersWithoutMfa = analyzeUsersWithoutMfa(mfaStatus, timeRange);
-    if (usersWithoutMfa) insights.push(usersWithoutMfa);
-    else insights.push({ id: 'mfa_ok', category: 'identity_access', name: 'MFA Habilitado para Todos', description: 'Todos os usuários possuem MFA configurado.', severity: 'info', status: 'pass' });
+    if (usersWithoutMfa) {
+      enrichWithCompliance(usersWithoutMfa, ['AUT-001', 'AUT-002'], 'A política de MFA obrigatório não está ativa no Compliance (AUT-001/002).');
+      insights.push(usersWithoutMfa);
+    } else {
+      insights.push({ id: 'mfa_ok', category: 'identity_access', name: 'MFA Habilitado para Todos', description: 'Todos os usuários possuem MFA configurado.', severity: 'info', status: 'pass' });
+    }
 
     const privilegedWithoutMfa = analyzePrivilegedWithoutMfa(mfaStatus, directoryRoles, timeRange);
-    if (privilegedWithoutMfa) insights.push(privilegedWithoutMfa);
-    else insights.push({ id: 'priv_mfa_ok', category: 'identity_access', name: 'Admins com MFA Ativo', description: 'Todos os usuários privilegiados possuem MFA habilitado.', severity: 'info', status: 'pass' });
+    if (privilegedWithoutMfa) {
+      enrichWithCompliance(privilegedWithoutMfa, ['AUT-001', 'AUT-002', 'ADM-007'], 'Contas Break Glass sem proteção (ADM-007) e/ou MFA não forçado para admins (AUT-001/002).');
+      insights.push(privilegedWithoutMfa);
+    } else {
+      insights.push({ id: 'priv_mfa_ok', category: 'identity_access', name: 'Admins com MFA Ativo', description: 'Todos os usuários privilegiados possuem MFA habilitado.', severity: 'info', status: 'pass' });
+    }
 
     // Behavior insights
     const offHoursLogins = analyzeOffHoursLogins(signInLogs, timeRange);
-    if (offHoursLogins) insights.push(offHoursLogins);
+    if (offHoursLogins) {
+      enrichWithCompliance(offHoursLogins, ['AUT-010', 'AUT-011'], 'Sem Acesso Condicional baseado em risco para restringir acessos fora de horário (AUT-010/011).');
+      insights.push(offHoursLogins);
+    }
 
     // Governance insights
     const roleChanges = analyzeAdminRoleChanges(auditLogs, timeRange);

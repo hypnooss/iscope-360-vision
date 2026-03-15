@@ -341,6 +341,45 @@ Deno.serve(async (req) => {
     const storageUsedGB = parseFloat((storageUsedBytes / (1024 ** 3)).toFixed(2));
     const storageAllocatedGB = parseFloat((storageAllocatedBytes / (1024 ** 3)).toFixed(2));
 
+    // ── Fetch compliance correlation data ──────────────────────────────────
+    let failedComplianceCodes = new Set<string>();
+    try {
+      const { data: lastCompliance } = await supabase
+        .from('m365_posture_history')
+        .select('insights')
+        .eq('tenant_record_id', tenant_record_id)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (lastCompliance?.insights && Array.isArray(lastCompliance.insights)) {
+        failedComplianceCodes = new Set(
+          (lastCompliance.insights as any[])
+            .filter((r: any) => r.status === 'fail')
+            .map((r: any) => r.code || r.id)
+            .filter(Boolean)
+        );
+        console.log(`Compliance correlation: ${failedComplianceCodes.size} failed codes found`);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch compliance data for correlation:', e);
+    }
+
+    function enrichCollabInsight(insight: any, codes: string[], context: string): any {
+      const matchedCodes = codes.filter(c => failedComplianceCodes.has(c));
+      if (matchedCodes.length > 0) {
+        insight.description += `\n\n⚠️ Correlação de Compliance: ${context}`;
+        insight.metadata = {
+          ...(insight.metadata || {}),
+          complianceCorrelation: true,
+          complianceCodes: matchedCodes,
+          complianceContext: context,
+        };
+      }
+      return insight;
+    }
+
     // === GENERATE COLLABORATION INSIGHTS ===
     const collaborationInsights: any[] = [];
 

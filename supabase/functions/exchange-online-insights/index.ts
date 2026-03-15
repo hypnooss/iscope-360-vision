@@ -588,14 +588,54 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ── Fetch compliance correlation data ──────────────────────────────────
+    let failedComplianceCodes = new Set<string>();
+    try {
+      const { data: lastCompliance } = await supabase
+        .from('m365_posture_history')
+        .select('insights')
+        .eq('tenant_record_id', tenant_record_id)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (lastCompliance?.insights && Array.isArray(lastCompliance.insights)) {
+        failedComplianceCodes = new Set(
+          (lastCompliance.insights as any[])
+            .filter((r: any) => r.status === 'fail')
+            .map((r: any) => r.code || r.id)
+            .filter(Boolean)
+        );
+        console.log(`Compliance correlation: ${failedComplianceCodes.size} failed codes found`);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch compliance data for correlation:', e);
+    }
+
+    function enrichWithCompliance(insight: ExchangeInsight | null, codes: string[], context: string): ExchangeInsight | null {
+      if (!insight) return null;
+      const matchedCodes = codes.filter(c => failedComplianceCodes.has(c));
+      if (matchedCodes.length > 0) {
+        insight.description += `\n\n⚠️ Correlação de Compliance: ${context}`;
+        (insight as any).metadata = {
+          ...((insight as any).metadata || {}),
+          complianceCorrelation: true,
+          complianceCodes: matchedCodes,
+          complianceContext: context,
+        };
+      }
+      return insight;
+    }
+
     // Generate insights
     console.log("Generating insights...");
     const insights: ExchangeInsight[] = [
-      analyzeExternalForwarding(users, tenantDomains),
-      analyzeForwardingRules(users),
+      enrichWithCompliance(analyzeExternalForwarding(users, tenantDomains), ['EXO-022'], 'Regras de encaminhamento externo detectadas no Compliance (EXO-022) sem política de DLP para prevenir vazamento.'),
+      enrichWithCompliance(analyzeForwardingRules(users), ['EXO-022'], 'Regras de encaminhamento ativas sem controle de compliance (EXO-022).'),
       analyzeDeleteRules(users),
       analyzeRuleCount(users),
-      analyzeAutoReplies(users),
+      enrichWithCompliance(analyzeAutoReplies(users), ['EXO-025'], 'Respostas automáticas para externos sem política restritiva (EXO-025).'),
     ].filter((insight): insight is ExchangeInsight => insight !== null);
 
     // Calculate summary
