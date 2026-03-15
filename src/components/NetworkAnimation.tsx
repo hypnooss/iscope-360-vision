@@ -44,44 +44,12 @@ function createParticles(): Particle[] {
     }
 
     // Size variation
-    const sizeRoll = Math.random();
-    let baseSize: number;
-    if (sizeRoll < 0.5) {
-      baseSize = 0.4 + Math.random() * 0.5;
-    } else if (sizeRoll < 0.85) {
-      baseSize = 0.9 + Math.random() * 0.7;
-    } else {
-      baseSize = 1.6 + Math.random() * 1.0;
-    }
-
-    // Color palette with magenta
-    const colorRoll = Math.random();
-    let colorR: number, colorG: number, colorB: number;
-    let brightnessBoost = 0;
-    if (colorRoll < 0.45) {
-      // Dark teal
-      colorR = 15; colorG = 140; colorB = 130;
-    } else if (colorRoll < 0.70) {
-      // Bright teal
-      colorR = 20; colorG = 184; colorB = 166;
-      brightnessBoost = 0.05;
-    } else if (colorRoll < 0.85) {
-      // Cyan
-      colorR = 30; colorG = 200; colorB = 220;
-      brightnessBoost = 0.12;
-    } else if (colorRoll < 0.95) {
-      // Magenta/pink
-      colorR = 180; colorG = 60; colorB = 180;
-      brightnessBoost = 0.1;
-    } else {
-      // Bright white-cyan highlights
-      colorR = 140; colorG = 235; colorB = 245;
-      brightnessBoost = 0.3;
-    }
+    const brightnessBoost = Math.random() < 0.05 ? 0.3 : (Math.random() < 0.3 ? 0.08 : 0);
 
     particles.push({
       theta, phi, radiusMul, baseSize,
-      colorR, colorG, colorB, brightnessBoost,
+      colorSeed: Math.random(),
+      brightnessBoost,
       disperseX: (Math.random() - 0.5) * 2,
       disperseY: (Math.random() - 0.5) * 2,
     });
