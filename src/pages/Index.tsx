@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/Header';
+import { NetworkAnimation } from '@/components/NetworkAnimation';
 import { Button } from '@/components/ui/button';
 import {
   CheckCircle2, AlertTriangle, TrendingUp, ArrowRight, Shield,
@@ -35,48 +36,6 @@ function SectionReveal({ children, className = '', delay = 0 }: { children: Reac
   );
 }
 
-/* ── Animated Background with floating orbs + grid ── */
-function AnimatedBackground() {
-  return (
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      {/* Floating orbs */}
-      <div
-        className="absolute w-[600px] h-[600px] rounded-full opacity-[0.07]"
-        style={{
-          background: 'radial-gradient(circle, hsl(175 80% 45%), transparent 70%)',
-          top: '10%',
-          left: '15%',
-          filter: 'blur(180px)',
-          animation: 'orb-drift-1 25s ease-in-out infinite',
-        }}
-      />
-      <div
-        className="absolute w-[500px] h-[500px] rounded-full opacity-[0.05]"
-        style={{
-          background: 'radial-gradient(circle, hsl(190 80% 40%), transparent 70%)',
-          top: '50%',
-          right: '10%',
-          filter: 'blur(160px)',
-          animation: 'orb-drift-2 30s ease-in-out infinite',
-        }}
-      />
-      <div
-        className="absolute w-[400px] h-[400px] rounded-full opacity-[0.06]"
-        style={{
-          background: 'radial-gradient(circle, hsl(175 60% 50%), transparent 70%)',
-          bottom: '15%',
-          left: '40%',
-          filter: 'blur(200px)',
-          animation: 'orb-drift-3 35s ease-in-out infinite',
-        }}
-      />
-
-      {/* Grid overlay with radial fade */}
-      <div className="absolute inset-0 animated-grid-dots grid-radial-mask" />
-    </div>
-  );
-}
-
 /* ── Page ── */
 const Index = () => {
   const { user, loading, mfaRequired, mfaEnrolled } = useAuth();
@@ -102,7 +61,11 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col relative">
-      <AnimatedBackground />
+      {/* Animated network background */}
+      <NetworkAnimation />
+      {/* Grid overlay with radial fade */}
+      <div className="pointer-events-none fixed inset-0 z-0 animated-grid-dots grid-radial-mask" />
+
       <Header />
 
       <main className="flex-1 relative z-10">
