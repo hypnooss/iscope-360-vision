@@ -43,7 +43,16 @@ function createParticles(): Particle[] {
       radiusMul = 1.15 + Math.random() * 0.15;
     }
 
-    // Size variation
+    const sizeRoll = Math.random();
+    let baseSize: number;
+    if (sizeRoll < 0.5) {
+      baseSize = 0.4 + Math.random() * 0.5;
+    } else if (sizeRoll < 0.85) {
+      baseSize = 0.9 + Math.random() * 0.7;
+    } else {
+      baseSize = 1.6 + Math.random() * 1.0;
+    }
+
     const brightnessBoost = Math.random() < 0.05 ? 0.3 : (Math.random() < 0.3 ? 0.08 : 0);
 
     particles.push({
