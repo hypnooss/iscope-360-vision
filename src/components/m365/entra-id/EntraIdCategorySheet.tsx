@@ -220,7 +220,7 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
                       { label: 'Sem MFA', value: mfa.disabled, colorClass: 'bg-destructive' },
                     ]} />
                   )}
-                  <p className="text-xs text-muted-foreground">Exclui contas Guest{excludeShared ? ' e caixas compartilhadas' : ''}. Um usuário pode ter mais de um método.</p>
+                  <p className="text-xs text-muted-foreground">Exclui contas Guest e caixas compartilhadas. Um usuário pode ter mais de um método.</p>
                 </div>
               </div>
             </TabsContent>
