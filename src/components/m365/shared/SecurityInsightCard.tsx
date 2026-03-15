@@ -7,7 +7,7 @@ import { M365_ANALYZER_CATEGORY_LABELS } from '@/types/m365AnalyzerInsights';
 import type { M365AnalyzerInsight } from '@/types/m365AnalyzerInsights';
 import {
   AlertTriangle, AlertCircle, Info, Shield, CheckCircle2,
-  TrendingUp, TrendingDown, Users, Hash, Tag, MinusCircle,
+  TrendingUp, TrendingDown, Users, Hash, Tag, MinusCircle, Link2,
 } from 'lucide-react';
 import { DataSourceDot } from './DataSourceDot';
 import { IncidentDetailSheet } from '@/components/m365/analyzer/IncidentDetailSheet';
@@ -202,6 +202,14 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
                       <Tag className="w-3 h-3 mr-0.5" />
                       {categoryLabel}
+                    </Badge>
+                  )}
+
+                  {/* Compliance Correlation */}
+                  {!isPass && (insight.metadata as any)?.complianceCorrelation && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-violet-500/15 text-violet-400 border-violet-500/30">
+                      <Link2 className="w-3 h-3 mr-0.5" />
+                      Compliance
                     </Badge>
                   )}
 

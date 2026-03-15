@@ -11,7 +11,7 @@ import {
   AlertOctagon, AlertTriangle, Shield, Info,
   Search, Layers, FileText, Wrench, Users, UserX,
   Activity, TrendingUp, TrendingDown, Minus, Lightbulb,
-  Building2,
+  Building2, Link2,
 } from 'lucide-react';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
 import { M365_ANALYZER_CATEGORY_LABELS } from '@/types/m365AnalyzerInsights';
@@ -207,6 +207,30 @@ export function IncidentDetailSheet({ insight, open, onOpenChange }: IncidentDet
                 </h5>
                 <div className="rounded-md p-3 border bg-primary/5 border-primary/20">
                   <p className="text-sm text-foreground">{insight.recommendation}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Compliance Correlation Section */}
+            {(insight.metadata as any)?.complianceCorrelation && (
+              <div className="space-y-2">
+                <h5 className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  <Link2 className="w-3 h-3 text-violet-400" />
+                  CORRELAÇÃO DE COMPLIANCE
+                </h5>
+                <div className="rounded-md p-3 border bg-violet-500/10 border-violet-500/30">
+                  <p className="text-sm text-foreground whitespace-pre-line">
+                    {(insight.metadata as any)?.complianceContext || 'Este insight está correlacionado com falhas detectadas no módulo de Compliance.'}
+                  </p>
+                  {(insight.metadata as any)?.complianceCodes && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {((insight.metadata as any).complianceCodes as string[]).map((code: string) => (
+                        <Badge key={code} variant="outline" className="text-xs bg-violet-500/15 text-violet-400 border-violet-500/30 font-mono">
+                          {code}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

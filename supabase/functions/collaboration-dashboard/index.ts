@@ -341,12 +341,51 @@ Deno.serve(async (req) => {
     const storageUsedGB = parseFloat((storageUsedBytes / (1024 ** 3)).toFixed(2));
     const storageAllocatedGB = parseFloat((storageAllocatedBytes / (1024 ** 3)).toFixed(2));
 
+    // ── Fetch compliance correlation data ──────────────────────────────────
+    let failedComplianceCodes = new Set<string>();
+    try {
+      const { data: lastCompliance } = await supabase
+        .from('m365_posture_history')
+        .select('insights')
+        .eq('tenant_record_id', tenant_record_id)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (lastCompliance?.insights && Array.isArray(lastCompliance.insights)) {
+        failedComplianceCodes = new Set(
+          (lastCompliance.insights as any[])
+            .filter((r: any) => r.status === 'fail')
+            .map((r: any) => r.code || r.id)
+            .filter(Boolean)
+        );
+        console.log(`Compliance correlation: ${failedComplianceCodes.size} failed codes found`);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch compliance data for correlation:', e);
+    }
+
+    function enrichCollabInsight(insight: any, codes: string[], context: string): any {
+      const matchedCodes = codes.filter(c => failedComplianceCodes.has(c));
+      if (matchedCodes.length > 0) {
+        insight.description += `\n\n⚠️ Correlação de Compliance: ${context}`;
+        insight.metadata = {
+          ...(insight.metadata || {}),
+          complianceCorrelation: true,
+          complianceCodes: matchedCodes,
+          complianceContext: context,
+        };
+      }
+      return insight;
+    }
+
     // === GENERATE COLLABORATION INSIGHTS ===
     const collaborationInsights: any[] = [];
 
     // Teams governance
     if (publicTeams > 0 && publicTeams > totalTeams * 0.5) {
-      collaborationInsights.push({
+      const insight = {
         id: 'teams_public_majority',
         category: 'teams_governance',
         name: 'Maioria dos Teams são Públicos',
@@ -355,7 +394,8 @@ Deno.serve(async (req) => {
         status: 'fail',
         count: publicTeams,
         recommendation: 'Revise a visibilidade dos teams e restrinja aqueles com dados sensíveis para privado.',
-      });
+      };
+      collaborationInsights.push(enrichCollabInsight(insight, ['TMS-001', 'TMS-002'], 'Sem política de governança de Teams restringindo visibilidade (TMS-001/002).'));
     } else {
       collaborationInsights.push({
         id: 'teams_governance_ok',
@@ -369,7 +409,7 @@ Deno.serve(async (req) => {
 
     // Guest access
     if (teamsWithGuests > 0) {
-      collaborationInsights.push({
+      const guestInsight = {
         id: 'teams_with_guests',
         category: 'guest_access',
         name: 'Teams com Convidados Externos',
@@ -378,7 +418,8 @@ Deno.serve(async (req) => {
         status: 'fail',
         count: teamsWithGuests,
         recommendation: 'Revise periodicamente os convidados e remova acessos desnecessários.',
-      });
+      };
+      collaborationInsights.push(enrichCollabInsight(guestInsight, ['TMS-003', 'TMS-005'], 'Sem política de revisão periódica de convidados externos (TMS-003/005).'));
     } else {
       collaborationInsights.push({
         id: 'guest_access_ok',
@@ -406,7 +447,7 @@ Deno.serve(async (req) => {
 
     // SharePoint exposure
     if (inactiveSites > activeSites && inactiveSites > 10) {
-      collaborationInsights.push({
+      const inactiveInsight = {
         id: 'sharepoint_inactive',
         category: 'sharepoint_exposure',
         name: 'Sites SharePoint Inativos',
@@ -415,7 +456,8 @@ Deno.serve(async (req) => {
         status: 'fail',
         count: inactiveSites,
         recommendation: 'Revise e arquive sites inativos para reduzir superfície de exposição.',
-      });
+      };
+      collaborationInsights.push(enrichCollabInsight(inactiveInsight, ['SPO-001', 'SPO-002'], 'Sem política de lifecycle para sites inativos (SPO-001/002).'));
     } else {
       collaborationInsights.push({
         id: 'sharepoint_exposure_ok',
