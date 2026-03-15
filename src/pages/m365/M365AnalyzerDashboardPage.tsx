@@ -434,8 +434,7 @@ export default function M365AnalyzerDashboardPage() {
 
   // Filter insights: operational only + remove configurational items
   const operationalInsights = (snapshot?.insights ?? [])
-    .filter(i => OPERATIONAL_CATEGORIES.includes(i.category as M365AnalyzerCategory))
-    .filter(i => !isConfigurationalInsight(i));
+    .filter(i => OPERATIONAL_CATEGORIES.includes(i.category as M365AnalyzerCategory));
 
   // Compute risk score from insights when backend doesn't provide one
   const computeRiskScore = (insights: typeof operationalInsights): number => {
@@ -466,7 +465,6 @@ export default function M365AnalyzerDashboardPage() {
   const anomalyInsights = applyKpiFilter(
     (snapshot?.insights ?? [])
       .filter(i => ANOMALY_CATEGORIES.includes(i.category as M365AnalyzerCategory))
-      .filter(i => !isConfigurationalInsight(i))
   );
 
   // Group by severity for columns

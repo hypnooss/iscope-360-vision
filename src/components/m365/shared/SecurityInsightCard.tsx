@@ -7,7 +7,7 @@ import { M365_ANALYZER_CATEGORY_LABELS } from '@/types/m365AnalyzerInsights';
 import type { M365AnalyzerInsight } from '@/types/m365AnalyzerInsights';
 import {
   AlertTriangle, AlertCircle, Info, Shield, CheckCircle2,
-  TrendingUp, TrendingDown, Users, Hash, Tag,
+  TrendingUp, TrendingDown, Users, Hash, Tag, MinusCircle,
 } from 'lucide-react';
 import { DataSourceDot } from './DataSourceDot';
 import { IncidentDetailSheet } from '@/components/m365/analyzer/IncidentDetailSheet';
@@ -56,6 +56,18 @@ interface SecurityInsightCardsProps {
   title?: string;
 }
 
+// ─── N/A Detection ───────────────────────────────────────────────────────────
+
+function isNAInsight(insight: M365AnalyzerInsight): boolean {
+  if (insight.status === 'pass') return false;
+  if (insight.status === 'not_applicable') return true;
+  const name = insight.name.toLowerCase();
+  const configKeywords = ['desabilitado', 'disabled', 'configuração', 'configuracao', 'policy', 'habilitado', 'enabled'];
+  if (configKeywords.some(kw => name.includes(kw))) return true;
+  if ((insight.count === undefined || insight.count === 0) && (!insight.affectedUsers || insight.affectedUsers.length === 0)) return true;
+  return false;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function SecurityInsightCards({ insights, loading, title = 'Insights de Segurança' }: SecurityInsightCardsProps) {
@@ -63,15 +75,17 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
 
   const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 
-  // Separate fail/pass, sort fail by severity, pass at end
+  // Classify insights into fail, pass, NA
   const failInsights = insights
-    .filter(i => i.status !== 'pass')
+    .filter(i => i.status !== 'pass' && !isNAInsight(i))
     .sort((a, b) => (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5));
   const passInsights = insights.filter(i => i.status === 'pass');
-  const sorted = [...failInsights, ...passInsights];
+  const naInsights = insights.filter(i => i.status !== 'pass' && isNAInsight(i));
+  const sorted = [...failInsights, ...passInsights, ...naInsights];
 
   const failCount = failInsights.length;
   const passCount = passInsights.length;
+  const naCount = naInsights.length;
 
   if (loading || sorted.length === 0) return null;
 
@@ -92,15 +106,21 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
               {passCount} OK
             </Badge>
           )}
+          {naCount > 0 && (
+            <Badge variant="outline" className="text-xs bg-slate-500/10 text-slate-400 border-slate-500/30">
+              {naCount} N/A
+            </Badge>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {sorted.map(insight => {
           const isPass = insight.status === 'pass';
+          const isNA = !isPass && isNAInsight(insight);
           const sevConfig = SEVERITY_CONFIG[insight.severity];
-          const Icon = isPass ? CheckCircle2 : (severityIcons[insight.severity] || Shield);
-          const borderColor = isPass ? 'border-l-emerald-500' : severityBorderColors[insight.severity];
+          const Icon = isNA ? MinusCircle : isPass ? CheckCircle2 : (severityIcons[insight.severity] || Shield);
+          const borderColor = isNA ? 'border-l-slate-400' : isPass ? 'border-l-emerald-500' : severityBorderColors[insight.severity];
           const categoryLabel = M365_ANALYZER_CATEGORY_LABELS[insight.category];
           const trend = insight.metadata?.trend as string | undefined;
           const TrendIcon = trend ? trendIcons[trend] : undefined;
@@ -111,7 +131,8 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
               className={cn(
                 'border-l-4 cursor-pointer transition-all hover:shadow-md hover:scale-[1.01]',
                 borderColor,
-                isPass && 'opacity-80 hover:opacity-100'
+                isPass && 'opacity-80 hover:opacity-100',
+                isNA && 'opacity-70 hover:opacity-90'
               )}
               onClick={() => setSelectedInsight(insight)}
             >
@@ -120,7 +141,7 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                   <div className="flex items-start gap-2 flex-1 min-w-0">
                     <Icon className={cn(
                       'w-4 h-4 shrink-0 mt-0.5',
-                      isPass ? 'text-emerald-400' : sevConfig?.color
+                      isNA ? 'text-slate-400' : isPass ? 'text-emerald-400' : sevConfig?.color
                     )} />
                     <div className="min-w-0">
                       <CardTitle className="text-sm font-semibold leading-tight line-clamp-2">
@@ -139,8 +160,13 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
 
               <CardContent className="pt-0 pb-3 px-4">
                 <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                  {/* Severity / OK badge */}
-                  {isPass ? (
+                  {/* Severity / OK / N/A badge */}
+                  {isNA ? (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-500/15 text-slate-400 border-slate-500/30">
+                      <MinusCircle className="w-3 h-3 mr-0.5" />
+                      N/A
+                    </Badge>
+                  ) : isPass ? (
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
                       <CheckCircle2 className="w-3 h-3 mr-0.5" />
                       OK
