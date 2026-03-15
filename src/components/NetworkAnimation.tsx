@@ -172,28 +172,40 @@ export function NetworkAnimation() {
         const alpha = Math.max(0.03, depthAlpha * 1.0 + p.brightnessBoost + frontBoost * 0.3);
         const clampedAlpha = Math.min(alpha * globalAlpha, 1);
 
-        // Size: front particles much bigger
-        const frontSizeMul = normalizedZ > 0.5 ? 1 + (normalizedZ - 0.5) * 1.5 : 1;
-        const size = Math.max(0.3, p.baseSize * scale * 1.2 * frontSizeMul);
+        // Size: uniform, no front boost
+        const size = Math.max(0.2, p.baseSize * scale * 0.9);
 
-        // Dynamic color based on rotated horizontal angle
-        const angle = Math.atan2(z, x); // -PI to PI
-        const norm = (angle + Math.PI) / (2 * Math.PI); // 0 to 1
-        const shifted = (norm + p.colorSeed * 0.15) % 1; // slight per-particle variation
+        // Silhouette-based coloring: edges get dynamic color, center stays teal
+        const dx = sx - cx;
+        const dy = sy - cy;
+        const distFromCenter = Math.sqrt(dx * dx + dy * dy);
+        const projectedRadius = sphereRadius * scale * 0.85;
+        const edgeFactor = clamp(distFromCenter / projectedRadius, 0, 1);
+        const edgePow = edgeFactor * edgeFactor * edgeFactor; // cubic for sharp edge transition
+
+        // Edge color: use vertical angle for cyan vs magenta
+        const vertAngle = Math.atan2(dy, dx); // angle on screen
+        const vertNorm = (vertAngle + Math.PI) / (2 * Math.PI);
+        const shifted = (vertNorm + p.colorSeed * 0.15) % 1;
         
-        // Three-zone gradient: teal → cyan → magenta → teal
+        // Edge gradient: cyan ↔ magenta
+        let edgeR: number, edgeG: number, edgeB: number;
         const zone = shifted * 3;
-        let cR: number, cG: number, cB: number;
         if (zone < 1) {
-          const t = zone; // teal → cyan
-          cR = lerp(20, 30, t); cG = lerp(184, 200, t); cB = lerp(166, 230, t);
+          const t = zone;
+          edgeR = lerp(20, 30, t); edgeG = lerp(184, 200, t); edgeB = lerp(166, 230, t);
         } else if (zone < 2) {
-          const t = zone - 1; // cyan → magenta
-          cR = lerp(30, 170, t); cG = lerp(200, 60, t); cB = lerp(230, 180, t);
+          const t = zone - 1;
+          edgeR = lerp(30, 170, t); edgeG = lerp(200, 60, t); edgeB = lerp(230, 180, t);
         } else {
-          const t = zone - 2; // magenta → teal
-          cR = lerp(170, 20, t); cG = lerp(60, 184, t); cB = lerp(180, 166, t);
+          const t = zone - 2;
+          edgeR = lerp(170, 20, t); edgeG = lerp(60, 184, t); edgeB = lerp(180, 166, t);
         }
+
+        // Blend: center=teal, edges=dynamic
+        const cR = lerp(20, edgeR, edgePow);
+        const cG = lerp(184, edgeG, edgePow);
+        const cB = lerp(166, edgeB, edgePow);
 
         ctx.fillStyle = `rgba(${cR | 0}, ${cG | 0}, ${cB | 0}, ${clampedAlpha})`;
         ctx.beginPath();
