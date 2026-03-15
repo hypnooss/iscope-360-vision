@@ -51,6 +51,8 @@ export function SecurityInsightCards({ snapshot }: SecurityInsightCardsProps) {
   if (mappedInsights.length === 0) return null;
 
   const complianceCount = complianceInsights.length;
+  const failCount = mappedInsights.filter(i => i.status === 'fail').length;
+  const passCount = mappedInsights.filter(i => i.status === 'pass').length;
 
   return (
     <div className="space-y-4 mb-6">
@@ -68,10 +70,20 @@ export function SecurityInsightCards({ snapshot }: SecurityInsightCardsProps) {
           <Badge variant="outline" className="text-xs">
             {mappedInsights.length} {mappedInsights.length === 1 ? 'insight' : 'insights'}
           </Badge>
+          {failCount > 0 && (
+            <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
+              {failCount} {failCount === 1 ? 'alerta' : 'alertas'}
+            </Badge>
+          )}
+          {passCount > 0 && (
+            <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+              {passCount} OK
+            </Badge>
+          )}
         </div>
       </div>
 
-      <SharedSecurityInsightCards insights={mappedInsights} title="" />
+      <SharedSecurityInsightCards insights={mappedInsights} hideHeader />
     </div>
   );
 }
