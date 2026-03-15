@@ -243,13 +243,12 @@ Deno.serve(async (req) => {
     });
     console.log(`[entra-id-dashboard] MFA users: ${mfaUsersRaw.length} raw → ${mfaUsers.length} after excluding ${mfaUsersRaw.length - mfaUsers.length} shared mailboxes`);
 
-    const mfaEnabled = mfaUsers.filter((u: any) => {
-      const methods = u.methodsRegistered || [];
-      return methods.some((m: string) =>
-        ['microsoftAuthenticatorPush', 'softwareOneTimePasscode', 'hardwareOneTimePasscode', 'windowsHelloForBusiness', 'passKeyDeviceBound'].includes(m)
-      );
-    }).length;
+    // mfaEnabled = any registered method (aligns with hasMfa in userDetails)
+    const STRONG_METHODS = ['microsoftAuthenticatorPush', 'softwareOneTimePasscode', 'hardwareOneTimePasscode', 'windowsHelloForBusiness', 'passKeyDeviceBound', 'microsoftAuthenticatorPasswordless', 'fido2'];
+    const mfaEnabled = mfaUsers.filter((u: any) => (u.methodsRegistered || []).length > 0).length;
     const mfaDisabled = mfaUsers.length - mfaEnabled;
+    const mfaStrong = mfaUsers.filter((u: any) => (u.methodsRegistered || []).some((m: string) => STRONG_METHODS.includes(m))).length;
+    const mfaWeak = mfaEnabled - mfaStrong;
 
     const mfaMethodCounts: Record<string, number> = {};
     mfaUsers.forEach((u: any) => {
