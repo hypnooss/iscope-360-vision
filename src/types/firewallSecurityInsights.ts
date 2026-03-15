@@ -21,6 +21,7 @@ export interface FirewallSecurityInsight {
   metrics: FirewallInsightMetric[];
   source?: FirewallInsightSource;
   complianceCode?: string;
+  status?: 'fail' | 'pass' | 'not_applicable';
 }
 
 // Correlation rule definition

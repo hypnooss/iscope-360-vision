@@ -10,32 +10,47 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
     const m = snapshot.metrics;
 
     // Heurística 1: VPN Bombardeada
-    if ((m.vpnFailures || 0) > 100) {
-      const countries = new Set(
-        m.topVpnAuthCountriesFailed?.map(c => c.country) ?? []
-      ).size;
-      
-      if (countries > 5) {
-        insights.push({
-          id: 'vpn-exposed',
-          title: 'VPN Exposta a Ataques Globais',
-          severity: 'high',
-          icon: 'Wifi',
-          what: `${m.vpnFailures} tentativas de VPN de ${countries} países diferentes.`,
-          why: 'VPNs sem restrição geográfica são alvos constantes de ataques automatizados de força bruta.',
-          bestPractice: [
-            'Restringir origens por geolocalização (países permitidos)',
-            'Implementar whitelist de IPs ou redes confiáveis',
-            'Ativar autenticação multifator (MFA) obrigatória',
-            'Configurar rate limiting para tentativas de login'
-          ],
-          businessImpact: 'Credenciais comprometidas podem resultar em acesso não autorizado à rede interna, exfiltração de dados sensíveis e violação de conformidade.',
-          metrics: [
-            { label: 'Tentativas Falhadas', value: m.vpnFailures || 0 },
-            { label: 'Países Únicos', value: countries },
-          ],
-        });
-      }
+    const vpnFailures = m.vpnFailures || 0;
+    const vpnCountries = new Set(m.topVpnAuthCountriesFailed?.map(c => c.country) ?? []).size;
+    const hasVpnData = (m.vpnSuccesses || 0) > 0 || vpnFailures > 0;
+
+    if (vpnFailures > 100 && vpnCountries > 5) {
+      insights.push({
+        id: 'vpn-exposed',
+        title: 'VPN Exposta a Ataques Globais',
+        severity: 'high',
+        icon: 'Wifi',
+        status: 'fail',
+        what: `${vpnFailures} tentativas de VPN de ${vpnCountries} países diferentes.`,
+        why: 'VPNs sem restrição geográfica são alvos constantes de ataques automatizados de força bruta.',
+        bestPractice: [
+          'Restringir origens por geolocalização (países permitidos)',
+          'Implementar whitelist de IPs ou redes confiáveis',
+          'Ativar autenticação multifator (MFA) obrigatória',
+          'Configurar rate limiting para tentativas de login'
+        ],
+        businessImpact: 'Credenciais comprometidas podem resultar em acesso não autorizado à rede interna, exfiltração de dados sensíveis e violação de conformidade.',
+        metrics: [
+          { label: 'Tentativas Falhadas', value: vpnFailures },
+          { label: 'Países Únicos', value: vpnCountries },
+        ],
+      });
+    } else if (hasVpnData) {
+      insights.push({
+        id: 'vpn-exposed',
+        title: 'VPN sem Ataques Globais Significativos',
+        severity: 'low',
+        icon: 'Wifi',
+        status: 'pass',
+        what: `VPN ativa com ${vpnFailures} tentativas falhadas de ${vpnCountries} países — dentro do esperado.`,
+        why: 'O volume de tentativas de acesso à VPN está dentro dos parâmetros normais.',
+        bestPractice: ['Manter monitoramento contínuo de tentativas de acesso VPN'],
+        businessImpact: 'Nenhum risco identificado no momento.',
+        metrics: [
+          { label: 'Tentativas Falhadas', value: vpnFailures },
+          { label: 'Países Únicos', value: vpnCountries },
+        ],
+      });
     }
 
     // Heurística 2: Admin Brute Force
@@ -48,6 +63,7 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
         title: 'Alta Taxa de Falhas em Acesso Administrativo',
         severity: 'critical',
         icon: 'ShieldAlert',
+        status: 'fail',
         what: `${Math.round(adminFailRate * 100)}% das tentativas de login admin falharam (${m.firewallAuthFailures} falhas).`,
         why: 'Alta taxa de falhas indica tentativas de brute force ou credenciais vazadas.',
         bestPractice: [
@@ -62,6 +78,22 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
           { label: 'Tentativas', value: totalAuth },
         ],
       });
+    } else if (totalAuth > 0) {
+      insights.push({
+        id: 'admin-brute-force',
+        title: 'Acesso Administrativo sem Anomalias',
+        severity: 'low',
+        icon: 'ShieldAlert',
+        status: 'pass',
+        what: `Taxa de falha de ${Math.round(adminFailRate * 100)}% em ${totalAuth} tentativas — dentro do esperado.`,
+        why: 'O volume de falhas de autenticação administrativa está dentro dos parâmetros normais.',
+        bestPractice: ['Manter monitoramento contínuo de acessos administrativos'],
+        businessImpact: 'Nenhum risco identificado no momento.',
+        metrics: [
+          { label: 'Taxa de Falha', value: `${Math.round(adminFailRate * 100)}%` },
+          { label: 'Tentativas', value: totalAuth },
+        ],
+      });
     }
 
     // Heurística 3: Botnet Detection
@@ -71,6 +103,7 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
         title: 'Comunicação com Botnets Detectada',
         severity: 'critical',
         icon: 'Bug',
+        status: 'fail',
         what: `${m.botnetDetections} tentativas de comunicação com servidores C&C de botnets conhecidos.`,
         why: 'Dispositivos internos podem estar comprometidos e sob controle remoto.',
         bestPractice: [
@@ -85,6 +118,21 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
           { label: 'Domínios Únicos', value: m.botnetDomains?.length ?? 0 },
         ],
       });
+    } else {
+      insights.push({
+        id: 'botnet-c2',
+        title: 'Nenhuma Comunicação com Botnets',
+        severity: 'low',
+        icon: 'Bug',
+        status: 'pass',
+        what: 'Nenhuma comunicação com servidores C&C de botnets foi detectada neste período.',
+        why: 'Não há evidências de dispositivos comprometidos se comunicando com botnets.',
+        bestPractice: ['Manter FortiGuard Botnet C&C Detection ativo'],
+        businessImpact: 'Nenhum risco identificado no momento.',
+        metrics: [
+          { label: 'Detecções', value: 0 },
+        ],
+      });
     }
 
     // Heurística 4: Port Scan
@@ -95,6 +143,7 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
         title: 'Port Scans Detectados',
         severity: 'high',
         icon: 'Radar',
+        status: 'fail',
         what: `${portScanIPs.length} IPs realizaram varredura em múltiplas portas (${portScanIPs[0].targetPorts.length} portas).`,
         why: 'Port scans são a fase de reconhecimento de ataques direcionados.',
         bestPractice: [
@@ -109,6 +158,21 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
           { label: 'Portas Testadas', value: portScanIPs[0].targetPorts.length },
         ],
       });
+    } else {
+      insights.push({
+        id: 'port-scan-detected',
+        title: 'Nenhum Port Scan Detectado',
+        severity: 'low',
+        icon: 'Radar',
+        status: 'pass',
+        what: 'Nenhuma varredura de portas significativa foi detectada neste período.',
+        why: 'Não há evidências de reconhecimento ativo contra a infraestrutura.',
+        bestPractice: ['Manter IDS/IPS ativo para detecção contínua'],
+        businessImpact: 'Nenhum risco identificado no momento.',
+        metrics: [
+          { label: 'IPs Escaneando', value: 0 },
+        ],
+      });
     }
 
     // Heurística 5: Anomalias de Tráfego
@@ -118,6 +182,7 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
         title: 'Alto Volume de Anomalias de Tráfego',
         severity: 'medium',
         icon: 'Zap',
+        status: 'fail',
         what: `${m.anomalyEvents} eventos anômalos detectados (DoS, DDoS, Port Scans).`,
         why: 'Anomalias indicam ataques de negação de serviço ou tentativas de exploração.',
         bestPractice: [
@@ -132,6 +197,21 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
           { label: 'Tráfego Dropado', value: m.anomalyDropped || 0 },
         ],
       });
+    } else {
+      insights.push({
+        id: 'traffic-anomalies',
+        title: 'Tráfego sem Anomalias Significativas',
+        severity: 'low',
+        icon: 'Zap',
+        status: 'pass',
+        what: `Apenas ${m.anomalyEvents || 0} eventos anômalos detectados — dentro do esperado.`,
+        why: 'O volume de anomalias de tráfego está dentro dos parâmetros normais.',
+        bestPractice: ['Manter proteção DDoS ativa em interfaces WAN'],
+        businessImpact: 'Nenhum risco identificado no momento.',
+        metrics: [
+          { label: 'Eventos Anômalos', value: m.anomalyEvents || 0 },
+        ],
+      });
     }
 
     // Heurística 6: Alta Taxa de Bloqueio
@@ -142,6 +222,7 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
         title: 'Taxa de Bloqueio Elevada',
         severity: 'medium',
         icon: 'Shield',
+        status: 'fail',
         what: `${Math.round(blockRate * 100)}% de todo o tráfego está sendo bloqueado (${m.totalDenied} eventos).`,
         why: 'Taxa muito alta pode indicar políticas restritivas demais ou ataques massivos.',
         bestPractice: [
@@ -156,6 +237,22 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
           { label: 'Total Bloqueado', value: m.totalDenied || 0 },
         ],
       });
+    } else if ((m.totalEvents || 0) > 0) {
+      insights.push({
+        id: 'high-block-rate',
+        title: 'Taxa de Bloqueio Normal',
+        severity: 'low',
+        icon: 'Shield',
+        status: 'pass',
+        what: `${Math.round(blockRate * 100)}% do tráfego está sendo bloqueado — dentro do esperado.`,
+        why: 'A taxa de bloqueio está em níveis saudáveis, indicando políticas bem calibradas.',
+        bestPractice: ['Revisar políticas periodicamente para manter equilíbrio'],
+        businessImpact: 'Nenhum risco identificado no momento.',
+        metrics: [
+          { label: 'Taxa de Bloqueio', value: `${Math.round(blockRate * 100)}%` },
+          { label: 'Total Bloqueado', value: m.totalDenied || 0 },
+        ],
+      });
     }
 
     // Heurística 7: Sessões Persistentes
@@ -165,6 +262,7 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
         title: 'Alto Número de Sessões Persistentes',
         severity: 'low',
         icon: 'Users',
+        status: 'fail',
         what: `${m.activeSessions} sessões ativas simultâneas no firewall.`,
         why: 'Sessões longas podem indicar conexões zombie ou falta de timeout adequado.',
         bestPractice: [
@@ -178,6 +276,21 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
           { label: 'Sessões Ativas', value: m.activeSessions || 0 },
         ],
       });
+    } else if ((m.activeSessions || 0) > 0) {
+      insights.push({
+        id: 'persistent-sessions',
+        title: 'Sessões Ativas em Níveis Normais',
+        severity: 'low',
+        icon: 'Users',
+        status: 'pass',
+        what: `${m.activeSessions} sessões ativas — dentro dos parâmetros normais.`,
+        why: 'O número de sessões ativas está em níveis saudáveis.',
+        bestPractice: ['Manter monitoramento contínuo de sessões ativas'],
+        businessImpact: 'Nenhum risco identificado no momento.',
+        metrics: [
+          { label: 'Sessões Ativas', value: m.activeSessions || 0 },
+        ],
+      });
     }
 
     // Heurística 8: Tráfego Saída Bloqueado
@@ -187,6 +300,7 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
         title: 'Alto Volume de Tráfego de Saída Bloqueado',
         severity: 'medium',
         icon: 'ArrowUpRight',
+        status: 'fail',
         what: `${m.outboundBlocked} conexões de saída foram bloqueadas.`,
         why: 'Tráfego de saída bloqueado pode indicar malware tentando se comunicar com servidores externos.',
         bestPractice: [
@@ -199,6 +313,21 @@ export function useFirewallSecurityInsights(snapshot: AnalyzerSnapshot | null): 
         metrics: [
           { label: 'Conexões Bloqueadas', value: m.outboundBlocked || 0 },
           { label: 'IPs Únicos', value: m.topOutboundBlockedIPs?.length ?? 0 },
+        ],
+      });
+    } else {
+      insights.push({
+        id: 'outbound-blocked',
+        title: 'Tráfego de Saída sem Bloqueios Anômalos',
+        severity: 'low',
+        icon: 'ArrowUpRight',
+        status: 'pass',
+        what: `Apenas ${m.outboundBlocked || 0} conexões de saída bloqueadas — dentro do esperado.`,
+        why: 'O volume de tráfego de saída bloqueado está em níveis normais.',
+        bestPractice: ['Manter políticas de egress filtering ativas'],
+        businessImpact: 'Nenhum risco identificado no momento.',
+        metrics: [
+          { label: 'Conexões Bloqueadas', value: m.outboundBlocked || 0 },
         ],
       });
     }
