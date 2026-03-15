@@ -2513,7 +2513,7 @@ Deno.serve(async (req) => {
     const securityRisk = analyzeSecurityRisk(signInLogs, riskyUsersData);
     allInsights.push(...securityRisk.insights);
 
-    const identityAccess = analyzeIdentityAccess(auditLogs, credentialRegistration, recentApps, signInLogs);
+    const identityAccess = analyzeIdentityAccess(auditLogs, credentialRegistration, recentApps, signInLogs, exoSharedMailboxes);
     allInsights.push(...identityAccess.insights);
 
     const conditionalAccessResult = analyzeConditionalAccess(caPolicies, auditLogs);
