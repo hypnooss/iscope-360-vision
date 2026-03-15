@@ -54,6 +54,7 @@ interface SecurityInsightCardsProps {
   insights: M365AnalyzerInsight[];
   loading?: boolean;
   title?: string;
+  hideHeader?: boolean;
 }
 
 // ─── N/A Detection ───────────────────────────────────────────────────────────
@@ -71,7 +72,7 @@ function isNAInsight(insight: M365AnalyzerInsight): boolean {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function SecurityInsightCards({ insights, loading, title = 'Insights de Segurança' }: SecurityInsightCardsProps) {
+export function SecurityInsightCards({ insights, loading, title = 'Insights de Segurança', hideHeader }: SecurityInsightCardsProps) {
   const [selectedInsight, setSelectedInsight] = useState<M365AnalyzerInsight | null>(null);
 
   const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -92,28 +93,30 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
 
   return (
     <div className="space-y-4 mb-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-          {title}
-        </h2>
-        <div className="flex items-center gap-2">
-          {failCount > 0 && (
-            <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
-              {failCount} {failCount === 1 ? 'alerta' : 'alertas'}
-            </Badge>
-          )}
-          {passCount > 0 && (
-            <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
-              {passCount} OK
-            </Badge>
-          )}
-          {naCount > 0 && (
-            <Badge variant="outline" className="text-xs bg-slate-500/10 text-slate-400 border-slate-500/30">
-              {naCount} N/A
-            </Badge>
-          )}
+      {!hideHeader && (
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            {title}
+          </h2>
+          <div className="flex items-center gap-2">
+            {failCount > 0 && (
+              <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
+                {failCount} {failCount === 1 ? 'alerta' : 'alertas'}
+              </Badge>
+            )}
+            {passCount > 0 && (
+              <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+                {passCount} OK
+              </Badge>
+            )}
+            {naCount > 0 && (
+              <Badge variant="outline" className="text-xs bg-slate-500/10 text-slate-400 border-slate-500/30">
+                {naCount} N/A
+              </Badge>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {sorted.map(insight => {
