@@ -23,7 +23,7 @@ function mapFirewallToAnalyzerInsight(fw: FirewallSecurityInsight): M365Analyzer
     recommendation: fw.bestPractice.join('\n'),
     businessImpact: fw.businessImpact,
     status: 'fail',
-    count: fw.metrics.find(m => typeof m.value === 'number')?.value as number,
+    status: 'fail',
     metadata: {
       ...Object.fromEntries(fw.metrics.map(m => [m.label, m.value])),
       source: fw.source,
