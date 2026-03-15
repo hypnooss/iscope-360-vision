@@ -106,6 +106,11 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
               {passCount} OK
             </Badge>
           )}
+          {naCount > 0 && (
+            <Badge variant="outline" className="text-xs bg-slate-500/10 text-slate-400 border-slate-500/30">
+              {naCount} N/A
+            </Badge>
+          )}
         </div>
       </div>
 
