@@ -5,8 +5,8 @@ import { Header } from '@/components/Header';
 import { NetworkAnimation } from '@/components/NetworkAnimation';
 import { Button } from '@/components/ui/button';
 import {
-  CheckCircle2, AlertTriangle, TrendingUp, ArrowRight, Shield,
-  Network, Eye, Zap, Lock, ChevronRight,
+  ArrowRight, Shield, Network, Eye, Zap, ChevronDown,
+  Quote, Scan, BarChart3, FileSearch, ShieldCheck,
 } from 'lucide-react';
 
 /* ── Scroll Reveal ── */
@@ -36,6 +36,15 @@ function SectionReveal({ children, className = '', delay = 0 }: { children: Reac
   );
 }
 
+/* ── Animated Counter ── */
+function AnimatedNumber({ value, suffix = '' }: { value: string; suffix?: string }) {
+  return (
+    <span className="tabular-nums">
+      {value}<span className="text-primary">{suffix}</span>
+    </span>
+  );
+}
+
 /* ── Page ── */
 const Index = () => {
   const { user, loading, mfaRequired, mfaEnrolled } = useAuth();
@@ -61,37 +70,41 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col relative">
-      {/* Animated network background */}
       <NetworkAnimation />
-      {/* Grid overlay with radial fade */}
       <div className="pointer-events-none fixed inset-0 z-0 animated-grid-dots grid-radial-mask" />
 
       <Header />
 
       <main className="flex-1 relative z-10">
         {/* ═══ HERO ═══ */}
-        <section className="min-h-screen flex items-center justify-center px-6">
-          <div className="text-center max-w-3xl mx-auto">
+        <section className="min-h-screen flex flex-col items-center justify-center px-6 relative">
+          <div className="text-center max-w-4xl mx-auto">
             <SectionReveal delay={100}>
-              <h1 className="font-heading text-[2.75rem] sm:text-[3.5rem] lg:text-[4.5rem] font-extrabold leading-[1.05] tracking-tight mb-6">
+              <p className="text-xs uppercase tracking-[0.3em] text-primary/70 font-medium mb-8 font-mono">
+                Plataforma de Segurança &amp; Compliance
+              </p>
+            </SectionReveal>
+
+            <SectionReveal delay={200}>
+              <h1 className="font-heading text-[2.75rem] sm:text-[3.5rem] lg:text-[4.5rem] font-extrabold leading-[1.05] tracking-tight mb-8">
                 Gerencie sua infraestrutura{' '}
                 <span className="text-primary">com inteligência</span>
               </h1>
             </SectionReveal>
 
-            <SectionReveal delay={200}>
-              <p className="text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto mb-12 leading-relaxed">
+            <SectionReveal delay={300}>
+              <p className="text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto mb-14 leading-relaxed">
                 Plataforma completa para análise de compliance, segurança e
                 boas práticas da sua infraestrutura.
               </p>
             </SectionReveal>
 
-            <SectionReveal delay={300}>
+            <SectionReveal delay={400}>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button
                   size="lg"
                   onClick={() => navigate('/auth')}
-                  className="gap-2 h-13 px-8 text-base font-semibold shadow-[0_0_30px_hsl(175_80%_45%/0.2)] hover:shadow-[0_0_50px_hsl(175_80%_45%/0.35)] transition-shadow duration-300"
+                  className="gap-2 h-13 px-10 text-base font-semibold shadow-[0_0_30px_hsl(175_80%_45%/0.2)] hover:shadow-[0_0_50px_hsl(175_80%_45%/0.35)] transition-shadow duration-300"
                 >
                   Acessar Plataforma <ArrowRight className="w-5 h-5" />
                 </Button>
@@ -99,88 +112,138 @@ const Index = () => {
                   size="lg"
                   variant="outline"
                   onClick={() => document.querySelector('#how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
-                  className="gap-2 h-13 px-8 text-base font-semibold"
+                  className="gap-2 h-13 px-10 text-base font-semibold"
                 >
-                  Ver como funciona <ChevronRight className="w-5 h-5" />
+                  Ver como funciona
                 </Button>
               </div>
             </SectionReveal>
           </div>
-        </section>
 
-        {/* ═══ CREDIBILITY + METRICS ═══ */}
-        <section className="min-h-screen flex items-center justify-center px-6 bg-card/20">
-          <div className="max-w-[1200px] mx-auto w-full">
-            <SectionReveal>
-              <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground/60 mb-12 font-medium text-center">
-                Construído para ambientes corporativos
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-10 mb-20">
-                {['Enterprise A', 'Enterprise B', 'Enterprise C', 'Enterprise D'].map((name) => (
-                  <div
-                    key={name}
-                    className="h-8 px-6 rounded bg-muted/20 flex items-center justify-center text-xs text-muted-foreground/40 font-medium tracking-wider"
-                  >
-                    {name}
-                  </div>
-                ))}
-              </div>
-            </SectionReveal>
-            <SectionReveal delay={150}>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-3xl mx-auto text-center">
-                {[
-                  { number: '50+', label: 'Verificações de Compliance' },
-                  { number: '360°', label: 'Visibilidade da Infraestrutura' },
-                  { number: 'Zero', label: 'Intervenção Manual' },
-                ].map((m) => (
-                  <div key={m.label}>
-                    <div className="text-4xl lg:text-5xl font-heading font-extrabold text-primary mb-2">{m.number}</div>
-                    <div className="text-sm text-muted-foreground font-medium">{m.label}</div>
-                  </div>
-                ))}
-              </div>
-            </SectionReveal>
+          {/* Scroll indicator */}
+          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-muted-foreground/40">
+            <span className="text-[10px] uppercase tracking-[0.3em] font-mono">Scroll</span>
+            <ChevronDown className="w-4 h-4 animate-bounce" />
           </div>
         </section>
 
-        {/* ═══ FEATURES ═══ */}
+        {/* ═══ PROBLEM — Impact Numbers ═══ */}
+        <section className="min-h-screen flex items-center justify-center px-6">
+          <div className="max-w-[1100px] mx-auto w-full">
+            <SectionReveal>
+              <div className="text-center mb-20">
+                <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-6 leading-tight">
+                  Backlogs de vulnerabilidades{' '}
+                  <span className="text-primary">continuam crescendo</span>
+                </h2>
+                <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
+                  A cada dia novas ameaças surgem. Manter a visibilidade e o controle da sua infraestrutura não é mais opcional.
+                </p>
+              </div>
+            </SectionReveal>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
+              {[
+                { number: '40,000', suffix: '+', context: 'Vulnerabilidades publicadas em 2024', subtext: 'CVEs registrados — recorde histórico' },
+                { number: '72', suffix: 'h', context: 'Tempo médio para exploração', subtext: 'Após a publicação de um CVE crítico' },
+                { number: '34', suffix: '%', context: 'Aumento em ataques a infraestrutura', subtext: 'Em relação ao ano anterior' },
+              ].map((stat, i) => (
+                <SectionReveal key={stat.context} delay={i * 150}>
+                  <div className="text-center md:text-left">
+                    <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
+                      <AnimatedNumber value={stat.number} suffix={stat.suffix} />
+                    </div>
+                    <div className="text-lg font-semibold text-foreground/90 mb-1">{stat.context}</div>
+                    <div className="text-sm text-muted-foreground">{stat.subtext}</div>
+                  </div>
+                </SectionReveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ═══ SOLUTION — 4-Step Flow ═══ */}
+        <section id="how-it-works" className="min-h-screen flex items-center justify-center px-6 bg-card/20">
+          <div className="max-w-[1100px] mx-auto w-full">
+            <SectionReveal>
+              <div className="text-center mb-20">
+                <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4">
+                  Como o iScope <span className="text-primary">resolve</span>
+                </h2>
+                <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
+                  Da conexão à ação — em quatro passos simples.
+                </p>
+              </div>
+            </SectionReveal>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 relative">
+              {/* Connecting line */}
+              <div className="hidden md:block absolute top-16 left-[12%] right-[12%] h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+
+              {[
+                { num: '01', icon: Network, title: 'Conecte', desc: 'Integre firewalls, servidores e serviços de nuvem em minutos.' },
+                { num: '02', icon: Scan, title: 'Analise', desc: 'Nossa engine avalia centenas de pontos de compliance e segurança.' },
+                { num: '03', icon: BarChart3, title: 'Visualize', desc: 'Dashboards interativos com visão 360° do seu ambiente.' },
+                { num: '04', icon: ShieldCheck, title: 'Corrija', desc: 'Recomendações acionáveis para melhorar sua postura de segurança.' },
+              ].map((step, i) => (
+                <SectionReveal key={step.num} delay={i * 120}>
+                  <div className="text-center relative">
+                    <div className="inline-flex items-center justify-center w-[4.5rem] h-[4.5rem] rounded-2xl bg-card border border-border/40 mb-6 relative z-10 shadow-lg shadow-background/50">
+                      <step.icon className="w-6 h-6 text-primary" />
+                    </div>
+                    <div className="text-xs font-mono text-primary/60 mb-2 tracking-wider">{step.num}</div>
+                    <h3 className="font-heading font-bold text-lg text-foreground mb-2">{step.title}</h3>
+                    <p className="text-sm text-muted-foreground max-w-[220px] mx-auto leading-relaxed">{step.desc}</p>
+                  </div>
+                </SectionReveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ═══ FEATURES — Showcases ═══ */}
         <section id="features" className="min-h-screen flex items-center justify-center px-6">
-          <div className="max-w-[1200px] mx-auto w-full">
+          <div className="max-w-[1100px] mx-auto w-full">
             <SectionReveal>
               <div className="text-center mb-16">
-                <h2 className="font-heading text-3xl lg:text-[2.25rem] font-bold mb-4">
-                  Tudo que você precisa em um só lugar
+                <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4">
+                  Tudo que você precisa em <span className="text-primary">um só lugar</span>
                 </h2>
                 <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
                   Ferramentas poderosas para manter sua infraestrutura segura e em conformidade.
                 </p>
               </div>
             </SectionReveal>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
                 {
-                  icon: CheckCircle2,
-                  title: 'Verificações Automáticas',
-                  description: 'Mais de 50 pontos de verificação baseados em boas práticas de mercado.',
+                  icon: FileSearch,
+                  title: 'Análise de Compliance',
+                  description: 'Mais de 50 pontos de verificação baseados em boas práticas de mercado e frameworks reconhecidos.',
+                  highlight: '50+ verificações',
                 },
                 {
                   icon: Shield,
                   title: 'Detecção de Riscos',
-                  description: 'Identifica vulnerabilidades e configurações inseguras automaticamente.',
+                  description: 'Identifica vulnerabilidades e configurações inseguras automaticamente em toda a sua infraestrutura.',
+                  highlight: 'Tempo real',
                 },
                 {
-                  icon: TrendingUp,
-                  title: 'Recomendações',
-                  description: 'Sugestões práticas e acionáveis para melhorar sua postura de segurança.',
+                  icon: Eye,
+                  title: 'Visibilidade Total',
+                  description: 'Dashboards unificados com visão 360° do ambiente — firewalls, cloud, endpoints e serviços.',
+                  highlight: 'Visão 360°',
                 },
               ].map((f, i) => (
                 <SectionReveal key={f.title} delay={i * 100}>
-                  <div className="feature-card group h-full">
-                    <div className="inline-flex p-3.5 rounded-xl bg-primary/10 mb-5 group-hover:bg-primary/15 transition-colors duration-300">
+                  <div className="feature-card group h-full flex flex-col">
+                    <div className="inline-flex p-3.5 rounded-xl bg-primary/10 mb-5 group-hover:bg-primary/15 transition-colors duration-300 self-start">
                       <f.icon className="w-6 h-6 text-primary" />
                     </div>
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-primary/60 font-mono mb-3">{f.highlight}</div>
                     <h3 className="font-heading font-bold text-xl text-foreground mb-3">{f.title}</h3>
-                    <p className="text-[15px] text-muted-foreground leading-relaxed">{f.description}</p>
+                    <p className="text-[15px] text-muted-foreground leading-relaxed flex-1">{f.description}</p>
                   </div>
                 </SectionReveal>
               ))}
@@ -188,68 +251,44 @@ const Index = () => {
           </div>
         </section>
 
-        {/* ═══ HOW IT WORKS ═══ */}
-        <section id="how-it-works" className="min-h-screen flex items-center justify-center px-6 bg-card/20">
-          <div className="max-w-[1200px] mx-auto w-full">
-            <SectionReveal>
-              <div className="text-center mb-20">
-                <h2 className="font-heading text-3xl lg:text-[2.25rem] font-bold mb-4">
-                  Como funciona
-                </h2>
-                <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-                  Três passos simples para ter visibilidade total da sua infraestrutura.
-                </p>
-              </div>
-            </SectionReveal>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
-              <div className="hidden md:block absolute top-14 left-[20%] right-[20%] h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
-              {[
-                { num: '01', icon: Network, title: 'Conecte sua infraestrutura', desc: 'Integre firewalls, servidores e serviços de nuvem em minutos.' },
-                { num: '02', icon: Zap, title: 'Execute a análise automatizada', desc: 'Nossa engine avalia centenas de pontos de compliance e segurança.' },
-                { num: '03', icon: Eye, title: 'Receba recomendações acionáveis', desc: 'Visualize resultados e aplique correções com orientação clara.' },
-              ].map((step, i) => (
-                <SectionReveal key={step.num} delay={i * 150}>
-                  <div className="text-center relative">
-                    <div className="inline-flex items-center justify-center w-28 h-28 rounded-full bg-card border border-border/40 mb-6 relative z-10 shadow-lg shadow-background/50">
-                      <span className="text-3xl font-heading font-extrabold text-primary">{step.num}</span>
-                    </div>
-                    <h3 className="font-heading font-bold text-lg text-foreground mb-2">{step.title}</h3>
-                    <p className="text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed">{step.desc}</p>
-                  </div>
-                </SectionReveal>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ═══ SECURITY & TRUST ═══ */}
-        <section id="security" className="min-h-screen flex items-center justify-center px-6">
-          <div className="max-w-[1200px] mx-auto w-full">
+        {/* ═══ TESTIMONIALS ═══ */}
+        <section className="min-h-screen flex items-center justify-center px-6 bg-card/20">
+          <div className="max-w-[1100px] mx-auto w-full">
             <SectionReveal>
               <div className="text-center mb-16">
-                <h2 className="font-heading text-3xl lg:text-[2.25rem] font-bold mb-4">
-                  Segurança em primeiro lugar
+                <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4">
+                  O que nossos <span className="text-primary">clientes</span> dizem
                 </h2>
-                <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-                  Projetado para atender os mais altos padrões de segurança corporativa.
-                </p>
               </div>
             </SectionReveal>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
-                { icon: Zap, title: 'Análise automatizada', desc: 'Varredura completa sem intervenção manual.' },
-                { icon: AlertTriangle, title: 'Detecção de configurações inseguras', desc: 'Identifica problemas antes que se tornem incidentes.' },
-                { icon: Shield, title: 'Boas práticas de segurança', desc: 'Baseado em frameworks reconhecidos do mercado.' },
-                { icon: Lock, title: 'Visibilidade da infraestrutura', desc: 'Painel unificado com visão 360° do seu ambiente.' },
-              ].map((item, i) => (
-                <SectionReveal key={item.title} delay={i * 100}>
-                  <div className="feature-card flex gap-4 items-start h-full">
-                    <div className="shrink-0 p-3 rounded-xl bg-primary/10">
-                      <item.icon className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h3 className="font-heading font-bold text-foreground mb-1.5">{item.title}</h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+                {
+                  quote: 'O iScope reduziu nosso tempo de auditoria de compliance em mais de 60%. É indispensável para nossa operação.',
+                  name: 'Carlos M.',
+                  role: 'CISO — Empresa de Tecnologia',
+                },
+                {
+                  quote: 'Finalmente conseguimos ter visibilidade real do nosso ambiente. Antes do iScope era tudo manual e fragmentado.',
+                  name: 'Ana L.',
+                  role: 'CTO — Fintech',
+                },
+                {
+                  quote: 'A detecção automática de configurações inseguras já nos evitou dois incidentes graves em seis meses.',
+                  name: 'Roberto S.',
+                  role: 'Diretor de Infraestrutura — Healthcare',
+                },
+              ].map((t, i) => (
+                <SectionReveal key={t.name} delay={i * 120}>
+                  <div className="glass-container p-8 h-full flex flex-col">
+                    <Quote className="w-8 h-8 text-primary/20 mb-4 shrink-0" />
+                    <p className="text-[15px] text-foreground/80 leading-relaxed mb-8 flex-1 italic">
+                      "{t.quote}"
+                    </p>
+                    <div className="border-t border-border/20 pt-5">
+                      <div className="font-heading font-bold text-foreground text-sm">{t.name}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{t.role}</div>
                     </div>
                   </div>
                 </SectionReveal>
@@ -258,27 +297,36 @@ const Index = () => {
           </div>
         </section>
 
-        {/* ═══ CTA ═══ */}
-        <section className="min-h-screen flex items-center justify-center px-6 bg-card/20">
-          <div className="max-w-[1200px] mx-auto w-full">
+        {/* ═══ CTA FINAL ═══ */}
+        <section className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
+          {/* Subtle glow behind CTA */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px] pointer-events-none" />
+
+          <div className="max-w-3xl mx-auto w-full text-center relative z-10">
             <SectionReveal>
-              <div className="cta-gradient rounded-2xl border border-primary/20 px-8 py-24 lg:py-28 text-center relative overflow-hidden">
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] rounded-full bg-primary/8 blur-[100px] pointer-events-none" />
-                <div className="relative z-10">
-                  <h2 className="font-heading text-3xl lg:text-[2.25rem] font-bold mb-5">
-                    Comece a analisar sua infraestrutura hoje
-                  </h2>
-                  <p className="text-muted-foreground max-w-xl mx-auto mb-10 text-lg">
-                    Descubra vulnerabilidades, melhore sua postura de segurança e mantenha compliance contínuo.
-                  </p>
-                  <Button
-                    size="lg"
-                    onClick={() => navigate('/auth')}
-                    className="gap-2 px-12 h-14 text-base font-semibold shadow-[0_0_40px_hsl(175_80%_45%/0.25)] hover:shadow-[0_0_60px_hsl(175_80%_45%/0.4)] transition-shadow duration-300 animate-pulse-glow"
-                  >
-                    Acessar Plataforma <ArrowRight className="w-5 h-5" />
-                  </Button>
-                </div>
+              <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-6">
+                Comece a proteger sua infraestrutura{' '}
+                <span className="text-primary">hoje</span>
+              </h2>
+              <p className="text-muted-foreground max-w-xl mx-auto mb-12 text-lg leading-relaxed">
+                Descubra vulnerabilidades, melhore sua postura de segurança e mantenha compliance contínuo.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Button
+                  size="lg"
+                  onClick={() => navigate('/auth')}
+                  className="gap-2 px-12 h-14 text-base font-semibold shadow-[0_0_40px_hsl(175_80%_45%/0.25)] hover:shadow-[0_0_60px_hsl(175_80%_45%/0.4)] transition-shadow duration-300 animate-pulse-glow"
+                >
+                  Acessar Plataforma <ArrowRight className="w-5 h-5" />
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => navigate('/auth')}
+                  className="gap-2 px-10 h-14 text-base font-semibold"
+                >
+                  Falar com especialista
+                </Button>
               </div>
             </SectionReveal>
           </div>
