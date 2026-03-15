@@ -94,8 +94,7 @@ export default function EntraIdAnalyzerPage() {
 
   // ─── Extract identity insights from analyzer snapshot ───────────
   const entraInsights: M365AnalyzerInsight[] = (analyzerSnapshot?.insights ?? [])
-    .filter(i => ENTRA_OPERATIONAL_CATEGORIES.includes(i.category as M365AnalyzerCategory))
-    .filter(i => !isConfigurationalInsight(i));
+    .filter(i => ENTRA_OPERATIONAL_CATEGORIES.includes(i.category as M365AnalyzerCategory));
 
   const analyzedAt = analyzerSnapshot?.created_at;
 

@@ -121,8 +121,7 @@ export default function ExchangeAnalyzerPage() {
 
   // ─── Extract operational Exchange insights from analyzer snapshot ───────────
   const exchangeInsights: M365AnalyzerInsight[] = (analyzerSnapshot?.insights ?? [])
-    .filter(i => EXCHANGE_OPERATIONAL_CATEGORIES.includes(i.category as M365AnalyzerCategory))
-    .filter(i => !isConfigurationalInsight(i));
+    .filter(i => EXCHANGE_OPERATIONAL_CATEGORIES.includes(i.category as M365AnalyzerCategory));
 
   const analyzedAt = analyzerSnapshot?.created_at;
 

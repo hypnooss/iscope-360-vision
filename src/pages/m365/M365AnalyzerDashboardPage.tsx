@@ -465,7 +465,6 @@ export default function M365AnalyzerDashboardPage() {
   const anomalyInsights = applyKpiFilter(
     (snapshot?.insights ?? [])
       .filter(i => ANOMALY_CATEGORIES.includes(i.category as M365AnalyzerCategory))
-      .filter(i => !isConfigurationalInsight(i))
   );
 
   // Group by severity for columns
