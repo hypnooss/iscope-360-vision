@@ -40,12 +40,6 @@ export function Header() {
               {link.label}
             </button>
           ))}
-          <button
-            onClick={() => navigate('/auth')}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-200"
-          >
-            Login
-          </button>
         </nav>
 
         {/* Desktop CTA */}
