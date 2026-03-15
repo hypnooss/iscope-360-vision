@@ -389,17 +389,15 @@ Deno.serve(async (req) => {
         enabled: mfaEnabled,
         disabled: mfaDisabled,
         methodBreakdown: mfaMethodCounts,
-        userDetails: mfaUsers.map((u: any) => {
+      userDetails: mfaUsers.map((u: any) => {
           const methods = u.methodsRegistered || [];
           const hasMfa = methods.length > 0;
-          const upn = u.userPrincipalName || '';
           return {
             displayName: u.userDisplayName || '',
-            upn,
+            upn: u.userPrincipalName || '',
             methods,
             hasMfa,
             defaultMethod: u.systemPreferredAuthenticationMethods?.[0] || null,
-            isSharedMailbox: sharedMailboxUpns.has(upn.toLowerCase()) || sharedMailboxNames.has((u.userDisplayName || '').toLowerCase().trim()),
           };
         }),
       },
