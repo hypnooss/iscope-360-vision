@@ -14,7 +14,7 @@ interface Particle {
   phiSpeed: number;
 }
 
-const PARTICLE_COUNT = 10000;
+const PARTICLE_COUNT = 20000;
 const ROTATION_SPEED = 0.00015;
 const PERSPECTIVE = 800;
 
