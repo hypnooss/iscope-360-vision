@@ -71,7 +71,7 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col relative">
       <NetworkAnimation />
-      <div className="pointer-events-none fixed inset-0 z-0 animated-grid-dots grid-radial-mask" />
+      
 
       <Header />
 
