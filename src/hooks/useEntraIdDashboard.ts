@@ -54,7 +54,7 @@ export interface EntraIdDashboardData {
     guestDetails?: GuestUserDetail[];
   };
   admins: { total: number; globalAdmins: number; details?: AdminDetail[] };
-  mfa: { total: number; enabled: number; disabled: number; methodBreakdown: Record<string, number>; userDetails?: Array<{ displayName: string; upn: string; methods: string[]; hasMfa: boolean; defaultMethod?: string | null; isSharedMailbox?: boolean }> };
+  mfa: { total: number; enabled: number; disabled: number; methodBreakdown: Record<string, number>; userDetails?: Array<{ displayName: string; upn: string; methods: string[]; hasMfa: boolean; defaultMethod?: string | null }> };
   risks: { riskyUsers: number; atRisk: number; compromised: number; details?: RiskDetail[] };
   loginActivity: { total: number; success: number; failed: number; mfaRequired: number; blocked: number; details?: LoginDetail[] };
   userChanges: { updated: number; new: number; enabled: number; disabled: number; deleted: number };

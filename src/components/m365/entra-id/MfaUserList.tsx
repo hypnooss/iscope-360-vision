@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, ShieldCheck, ShieldOff, Star, Inbox } from 'lucide-react';
+import { Search, ShieldCheck, ShieldOff, Star } from 'lucide-react';
 
 interface MfaUserDetail {
   displayName: string;
@@ -9,7 +9,6 @@ interface MfaUserDetail {
   methods: string[];
   hasMfa: boolean;
   defaultMethod?: string | null;
-  isSharedMailbox?: boolean;
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -78,16 +77,8 @@ export function MfaUserList({ users, showMethods = false }: MfaUserListProps) {
                   <ShieldOff className="w-4 h-4 text-destructive" />
                 )}
               </div>
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-medium text-sm truncate">{user.displayName}</span>
-                  {user.isSharedMailbox && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-500/30 text-blue-400 bg-blue-500/10 shrink-0">
-                      <Inbox className="w-2.5 h-2.5 mr-0.5" />
-                      Shared
-                    </Badge>
-                  )}
-                </div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <span className="font-medium text-sm truncate block">{user.displayName}</span>
                 <div className="text-xs text-muted-foreground truncate">{user.upn}</div>
                 {showMethods && user.methods.length > 0 && (
                   <div className="flex flex-wrap gap-1 pt-0.5">
