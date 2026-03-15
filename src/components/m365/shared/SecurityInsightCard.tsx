@@ -205,6 +205,14 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                     </Badge>
                   )}
 
+                  {/* Compliance Correlation */}
+                  {!isPass && (insight.metadata as any)?.complianceCorrelation && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-violet-500/15 text-violet-400 border-violet-500/30">
+                      <Link2 className="w-3 h-3 mr-0.5" />
+                      Compliance
+                    </Badge>
+                  )}
+
                   {/* Trend */}
                   {!isPass && trend && TrendIcon && (
                     <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', trendStyles[trend])}>

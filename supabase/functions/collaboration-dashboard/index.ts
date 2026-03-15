@@ -447,7 +447,7 @@ Deno.serve(async (req) => {
 
     // SharePoint exposure
     if (inactiveSites > activeSites && inactiveSites > 10) {
-      collaborationInsights.push({
+      const inactiveInsight = {
         id: 'sharepoint_inactive',
         category: 'sharepoint_exposure',
         name: 'Sites SharePoint Inativos',
@@ -456,7 +456,8 @@ Deno.serve(async (req) => {
         status: 'fail',
         count: inactiveSites,
         recommendation: 'Revise e arquive sites inativos para reduzir superfície de exposição.',
-      });
+      };
+      collaborationInsights.push(enrichCollabInsight(inactiveInsight, ['SPO-001', 'SPO-002'], 'Sem política de lifecycle para sites inativos (SPO-001/002).'));
     } else {
       collaborationInsights.push({
         id: 'sharepoint_exposure_ok',
