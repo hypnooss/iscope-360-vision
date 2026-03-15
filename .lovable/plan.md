@@ -1,186 +1,108 @@
-1: # Status: ✅ Implementado
 
-## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-### Problema resolvido
-Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
+## Filosofia de Correlação Compliance ↔ Analyzer: Enriquecimento dos Insights de Segurança
 
-### Mudanças implementadas
+### Conceito Central (salvo como diretriz de produto)
 
-| Componente | Mudança |
-|---|---|
-| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
-| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
-| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
-| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
+> **Compliance diz "isso está errado". Analyzer mostra "o porquê está errado".**
+>
+> Insights de segurança nos Analyzers devem evidenciar os **efeitos operacionais reais** de configurações incorretas detectadas no Compliance. Não basta detectar eventos isolados — o valor está na correlação: uma Conditional Access Policy ausente (Compliance) + logins de países incomuns (Analyzer) = narrativa completa de risco.
 
-## Correção de Dados — scheduled_hour UTC→BRT
+### Estado Atual
 
-### Problema resolvido
-Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
+Os três Analyzers geram insights independentes, sem referenciar as falhas de compliance:
 
-### Solução aplicada
-1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
-2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
-3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
+| Analyzer | Edge Function | Insights Atuais |
+|---|---|---|
+| **Entra ID** | `entra-id-security-insights` | SI-001 a SI-009: Logins suspeitos, MFA ausente, logins de países incomuns, brute force, role changes — tudo **sem contexto de compliance** |
+| **Exchange** | `exchange-online-insights` | EXO-001 a EXO-005: Forward externo, regras de delete, auto-reply — **sem correlação** com políticas de DLP ou anti-spam do compliance |
+| **Colaboração** | `collaboration-dashboard` | Teams públicos, guests, SharePoint inativo — **insights genéricos sem referência a compliance** |
 
-## Paralelização do run-scheduled-analyses
+### Plano de Enriquecimento
 
-### Problema resolvido
-A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
+A abordagem é **buscar os resultados de compliance do tenant** (tabela `m365_posture_history`) dentro de cada edge function de insights e usar as falhas encontradas para:
+1. **Enriquecer a descrição** dos insights existentes com o contexto de compliance
+2. **Gerar novos insights correlacionados** quando há evidência operacional de uma falha de compliance
+3. **Adicionar metadados** (`complianceCode`, `complianceStatus`) para drill-down
 
-### Solução aplicada
-Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
-- `processFirewallComplianceSchedules`
-- `processExternalDomainSchedules`
-- `processAnalyzerSchedules`
-- `processAttackSurfaceSchedules`
-- `processM365AnalyzerSchedules`
-- `processM365ComplianceSchedules`
+#### Alterações por Analyzer
 
-CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
+**1. Entra ID Analyzer (`entra-id-security-insights`)**
 
-## Timezone Dinâmico — Preferência do Usuário
+| Correlação | Compliance Rule | Insight Enriquecido |
+|---|---|---|
+| Logins de países incomuns + Sem CA de localização | `AUT-010/011` (Risk-based CA) | "Logins de X países detectados — **não há Conditional Access restringindo origem geográfica**" |
+| MFA ausente + Compliance MFA falho | `AUT-001/002` (MFA enforcement) | "X usuários sem MFA — **a política de MFA obrigatório não está ativa no Compliance**" |
+| Brute force + Sem bloqueio de conta | `AUT-003` (Lockout policy) | "Tentativas de brute force detectadas — **não há política de bloqueio de conta configurada**" |
+| Admins sem MFA + Break glass sem proteção | `ADM-007` (Break glass) | "X admins sem MFA — **incluindo contas Break Glass sem proteção**" |
 
-### Problema resolvido
-O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
+**2. Exchange Analyzer (`exchange-online-insights`)**
 
-### Solução implementada
+| Correlação | Compliance Rule | Insight Enriquecido |
+|---|---|---|
+| Forward externo ativo + DLP ausente | `EXO-022` (Forward rules) | "Encaminhamento externo ativo — **sem política de DLP para prevenir vazamento**" |
+| Spam/phishing alto + Anti-spam fraco | `EXO-*` (Anti-spam policies) | "X e-mails de phishing entregues — **política anti-spam está em modo fraco ou desabilitada**" |
+| Auto-reply externo + Sem restrição | Exchange compliance rules | "Auto-reply para externos ativo — **sem política restringindo informações em respostas automáticas**" |
 
-| Componente | Mudança |
-|---|---|
-| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
-| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
-| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
-| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
-| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
-| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
+**3. Colaboração Analyzer (`collaboration-dashboard`)**
 
-### Arquitetura
+| Correlação | Compliance Rule | Insight Enriquecido |
+|---|---|---|
+| Teams com guests + Sem policy de guest | `TMS-*` (Guest policies) | "X teams com convidados externos — **sem política de revisão periódica de guests**" |
+| Sites SharePoint inativos + Sem governança | `SPO-*` (SharePoint governance) | "X sites abandonados — **sem política de lifecycle para sites inativos**" |
 
-```text
-┌─────────────────────────────────────────────────────┐
-│  Banco: tudo em UTC + coluna timezone por schedule  │
-├─────────────────────────────────────────────────────┤
-│  Frontend: dateUtils usa timezone do perfil         │
-│  ScheduleDialog: converte dinamicamente para UTC    │
-├─────────────────────────────────────────────────────┤
-│  Edge Function: lê timezone de cada registro        │
-│  e calcula offset via Intl.DateTimeFormat           │
-└─────────────────────────────────────────────────────┘
+#### Implementação Técnica
+
+Cada edge function receberá uma etapa adicional no início:
+
+```typescript
+// Buscar último resultado de compliance do tenant
+const { data: lastCompliance } = await supabase
+  .from('m365_posture_history')
+  .select('results')
+  .eq('tenant_record_id', tenantRecordId)
+  .eq('status', 'completed')
+  .order('created_at', { ascending: false })
+  .limit(1)
+  .single();
+
+const failedCodes = new Set(
+  (lastCompliance?.results || [])
+    .filter(r => r.status === 'fail')
+    .map(r => r.code)
+);
 ```
 
-## Correção de Dados Duplicados — Exchange Analyzer
+Depois, em cada função de análise, o código verifica se o compliance code relacionado está em `failedCodes` e enriquece o insight:
 
-### Status: ✅ Implementado
-
-### Problema resolvido
-O Exchange Analyzer usava janelas temporais fixas de 24h tanto no PowerShell (blueprint) quanto nas queries Graph API (edge function), causando sobreposição de dados entre snapshots consecutivos e contagem duplicada de eventos.
-
-### Mudanças implementadas
-
-| Componente | Mudança |
-|---|---|
-| **Blueprint `m365` (hybrid)** | Comando `exo_message_trace` alterado de `-StartDate (Get-Date).AddHours(-24)` para `-StartDate "{period_start}" -EndDate "{period_end}"`, usando os valores do payload da task |
-| **`supabase/functions/m365-analyzer/index.ts`** | Duas janelas fixas de 24h (fallback Graph API ~linha 2147 e enriquecimento ~linha 2197) substituídas por `snapshot.period_start`/`period_end` com fallback para 24h se ausentes. Filtro `createdDateTime le` adicionado para limite superior |
-| **Frontend** | Sem alteração necessária — agregação já funciona corretamente com snapshots não-sobrepostos |
-
-### Arquitetura final
-```text
-trigger-m365-analyzer:
-  period_start = last_snapshot.period_end (ou now - 2h)
-  period_end = now
-  → Cria snapshot + agent_task com period_start/period_end no payload
-
-Blueprint (PowerShell):
-  Get-MessageTraceV2 -StartDate "{period_start}" -EndDate "{period_end}"
-  → Agente interpola placeholders do payload
-
-Edge Function (Graph API):
-  $filter=createdDateTime ge {period_start} and createdDateTime le {period_end}
-  → Usa snapshot.period_start/period_end
-
-Frontend (useM365AnalyzerData.ts):
-  Soma contadores de snapshots consecutivos sem sobreposição
-  → Dados precisos sem duplicação
+```typescript
+// Exemplo: analyzeUnusualLocations
+if (failedCodes.has('AUT-010')) {
+  insight.description += '\n\n⚠️ Correlação de Compliance: Não existe política de Acesso Condicional baseada em risco de sign-in (AUT-010).';
+  insight.metadata = { ...insight.metadata, complianceCode: 'AUT-010', complianceCorrelation: true };
+  // Pode elevar severity se a correlação agrava o risco
+}
 ```
 
-## Dashboard Snapshots — Arquitetura de Período Dinâmico
+#### Alterações no Frontend
 
-### Status: ✅ Implementado
+- **`IncidentDetailSheet`**: Na aba "Análise", exibir uma seção "Correlação de Compliance" quando `metadata.complianceCorrelation === true`, mostrando o código e link para o item de compliance correspondente
+- **Badges nos cards**: Adicionar badge "Correlação Compliance" (ícone Link) quando o insight possui correlação
 
-### Problema resolvido
-Os dashboards operacionais (Exchange, Entra ID, Colaboração) salvavam KPIs numa única coluna JSONB sobrescrita a cada execução, impedindo agregação histórica para períodos dinâmicos (7 dias, 30 dias, etc.).
+#### Arquivos Afetados
 
-### Mudanças implementadas
-
-| Componente | Mudança |
+| Arquivo | Alteração |
 |---|---|
-| **Migration SQL** | Nova tabela `m365_dashboard_snapshots` com `tenant_record_id`, `client_id`, `dashboard_type`, `data` (JSONB), `period_start`, `period_end`, `created_at`. RLS com service_role, client_access e super_admin |
-| `exchange-dashboard` Edge Function | INSERT snapshot em `m365_dashboard_snapshots` (type='exchange') + UPDATE cache legado |
-| `entra-id-dashboard` Edge Function | INSERT snapshot (type='entra_id') + UPDATE cache legado |
-| `collaboration-dashboard` Edge Function | INSERT snapshot (type='collaboration') + UPDATE cache legado |
-| `useExchangeDashboard.ts` | Carrega do último snapshot da nova tabela, fallback para cache legado |
-| `useEntraIdDashboard.ts` | Idem |
-| `useCollaborationDashboard.ts` | Idem |
+| `supabase/functions/entra-id-security-insights/index.ts` | Buscar compliance, enriquecer SI-001 a SI-009 |
+| `supabase/functions/exchange-online-insights/index.ts` | Buscar compliance, enriquecer EXO-001 a EXO-005 |
+| `supabase/functions/collaboration-dashboard/index.ts` | Buscar compliance, enriquecer insights de Teams/SharePoint |
+| `src/components/m365/analyzer/IncidentDetailSheet.tsx` | Seção de correlação compliance |
+| `src/components/m365/shared/SecurityInsightCard.tsx` | Badge de correlação compliance |
 
-### Próximos passos
-- Adicionar seletor de período no frontend e agregar dados de evento de múltiplos snapshots
-- Auto-trigger dos dashboards no `agent-task-result` ao completar task m365_analyzer
-- Remover colunas de cache legado quando migração estiver consolidada
+### Prioridade de Implementação
 
-## StorageQuota SharePoint via Agent PowerShell
+1. **Entra ID** (maior impacto: logins + MFA + CA)
+2. **Exchange** (forward + anti-spam)
+3. **Colaboração** (guests + SharePoint)
+4. **Frontend** (badges + detail sheet)
 
-### Status: ✅ Implementado
-
-### Problema resolvido
-A REST API do SPO Admin (`/_api/StorageQuota()`) frequentemente falha por falta de permissões. O comando PowerShell `Get-PnPTenant | Select StorageQuota` é confiável e retorna o valor em MB.
-
-### Mudanças implementadas
-
-| Componente | Mudança |
-|---|---|
-| `python-agent/agent/executors/powershell.py` | Novo módulo `PnP.PowerShell` no dict `MODULES` com suporte a CBA via thumbprint. Params `spo_admin_domain` e `thumbprint` adicionados a todos os `.format()` de conexão |
-| Blueprint M365 hybrid (DB) | Novo step `spo_tenant_quota` (optional) usando `PnP.PowerShell` com comando `Get-PnPTenant \| Select StorageQuota, StorageQuotaAllocated` |
-| `collaboration-dashboard` Edge Function | Busca quota do agent (`step_results.spo_tenant_quota`) antes do fallback REST API. Converte MB→bytes |
-
-### Fluxo
-```text
-Agent (PnP.PowerShell) → Get-PnPTenant → StorageQuota (MB)
-  ↓ salvo em step_results do agent_task
-collaboration-dashboard → lê step_results do último snapshot completed
-  → storageAllocatedBytes = quotaMB * 1024 * 1024
-  → fallback: REST API SPO Admin (se agent não coletou)
-```
-
-## Correção do `spo_tenant_quota` — URL admin incorreta
-
-### Status: ✅ Implementado
-
-### Problema resolvido
-O campo `tenant_domain` armazenava domínios como `deployitgroup.mail.onmicrosoft.com`, mas a lógica de derivação do SPO admin URL não removia `.mail`, gerando URLs incorretas.
-
-### Mudanças implementadas
-
-| Componente | Mudança |
-|---|---|
-| **Migration SQL** | Adicionada coluna `spo_domain TEXT` em `m365_tenants` para armazenar o prefixo SPO explícito (ex: `precisioglobal`) |
-| **`rpc_get_agent_tasks`** | Incluído `spo_domain` no payload `target` para tasks M365 |
-| `python-agent/agent/tasks.py` | Inclui `spo_domain` no contexto M365 do agente |
-| `python-agent/agent/executors/powershell.py` | Novo método `_derive_spo_domain()` com prioridade: `spo_domain` explícito > derivação de `organization`. Todas as 6 derivações corrigidas para remover `.mail` |
-| `connect-m365-tenant` Edge Function | `fetchOrganizationInfo` extrai `spoDomain` de `verifiedDomains` (domínio `.onmicrosoft.com` sem `.mail`). Salva em `spo_domain` no INSERT |
-
-### Fluxo
-```text
-Onboarding (connect-m365-tenant):
-  GET /organization → verifiedDomains → encontra *.onmicrosoft.com (sem .mail)
-  → Extrai prefixo → salva em m365_tenants.spo_domain
-
-Agent (rpc_get_agent_tasks):
-  target.spo_domain → contexto → _derive_spo_domain(organization, spo_domain)
-  → Prioriza spo_domain explícito, fallback para derivação corrigida
-
-PowerShell:
-  Connect-PnPOnline -Url "https://{spo_domain}-admin.sharepoint.com" ...
-  → URL correta para Get-PnPTenant
-```
