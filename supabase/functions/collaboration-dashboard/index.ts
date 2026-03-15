@@ -385,7 +385,7 @@ Deno.serve(async (req) => {
 
     // Teams governance
     if (publicTeams > 0 && publicTeams > totalTeams * 0.5) {
-      collaborationInsights.push({
+      const insight = {
         id: 'teams_public_majority',
         category: 'teams_governance',
         name: 'Maioria dos Teams são Públicos',
@@ -394,7 +394,8 @@ Deno.serve(async (req) => {
         status: 'fail',
         count: publicTeams,
         recommendation: 'Revise a visibilidade dos teams e restrinja aqueles com dados sensíveis para privado.',
-      });
+      };
+      collaborationInsights.push(enrichCollabInsight(insight, ['TMS-001', 'TMS-002'], 'Sem política de governança de Teams restringindo visibilidade (TMS-001/002).'));
     } else {
       collaborationInsights.push({
         id: 'teams_governance_ok',
