@@ -45,12 +45,12 @@ function createParticles(): Particle[] {
 
     const sizeRoll = Math.random();
     let baseSize: number;
-    if (sizeRoll < 0.5) {
-      baseSize = 0.4 + Math.random() * 0.5;
-    } else if (sizeRoll < 0.85) {
-      baseSize = 0.9 + Math.random() * 0.7;
+    if (sizeRoll < 0.7) {
+      baseSize = 0.3 + Math.random() * 0.5;
+    } else if (sizeRoll < 0.95) {
+      baseSize = 0.8 + Math.random() * 0.4;
     } else {
-      baseSize = 1.6 + Math.random() * 1.0;
+      baseSize = 1.2 + Math.random() * 0.3;
     }
 
     const brightnessBoost = Math.random() < 0.05 ? 0.3 : (Math.random() < 0.3 ? 0.08 : 0);
