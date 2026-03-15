@@ -161,9 +161,7 @@ export function EntraIdCategorySheet({ open, onOpenChange, category, dashboardDa
           key, label: methodLabels[key]?.label || key, colorClass: methodLabels[key]?.colorClass || 'bg-muted-foreground', value,
         })).sort((a, b) => b.value - a.value);
 
-        const allUserDetails = mfa.userDetails || [];
-        const sharedCount = allUserDetails.filter((u) => u.isSharedMailbox).length;
-        const userDetails = excludeShared ? allUserDetails.filter((u) => !u.isSharedMailbox) : allUserDetails;
+        const userDetails = mfa.userDetails || [];
         const enabledUsers = userDetails.filter((u) => u.hasMfa);
         const disabledUsersDetail = userDetails.filter((u) => !u.hasMfa);
         const WEAK_METHODS = new Set(['mobilePhone', 'email']);
