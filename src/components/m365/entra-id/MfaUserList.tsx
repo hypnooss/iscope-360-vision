@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, ShieldCheck, ShieldOff, Star, Inbox } from 'lucide-react';
+import { Search, ShieldCheck, ShieldOff, Star } from 'lucide-react';
 
 interface MfaUserDetail {
   displayName: string;
