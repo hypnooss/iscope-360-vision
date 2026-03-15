@@ -11,7 +11,7 @@ import {
   AlertOctagon, AlertTriangle, Shield, Info,
   Search, Layers, FileText, Wrench, Users, UserX,
   Activity, TrendingUp, TrendingDown, Minus, Lightbulb,
-  Building2,
+  Building2, Link2,
 } from 'lucide-react';
 import type { M365AnalyzerInsight, M365AnalyzerCategory } from '@/types/m365AnalyzerInsights';
 import { M365_ANALYZER_CATEGORY_LABELS } from '@/types/m365AnalyzerInsights';
