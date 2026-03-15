@@ -160,8 +160,13 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
 
               <CardContent className="pt-0 pb-3 px-4">
                 <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                  {/* Severity / OK badge */}
-                  {isPass ? (
+                  {/* Severity / OK / N/A badge */}
+                  {isNA ? (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-500/15 text-slate-400 border-slate-500/30">
+                      <MinusCircle className="w-3 h-3 mr-0.5" />
+                      N/A
+                    </Badge>
+                  ) : isPass ? (
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
                       <CheckCircle2 className="w-3 h-3 mr-0.5" />
                       OK
