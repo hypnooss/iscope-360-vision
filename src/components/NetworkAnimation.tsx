@@ -186,8 +186,9 @@ export function NetworkAnimation() {
         const alpha = Math.max(0.03, depthAlpha * 1.0 + p.brightnessBoost + frontBoost * 0.3);
         const clampedAlpha = Math.min(alpha * globalAlpha, 1);
 
-        // Size: uniform, no front boost
-        const size = Math.max(0.2, p.baseSize * scale * 0.9);
+        // Size: slight front boost
+        const frontSizeMul = normalizedZ > 0.5 ? 1 + (normalizedZ - 0.5) * 0.5 : 1;
+        const size = Math.max(0.2, p.baseSize * scale * 0.9 * frontSizeMul);
 
         // Silhouette-based coloring: edges get dynamic color, center stays teal
         const dx = sx - cx;
