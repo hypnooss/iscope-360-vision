@@ -20,7 +20,8 @@ export type M365AnalyzerCategory =
   | 'sharepoint_exposure'
   | 'guest_access'
   | 'external_sharing'
-  | 'collaboration_risk';
+  | 'collaboration_risk'
+  | 'firewall_security';
 
 export interface M365AnalyzerInsight {
   id: string;
@@ -189,6 +190,7 @@ export const M365_ANALYZER_CATEGORY_LABELS: Record<M365AnalyzerCategory, string>
   guest_access: 'Acesso de Convidados',
   external_sharing: 'Compartilhamento Externo',
   collaboration_risk: 'Risco de Colaboração',
+  firewall_security: 'Segurança de Firewall',
 };
 
 export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
@@ -210,6 +212,7 @@ export const M365_ANALYZER_CATEGORIES: M365AnalyzerCategory[] = [
   'guest_access',
   'external_sharing',
   'collaboration_risk',
+  'firewall_security',
 ];
 
 export function groupM365AnalyzerInsightsByCategory(
