@@ -206,8 +206,43 @@ Deno.serve(async (req) => {
 
     const adminDetails = Array.from(adminUserMap.values());
 
-    // MFA calculation
-    const mfaUsers = mfaRegistration || [];
+    // Fetch shared mailbox UPNs from Exchange analyzer snapshot (needed before MFA calc)
+    let sharedMailboxUpns = new Set<string>();
+    let sharedMailboxNames = new Set<string>();
+    try {
+      const { data: exoSnapshot } = await supabase
+        .from('m365_analyzer_snapshots')
+        .select('metrics')
+        .eq('tenant_record_id', tenant_record_id)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (exoSnapshot?.metrics) {
+        const metrics = exoSnapshot.metrics as any;
+        const sharedMailboxes = metrics?.exoSharedMailboxes || metrics?.shared_mailboxes || [];
+        sharedMailboxes.forEach((m: any) => {
+          const upn = m.UserPrincipalName || m.userPrincipalName || m.upn || '';
+          if (upn) sharedMailboxUpns.add(upn.toLowerCase());
+          const name = m.DisplayName || m.displayName || '';
+          if (name) sharedMailboxNames.add(name.toLowerCase().trim());
+        });
+        console.log(`[entra-id-dashboard] Found ${sharedMailboxUpns.size} shared mailbox UPNs and ${sharedMailboxNames.size} DisplayNames from Exchange snapshot`);
+      }
+    } catch (e) {
+      console.warn('[entra-id-dashboard] Could not fetch shared mailbox data:', e);
+    }
+
+    // MFA calculation — filter out shared mailboxes
+    const mfaUsersRaw = mfaRegistration || [];
+    const mfaUsers = mfaUsersRaw.filter((u: any) => {
+      const upn = (u.userPrincipalName || '').toLowerCase();
+      const name = (u.userDisplayName || '').toLowerCase().trim();
+      return !sharedMailboxUpns.has(upn) && !sharedMailboxNames.has(name);
+    });
+    console.log(`[entra-id-dashboard] MFA users: ${mfaUsersRaw.length} raw → ${mfaUsers.length} after excluding ${mfaUsersRaw.length - mfaUsers.length} shared mailboxes`);
+
     const mfaEnabled = mfaUsers.filter((u: any) => {
       const methods = u.methodsRegistered || [];
       return methods.some((m: string) =>
