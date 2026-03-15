@@ -81,7 +81,7 @@ export function useEntraIdDashboard({ tenantRecordId }: UseEntraIdDashboardOptio
       guestDetails: result.users?.guestDetails || [],
     },
     admins: { ...(result.admins || { total: 0, globalAdmins: 0 }), details: result.admins?.details || [] },
-    mfa: { ...(result.mfa || { total: 0, enabled: 0, disabled: 0 }), methodBreakdown: result.mfa?.methodBreakdown || {}, userDetails: result.mfa?.userDetails || [] },
+    mfa: { ...(result.mfa || { total: 0, enabled: 0, disabled: 0, strong: 0, weak: 0 }), methodBreakdown: result.mfa?.methodBreakdown || {}, userDetails: result.mfa?.userDetails || [] },
     risks: { ...(result.risks || { riskyUsers: 0, atRisk: 0, compromised: 0 }), details: result.risks?.details || [] },
     loginActivity: { ...(result.loginActivity || { total: 0, success: 0, failed: 0, mfaRequired: 0, blocked: 0 }), details: result.loginActivity?.details || [] },
     userChanges: result.userChanges || { updated: 0, new: 0, enabled: 0, disabled: 0, deleted: 0 },

@@ -387,6 +387,8 @@ Deno.serve(async (req) => {
         total: mfaUsers.length,
         enabled: mfaEnabled,
         disabled: mfaDisabled,
+        strong: mfaStrong,
+        weak: mfaWeak,
         methodBreakdown: mfaMethodCounts,
       userDetails: mfaUsers.map((u: any) => {
           const methods = u.methodsRegistered || [];
