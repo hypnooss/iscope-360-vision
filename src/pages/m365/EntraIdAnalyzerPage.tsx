@@ -166,6 +166,8 @@ export default function EntraIdAnalyzerPage() {
         total: 0,
         enabled: 0,
         disabled: m.identity?.noMfaUsers ?? 0,
+        strong: 0,
+        weak: 0,
         methodBreakdown: {},
       },
       risks: {
