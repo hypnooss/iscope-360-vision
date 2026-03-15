@@ -7,7 +7,6 @@ import {
   CheckCircle2, AlertTriangle, TrendingUp, ArrowRight, Shield,
   Network, Eye, Zap, Lock, ChevronRight,
 } from 'lucide-react';
-import dashboardPreview from '@/assets/dashboard-preview.png';
 
 /* ── Scroll Reveal ── */
 function SectionReveal({ children, className = '', delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
@@ -36,18 +35,19 @@ function SectionReveal({ children, className = '', delay = 0 }: { children: Reac
   );
 }
 
-/* ── Animated Grid Background with dots ── */
+/* ── Animated Grid Background ── */
 function AnimatedGrid() {
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      {/* Grid lines + dots at intersections */}
-      <div className="absolute inset-0 animated-grid-dots opacity-60" />
-      {/* Hero glow orb */}
+      <div className="absolute inset-0 animated-grid-dots" />
       <div className="hero-glow absolute inset-0" />
-      {/* Secondary glow at bottom */}
-      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full bg-primary/3 blur-[150px]" />
     </div>
   );
+}
+
+/* ── Section Divider ── */
+function SectionDivider() {
+  return <div className="max-w-[1200px] mx-auto px-6"><div className="border-t border-border/10" /></div>;
 }
 
 /* ── Page ── */
@@ -79,10 +79,9 @@ const Index = () => {
       <Header />
 
       <main className="flex-1 relative z-10">
-        {/* ═══ HERO — Centralizado ═══ */}
-        <section className="max-w-[1200px] mx-auto px-6 pt-24 pb-16 lg:pt-36 lg:pb-28">
-          <div className="text-center max-w-4xl mx-auto">
-            {/* Badge */}
+        {/* ═══ HERO ═══ */}
+        <section className="min-h-[90vh] flex items-center justify-center px-6 pt-32 pb-24 lg:pt-44 lg:pb-36">
+          <div className="text-center max-w-3xl mx-auto">
             <SectionReveal>
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-primary/20 bg-primary/5 mb-8">
                 <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
@@ -90,7 +89,6 @@ const Index = () => {
               </div>
             </SectionReveal>
 
-            {/* Headline */}
             <SectionReveal delay={100}>
               <h1 className="font-heading text-[2.75rem] sm:text-[3.5rem] lg:text-[4.5rem] font-extrabold leading-[1.05] tracking-tight mb-6">
                 Gerencie sua infraestrutura{' '}
@@ -98,15 +96,13 @@ const Index = () => {
               </h1>
             </SectionReveal>
 
-            {/* Subheadline */}
             <SectionReveal delay={200}>
-              <p className="text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
+              <p className="text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto mb-12 leading-relaxed">
                 Plataforma completa para análise de compliance, segurança e
                 boas práticas da sua infraestrutura.
               </p>
             </SectionReveal>
 
-            {/* Buttons */}
             <SectionReveal delay={300}>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button
@@ -127,31 +123,17 @@ const Index = () => {
               </div>
             </SectionReveal>
           </div>
-
-          {/* Dashboard Mockup */}
-          <SectionReveal delay={400}>
-            <div className="mt-16 lg:mt-24 max-w-4xl mx-auto">
-              <div className="animate-float">
-                <div className="glass-container glow-border rounded-2xl overflow-hidden">
-                  <img
-                    src={dashboardPreview}
-                    alt="Dashboard iScope 360"
-                    className="w-full h-auto"
-                    loading="eager"
-                  />
-                </div>
-              </div>
-            </div>
-          </SectionReveal>
         </section>
 
-        {/* ═══ CREDIBILITY ═══ */}
+        <SectionDivider />
+
+        {/* ═══ CREDIBILITY + METRICS ═══ */}
         <SectionReveal>
-          <section className="max-w-[1200px] mx-auto px-6 py-12 text-center">
-            <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground/60 mb-8 font-medium">
+          <section className="max-w-[1200px] mx-auto px-6 py-24 lg:py-32">
+            <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground/60 mb-12 font-medium text-center">
               Construído para ambientes corporativos
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-10">
+            <div className="flex flex-wrap items-center justify-center gap-10 mb-20">
               {['Enterprise A', 'Enterprise B', 'Enterprise C', 'Enterprise D'].map((name) => (
                 <div
                   key={name}
@@ -161,12 +143,6 @@ const Index = () => {
                 </div>
               ))}
             </div>
-          </section>
-        </SectionReveal>
-
-        {/* ═══ METRICS ═══ */}
-        <SectionReveal>
-          <section className="max-w-[1200px] mx-auto px-6 py-16 lg:py-20">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-3xl mx-auto text-center">
               {[
                 { number: '50+', label: 'Verificações de Compliance' },
@@ -182,10 +158,12 @@ const Index = () => {
           </section>
         </SectionReveal>
 
+        <SectionDivider />
+
         {/* ═══ FEATURES ═══ */}
-        <section id="features" className="max-w-[1200px] mx-auto px-6 py-16 lg:py-24">
+        <section id="features" className="max-w-[1200px] mx-auto px-6 py-28 lg:py-36">
           <SectionReveal>
-            <div className="text-center mb-14">
+            <div className="text-center mb-16">
               <h2 className="font-heading text-3xl lg:text-[2.25rem] font-bold mb-4">
                 Tudo que você precisa em um só lugar
               </h2>
@@ -225,10 +203,12 @@ const Index = () => {
           </div>
         </section>
 
+        <SectionDivider />
+
         {/* ═══ HOW IT WORKS ═══ */}
-        <section id="how-it-works" className="max-w-[1200px] mx-auto px-6 py-16 lg:py-24">
+        <section id="how-it-works" className="max-w-[1200px] mx-auto px-6 py-28 lg:py-36">
           <SectionReveal>
-            <div className="text-center mb-16">
+            <div className="text-center mb-20">
               <h2 className="font-heading text-3xl lg:text-[2.25rem] font-bold mb-4">
                 Como funciona
               </h2>
@@ -238,7 +218,6 @@ const Index = () => {
             </div>
           </SectionReveal>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
-            {/* Connector line (desktop) */}
             <div className="hidden md:block absolute top-14 left-[20%] right-[20%] h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
 
             {[
@@ -259,32 +238,12 @@ const Index = () => {
           </div>
         </section>
 
-        {/* ═══ PLATFORM PREVIEW ═══ */}
-        <SectionReveal>
-          <section className="max-w-[1200px] mx-auto px-6 py-16 lg:py-24">
-            <div className="text-center mb-12">
-              <h2 className="font-heading text-3xl lg:text-[2.25rem] font-bold mb-4">
-                Visibilidade completa
-              </h2>
-              <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-                Interface moderna e intuitiva para monitorar toda sua infraestrutura.
-              </p>
-            </div>
-            <div className="glass-container glow-border rounded-2xl overflow-hidden max-w-4xl mx-auto">
-              <img
-                src={dashboardPreview}
-                alt="Interface da plataforma iScope 360"
-                className="w-full h-auto"
-                loading="lazy"
-              />
-            </div>
-          </section>
-        </SectionReveal>
+        <SectionDivider />
 
         {/* ═══ SECURITY & TRUST ═══ */}
-        <section id="security" className="max-w-[1200px] mx-auto px-6 py-16 lg:py-24">
+        <section id="security" className="max-w-[1200px] mx-auto px-6 py-28 lg:py-36">
           <SectionReveal>
-            <div className="text-center mb-14">
+            <div className="text-center mb-16">
               <h2 className="font-heading text-3xl lg:text-[2.25rem] font-bold mb-4">
                 Segurança em primeiro lugar
               </h2>
@@ -315,11 +274,12 @@ const Index = () => {
           </div>
         </section>
 
+        <SectionDivider />
+
         {/* ═══ CTA ═══ */}
         <SectionReveal>
-          <section className="max-w-[1200px] mx-auto px-6 py-16 lg:py-24">
-            <div className="cta-gradient rounded-2xl border border-primary/20 px-8 py-20 lg:py-24 text-center relative overflow-hidden">
-              {/* CTA glow orb */}
+          <section className="max-w-[1200px] mx-auto px-6 py-24 lg:py-32">
+            <div className="cta-gradient rounded-2xl border border-primary/20 px-8 py-24 lg:py-28 text-center relative overflow-hidden">
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] rounded-full bg-primary/8 blur-[100px] pointer-events-none" />
               <div className="relative z-10">
                 <h2 className="font-heading text-3xl lg:text-[2.25rem] font-bold mb-5">
