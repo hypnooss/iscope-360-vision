@@ -409,7 +409,7 @@ Deno.serve(async (req) => {
 
     // Guest access
     if (teamsWithGuests > 0) {
-      collaborationInsights.push({
+      const guestInsight = {
         id: 'teams_with_guests',
         category: 'guest_access',
         name: 'Teams com Convidados Externos',
@@ -418,7 +418,8 @@ Deno.serve(async (req) => {
         status: 'fail',
         count: teamsWithGuests,
         recommendation: 'Revise periodicamente os convidados e remova acessos desnecessários.',
-      });
+      };
+      collaborationInsights.push(enrichCollabInsight(guestInsight, ['TMS-003', 'TMS-005'], 'Sem política de revisão periódica de convidados externos (TMS-003/005).'));
     } else {
       collaborationInsights.push({
         id: 'guest_access_ok',
