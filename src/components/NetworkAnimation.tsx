@@ -1,22 +1,30 @@
 import { useEffect, useRef } from 'react';
 
 interface Particle {
-  // Spherical coords
   theta: number;
   phi: number;
-  // Normalized radius (0.85-1.15 for diffuse edges)
   radiusMul: number;
-  // Visual
   baseSize: number;
   colorR: number;
   colorG: number;
   colorB: number;
   brightnessBoost: number;
+  // For disperse phase: random target position (normalized -1 to 1)
+  disperseX: number;
+  disperseY: number;
 }
 
 const PARTICLE_COUNT = 6000;
 const ROTATION_SPEED = 0.00015;
 const PERSPECTIVE = 800;
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return v < min ? min : v > max ? max : v;
+}
 
 function createParticles(): Particle[] {
   const particles: Particle[] = [];
@@ -27,51 +35,58 @@ function createParticles(): Particle[] {
     const theta = goldenAngle * i;
     const phi = Math.acos(1 - 2 * t);
 
-    // Diffuse edges: most particles on surface, some scattered outward
+    // Diffuse edges
     const rRoll = Math.random();
     let radiusMul: number;
     if (rRoll < 0.75) {
-      radiusMul = 0.97 + Math.random() * 0.06; // tight on surface
+      radiusMul = 0.97 + Math.random() * 0.06;
     } else if (rRoll < 0.92) {
-      radiusMul = 1.03 + Math.random() * 0.12; // slightly outside
+      radiusMul = 1.03 + Math.random() * 0.12;
     } else {
-      radiusMul = 1.15 + Math.random() * 0.15; // scattered outer halo
+      radiusMul = 1.15 + Math.random() * 0.15;
     }
 
-    // Size variation: mostly tiny, some medium, few bright
+    // Size variation
     const sizeRoll = Math.random();
     let baseSize: number;
-    if (sizeRoll < 0.6) {
-      baseSize = 0.3 + Math.random() * 0.4; // tiny specks
-    } else if (sizeRoll < 0.9) {
-      baseSize = 0.7 + Math.random() * 0.6; // medium
+    if (sizeRoll < 0.5) {
+      baseSize = 0.4 + Math.random() * 0.5;
+    } else if (sizeRoll < 0.85) {
+      baseSize = 0.9 + Math.random() * 0.7;
     } else {
-      baseSize = 1.3 + Math.random() * 0.8; // bright dots
+      baseSize = 1.6 + Math.random() * 1.0;
     }
 
-    // Color: dark teal base, some cyan highlights, rare bright white-ish
+    // Color palette with magenta
     const colorRoll = Math.random();
     let colorR: number, colorG: number, colorB: number;
     let brightnessBoost = 0;
-    if (colorRoll < 0.55) {
+    if (colorRoll < 0.45) {
       // Dark teal
       colorR = 15; colorG = 140; colorB = 130;
-    } else if (colorRoll < 0.80) {
-      // Brighter teal
+    } else if (colorRoll < 0.70) {
+      // Bright teal
       colorR = 20; colorG = 184; colorB = 166;
-    } else if (colorRoll < 0.92) {
+      brightnessBoost = 0.05;
+    } else if (colorRoll < 0.85) {
       // Cyan
       colorR = 30; colorG = 200; colorB = 220;
+      brightnessBoost = 0.12;
+    } else if (colorRoll < 0.95) {
+      // Magenta/pink
+      colorR = 180; colorG = 60; colorB = 180;
       brightnessBoost = 0.1;
     } else {
-      // Bright cyan-white highlights
-      colorR = 120; colorG = 230; colorB = 240;
-      brightnessBoost = 0.25;
+      // Bright white-cyan highlights
+      colorR = 140; colorG = 235; colorB = 245;
+      brightnessBoost = 0.3;
     }
 
     particles.push({
       theta, phi, radiusMul, baseSize,
       colorR, colorG, colorB, brightnessBoost,
+      disperseX: (Math.random() - 0.5) * 2,
+      disperseY: (Math.random() - 0.5) * 2,
     });
   }
 
@@ -109,11 +124,24 @@ export function NetworkAnimation() {
       const time = now - startTime;
       const w = window.innerWidth;
       const h = window.innerHeight;
+      const scrollY = window.scrollY;
+      const scrollProgress = scrollY / h;
+
+      // Morphing phases
+      const flattenAmount = clamp((scrollProgress - 0.3) / 0.7, 0, 1); // 0.3 → 1.0
+      const disperseAmount = clamp((scrollProgress - 1.0) / 1.0, 0, 1); // 1.0 → 2.0
+      const fadeOut = clamp((scrollProgress - 2.5) / 0.5, 0, 1); // 2.5 → 3.0
+
       const cx = w * 0.5;
-      const cy = h * 0.46;
-      const sphereRadius = Math.min(w, h) * 0.44;
+      // Shift sphere up as user scrolls
+      const cyBase = h * 0.48;
+      const cy = cyBase - disperseAmount * h * 0.15;
+      const sphereRadius = Math.min(w, h) * 0.55;
 
       ctx.clearRect(0, 0, w, h);
+
+      // Global alpha for late-scroll fade
+      const globalAlpha = 1 - fadeOut * 0.7;
 
       const rotY = time * ROTATION_SPEED;
       const rotX = Math.sin(time * 0.00006) * 0.12;
@@ -125,12 +153,24 @@ export function NetworkAnimation() {
 
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
-        const r = sphereRadius * p.radiusMul;
 
-        const sp = Math.sin(p.phi);
+        // Apply morphing to phi: flatten toward equator
+        const morphedPhi = lerp(p.phi, Math.PI * 0.5, flattenAmount * 0.85);
+
+        // Apply disperse: expand radius and add random offset
+        const disperseScale = 1 + disperseAmount * 2.5;
+        const r = sphereRadius * p.radiusMul * disperseScale;
+
+        const sp = Math.sin(morphedPhi);
         let x = r * sp * Math.cos(p.theta);
-        let y = r * Math.cos(p.phi);
+        let y = r * Math.cos(morphedPhi);
         let z = r * sp * Math.sin(p.theta);
+
+        // Add random dispersion offset
+        if (disperseAmount > 0) {
+          x += p.disperseX * disperseAmount * w * 0.4;
+          y += p.disperseY * disperseAmount * h * 0.3;
+        }
 
         // Rotate Y
         const rx = x * cosY - z * sinY;
@@ -145,28 +185,33 @@ export function NetworkAnimation() {
         z = rz2;
 
         // Perspective
-        const maxR = sphereRadius * 1.3;
+        const maxR = sphereRadius * disperseScale * 1.3;
         const depth = z + PERSPECTIVE + maxR;
         const scale = PERSPECTIVE / depth;
         const sx = cx + x * scale;
         const sy = cy + y * scale;
 
-        // Depth-based alpha: back = very dim, front = bright
+        // Depth-based alpha: back very dim, front very bright
         const normalizedZ = (z + maxR) / (2 * maxR);
-        const depthAlpha = normalizedZ * normalizedZ;
-        const alpha = Math.max(0.02, (depthAlpha * 0.85) + p.brightnessBoost);
-        const clampedAlpha = Math.min(alpha, 1);
-        const size = Math.max(0.2, p.baseSize * scale * 1.1);
+        const depthAlpha = normalizedZ * normalizedZ * normalizedZ; // cubic for more contrast
+        const frontBoost = normalizedZ > 0.6 ? (normalizedZ - 0.6) * 2.5 : 0;
+        const alpha = Math.max(0.03, depthAlpha * 1.0 + p.brightnessBoost + frontBoost * 0.3);
+        const clampedAlpha = Math.min(alpha * globalAlpha, 1);
+
+        // Size: front particles much bigger
+        const frontSizeMul = normalizedZ > 0.5 ? 1 + (normalizedZ - 0.5) * 1.5 : 1;
+        const size = Math.max(0.3, p.baseSize * scale * 1.2 * frontSizeMul);
 
         ctx.fillStyle = `rgba(${p.colorR}, ${p.colorG}, ${p.colorB}, ${clampedAlpha})`;
         ctx.beginPath();
         ctx.arc(sx, sy, size, 0, Math.PI * 2);
         ctx.fill();
 
-        // Subtle glow on bright front-facing particles
-        if (normalizedZ > 0.65 && p.brightnessBoost > 0.05) {
-          const glowAlpha = (normalizedZ - 0.65) * 2.85 * 0.12;
-          const glowR = size * 4;
+        // Glow on bright front-facing particles (top 35%)
+        if (normalizedZ > 0.65 && p.brightnessBoost > 0.04 && disperseAmount < 0.5) {
+          const glowIntensity = (normalizedZ - 0.65) * 2.85;
+          const glowAlpha = glowIntensity * 0.18 * globalAlpha;
+          const glowR = size * 5;
           const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
           grad.addColorStop(0, `rgba(${p.colorR}, ${p.colorG}, ${p.colorB}, ${glowAlpha})`);
           grad.addColorStop(1, `rgba(${p.colorR}, ${p.colorG}, ${p.colorB}, 0)`);
