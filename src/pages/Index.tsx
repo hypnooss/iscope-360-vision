@@ -100,23 +100,14 @@ const Index = () => {
             </SectionReveal>
 
             <SectionReveal delay={400}>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button
-                  size="lg"
-                  onClick={() => navigate('/auth')}
-                  className="gap-2 h-13 px-10 text-base font-semibold shadow-[0_0_30px_hsl(175_80%_45%/0.2)] hover:shadow-[0_0_50px_hsl(175_80%_45%/0.35)] transition-shadow duration-300"
-                >
-                  Acessar Plataforma <ArrowRight className="w-5 h-5" />
-                </Button>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={() => document.querySelector('#how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
-                  className="gap-2 h-13 px-10 text-base font-semibold"
-                >
-                  Ver como funciona
-                </Button>
-              </div>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => document.querySelector('#how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
+                className="gap-2 h-14 px-14 text-lg font-semibold"
+              >
+                Ver como funciona
+              </Button>
             </SectionReveal>
           </div>
 

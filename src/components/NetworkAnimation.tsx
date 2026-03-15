@@ -3,9 +3,12 @@ import { useEffect, useRef } from 'react';
 interface Particle {
   baseTheta: number;
   basePhi: number;
+  colorR: number;
+  colorG: number;
+  colorB: number;
 }
 
-const PARTICLE_COUNT = 2500;
+const PARTICLE_COUNT = 4000;
 const ROTATION_SPEED = 0.00012;
 const PERSPECTIVE = 900;
 
@@ -16,7 +19,22 @@ function createParticles(): Particle[] {
     const t = i / PARTICLE_COUNT;
     const theta = goldenAngle * i;
     const phi = Math.acos(1 - 2 * t);
-    particles.push({ baseTheta: theta, basePhi: phi });
+
+    // Color variation: 70% teal, 20% cyan, 10% purple
+    const roll = Math.random();
+    let colorR: number, colorG: number, colorB: number;
+    if (roll < 0.7) {
+      // Teal
+      colorR = 20; colorG = 184; colorB = 166;
+    } else if (roll < 0.9) {
+      // Cyan
+      colorR = 6; colorG = 182; colorB = 212;
+    } else {
+      // Purple
+      colorR = 139; colorG = 92; colorB = 246;
+    }
+
+    particles.push({ baseTheta: theta, basePhi: phi, colorR, colorG, colorB });
   }
   return particles;
 }
@@ -54,15 +72,13 @@ export function NetworkAnimation() {
       const h = window.innerHeight;
       const cx = w * 0.5;
       const cy = h * 0.45;
-      const sphereRadius = Math.min(w, h) * 0.35;
+      const sphereRadius = Math.min(w, h) * 0.42;
 
       ctx.clearRect(0, 0, w, h);
 
-      // Rotation angles
       const rotY = time * ROTATION_SPEED;
       const rotX = Math.sin(time * 0.00008) * 0.15;
 
-      // Precompute rotation matrix
       const cosY = Math.cos(rotY);
       const sinY = Math.sin(rotY);
       const cosX = Math.cos(rotX);
@@ -71,7 +87,6 @@ export function NetworkAnimation() {
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
 
-        // Spherical to cartesian
         const sp = Math.sin(p.basePhi);
         let x = sphereRadius * sp * Math.cos(p.baseTheta);
         let y = sphereRadius * Math.cos(p.basePhi);
@@ -89,7 +104,7 @@ export function NetworkAnimation() {
         y = ry;
         z = rz2;
 
-        // Perspective projection
+        // Perspective
         const depth = z + PERSPECTIVE + sphereRadius;
         const scale = PERSPECTIVE / depth;
         const sx = cx + x * scale;
@@ -97,22 +112,21 @@ export function NetworkAnimation() {
 
         // Depth-based alpha and size
         const normalizedZ = (z + sphereRadius) / (2 * sphereRadius);
-        const alpha = Math.max(0.03, normalizedZ * normalizedZ * 0.85);
-        const size = Math.max(0.4, 1.8 * scale);
+        const alpha = Math.max(0.05, normalizedZ * normalizedZ * 0.95);
+        const size = Math.max(0.5, 2.2 * scale);
 
-        // Draw particle
-        ctx.fillStyle = `rgba(20, 184, 166, ${alpha})`;
+        ctx.fillStyle = `rgba(${p.colorR}, ${p.colorG}, ${p.colorB}, ${alpha})`;
         ctx.beginPath();
         ctx.arc(sx, sy, size, 0, Math.PI * 2);
         ctx.fill();
 
-        // Glow on front-facing particles (top 25% depth)
-        if (normalizedZ > 0.75) {
-          const glowAlpha = (normalizedZ - 0.75) * 4 * 0.15;
+        // Glow on front-facing particles (top 30% depth)
+        if (normalizedZ > 0.7) {
+          const glowAlpha = (normalizedZ - 0.7) * 3.33 * 0.2;
           const glowR = size * 5;
           const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
-          grad.addColorStop(0, `rgba(20, 184, 166, ${glowAlpha})`);
-          grad.addColorStop(1, 'rgba(20, 184, 166, 0)');
+          grad.addColorStop(0, `rgba(${p.colorR}, ${p.colorG}, ${p.colorB}, ${glowAlpha})`);
+          grad.addColorStop(1, `rgba(${p.colorR}, ${p.colorG}, ${p.colorB}, 0)`);
           ctx.fillStyle = grad;
           ctx.beginPath();
           ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
