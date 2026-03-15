@@ -392,7 +392,7 @@ Deno.serve(async (req) => {
             methods,
             hasMfa,
             defaultMethod: u.systemPreferredAuthenticationMethods?.[0] || null,
-            isSharedMailbox: sharedMailboxUpns.has(upn.toLowerCase()),
+            isSharedMailbox: sharedMailboxUpns.has(upn.toLowerCase()) || sharedMailboxNames.has((u.userDisplayName || '').toLowerCase().trim()),
           };
         }),
       },
