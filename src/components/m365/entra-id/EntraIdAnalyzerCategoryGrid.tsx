@@ -70,8 +70,15 @@ function getCategoryStats(cat: EntraIdOperationalCategory, data: EntraIdDashboar
     }
     case 'mfa_coverage': {
       const pct = mfa.total > 0 ? (mfa.enabled / mfa.total) * 100 : 0;
-      const strong = mfa.strong ?? 0;
-      const weak = mfa.weak ?? 0;
+      let strong = mfa.strong;
+      let weak = mfa.weak;
+      if (strong == null || weak == null) {
+        const STRONG_METHODS = ['microsoftAuthenticatorPush', 'softwareOneTimePasscode', 'hardwareOneTimePasscode', 'windowsHelloForBusiness', 'passKeyDeviceBound', 'microsoftAuthenticatorPasswordless', 'fido2'];
+        const details = mfa.userDetails || [];
+        const strongCount = details.filter(u => u.hasMfa && u.methods.some(m => STRONG_METHODS.includes(m))).length;
+        strong = strongCount;
+        weak = Math.max(0, mfa.enabled - strongCount);
+      }
       return {
         total: mfa.enabled,
         pct,
