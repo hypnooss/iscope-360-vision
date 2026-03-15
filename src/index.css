@@ -138,6 +138,51 @@
     background-size: 40px 40px;
   }
 
+  .animated-grid {
+    background-image: 
+      linear-gradient(hsl(175 80% 45% / 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(175 80% 45% / 0.04) 1px, transparent 1px);
+    background-size: 60px 60px;
+    animation: grid-fade 8s ease-in-out infinite;
+  }
+
+  @keyframes grid-fade {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+
+  .glass-container {
+    @apply bg-card/60 backdrop-blur-2xl border border-border/30 rounded-xl;
+    box-shadow: 0 8px 32px hsl(220 20% 0% / 0.5), inset 0 1px 0 hsl(175 80% 45% / 0.05);
+  }
+
+  .feature-card {
+    @apply bg-card/50 backdrop-blur-xl border border-border/30 rounded-xl p-6;
+    transition: all 0.3s ease;
+  }
+
+  .feature-card:hover {
+    @apply border-primary/30;
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 12px 40px hsl(175 80% 45% / 0.1), 0 0 0 1px hsl(175 80% 45% / 0.1);
+  }
+
+  .glow-border {
+    box-shadow: 0 0 30px hsl(175 80% 45% / 0.15), inset 0 1px 0 hsl(175 80% 45% / 0.1);
+  }
+
+  .cta-gradient {
+    background: linear-gradient(135deg, hsl(175 80% 45% / 0.15), hsl(190 80% 40% / 0.1), hsl(175 80% 45% / 0.05));
+    background-size: 200% 200%;
+    animation: gradient-shift 6s ease infinite;
+  }
+
+  @keyframes gradient-shift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
   /* Custom Scrollbar for sidebar and dark theme */
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;

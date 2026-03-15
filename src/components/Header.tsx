@@ -1,24 +1,89 @@
-import { LogIn } from 'lucide-react';
+import { LogIn, Menu, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { useNavigate } from 'react-router-dom';
 import logoIscope from '@/assets/logo-iscope.png';
+import { useState } from 'react';
+
+const NAV_LINKS = [
+  { label: 'Produto', href: '#features' },
+  { label: 'Segurança', href: '#security' },
+  { label: 'Como Funciona', href: '#how-it-works' },
+];
 
 export function Header() {
   const navigate = useNavigate();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const scrollTo = (href: string) => {
+    setMobileOpen(false);
+    const el = document.querySelector(href);
+    el?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <header className="sticky top-0 z-50 border-b border-border/30 bg-background/70 backdrop-blur-xl">
+      <div className="max-w-[1200px] mx-auto px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <img src={logoIscope} alt="iScope 360" className="h-10 w-auto" />
-          <h1 className="text-lg font-bold text-foreground">iScope 360</h1>
+          <img src={logoIscope} alt="iScope 360" className="h-9 w-auto" />
+          <span className="text-lg font-bold font-heading text-foreground">iScope 360</span>
         </div>
 
-        <Button onClick={() => navigate('/auth')} className="gap-2">
-          <LogIn className="w-4 h-4" />
-          Acessar Plataforma
-        </Button>
+        {/* Desktop Nav */}
+        <nav className="hidden md:flex items-center gap-8">
+          {NAV_LINKS.map((link) => (
+            <button
+              key={link.href}
+              onClick={() => scrollTo(link.href)}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-200"
+            >
+              {link.label}
+            </button>
+          ))}
+          <button
+            onClick={() => navigate('/auth')}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-200"
+          >
+            Login
+          </button>
+          <Button onClick={() => navigate('/auth')} size="sm" className="gap-2">
+            <LogIn className="w-4 h-4" />
+            Acessar Plataforma
+          </Button>
+        </nav>
+
+        {/* Mobile toggle */}
+        <button
+          className="md:hidden text-foreground"
+          onClick={() => setMobileOpen(!mobileOpen)}
+        >
+          {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
       </div>
+
+      {/* Mobile Nav */}
+      {mobileOpen && (
+        <div className="md:hidden border-t border-border/30 bg-background/95 backdrop-blur-xl px-6 py-4 space-y-3 animate-fade-in">
+          {NAV_LINKS.map((link) => (
+            <button
+              key={link.href}
+              onClick={() => scrollTo(link.href)}
+              className="block w-full text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {link.label}
+            </button>
+          ))}
+          <button
+            onClick={() => { setMobileOpen(false); navigate('/auth'); }}
+            className="block w-full text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Login
+          </button>
+          <Button onClick={() => navigate('/auth')} className="w-full gap-2 mt-2">
+            <LogIn className="w-4 h-4" />
+            Acessar Plataforma
+          </Button>
+        </div>
+      )}
     </header>
   );
 }
