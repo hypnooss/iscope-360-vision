@@ -163,8 +163,8 @@
   }
 
   @keyframes grid-fade {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.8; }
   }
 
   .glass-container {
