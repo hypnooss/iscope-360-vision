@@ -489,23 +489,14 @@ const Index = () => {
               </p>
             </Reveal>
             <Reveal delay={0.2}>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button
-                  size="lg"
-                  onClick={() => navigate('/auth')}
-                  className="gap-2 px-12 h-14 text-base font-semibold shadow-[0_0_40px_hsl(175_80%_45%/0.25)] hover:shadow-[0_0_60px_hsl(175_80%_45%/0.4)] hover:-translate-y-0.5 transition-all duration-300"
-                >
-                  Acessar Plataforma <ArrowRight className="w-5 h-5" />
-                </Button>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={() => navigate('/auth')}
-                  className="gap-2 px-10 h-14 text-base font-semibold hover:-translate-y-0.5 transition-all duration-300"
-                >
-                  Falar com especialista
-                </Button>
-              </div>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => navigate('/auth')}
+                className="gap-2 px-10 h-14 text-base font-semibold hover:-translate-y-0.5 transition-all duration-300"
+              >
+                Falar com especialista <ArrowRight className="w-5 h-5" />
+              </Button>
             </Reveal>
           </motion.div>
         </section>

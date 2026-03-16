@@ -65,7 +65,7 @@ export function Header() {
             size="sm"
             className="hover:-translate-y-0.5 transition-all duration-300 shadow-[0_0_20px_hsl(175_80%_45%/0.15)] hover:shadow-[0_0_30px_hsl(175_80%_45%/0.3)]"
           >
-            Acessar Plataforma
+            <LogIn className="w-4 h-4" /> Acessar Plataforma
           </Button>
         </div>
 
