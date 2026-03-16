@@ -125,7 +125,7 @@ const Index = () => {
                 <Button
                   size="lg"
                   onClick={() => navigate('/auth')}
-                  className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300 shadow-[0_0_30px_hsl(175_80%_45%/0.2)] hover:shadow-[0_0_50px_hsl(175_80%_45%/0.35)]"
+                  className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300"
                 >
                   Acessar Plataforma <ArrowRight className="w-4 h-4" />
                 </Button>
