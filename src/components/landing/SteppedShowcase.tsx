@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useRef, useMemo } from 'react';
+import { motion, useScroll, useTransform, useMotionValueEvent } from 'framer-motion';
+import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 
 /* ── Step data ── */
@@ -29,31 +30,42 @@ function CVECard({
   cve,
   x,
   y,
-  delay = 0,
+  opacity,
+  scale,
+  size = 'lg',
 }: {
   cve: string;
   x: string;
   y: string;
-  delay?: number;
+  opacity: number;
+  scale: number;
+  size?: 'lg' | 'sm';
 }) {
+  const isSmall = size === 'sm';
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.8 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.8 }}
-      transition={{ duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] }}
-      className="absolute glass-container px-5 py-3 rounded-xl"
-      style={{ left: x, top: y }}
+      className="absolute glass-container rounded-xl"
+      style={{
+        left: x,
+        top: y,
+        opacity,
+        scale,
+        padding: isSmall ? '10px 16px' : '14px 22px',
+      }}
     >
       <div className="flex items-center gap-2 mb-2">
-        <div className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
-        <span className="font-mono text-sm text-foreground/90">{cve}</span>
+        <div className="relative">
+          <div className={`${isSmall ? 'w-2 h-2' : 'w-3 h-3'} rounded-full border border-destructive/40 flex items-center justify-center`}>
+            <div className={`${isSmall ? 'w-1 h-1' : 'w-1.5 h-1.5'} rounded-full bg-destructive animate-pulse`} />
+          </div>
+        </div>
+        <span className={`font-mono ${isSmall ? 'text-xs text-foreground/60' : 'text-sm text-foreground/90'}`}>{cve}</span>
       </div>
       <div className="flex gap-2">
         {['Exploitable', 'High Likelihood', 'Critical Impact'].map((tag) => (
           <span
             key={tag}
-            className="text-[10px] font-mono text-destructive/80 tracking-wide"
+            className={`font-mono tracking-wide ${isSmall ? 'text-[8px] text-destructive/50' : 'text-[10px] text-destructive/80'}`}
           >
             {tag}
           </span>
@@ -63,21 +75,83 @@ function CVECard({
   );
 }
 
+/* ── Sankey-like Chart (step 2 visual) ── */
+function SankeyChart({ opacity }: { opacity: number }) {
+  const rows = [
+    { label: 'Low', count: '380,431', color: 'hsl(var(--warning))', barWidth: '95%' },
+    { label: 'Medium', count: '149,156', color: 'hsl(var(--info))', barWidth: '72%' },
+    { label: 'High', count: '100,455', color: 'hsl(var(--primary))', barWidth: '48%' },
+    { label: 'Critical', count: '89,186', color: 'hsl(var(--destructive))', barWidth: '38%' },
+  ];
+
+  return (
+    <motion.div
+      className="absolute right-[5%] top-[10%] glass-container rounded-2xl p-6 w-[380px]"
+      style={{ opacity }}
+    >
+      <div className="space-y-4">
+        {rows.map((row, i) => (
+          <motion.div
+            key={row.label}
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: opacity > 0.3 ? 1 : 0, x: opacity > 0.3 ? 0 : 30 }}
+            transition={{ duration: 0.6, delay: i * 0.12, ease: [0.22, 1, 0.36, 1] }}
+            className="flex items-center gap-3"
+          >
+            <div className="w-16 text-right">
+              <div className="text-[11px] text-muted-foreground">{row.label}</div>
+              <div className="font-mono text-xs text-foreground/70">{row.count}</div>
+            </div>
+            <div className="flex-1 h-6 rounded-sm bg-muted/20 overflow-hidden relative">
+              <motion.div
+                className="h-full rounded-sm"
+                style={{ background: `linear-gradient(90deg, ${row.color}66, ${row.color}22)`, width: row.barWidth }}
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: opacity > 0.3 ? 1 : 0 }}
+                transition={{ duration: 0.8, delay: 0.2 + i * 0.12, ease: [0.22, 1, 0.36, 1] }}
+              />
+              {/* Flowing curves overlay */}
+              <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none">
+                <motion.path
+                  d={`M 0 ${12} Q ${50 + i * 10} ${4 + i * 3}, 100% ${8 + i * 2}`}
+                  stroke={row.color}
+                  strokeWidth="1.5"
+                  fill="none"
+                  opacity="0.4"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: opacity > 0.3 ? 1 : 0 }}
+                  transition={{ duration: 1.2, delay: 0.4 + i * 0.1 }}
+                />
+              </svg>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+      {/* Right side label */}
+      <div className="absolute -right-8 top-0 bottom-0 flex flex-col justify-between text-[9px] font-mono text-muted-foreground/50 writing-vertical">
+        <span>Exploitable 10%</span>
+        <span>Not Exploitable 90%</span>
+      </div>
+    </motion.div>
+  );
+}
+
 /* ── Workflow Step ── */
-function WorkflowStep({
+function WorkflowStepCard({
   num,
   label,
+  visible,
   delay = 0,
 }: {
   num: string;
   label: string;
+  visible: boolean;
   delay?: number;
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, x: 40 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 40 }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: visible ? 1 : 0, y: visible ? 0 : 20 }}
       transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}
       className="glass-container px-6 py-4 rounded-xl flex items-center gap-4"
     >
@@ -90,216 +164,182 @@ function WorkflowStep({
   );
 }
 
-/* ── Risk Nodes (step 2 visual) ── */
-function RiskNodes() {
-  const nodes = [
-    { label: 'Critical', color: 'bg-destructive', size: 'w-20 h-20', x: '20%', y: '15%' },
-    { label: 'High', color: 'bg-warning', size: 'w-14 h-14', x: '55%', y: '30%' },
-    { label: 'Medium', color: 'bg-info', size: 'w-10 h-10', x: '35%', y: '55%' },
-    { label: 'Low', color: 'bg-muted-foreground/40', size: 'w-7 h-7', x: '65%', y: '65%' },
-    { label: 'Info', color: 'bg-muted-foreground/20', size: 'w-5 h-5', x: '75%', y: '20%' },
-  ];
-
-  return (
-    <>
-      {nodes.map((n, i) => (
-        <motion.div
-          key={n.label}
-          initial={{ opacity: 0, scale: 0 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0 }}
-          transition={{ duration: 0.6, delay: i * 0.1, ease: [0.22, 1, 0.36, 1] }}
-          className="absolute flex flex-col items-center gap-1"
-          style={{ left: n.x, top: n.y }}
-        >
-          <div className={`${n.size} ${n.color} rounded-full opacity-20 blur-sm absolute`} />
-          <div className={`${n.size} ${n.color} rounded-full opacity-60 relative flex items-center justify-center`}>
-            <span className="text-[9px] font-mono text-foreground/90 font-semibold">{n.label}</span>
-          </div>
-        </motion.div>
-      ))}
-      {/* Connecting lines */}
-      <svg className="absolute inset-0 w-full h-full" style={{ zIndex: 0 }}>
-        <motion.line
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 0.15 }}
-          transition={{ duration: 1.2, delay: 0.5 }}
-          x1="30%" y1="25%" x2="60%" y2="37%"
-          stroke="hsl(var(--primary))" strokeWidth="1"
-        />
-        <motion.line
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 0.15 }}
-          transition={{ duration: 1.2, delay: 0.7 }}
-          x1="60%" y1="37%" x2="42%" y2="60%"
-          stroke="hsl(var(--primary))" strokeWidth="1"
-        />
-      </svg>
-    </>
-  );
-}
-
-/* ── Step Visuals ── */
-function StepVisual({ step }: { step: number }) {
-  return (
-    <div className="relative w-full h-[400px]">
-      <AnimatePresence mode="wait">
-        {step === 0 && (
-          <motion.div key="s0" className="absolute inset-0">
-            <CVECard cve="CVE-2025-21613" x="25%" y="8%" delay={0} />
-            <CVECard cve="CVE-2024-53990" x="8%" y="38%" delay={0.15} />
-            <CVECard cve="CVE-2024-53194" x="40%" y="52%" delay={0.3} />
-          </motion.div>
-        )}
-        {step === 1 && (
-          <motion.div key="s1" className="absolute inset-0">
-            <RiskNodes />
-          </motion.div>
-        )}
-        {step === 2 && (
-          <motion.div key="s2" className="absolute inset-0 flex flex-col justify-center gap-3 max-w-md ml-auto">
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.5 }}
-              className="glass-container px-5 py-3 rounded-xl mb-2"
-            >
-              <div className="font-mono text-sm text-foreground/90 mb-2">CVE-2024-53194</div>
-              <div className="flex gap-2">
-                {['Exploitable', 'High Likelihood', 'Critical Impact'].map((t) => (
-                  <span key={t} className="text-[10px] font-mono text-destructive/80">{t}</span>
-                ))}
-              </div>
-            </motion.div>
-            <WorkflowStep num="01" label="Incidente criado" delay={0.2} />
-            <WorkflowStep num="02" label="Política WAF implantada" delay={0.35} />
-            <WorkflowStep num="03" label="Ticket criado" delay={0.5} />
-            <WorkflowStep num="04" label="Notificação enviada para #segurança" delay={0.65} />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
 /* ── Progress Bar ── */
-function ProgressBar({
-  activeStep,
-  onStepClick,
-}: {
-  activeStep: number;
-  onStepClick: (i: number) => void;
-}) {
+function ProgressBar({ scrollProgress }: { scrollProgress: number }) {
+  // Map scroll progress to step: 0-0.33 = step 0, 0.33-0.66 = step 1, 0.66-1 = step 2
+  const step1Start = 0;
+  const step2Start = 1 / 3;
+  const step3Start = 2 / 3;
+
+  const getSegmentProgress = (segStart: number, segEnd: number) => {
+    if (scrollProgress <= segStart) return 0;
+    if (scrollProgress >= segEnd) return 1;
+    return (scrollProgress - segStart) / (segEnd - segStart);
+  };
+
+  const seg1 = getSegmentProgress(step1Start, step2Start);
+  const seg2 = getSegmentProgress(step2Start, step3Start);
+
+  // Dot position: which segment it's in
+  const dotLeft = useMemo(() => {
+    if (scrollProgress < step2Start) {
+      return `${(scrollProgress / step2Start) * 47}%`;
+    } else if (scrollProgress < step3Start) {
+      return `${50 + ((scrollProgress - step2Start) / (step3Start - step2Start)) * 47}%`;
+    } else {
+      return '97%';
+    }
+  }, [scrollProgress]);
+
   return (
-    <div className="flex items-center w-full max-w-[1200px] mx-auto mb-16 px-6">
-      {steps.map((s, i) => {
-        const isActive = i === activeStep;
-        const isPast = i < activeStep;
-        return (
-          <div key={s.num} className="flex items-center flex-1">
-            <button
-              onClick={() => onStepClick(i)}
-              className="flex items-center gap-2 group cursor-pointer"
-            >
+    <div className="sticky top-0 z-30 pt-4 pb-6 bg-gradient-to-b from-background via-background to-transparent">
+      <div className="flex items-center w-full max-w-[1200px] mx-auto px-6">
+        {steps.map((s, i) => {
+          const isActive = scrollProgress >= i / 3;
+          return (
+            <div key={s.num} className="flex items-center flex-1">
               <span
-                className={`font-mono text-sm transition-colors duration-300 ${
-                  isActive ? 'text-foreground' : 'text-muted-foreground/40'
+                className={`font-mono text-sm transition-colors duration-500 ${
+                  isActive ? 'text-foreground' : 'text-muted-foreground/30'
                 }`}
               >
                 {s.num}
               </span>
-            </button>
-            {i < steps.length - 1 && (
-              <div className="flex-1 mx-3 h-px relative">
-                <div className="absolute inset-0 bg-muted-foreground/10" />
-                {/* Dots on the line */}
-                <div className="absolute inset-0 flex items-center">
+              {i < steps.length - 1 && (
+                <div className="flex-1 mx-3 h-px relative">
+                  <div className="absolute inset-0 bg-muted-foreground/10" />
                   <div
-                    className="h-px transition-all duration-700 ease-out"
+                    className="absolute inset-y-0 left-0 h-px transition-all duration-300 ease-out"
                     style={{
-                      width: isPast ? '100%' : isActive ? '50%' : '0%',
-                      background: `linear-gradient(90deg, hsl(var(--primary) / 0.4), hsl(var(--primary) / 0.1))`,
+                      width: `${(i === 0 ? seg1 : seg2) * 100}%`,
+                      background: 'linear-gradient(90deg, hsl(var(--primary) / 0.5), hsl(var(--primary) / 0.15))',
                     }}
                   />
+                  {/* Dotted line */}
+                  <div className="absolute inset-0 flex items-center">
+                    {Array.from({ length: 30 }).map((_, j) => (
+                      <div
+                        key={j}
+                        className="w-[2px] h-[2px] rounded-full mx-[3px]"
+                        style={{
+                          backgroundColor:
+                            j / 30 <= (i === 0 ? seg1 : seg2)
+                              ? 'hsl(var(--primary) / 0.4)'
+                              : 'hsl(var(--muted-foreground) / 0.15)',
+                        }}
+                      />
+                    ))}
+                  </div>
                 </div>
-                {isActive && (
-                  <motion.div
-                    layoutId="progress-dot"
-                    className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-primary shadow-lg shadow-primary/40"
-                    style={{
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                    }}
-                    transition={{ type: 'spring', stiffness: 200, damping: 25 }}
-                  />
-                )}
-                {isPast && (
-                  <div
-                    className="absolute top-1/2 -translate-y-1/2 right-0 w-2 h-2 rounded-full bg-primary/40"
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
+              )}
+            </div>
+          );
+        })}
+        {/* Moving dot */}
+        <div
+          className="absolute w-3 h-3 rounded-full bg-primary shadow-lg shadow-primary/50 transition-all duration-300 ease-out"
+          style={{
+            left: dotLeft,
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+          }}
+        />
+      </div>
     </div>
   );
 }
 
 /* ── Main Component ── */
 export function SteppedShowcase() {
-  const [activeStep, setActiveStep] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [currentProgress, setCurrentProgress] = useState(0);
 
-  const nextStep = useCallback(() => {
-    setActiveStep((prev) => (prev + 1) % steps.length);
-  }, []);
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ['start start', 'end end'],
+  });
 
-  useEffect(() => {
-    if (isPaused) return;
-    const timer = setInterval(nextStep, 6000);
-    return () => clearInterval(timer);
-  }, [isPaused, nextStep]);
+  useMotionValueEvent(scrollYProgress, 'change', (v) => {
+    setCurrentProgress(v);
+  });
 
-  const handleStepClick = (i: number) => {
-    setActiveStep(i);
-    setIsPaused(true);
-    // Resume auto-play after 12s
-    setTimeout(() => setIsPaused(false), 12000);
-  };
+  // Determine active step from scroll
+  const activeStep = currentProgress < 0.33 ? 0 : currentProgress < 0.66 ? 1 : 2;
 
-  const current = steps[activeStep];
+  // Per-step opacity for smooth crossfade
+  const step0Opacity = currentProgress < 0.25 ? 1 : currentProgress < 0.38 ? 1 - (currentProgress - 0.25) / 0.13 : 0;
+  const step1Opacity = currentProgress < 0.25 ? 0 : currentProgress < 0.38 ? (currentProgress - 0.25) / 0.13 : currentProgress < 0.58 ? 1 : currentProgress < 0.71 ? 1 - (currentProgress - 0.58) / 0.13 : 0;
+  const step2Opacity = currentProgress < 0.58 ? 0 : currentProgress < 0.71 ? (currentProgress - 0.58) / 0.13 : 1;
 
   return (
-    <section className="relative py-[120px] overflow-hidden">
-      {/* Particle background effect */}
+    <section ref={containerRef} className="relative" style={{ height: '300vh' }}>
+      {/* Particle background */}
       <div className="absolute inset-0 animated-grid-dots grid-radial-mask opacity-60" />
 
-      <ProgressBar activeStep={activeStep} onStepClick={handleStepClick} />
+      <div className="sticky top-0 h-screen overflow-hidden flex flex-col">
+        <ProgressBar scrollProgress={currentProgress} />
 
-      <div className="max-w-[1200px] mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center min-h-[420px]">
-        {/* Left: Text */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeStep}
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <h2 className="font-heading text-3xl lg:text-[2.75rem] font-bold leading-tight text-foreground whitespace-pre-line mb-6">
-              {current.title}
-            </h2>
-            <p className="text-muted-foreground text-lg leading-relaxed max-w-md">
-              {current.description}
-            </p>
-          </motion.div>
-        </AnimatePresence>
+        <div className="flex-1 flex items-center">
+          <div className="max-w-[1200px] mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center w-full">
+            {/* Left: Text — crossfade between steps */}
+            <div className="relative min-h-[280px]">
+              {steps.map((step, i) => {
+                const opacity = i === 0 ? step0Opacity : i === 1 ? step1Opacity : step2Opacity;
+                return (
+                  <motion.div
+                    key={i}
+                    className="absolute inset-0 flex flex-col justify-center"
+                    style={{ opacity, pointerEvents: opacity > 0.5 ? 'auto' : 'none' }}
+                  >
+                    <h2 className="font-heading text-3xl lg:text-[2.75rem] font-bold leading-tight text-foreground whitespace-pre-line mb-6">
+                      {step.title}
+                    </h2>
+                    <p className="text-muted-foreground text-lg leading-relaxed max-w-md">
+                      {step.description}
+                    </p>
+                  </motion.div>
+                );
+              })}
+            </div>
 
-        {/* Right: Visual */}
-        <StepVisual step={activeStep} />
+            {/* Right: Visuals — crossfade */}
+            <div className="relative h-[450px]">
+              {/* Step 0: CVE Cards floating */}
+              <div style={{ opacity: step0Opacity, pointerEvents: step0Opacity > 0.3 ? 'auto' : 'none' }} className="absolute inset-0">
+                <CVECard cve="CVE-2025-21613" x="15%" y="8%" opacity={step0Opacity} scale={step0Opacity} />
+                <CVECard cve="CVE-2024-53990" x="25%" y="38%" opacity={step0Opacity} scale={step0Opacity} size="lg" />
+                <CVECard cve="CVE-2024-53194" x="30%" y="58%" opacity={step0Opacity} scale={step0Opacity} size="sm" />
+              </div>
+
+              {/* Step 1: Sankey chart */}
+              <div style={{ opacity: step1Opacity, pointerEvents: step1Opacity > 0.3 ? 'auto' : 'none' }} className="absolute inset-0">
+                <SankeyChart opacity={step1Opacity} />
+              </div>
+
+              {/* Step 2: Workflow */}
+              <div
+                style={{ opacity: step2Opacity, pointerEvents: step2Opacity > 0.3 ? 'auto' : 'none' }}
+                className="absolute inset-0 flex flex-col justify-center gap-3 max-w-md ml-auto"
+              >
+                <motion.div
+                  className="glass-container px-5 py-3 rounded-xl mb-2"
+                  style={{ opacity: step2Opacity }}
+                >
+                  <div className="font-mono text-sm text-foreground/90 mb-2">CVE-2024-53194</div>
+                  <div className="flex gap-2">
+                    {['Exploitable', 'High Likelihood', 'Critical Impact'].map((t) => (
+                      <span key={t} className="text-[10px] font-mono text-destructive/80">{t}</span>
+                    ))}
+                  </div>
+                </motion.div>
+                <WorkflowStepCard num="01" label="Incidente criado" visible={step2Opacity > 0.5} delay={0.1} />
+                <WorkflowStepCard num="02" label="Política WAF implantada" visible={step2Opacity > 0.5} delay={0.2} />
+                <WorkflowStepCard num="03" label="Ticket criado" visible={step2Opacity > 0.5} delay={0.3} />
+                <WorkflowStepCard num="04" label="Notificação enviada para #segurança" visible={step2Opacity > 0.5} delay={0.4} />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );
