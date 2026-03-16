@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 const PARTICLE_COUNT = 18000;
-const ROTATION_SPEED = 0.000015;
+const ROTATION_SPEED = 0.000020;
 
 // === 4D Simplex Noise + FBM vertex shader (ported from MazeHQ) ===
 const vertexShader = `
@@ -263,7 +263,7 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
     const uniforms = {
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
-      uSpeed: { value: 0.25 },
+      uSpeed: { value: 0.35 },
       uSize: { value: 16.0 },
       uAlpha: { value: 1.0 },
       uDepth: { value: 0.005 },
