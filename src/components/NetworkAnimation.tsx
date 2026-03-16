@@ -202,9 +202,13 @@ export function NetworkAnimation() {
         const edgePow = edgeFactor * edgeFactor * edgeFactor; // cubic for sharp edge transition
 
         // Edge color: use vertical angle for cyan vs magenta
-        const vertAngle = Math.atan2(dy, dx); // angle on screen
+        const vertAngle = Math.atan2(dy, dx);
         const vertNorm = (vertAngle + Math.PI) / (2 * Math.PI);
-        const shifted = (vertNorm + p.colorSeed * 0.15) % 1;
+
+        // ondas de energia percorrendo o globo
+        const wave = Math.sin(p.theta * 2.5 + time * 0.0008) + Math.sin(p.phi * 3.5 - time * 0.0006);
+
+        const shifted = (vertNorm + wave * 0.15 + p.colorSeed * 0.8) % 1;
 
         // Edge gradient: cyan ↔ magenta
         let edgeR: number, edgeG: number, edgeB: number;
