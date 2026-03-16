@@ -4,35 +4,178 @@ import * as THREE from "three";
 const PARTICLE_COUNT = 18000;
 const ROTATION_SPEED = 0.00006;
 
-// Vertex shader: positions points and passes data to fragment
+// === 4D Simplex Noise + FBM vertex shader (ported from MazeHQ) ===
 const vertexShader = `
-  attribute float aSize;
-  attribute vec3 aColor;
   attribute float aAlpha;
-  
-  varying vec3 vColor;
+  attribute float aIndex;
+  attribute vec3 aMove;
+  attribute vec3 aSpeed;
+  attribute vec3 aRandomness;
+
+  uniform float uPixelRatio;
+  uniform float uTime;
+  uniform float uSpeed;
+  uniform float uSize;
+  uniform float uAlpha;
+  uniform float uDepth;
+  uniform float uAmplitude;
+  uniform float uFrequency;
+  uniform float uScale;
+
+  uniform float uRcolor;
+  uniform float uGcolor;
+  uniform float uBcolor;
+  uniform float uRnoise;
+  uniform float uGnoise;
+  uniform float uBnoise;
+
   varying float vAlpha;
-  
+  varying float vDistance;
+  varying float vNoise;
+  varying vec3 vColor;
+
+  // --- 2D simplex noise ---
+  vec3 mod289v3(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec2 mod289v2(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec3 permute3(vec3 x) { return mod289v3(((x * 34.0) + 1.0) * x); }
+
+  float snoise2d(vec2 v) {
+    const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+                       -0.577350269189626, 0.024390243902439);
+    vec2 i  = floor(v + dot(v, C.yy));
+    vec2 x0 = v - i + dot(i, C.xx);
+    vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec4 x12 = x0.xyxy + C.xxzz;
+    x12.xy -= i1;
+    i = mod289v2(i);
+    vec3 p = permute3(permute3(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+    vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+    m = m * m;
+    m = m * m;
+    vec3 x = 2.0 * fract(p * C.www) - 1.0;
+    vec3 h = abs(x) - 0.5;
+    vec3 ox = floor(x + 0.5);
+    vec3 a0 = x - ox;
+    m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+    vec3 g;
+    g.x  = a0.x  * x0.x  + h.x  * x0.y;
+    g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+    return 130.0 * dot(m, g);
+  }
+
+  // --- 4D simplex noise ---
+  vec4 permute4(vec4 x) { return mod(((x * 34.0) + 1.0) * x, 289.0); }
+  float permute1(float x) { return floor(mod(((x * 34.0) + 1.0) * x, 289.0)); }
+  vec4 taylorInvSqrt4(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+  float taylorInvSqrt1(float r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+  vec4 grad4(float j, vec4 ip) {
+    const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
+    vec4 p, s;
+    p.xyz = floor(fract(vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
+    p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
+    s = vec4(lessThan(p, vec4(0.0)));
+    p.xyz = p.xyz + (s.xyz * 2.0 - 1.0) * s.www;
+    return p;
+  }
+
+  float snoise4d(vec4 v) {
+    const vec2 C = vec2(0.138196601125010504, 0.309016994374947451);
+    vec4 i = floor(v + dot(v, C.yyyy));
+    vec4 x0 = v - i + dot(i, C.xxxx);
+    vec4 i0;
+    vec3 isX = step(x0.yzw, x0.xxx);
+    vec3 isYZ = step(x0.zww, x0.yyz);
+    i0.x = isX.x + isX.y + isX.z;
+    i0.yzw = 1.0 - isX;
+    i0.y += isYZ.x + isYZ.y;
+    i0.zw += 1.0 - isYZ.xy;
+    i0.z += isYZ.z;
+    i0.w += 1.0 - isYZ.z;
+    vec4 i3 = clamp(i0, 0.0, 1.0);
+    vec4 i2 = clamp(i0 - 1.0, 0.0, 1.0);
+    vec4 i1 = clamp(i0 - 2.0, 0.0, 1.0);
+    vec4 x1 = x0 - i1 + C.xxxx;
+    vec4 x2 = x0 - i2 + 2.0 * C.xxxx;
+    vec4 x3 = x0 - i3 + 3.0 * C.xxxx;
+    vec4 x4 = x0 - 1.0 + 4.0 * C.xxxx;
+    i = mod(i, 289.0);
+    float j0 = permute1(permute1(permute1(permute1(i.w) + i.z) + i.y) + i.x);
+    vec4 j1 = permute4(permute4(permute4(permute4(
+        i.w + vec4(i1.w, i2.w, i3.w, 1.0))
+        + i.z + vec4(i1.z, i2.z, i3.z, 1.0))
+        + i.y + vec4(i1.y, i2.y, i3.y, 1.0))
+        + i.x + vec4(i1.x, i2.x, i3.x, 1.0));
+    vec4 ip = vec4(1.0/294.0, 1.0/49.0, 1.0/7.0, 0.0);
+    vec4 p0 = grad4(j0, ip);
+    vec4 p1 = grad4(j1.x, ip);
+    vec4 p2 = grad4(j1.y, ip);
+    vec4 p3 = grad4(j1.z, ip);
+    vec4 p4 = grad4(j1.w, ip);
+    vec4 norm = taylorInvSqrt4(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+    p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+    p4 *= taylorInvSqrt1(dot(p4, p4));
+    vec3 m0 = max(0.6 - vec3(dot(x0,x0), dot(x1,x1), dot(x2,x2)), 0.0);
+    vec2 m1 = max(0.6 - vec2(dot(x3,x3), dot(x4,x4)), 0.0);
+    m0 = m0 * m0; m1 = m1 * m1;
+    return 49.0 * (dot(m0*m0, vec3(dot(p0,x0), dot(p1,x1), dot(p2,x2)))
+        + dot(m1*m1, vec2(dot(p3,x3), dot(p4,x4))));
+  }
+
+  // --- FBM ---
+  float fbm(vec3 x) {
+    float v = 0.0;
+    float a = 0.5;
+    vec3 shift = vec3(100.0);
+    for (int i = 0; i < 5; ++i) {
+      v += a * snoise4d(vec4(x, uTime));
+      x = x * 2.0 + shift;
+      a *= 0.5;
+    }
+    return v;
+  }
+
   void main() {
-    vColor = aColor;
-    vAlpha = aAlpha;
-    
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = aSize * (300.0 / -mvPosition.z);
+    // Compute noise for this particle
+    vNoise = fbm(position * uFrequency);
+
+    // Noise-driven color mixing
+    float noiseFactor = clamp(vNoise, 0.0, 1.0) * 4.0;
+    float r = uRcolor / 255.0 + (noiseFactor * (uRnoise - uRcolor) / 255.0);
+    float g = uGcolor / 255.0 + (noiseFactor * (uGnoise - uGcolor) / 255.0);
+    float b = uBcolor / 255.0 + (noiseFactor * (uBnoise - uBcolor) / 255.0);
+    vColor = vec3(r, g, b);
+
+    // Blob deformation via noise
+    vec3 displaced = position * (1.0 + uAmplitude * vNoise);
+
+    // Per-particle jitter via 2D noise
+    displaced += vec3(uScale * uDepth * aMove * aSpeed * snoise2d(vec2(aIndex, uTime * uSpeed)));
+
+    // Final position
+    vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
     gl_Position = projectionMatrix * mvPosition;
+
+    // Point size with distance attenuation
+    vDistance = -mvPosition.z;
+    gl_PointSize = uSize * (100.0 / vDistance) * uPixelRatio;
+    gl_PointSize = clamp(gl_PointSize, 1.0, 100.0);
+
+    // Alpha with distance attenuation
+    vAlpha = uAlpha * aAlpha * (300.0 / vDistance);
   }
 `;
 
-// Fragment shader: draws soft circular particles with color/alpha
 const fragmentShader = `
-  varying vec3 vColor;
   varying float vAlpha;
-  
+  varying float vDistance;
+  varying float vNoise;
+  varying vec3 vColor;
+
   void main() {
-    // Circular point with soft edge
     float dist = length(gl_PointCoord - vec2(0.5));
     if (dist > 0.5) discard;
-    
+
     float softEdge = 1.0 - smoothstep(0.3, 0.5, dist);
     gl_FragColor = vec4(vColor, vAlpha * softEdge);
   }
@@ -44,7 +187,6 @@ interface NetworkAnimationProps {
 
 export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const cleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -65,42 +207,78 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
     container.appendChild(renderer.domElement);
     renderer.domElement.style.pointerEvents = "none";
 
-    // Create particle geometry
+    // Create particle geometry — positions set once, GPU animates
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(PARTICLE_COUNT * 3);
-    const colors = new Float32Array(PARTICLE_COUNT * 3);
     const alphas = new Float32Array(PARTICLE_COUNT);
-    const sizes = new Float32Array(PARTICLE_COUNT);
-
-    // Store spherical coords for animation
-    const thetas = new Float32Array(PARTICLE_COUNT);
-    const phis = new Float32Array(PARTICLE_COUNT);
-    const radiusMuls = new Float32Array(PARTICLE_COUNT);
-    const thetaSpeeds = new Float32Array(PARTICLE_COUNT);
-    const phiSpeeds = new Float32Array(PARTICLE_COUNT);
+    const indices = new Float32Array(PARTICLE_COUNT);
+    const moves = new Float32Array(PARTICLE_COUNT * 3);
+    const speeds = new Float32Array(PARTICLE_COUNT * 3);
+    const randomness = new Float32Array(PARTICLE_COUNT * 3);
 
     const goldenAngle = Math.PI * (3 - Math.sqrt(5));
 
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const t = i / PARTICLE_COUNT;
-      thetas[i] = goldenAngle * i;
-      phis[i] = Math.acos(1 - 2 * t);
+      const theta = goldenAngle * i;
+      const phi = Math.acos(1 - 2 * t);
 
+      // Sphere radius variation (atmosphere particles slightly further out)
       const isAtmosphere = Math.random() < 0.12;
-      radiusMuls[i] = isAtmosphere
+      const rMul = isAtmosphere
         ? 1.01 + Math.random() * 0.1
         : 0.98 + Math.random() * 0.04;
+      const r = 1.0 * rMul; // normalized, scaled by container in resize
 
-      thetaSpeeds[i] = (Math.random() - 0.5) * 0.0015;
-      phiSpeeds[i] = (Math.random() - 0.5) * 0.0008;
+      const sp = Math.sin(phi);
+      positions[i * 3] = r * sp * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.cos(phi);
+      positions[i * 3 + 2] = r * sp * Math.sin(theta);
 
-      sizes[i] = 1.5 + Math.random() * 2.5;
+      // Per-particle attributes
+      alphas[i] = 0.3 + Math.random() * 0.7;
+      indices[i] = i;
+
+      moves[i * 3] = (Math.random() - 0.5) * 2.0;
+      moves[i * 3 + 1] = (Math.random() - 0.5) * 2.0;
+      moves[i * 3 + 2] = (Math.random() - 0.5) * 2.0;
+
+      speeds[i * 3] = 0.5 + Math.random() * 1.5;
+      speeds[i * 3 + 1] = 0.5 + Math.random() * 1.5;
+      speeds[i * 3 + 2] = 0.5 + Math.random() * 1.5;
+
+      randomness[i * 3] = Math.random() * 2.0 - 1.0;
+      randomness[i * 3 + 1] = Math.random() * 2.0 - 1.0;
+      randomness[i * 3 + 2] = Math.random() * 2.0 - 1.0;
     }
 
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
     geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
-    geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute("aIndex", new THREE.BufferAttribute(indices, 1));
+    geometry.setAttribute("aMove", new THREE.BufferAttribute(moves, 3));
+    geometry.setAttribute("aSpeed", new THREE.BufferAttribute(speeds, 3));
+    geometry.setAttribute("aRandomness", new THREE.BufferAttribute(randomness, 3));
+
+    // Uniforms — tuned for organic blob globe
+    const uniforms = {
+      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+      uTime: { value: 0.0 },
+      uSpeed: { value: 0.0003 },
+      uSize: { value: 2.5 },
+      uAlpha: { value: 0.8 },
+      uDepth: { value: 0.3 },
+      uAmplitude: { value: 0.15 },
+      uFrequency: { value: 1.5 },
+      uScale: { value: 1.0 },
+      // Base color: Cyan #22D0DF
+      uRcolor: { value: 34.0 },
+      uGcolor: { value: 208.0 },
+      uBcolor: { value: 223.0 },
+      // Noise color: Magenta #B43CC8
+      uRnoise: { value: 180.0 },
+      uGnoise: { value: 60.0 },
+      uBnoise: { value: 200.0 },
+    };
 
     const material = new THREE.ShaderMaterial({
       vertexShader,
@@ -108,12 +286,13 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      uniforms,
     });
 
     const points = new THREE.Points(geometry, material);
     scene.add(points);
 
-    // Resize handler
+    // Resize handler — scale sphere positions to container
     const resize = () => {
       const rect = container.getBoundingClientRect();
       const w = rect.width;
@@ -121,96 +300,24 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       renderer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+
+      const sphereRadius = Math.min(w, h) * 0.38;
+      points.scale.setScalar(sphereRadius);
     };
     resize();
     window.addEventListener("resize", resize);
 
-    // Animation
+    // Animation — only update uniforms, GPU does the rest
     let animId = 0;
     const startTime = performance.now();
 
-    // Color constants (normalized 0-1)
-    const cyanR = 34 / 255, cyanG = 208 / 255, cyanB = 223 / 255;
-    const magentaR = 180 / 255, magentaG = 60 / 255, magentaB = 200 / 255;
-
     const animate = () => {
-      const now = performance.now();
-      const time = now - startTime;
-
-      const rect = container.getBoundingClientRect();
-      const sphereRadius = Math.min(rect.width, rect.height) * 0.38;
+      const elapsed = (performance.now() - startTime) * 0.001; // seconds
+      uniforms.uTime.value = elapsed;
 
       // Slow global rotation
-      const rotY = time * ROTATION_SPEED;
-      const rotX = Math.sin(time * 0.00003) * 0.12;
-
-      points.rotation.y = rotY;
-      points.rotation.x = rotX;
-
-      const posAttr = geometry.getAttribute("position") as THREE.BufferAttribute;
-      const colAttr = geometry.getAttribute("aColor") as THREE.BufferAttribute;
-      const alphaAttr = geometry.getAttribute("aAlpha") as THREE.BufferAttribute;
-
-      for (let i = 0; i < PARTICLE_COUNT; i++) {
-        // Animate individual particle movement
-        thetas[i] += thetaSpeeds[i];
-        phis[i] += phiSpeeds[i];
-
-        if (phis[i] < 0.05 || phis[i] > Math.PI - 0.05) {
-          phiSpeeds[i] = -phiSpeeds[i];
-          phis[i] = Math.max(0.05, Math.min(Math.PI - 0.05, phis[i]));
-        }
-
-        const r = sphereRadius * radiusMuls[i];
-        const sp = Math.sin(phis[i]);
-
-        const x = r * sp * Math.cos(thetas[i]);
-        const y = r * Math.cos(phis[i]);
-        const z = r * sp * Math.sin(thetas[i]);
-
-        posAttr.setXYZ(i, x, y, z);
-
-        // Compute surface normal dot with view direction (before rotation)
-        // For Fresnel/rim effect we use the local z
-        const dist = Math.sqrt(x * x + y * y + z * z);
-        const nz = z / (dist || 1);
-        const edgeFactor = 1.0 - Math.abs(nz); // 0=center, 1=edge
-
-        // Diagonal gradient: top-left = cyan, bottom-right = magenta
-        const diagonalMix = Math.max(0, Math.min(1, (-x + y) / (2 * sphereRadius) + 0.5));
-
-        // Lerp between magenta and cyan
-        const cr = magentaR + (cyanR - magentaR) * diagonalMix;
-        const cg = magentaG + (cyanG - magentaG) * diagonalMix;
-        const cb = magentaB + (cyanB - magentaB) * diagonalMix;
-
-        colAttr.setXYZ(i, cr, cg, cb);
-
-        // Alpha: Fresnel rim effect — center nearly invisible, edges bright
-        let alpha: number;
-        if (edgeFactor >= 0.55) {
-          // Rim: bright glow
-          const rimIntensity = (edgeFactor - 0.55) / 0.45;
-          alpha = 0.15 + rimIntensity * 0.7;
-        } else {
-          // Center: very faint
-          alpha = edgeFactor * 0.12;
-        }
-
-        // Depth fade using local z (back face darker)
-        const depthFade = (nz + 1.0) * 0.5; // 0=back, 1=front
-        if (depthFade < 0.3) {
-          alpha *= depthFade * 0.15;
-        } else {
-          alpha *= 0.15 + depthFade * 0.85;
-        }
-
-        alphaAttr.setX(i, Math.max(0, Math.min(1, alpha)));
-      }
-
-      posAttr.needsUpdate = true;
-      colAttr.needsUpdate = true;
-      alphaAttr.needsUpdate = true;
+      points.rotation.y = elapsed * ROTATION_SPEED * 1000;
+      points.rotation.x = Math.sin(elapsed * 0.03) * 0.12;
 
       renderer.render(scene, camera);
       animId = requestAnimationFrame(animate);
@@ -218,7 +325,7 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
 
     animId = requestAnimationFrame(animate);
 
-    cleanupRef.current = () => {
+    return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener("resize", resize);
       geometry.dispose();
@@ -227,10 +334,6 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
-    };
-
-    return () => {
-      cleanupRef.current?.();
     };
   }, []);
 
