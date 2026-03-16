@@ -194,7 +194,7 @@ const vertexShader = `
     vAlpha = uAlpha * aAlpha * alphaMultiplier * (300.0 / vDistance);
 
     // Size — shrink distant particles in sand state for perspective
-    float depthSize = mix(1.0, 0.4 + 0.6 * (1.0 - smoothstep(-0.5, 1.5, aFlatPosition.z)), morphEased);
+    float depthSize = mix(1.0, 0.5 + 0.5 * (1.0 - smoothstep(-0.5, 1.5, aFlatPosition.z)), morphEased);
     gl_PointSize *= depthSize;
   }
 `;
