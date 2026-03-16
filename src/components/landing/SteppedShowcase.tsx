@@ -315,7 +315,7 @@ export function SteppedShowcase() {
   const stepValues = [step0, step1, step2];
 
   return (
-    <section ref={containerRef} className="relative" style={{ height: '300vh' }}>
+    <section ref={containerRef} className="relative" style={{ height: '400vh' }}>
 
       <div className="sticky top-0 h-screen overflow-hidden flex flex-col">
         <ProgressBar scrollProgress={currentProgress} />
