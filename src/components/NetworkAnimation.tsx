@@ -117,7 +117,7 @@ export function NetworkAnimation() {
       const cx = w * 0.5;
       // Shift sphere up as user scrolls
       const cyBase = h * 0.48;
-      const cy = cyBase - disperseAmount * h * 0.15;
+      const cy = cyBase + disperseAmount * h * 0.35;
       const sphereRadius = Math.min(w, h) * 0.55;
 
       ctx.clearRect(0, 0, w, h);
