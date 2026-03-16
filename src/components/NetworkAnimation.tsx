@@ -5,19 +5,13 @@ interface Particle {
   phi: number;
   radiusMul: number;
   baseSize: number;
-  colorSeed: number;
-  brightnessBoost: number;
   thetaSpeed: number;
   phiSpeed: number;
 }
 
-const PARTICLE_COUNT = 4000;
-const ROTATION_SPEED = 0.00015;
+const PARTICLE_COUNT = 18000;
+const ROTATION_SPEED = 0.00008;
 const PERSPECTIVE = 800;
-
-function lerp(a: number, b: number, t: number) {
-  return a + (b - a) * t;
-}
 
 function clamp(v: number, min: number, max: number) {
   return v < min ? min : v > max ? max : v;
@@ -32,15 +26,19 @@ function createParticles(): Particle[] {
     const theta = goldenAngle * i;
     const phi = Math.acos(1 - 2 * t);
 
+    // 10% of particles spread beyond radius for atmosphere
+    const isAtmosphere = Math.random() < 0.1;
+    const radiusMul = isAtmosphere
+      ? 1.01 + Math.random() * 0.07
+      : 0.99 + Math.random() * 0.02;
+
     particles.push({
       theta,
       phi,
-      radiusMul: 0.99 + Math.random() * 0.03,
-      baseSize: 0.4 + Math.random() * 0.8,
-      colorSeed: Math.random(),
-      brightnessBoost: Math.random() < 0.05 ? 0.25 : 0,
-      thetaSpeed: (Math.random() - 0.5) * 0.003,
-      phiSpeed: (Math.random() - 0.5) * 0.0015,
+      radiusMul,
+      baseSize: 0.15 + Math.random() * 0.35,
+      thetaSpeed: (Math.random() - 0.5) * 0.002,
+      phiSpeed: (Math.random() - 0.5) * 0.001,
     });
   }
 
@@ -69,7 +67,6 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       const rect = canvas.parentElement?.getBoundingClientRect();
       const w = rect?.width ?? window.innerWidth;
       const h = rect?.height ?? window.innerHeight;
-
       canvas.width = w * dpr;
       canvas.height = h * dpr;
       canvas.style.width = `${w}px`;
@@ -96,15 +93,12 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       ctx.clearRect(0, 0, w, h);
 
       const rotY = time * ROTATION_SPEED;
-      const rotX = Math.sin(time * 0.00006) * 0.12;
+      const rotX = Math.sin(time * 0.00004) * 0.1;
 
       const cosY = Math.cos(rotY);
       const sinY = Math.sin(rotY);
       const cosX = Math.cos(rotX);
       const sinX = Math.sin(rotX);
-
-      const t1 = time * 0.0012;
-      const t2 = time * 0.0009;
 
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
@@ -124,11 +118,13 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
         let y = r * Math.cos(p.phi);
         let z = r * sp * Math.sin(p.theta);
 
+        // Rotate Y
         const rx = x * cosY - z * sinY;
         const rz = x * sinY + z * cosY;
         x = rx;
         z = rz;
 
+        // Rotate X
         const ry = y * cosX - z * sinX;
         const rz2 = y * sinX + z * cosX;
         y = ry;
@@ -141,47 +137,61 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
         const sx = cx + x * scale;
         const sy = cy + y * scale;
 
-        if (sx < -50 || sx > w + 50 || sy < -50 || sy > h + 50) continue;
+        if (sx < -20 || sx > w + 20 || sy < -20 || sy > h + 20) continue;
 
+        // Depth: normalizedZ 0=back, 1=front
         const normalizedZ = (z + maxR) / (2 * maxR);
-        const depthAlpha = normalizedZ * normalizedZ * normalizedZ;
-        const alpha = Math.max(0.03, depthAlpha + p.brightnessBoost);
-        const clampedAlpha = Math.min(alpha, 1);
-        const size = Math.max(0.2, p.baseSize * scale * 1.4);
 
-        const wave = Math.sin(p.theta * 3 + t1) + Math.sin(p.phi * 4 + t2);
-        const pulse = Math.sin(t1 + p.theta * 2) * 0.5 + 0.5;
-        const shifted = (wave * 0.2 + pulse * 0.35 + p.colorSeed * 0.05) % 1;
-        const zone = shifted * 3;
-
-        let rC = 20, gC = 184, bC = 166;
-
-        if (zone < 1) {
-          const t = zone;
-          rC = lerp(20, 30, t); gC = lerp(184, 200, t); bC = lerp(166, 230, t);
-        } else if (zone < 2) {
-          const t = zone - 1;
-          rC = lerp(30, 170, t); gC = lerp(200, 60, t); bC = lerp(230, 180, t);
-        } else {
-          const t = zone - 2;
-          rC = lerp(170, 20, t); gC = lerp(60, 184, t); bC = lerp(180, 166, t);
+        // Back face nearly invisible
+        if (normalizedZ < 0.3) {
+          const alpha = normalizedZ * 0.08;
+          if (alpha < 0.005) continue;
+          ctx.fillStyle = `rgba(20,30,60,${alpha})`;
+          ctx.beginPath();
+          ctx.arc(sx, sy, Math.max(0.2, p.baseSize * scale), 0, Math.PI * 2);
+          ctx.fill();
+          continue;
         }
 
-        ctx.fillStyle = `rgba(${rC | 0},${gC | 0},${bC | 0},${clampedAlpha})`;
+        // Silhouette factor: how close to edge vs center
+        // Use the original (pre-projection) position to compute normal dot with view dir
+        const dist = Math.sqrt(x * x + y * y + z * z);
+        const nz = z / (dist || 1); // normalized z component of surface normal
+        const edgeFactor = 1 - Math.abs(nz); // 0=facing camera, 1=edge
+
+        let rC: number, gC: number, bC: number, alpha: number;
+
+        if (edgeFactor > 0.5) {
+          // Edge/silhouette: cyan ↔ magenta based on vertical angle
+          const verticalMix = clamp((y / (sphereRadius || 1)) * 0.5 + 0.5, 0, 1);
+          const edgeIntensity = (edgeFactor - 0.5) * 2; // 0..1
+
+          // Cyan (34, 208, 223) → Magenta (200, 80, 192)
+          rC = 34 + (200 - 34) * verticalMix;
+          gC = 208 + (80 - 208) * verticalMix;
+          bC = 223 + (192 - 223) * verticalMix;
+
+          alpha = 0.3 + edgeIntensity * 0.6;
+          // Front face edges brighter
+          alpha *= (0.4 + normalizedZ * 0.6);
+        } else {
+          // Center: navy with subtle teal tint
+          const centerBlend = edgeFactor / 0.5; // 0=dead center, 1=transition zone
+          rC = 15 + centerBlend * 15;
+          gC = 30 + centerBlend * 60;
+          bC = 60 + centerBlend * 40;
+
+          alpha = 0.15 + normalizedZ * 0.25;
+        }
+
+        // Front-face size boost
+        const sizeBoost = normalizedZ > 0.5 ? 1.0 + (normalizedZ - 0.5) * 0.5 : 1.0;
+        const size = Math.max(0.2, p.baseSize * scale * sizeBoost);
+
+        ctx.fillStyle = `rgba(${rC | 0},${gC | 0},${bC | 0},${clamp(alpha, 0, 1)})`;
         ctx.beginPath();
         ctx.arc(sx, sy, size, 0, Math.PI * 2);
         ctx.fill();
-
-        if (normalizedZ > 0.75 && p.brightnessBoost > 0.1) {
-          const glowR = size * 4;
-          const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
-          grad.addColorStop(0, `rgba(${rC | 0},${gC | 0},${bC | 0},0.15)`);
-          grad.addColorStop(1, `rgba(${rC | 0},${gC | 0},${bC | 0},0)`);
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
-          ctx.fill();
-        }
       }
 
       animRef.current = requestAnimationFrame(draw);
