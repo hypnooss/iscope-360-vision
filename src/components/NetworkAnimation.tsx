@@ -38,12 +38,12 @@ function createParticles(): Particle[] {
     // Diffuse edges
     const rRoll = Math.random();
     let radiusMul: number;
-    if (rRoll < 0.75) {
-      radiusMul = 0.97 + Math.random() * 0.06;
-    } else if (rRoll < 0.92) {
-      radiusMul = 1.03 + Math.random() * 0.12;
+    if (rRoll < 0.8) {
+      radiusMul = 0.99 + Math.random() * 0.02;
+    } else if (rRoll < 0.95) {
+      radiusMul = 1.01 + Math.random() * 0.04;
     } else {
-      radiusMul = 1.15 + Math.random() * 0.15;
+      radiusMul = 1.05 + Math.random() * 0.05;
     }
 
     const sizeRoll = Math.random();
