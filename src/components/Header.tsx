@@ -1,4 +1,4 @@
-import { Menu, X } from 'lucide-react';
+import { Menu, X, LogIn } from 'lucide-react';
 import { Button } from './ui/button';
 import { useNavigate } from 'react-router-dom';
 import logoIscope from '@/assets/logo-iscope.png';
