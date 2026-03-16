@@ -171,7 +171,9 @@ const vertexShader = `
     // --- Flat "sand" position with subtle noise movement ---
       float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.5 + uTime * 0.1, aFlatPosition.z * 0.5));
     float flatNoiseX = snoise2d(vec2(aFlatPosition.z * 0.8 + uTime * 0.08, aFlatPosition.x * 0.3));
-    vec3 flatPos = aFlatPosition + vec3(flatNoiseX * 0.015, flatNoise * 0.003, 0.0);
+    float dune = sin(aFlatPosition.x * 3.0 + uTime * 0.5) * 0.035
+               + sin(aFlatPosition.x * 1.5 + aFlatPosition.z * 2.0 - uTime * 0.3) * 0.025;
+    vec3 flatPos = aFlatPosition + vec3(flatNoiseX * 0.015, dune + flatNoise * 0.003, 0.0);
 
     // --- Morph between sphere and flat ---
     // Use smoothstep for organic easing
