@@ -187,9 +187,15 @@ const vertexShader = `
     gl_PointSize = uSize * sizeMultiplier * (100.0 / vDistance) * uPixelRatio;
     gl_PointSize = clamp(gl_PointSize, 1.0, 100.0);
 
-    // Alpha — slightly dimmer in sand state
-    float alphaMultiplier = mix(1.0, 0.6, morphEased);
+    // Alpha — depth fade in sand state (particles further in Z fade out)
+    // aFlatPosition.z ranges from -0.6 to 0.6; normalize to 0..1 depth factor
+    float depthFade = 1.0 - smoothstep(-0.2, 0.6, aFlatPosition.z) * 0.7;
+    float alphaMultiplier = mix(1.0, 0.6 * depthFade, morphEased);
     vAlpha = uAlpha * aAlpha * alphaMultiplier * (300.0 / vDistance);
+
+    // Size — shrink distant particles in sand state for perspective
+    float depthSize = mix(1.0, 0.6 + 0.4 * (1.0 - smoothstep(-0.2, 0.6, aFlatPosition.z)), morphEased);
+    gl_PointSize *= depthSize;
   }
 `;
 
