@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { MiniChart } from '@/components/landing/MiniChart';
+import { SteppedShowcase } from '@/components/landing/SteppedShowcase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/Header';
@@ -290,6 +291,9 @@ const Index = () => {
             ))}
           </div>
         </Section>
+
+        {/* ═══ STEPPED SHOWCASE (MazeHQ-style) ═══ */}
+        <SteppedShowcase />
 
         {/* ═══ HOW IT WORKS ═══ */}
         <Section id="how-it-works">
