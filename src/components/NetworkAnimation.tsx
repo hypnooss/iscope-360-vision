@@ -226,8 +226,8 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       // Sphere radius variation (atmosphere particles slightly further out)
       const isAtmosphere = Math.random() < 0.12;
       const rMul = isAtmosphere
-        ? 1.01 + Math.random() * 0.1
-        : 0.98 + Math.random() * 0.04;
+        ? 1.005 + Math.random() * 0.03
+        : 0.99 + Math.random() * 0.02;
       const r = 1.0 * rMul; // normalized, scaled by container in resize
 
       const sp = Math.sin(phi);
@@ -264,10 +264,10 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
       uSpeed: { value: 0.00008 },
-      uSize: { value: 9.0 },
+      uSize: { value: 14.0 },
       uAlpha: { value: 1.0 },
-      uDepth: { value: 0.008 },
-      uAmplitude: { value: 0.06 },
+      uDepth: { value: 0.002 },
+      uAmplitude: { value: 0.03 },
       uFrequency: { value: 1.2 },
       uScale: { value: 0.5 },
       // Base color: Cyan #22D0DF
