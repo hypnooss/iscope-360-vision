@@ -127,7 +127,7 @@ export function NetworkAnimation() {
 
       const rotY = time * ROTATION_SPEED;
 
-      const rotX = Math.sin(time * 0.00006) * 0.12 + disperseAmount * 1.25;
+      const rotX = Math.sin(time * 0.00006) * 0.12 + disperseAmount * 0.65;
 
       const cosY = Math.cos(rotY);
       const sinY = Math.sin(rotY);
@@ -150,7 +150,7 @@ export function NetworkAnimation() {
         const morphedPhi = lerp(p.phi, Math.PI * 0.5, flattenAmount * 0.85);
 
         // Apply disperse: expand radius and add random offset
-        const disperseScale = 1 + disperseAmount * 9;
+        const disperseScale = 1 + disperseAmount * 3.2;
         const r = sphereRadius * p.radiusMul * disperseScale;
 
         const sp = Math.sin(morphedPhi);
@@ -160,13 +160,12 @@ export function NetworkAnimation() {
 
         // Add random dispersion offset
         if (disperseAmount > 0) {
-          x += p.disperseX * disperseAmount * w * 0.4;
-          y += p.disperseY * disperseAmount * h * 0.3;
-          z += p.disperseX * disperseAmount * w * 0.6;
+          x += p.disperseX * disperseAmount * w * 0.12;
+          y += p.disperseY * disperseAmount * h * 0.08;
+          z += p.disperseX * disperseAmount * w * 0.15;
           
           if (disperseAmount > 0.4) {
             y += Math.sin(x * 0.002 + time * 0.001) * 25 * disperseAmount;
-          }
         }
 
         // Rotate Y
