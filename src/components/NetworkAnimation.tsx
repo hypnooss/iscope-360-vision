@@ -126,6 +126,7 @@ export function NetworkAnimation() {
       const globalAlpha = 1 - fadeOut * 0.7;
 
       const rotY = time * ROTATION_SPEED;
+
       const rotX =
         Math.sin(time * 0.00006) * 0.12 +
         disperseAmount * 1.25;
