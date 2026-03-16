@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { MiniChart } from '@/components/landing/MiniChart';
 import { SteppedShowcase } from '@/components/landing/SteppedShowcase';
 import { useNavigate } from 'react-router-dom';
@@ -60,6 +60,20 @@ function Reveal({ children, className = '', delay = 0 }: { children: React.React
 const Index = () => {
   const { user, loading, mfaRequired, mfaEnrolled } = useAuth();
   const navigate = useNavigate();
+  const [scrollProgress, setScrollProgress] = useState(0);
+
+  const handleScroll = useCallback(() => {
+    const scrollY = window.scrollY;
+    const windowH = window.innerHeight;
+    // Map scroll from 0 to 1 over the first viewport height
+    const progress = Math.min(1, Math.max(0, scrollY / windowH));
+    setScrollProgress(progress);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
 
   useEffect(() => {
     if (!loading && user) {
@@ -83,20 +97,15 @@ const Index = () => {
     <div className="min-h-screen bg-background text-foreground flex flex-col relative">
       <Header />
 
+      {/* Globe — fixed background across entire page */}
+      <div className="fixed inset-0 z-0">
+        <NetworkAnimation className="absolute inset-0" scrollProgress={scrollProgress} />
+      </div>
+
       <main className="flex-1 relative z-10">
 
         {/* ═══ HERO ═══ */}
         <section className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
-          {/* Globe — full background */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.85 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1.4, ease }}
-            className="absolute inset-0 z-0"
-          >
-            <NetworkAnimation className="absolute inset-0" />
-            
-          </motion.div>
 
           {/* Copy — centered overlay */}
           <motion.div

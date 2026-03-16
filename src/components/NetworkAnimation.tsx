@@ -4,13 +4,13 @@ import * as THREE from "three";
 const PARTICLE_COUNT = 18000;
 const ROTATION_SPEED = 0.000020;
 
-// === 4D Simplex Noise + FBM vertex shader (ported from MazeHQ) ===
 const vertexShader = `
   attribute float aAlpha;
   attribute float aIndex;
   attribute vec3 aMove;
   attribute vec3 aSpeed;
   attribute vec3 aRandomness;
+  attribute vec3 aFlatPosition;
 
   uniform float uPixelRatio;
   uniform float uTime;
@@ -21,6 +21,7 @@ const vertexShader = `
   uniform float uAmplitude;
   uniform float uFrequency;
   uniform float uScale;
+  uniform float uMorph;
 
   uniform float uRcolor;
   uniform float uGcolor;
@@ -146,42 +147,49 @@ const vertexShader = `
     float b = uBcolor / 255.0 + (noiseFactor * (uBnoise - uBcolor) / 255.0);
     vColor = vec3(r, g, b);
 
-    // --- Tangential surface drift ---
+    // --- Sphere position with tangential drift ---
     vec3 normal = normalize(position);
     float baseRadius = length(position);
 
-    // Build tangent frame from normal
     vec3 up = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
     vec3 tangent = normalize(cross(up, normal));
     vec3 bitangent = cross(normal, tangent);
 
-    // Per-particle drift direction from aRandomness, animated by noise over time
-    float driftAngle = aRandomness.x * 6.2831853; // unique direction per particle
+    float driftAngle = aRandomness.x * 6.2831853;
     float driftNoise1 = snoise2d(vec2(aIndex * 0.01, uTime * uSpeed));
     float driftNoise2 = snoise2d(vec2(aIndex * 0.01 + 100.0, uTime * uSpeed * 0.7));
 
-    float driftAmount = uScale * uDepth * 8.0; // surface drift magnitude
+    float driftAmount = uScale * uDepth * 8.0;
     vec3 surfaceOffset = tangent * (cos(driftAngle) * driftNoise1 * driftAmount * aSpeed.x)
                        + bitangent * (sin(driftAngle) * driftNoise2 * driftAmount * aSpeed.y);
 
-    // Apply drift then re-project onto sphere to keep shape clean
     vec3 drifted = position + surfaceOffset;
     drifted = normalize(drifted) * baseRadius;
 
-    // Subtle radial breathing (blob deformation)
-    vec3 displaced = drifted * (1.0 + uAmplitude * vNoise * 0.3);
+    vec3 spherePos = drifted * (1.0 + uAmplitude * vNoise * 0.3);
+
+    // --- Flat "sand" position with subtle noise movement ---
+    float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.5 + uTime * 0.1, aFlatPosition.z * 0.5));
+    vec3 flatPos = aFlatPosition + vec3(0.0, flatNoise * 0.02, 0.0);
+
+    // --- Morph between sphere and flat ---
+    // Use smoothstep for organic easing
+    float morphEased = smoothstep(0.0, 1.0, uMorph);
+    vec3 finalPos = mix(spherePos, flatPos, morphEased);
 
     // Final position
-    vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
+    vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-    // Point size with distance attenuation
+    // Point size — smaller in sand state
+    float sizeMultiplier = mix(1.0, 0.5, morphEased);
     vDistance = -mvPosition.z;
-    gl_PointSize = uSize * (100.0 / vDistance) * uPixelRatio;
+    gl_PointSize = uSize * sizeMultiplier * (100.0 / vDistance) * uPixelRatio;
     gl_PointSize = clamp(gl_PointSize, 1.0, 100.0);
 
-    // Alpha with distance attenuation
-    vAlpha = uAlpha * aAlpha * (300.0 / vDistance);
+    // Alpha — slightly dimmer in sand state
+    float alphaMultiplier = mix(1.0, 0.6, morphEased);
+    vAlpha = uAlpha * aAlpha * alphaMultiplier * (300.0 / vDistance);
   }
 `;
 
@@ -202,16 +210,22 @@ const fragmentShader = `
 
 interface NetworkAnimationProps {
   className?: string;
+  scrollProgress?: number; // 0 = globe, 1 = sand
 }
 
-export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
+export function NetworkAnimation({ className = '', scrollProgress = 0 }: NetworkAnimationProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef(scrollProgress);
+
+  // Keep ref in sync with prop
+  useEffect(() => {
+    scrollRef.current = scrollProgress;
+  }, [scrollProgress]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Scene setup
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 1, 2000);
     camera.position.z = 800;
@@ -226,9 +240,9 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
     container.appendChild(renderer.domElement);
     renderer.domElement.style.pointerEvents = "none";
 
-    // Create particle geometry — positions set once, GPU animates
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(PARTICLE_COUNT * 3);
+    const flatPositions = new Float32Array(PARTICLE_COUNT * 3);
     const alphas = new Float32Array(PARTICLE_COUNT);
     const indices = new Float32Array(PARTICLE_COUNT);
     const moves = new Float32Array(PARTICLE_COUNT * 3);
@@ -242,19 +256,26 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       const theta = goldenAngle * i;
       const phi = Math.acos(1 - 2 * t);
 
-      // Sphere radius variation (atmosphere particles slightly further out)
       const isAtmosphere = Math.random() < 0.12;
       const rMul = isAtmosphere
         ? 1.01 + Math.random() * 0.1
         : 0.98 + Math.random() * 0.04;
-      const r = 1.0 * rMul; // normalized, scaled by container in resize
+      const r = 1.0 * rMul;
 
       const sp = Math.sin(phi);
       positions[i * 3] = r * sp * Math.cos(theta);
       positions[i * 3 + 1] = r * Math.cos(phi);
       positions[i * 3 + 2] = r * sp * Math.sin(theta);
 
-      // Per-particle attributes
+      // Flat "sand" target positions — wide XZ plane
+      // Spread across a 6x6 normalized area, with subtle Y variation
+      const flatX = (Math.random() - 0.5) * 6.0;
+      const flatZ = (Math.random() - 0.5) * 3.0;
+      const flatY = -0.3 + (Math.random() - 0.5) * 0.1; // slightly below center
+      flatPositions[i * 3] = flatX;
+      flatPositions[i * 3 + 1] = flatY;
+      flatPositions[i * 3 + 2] = flatZ;
+
       alphas[i] = 0.3 + Math.random() * 0.7;
       indices[i] = i;
 
@@ -272,13 +293,13 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
     }
 
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("aFlatPosition", new THREE.BufferAttribute(flatPositions, 3));
     geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
     geometry.setAttribute("aIndex", new THREE.BufferAttribute(indices, 1));
     geometry.setAttribute("aMove", new THREE.BufferAttribute(moves, 3));
     geometry.setAttribute("aSpeed", new THREE.BufferAttribute(speeds, 3));
     geometry.setAttribute("aRandomness", new THREE.BufferAttribute(randomness, 3));
 
-    // Uniforms — tuned for organic blob globe
     const uniforms = {
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
@@ -289,11 +310,10 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       uAmplitude: { value: 0.04 },
       uFrequency: { value: 1.2 },
       uScale: { value: 1.2 },
-      // Base color: Cyan #22D0DF
+      uMorph: { value: 0.0 },
       uRcolor: { value: 34.0 },
       uGcolor: { value: 208.0 },
       uBcolor: { value: 223.0 },
-      // Noise color: Magenta #B43CC8
       uRnoise: { value: 180.0 },
       uGnoise: { value: 60.0 },
       uBnoise: { value: 200.0 },
@@ -311,7 +331,8 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
     const points = new THREE.Points(geometry, material);
     scene.add(points);
 
-    // Resize handler — scale sphere positions to container
+    let currentSphereRadius = 300;
+
     const resize = () => {
       const rect = container.getBoundingClientRect();
       const w = rect.width;
@@ -320,23 +341,30 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
 
-      const sphereRadius = Math.min(w, h) * 0.38;
-      points.scale.setScalar(sphereRadius);
+      currentSphereRadius = Math.min(w, h) * 0.38;
     };
     resize();
     window.addEventListener("resize", resize);
 
-    // Animation — only update uniforms, GPU does the rest
     let animId = 0;
     const startTime = performance.now();
 
     const animate = () => {
-      const elapsed = (performance.now() - startTime) * 0.001; // seconds
-      uniforms.uTime.value = elapsed * 0.15; // visible FBM noise evolution
+      const elapsed = (performance.now() - startTime) * 0.001;
+      uniforms.uTime.value = elapsed * 0.15;
 
-      // Slow global rotation
-      points.rotation.y = elapsed * ROTATION_SPEED * 1000;
-      points.rotation.x = Math.sin(elapsed * 0.008) * 0.08;
+      const morph = scrollRef.current;
+      uniforms.uMorph.value = morph;
+
+      // Interpolate rotation — fade to 0 in sand state
+      const rotationFactor = 1.0 - morph;
+      points.rotation.y = elapsed * ROTATION_SPEED * 1000 * rotationFactor;
+      points.rotation.x = Math.sin(elapsed * 0.008) * 0.08 * rotationFactor;
+
+      // Interpolate scale — globe radius → wide spread for sand
+      const sandScale = currentSphereRadius * 1.8;
+      const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
+      points.scale.setScalar(scale);
 
       renderer.render(scene, camera);
       animId = requestAnimationFrame(animate);
