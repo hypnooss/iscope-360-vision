@@ -170,8 +170,8 @@ const vertexShader = `
 
     // --- Flat "sand" position with subtle noise movement ---
       float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.5 + uTime * 0.1, aFlatPosition.z * 0.5));
-    float zigzag = sin(aFlatPosition.x * 4.0 + uTime * 2.0) * 0.04
-                 + sin(aFlatPosition.z * 6.0 - uTime * 1.5) * 0.03;
+    float zigzag = sin(aFlatPosition.x * 4.0 + uTime * 2.0) * 0.08
+                 + sin(aFlatPosition.z * 6.0 - uTime * 1.5) * 0.06;
     vec3 flatPos = aFlatPosition + vec3(0.0, flatNoise * 0.008 + zigzag, 0.0);
 
     // --- Morph between sphere and flat ---
@@ -281,9 +281,9 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const flatZ = (Math.random() - 0.5) * 2.5;
       // Sinusoidal zig-zag dunes for beach sand effect
       const flatY = -0.3
-        + Math.sin(flatX * 4.0) * 0.12
-        + Math.sin(flatZ * 6.0) * 0.10
-        + Math.sin(flatX * 9.0 + flatZ * 5.0) * 0.06
+        + Math.sin(flatX * 4.0) * 0.20
+        + Math.sin(flatZ * 6.0) * 0.18
+        + Math.sin(flatX * 9.0 + flatZ * 5.0) * 0.10
         + (Math.random() - 0.5) * 0.025;
       flatPositions[i * 3] = flatX;
       flatPositions[i * 3 + 1] = flatY;
@@ -317,7 +317,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
       uSpeed: { value: 0.35 },
-      uSize: { value: 18.0 },
+      uSize: { value: 28.0 },
       uAlpha: { value: 1.0 },
       uDepth: { value: 0.005 },
       uAmplitude: { value: 0.04 },
@@ -376,15 +376,15 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       points.rotation.x = globeRotX * (1.0 - morph) + 0.55 * morph;
 
       // Offset Y downward in sand state
-      points.position.y = -currentSphereRadius * 0.35 * morph;
+      points.position.y = -currentSphereRadius * 0.25 * morph;
 
       // Interpolate scale — globe radius → wide spread for sand
-      const sandScale = currentSphereRadius * 2.5;
+      const sandScale = currentSphereRadius * 1.8;
       const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
       points.scale.setScalar(scale);
 
       // Move camera closer during morph for stronger perspective
-      camera.position.z = 800 - 200 * morph;
+      camera.position.z = 800 - 450 * morph;
       camera.updateProjectionMatrix();
 
       renderer.render(scene, camera);
