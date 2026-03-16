@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
-const PARTICLE_COUNT = 18000;
+const PARTICLE_COUNT = 25000;
 const ROTATION_SPEED = 0.000020;
 
 const vertexShader = `
@@ -169,8 +169,10 @@ const vertexShader = `
     vec3 spherePos = drifted * (1.0 + uAmplitude * vNoise * 0.3);
 
     // --- Flat "sand" position with subtle noise movement ---
-    float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.5 + uTime * 0.1, aFlatPosition.z * 0.5));
-    vec3 flatPos = aFlatPosition + vec3(0.0, flatNoise * 0.008, 0.0);
+      float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.5 + uTime * 0.1, aFlatPosition.z * 0.5));
+    float zigzag = sin(aFlatPosition.x * 4.0 + uTime * 2.0) * 0.04
+                 + sin(aFlatPosition.z * 6.0 - uTime * 1.5) * 0.03;
+    vec3 flatPos = aFlatPosition + vec3(0.0, flatNoise * 0.008 + zigzag, 0.0);
 
     // --- Morph between sphere and flat ---
     // Use smoothstep for organic easing
@@ -275,14 +277,14 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
 
       // Flat "sand" target positions — wide XZ plane
       // Spread across a 6x6 normalized area, with subtle Y variation
-      const flatX = (Math.random() - 0.5) * 3.0;
-      const flatZ = (Math.random() - 0.5) * 3.0;
+      const flatX = (Math.random() - 0.5) * 2.5;
+      const flatZ = (Math.random() - 0.5) * 2.5;
       // Sinusoidal zig-zag dunes for beach sand effect
       const flatY = -0.3
-        + Math.sin(flatX * 4.0) * 0.06
-        + Math.sin(flatZ * 6.0) * 0.05
-        + Math.sin(flatX * 9.0 + flatZ * 5.0) * 0.03
-        + (Math.random() - 0.5) * 0.015;
+        + Math.sin(flatX * 4.0) * 0.12
+        + Math.sin(flatZ * 6.0) * 0.10
+        + Math.sin(flatX * 9.0 + flatZ * 5.0) * 0.06
+        + (Math.random() - 0.5) * 0.025;
       flatPositions[i * 3] = flatX;
       flatPositions[i * 3 + 1] = flatY;
       flatPositions[i * 3 + 2] = flatZ;
@@ -315,7 +317,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
       uSpeed: { value: 0.35 },
-      uSize: { value: 16.0 },
+      uSize: { value: 18.0 },
       uAlpha: { value: 1.0 },
       uDepth: { value: 0.005 },
       uAmplitude: { value: 0.04 },
