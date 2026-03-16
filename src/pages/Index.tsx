@@ -151,26 +151,6 @@ const Index = () => {
           </div>
         </section>
 
-        {/* ═══ SOCIAL PROOF ═══ */}
-        <Section className="!py-16 border-y border-border/10">
-          <Reveal>
-            <p className="text-center text-sm text-muted-foreground mb-10">
-              Utilizado por equipes de segurança em todo o Brasil
-            </p>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <div className="flex flex-wrap justify-center items-center gap-8 md:gap-14">
-              {['TechCorp', 'CloudSec', 'DataShield', 'NetGuard', 'CyberX', 'SafeNet'].map((name) => (
-                <span
-                  key={name}
-                  className="text-lg font-heading font-bold text-muted-foreground/30 hover:text-muted-foreground/70 transition-opacity duration-300 select-none"
-                >
-                  {name}
-                </span>
-              ))}
-            </div>
-          </Reveal>
-        </Section>
 
         {/* ═══ PROBLEM — Impact Numbers ═══ */}
         <Section id="problem">
