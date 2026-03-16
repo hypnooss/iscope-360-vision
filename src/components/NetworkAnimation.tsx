@@ -168,12 +168,12 @@ const vertexShader = `
 
     vec3 spherePos = drifted * (1.0 + uAmplitude * vNoise * 0.3);
 
-    // --- Flat "sand" position with shallow dune bands on the ground plane ---
-      float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.42 + uTime * 0.06, aFlatPosition.z * 0.28));
-    float flatNoiseZ = snoise2d(vec2(aFlatPosition.x * 0.22 - uTime * 0.04, aFlatPosition.z * 0.35));
-    float dune = sin(aFlatPosition.x * 4.2 + uTime * 0.35) * 0.018
-               + sin(aFlatPosition.x * 2.1 + aFlatPosition.z * 0.9 - uTime * 0.18) * 0.012;
-    vec3 flatPos = aFlatPosition + vec3(0.0, dune + flatNoise * 0.004, flatNoiseZ * 0.02);
+    // --- Flat "sand" position with zig-zag bands on the ground plane ---
+      float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.38 + uTime * 0.05, aFlatPosition.z * 0.24));
+    float zigzag = sin(aFlatPosition.z * 6.5 + uTime * 0.2) * 0.03;
+    float dune = sin(aFlatPosition.z * 3.2 + aFlatPosition.x * 0.7 - uTime * 0.12) * 0.015;
+    float driftX = snoise2d(vec2(aFlatPosition.z * 0.42 - uTime * 0.04, aFlatPosition.x * 0.18)) * 0.008;
+    vec3 flatPos = aFlatPosition + vec3(driftX, zigzag + dune + flatNoise * 0.004, 0.0);
 
     // --- Morph between sphere and flat ---
     // Use smoothstep for organic easing
