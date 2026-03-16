@@ -162,13 +162,13 @@ function RiskChart({ opacity }: { opacity: number }) {
                 <motion.div
                   className="absolute inset-y-0 left-0 rounded-md"
                   style={{
-                    background: `linear-gradient(90deg, ${row.color}33, ${row.color}11)`,
+                    background: `linear-gradient(90deg, ${row.color}88, ${row.color}44)`,
                     width: `${row.pct}%`,
+                    transformOrigin: 'left',
                   }}
                   initial={{ scaleX: 0 }}
                   animate={{ scaleX: opacity > 0.3 ? 1 : 0 }}
                   transition={{ duration: 0.8, delay: 0.15 + i * 0.1, ease: EASE }}
-                  style-origin="left"
                 />
                 {/* Exploitable bar overlay */}
                 <motion.div
@@ -176,6 +176,7 @@ function RiskChart({ opacity }: { opacity: number }) {
                   style={{
                     background: `linear-gradient(90deg, ${row.color}AA, ${row.color}55)`,
                     width: `${parseFloat(exploitPct) * (row.pct / 100)}%`,
+                    transformOrigin: 'left',
                   }}
                   initial={{ scaleX: 0 }}
                   animate={{ scaleX: opacity > 0.3 ? 1 : 0 }}
