@@ -231,9 +231,11 @@ export function NetworkAnimation() {
         }
 
         // Blend: center=teal, edges=dynamic
-        const cR = lerp(20, edgeR, edgePow);
-        const cG = lerp(184, edgeG, edgePow);
-        const cB = lerp(166, edgeB, edgePow);
+        const colorMix = 0.35 + edgePow * 0.65;
+
+        const cR = lerp(20, edgeR, colorMix);
+        const cG = lerp(184, edgeG, colorMix);
+        const cB = lerp(166, edgeB, colorMix);
 
         ctx.fillStyle = `rgba(${cR | 0}, ${cG | 0}, ${cB | 0}, ${clampedAlpha})`;
         ctx.beginPath();
