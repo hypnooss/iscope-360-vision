@@ -1,205 +1,238 @@
 import { useEffect, useRef } from "react";
+import * as THREE from "three";
 
-interface Particle {
-  theta: number;
-  phi: number;
-  radiusMul: number;
-  baseSize: number;
-  thetaSpeed: number;
-  phiSpeed: number;
-}
+const PARTICLE_COUNT = 18000;
+const ROTATION_SPEED = 0.00006;
 
-const PARTICLE_COUNT = 25000;
-const ROTATION_SPEED = 0.00008;
-const PERSPECTIVE = 800;
-
-function clamp(v: number, min: number, max: number) {
-  return v < min ? min : v > max ? max : v;
-}
-
-function createParticles(): Particle[] {
-  const particles: Particle[] = [];
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const t = i / PARTICLE_COUNT;
-    const theta = goldenAngle * i;
-    const phi = Math.acos(1 - 2 * t);
-
-    // 15% of particles spread beyond radius for atmospheric halo
-    const isAtmosphere = Math.random() < 0.15;
-    const radiusMul = isAtmosphere
-      ? 1.01 + Math.random() * 0.11
-      : 0.99 + Math.random() * 0.02;
-
-    particles.push({
-      theta,
-      phi,
-      radiusMul,
-      baseSize: 0.3 + Math.random() * 0.5,
-      thetaSpeed: (Math.random() - 0.5) * 0.002,
-      phiSpeed: (Math.random() - 0.5) * 0.001,
-    });
+// Vertex shader: positions points and passes data to fragment
+const vertexShader = `
+  attribute float aSize;
+  attribute vec3 aColor;
+  attribute float aAlpha;
+  
+  varying vec3 vColor;
+  varying float vAlpha;
+  
+  void main() {
+    vColor = aColor;
+    vAlpha = aAlpha;
+    
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = aSize * (300.0 / -mvPosition.z);
+    gl_Position = projectionMatrix * mvPosition;
   }
+`;
 
-  return particles;
-}
+// Fragment shader: draws soft circular particles with color/alpha
+const fragmentShader = `
+  varying vec3 vColor;
+  varying float vAlpha;
+  
+  void main() {
+    // Circular point with soft edge
+    float dist = length(gl_PointCoord - vec2(0.5));
+    if (dist > 0.5) discard;
+    
+    float softEdge = 1.0 - smoothstep(0.3, 0.5, dist);
+    gl_FragColor = vec4(vColor, vAlpha * softEdge);
+  }
+`;
 
 interface NetworkAnimationProps {
   className?: string;
 }
 
 export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const particlesRef = useRef<Particle[]>(createParticles());
-  const animRef = useRef<number>(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const container = containerRef.current;
+    if (!container) return;
 
-    const ctx = canvas.getContext("2d", { alpha: true });
-    if (!ctx) return;
+    // Scene setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1, 1, 2000);
+    camera.position.z = 800;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const renderer = new THREE.WebGLRenderer({
+      alpha: true,
+      antialias: false,
+      powerPreference: "high-performance",
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 0);
+    container.appendChild(renderer.domElement);
+    renderer.domElement.style.pointerEvents = "none";
 
+    // Create particle geometry
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(PARTICLE_COUNT * 3);
+    const colors = new Float32Array(PARTICLE_COUNT * 3);
+    const alphas = new Float32Array(PARTICLE_COUNT);
+    const sizes = new Float32Array(PARTICLE_COUNT);
+
+    // Store spherical coords for animation
+    const thetas = new Float32Array(PARTICLE_COUNT);
+    const phis = new Float32Array(PARTICLE_COUNT);
+    const radiusMuls = new Float32Array(PARTICLE_COUNT);
+    const thetaSpeeds = new Float32Array(PARTICLE_COUNT);
+    const phiSpeeds = new Float32Array(PARTICLE_COUNT);
+
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const t = i / PARTICLE_COUNT;
+      thetas[i] = goldenAngle * i;
+      phis[i] = Math.acos(1 - 2 * t);
+
+      const isAtmosphere = Math.random() < 0.12;
+      radiusMuls[i] = isAtmosphere
+        ? 1.01 + Math.random() * 0.1
+        : 0.98 + Math.random() * 0.04;
+
+      thetaSpeeds[i] = (Math.random() - 0.5) * 0.0015;
+      phiSpeeds[i] = (Math.random() - 0.5) * 0.0008;
+
+      sizes[i] = 1.5 + Math.random() * 2.5;
+    }
+
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
+    geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+
+    const material = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+
+    const points = new THREE.Points(geometry, material);
+    scene.add(points);
+
+    // Resize handler
     const resize = () => {
-      const rect = canvas.parentElement?.getBoundingClientRect();
-      const w = rect?.width ?? window.innerWidth;
-      const h = rect?.height ?? window.innerHeight;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const rect = container.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
     };
-
     resize();
     window.addEventListener("resize", resize);
 
-    const particles = particlesRef.current;
+    // Animation
+    let animId = 0;
     const startTime = performance.now();
 
-    const draw = (now: number) => {
+    // Color constants (normalized 0-1)
+    const cyanR = 34 / 255, cyanG = 208 / 255, cyanB = 223 / 255;
+    const magentaR = 180 / 255, magentaG = 60 / 255, magentaB = 200 / 255;
+
+    const animate = () => {
+      const now = performance.now();
       const time = now - startTime;
-      const rect = canvas.parentElement?.getBoundingClientRect();
-      const w = rect?.width ?? window.innerWidth;
-      const h = rect?.height ?? window.innerHeight;
 
-      const cx = w * 0.5;
-      const cy = h * 0.48;
-      const sphereRadius = Math.min(w, h) * 0.65;
+      const rect = container.getBoundingClientRect();
+      const sphereRadius = Math.min(rect.width, rect.height) * 0.38;
 
-      ctx.clearRect(0, 0, w, h);
-
+      // Slow global rotation
       const rotY = time * ROTATION_SPEED;
-      const rotX = Math.sin(time * 0.00004) * 0.1;
+      const rotX = Math.sin(time * 0.00003) * 0.12;
 
-      const cosY = Math.cos(rotY);
-      const sinY = Math.sin(rotY);
-      const cosX = Math.cos(rotX);
-      const sinX = Math.sin(rotX);
+      points.rotation.y = rotY;
+      points.rotation.x = rotX;
 
-      for (let i = 0; i < particles.length; i++) {
-        const p = particles[i];
+      const posAttr = geometry.getAttribute("position") as THREE.BufferAttribute;
+      const colAttr = geometry.getAttribute("aColor") as THREE.BufferAttribute;
+      const alphaAttr = geometry.getAttribute("aAlpha") as THREE.BufferAttribute;
 
-        p.theta += p.thetaSpeed;
-        p.phi += p.phiSpeed;
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        // Animate individual particle movement
+        thetas[i] += thetaSpeeds[i];
+        phis[i] += phiSpeeds[i];
 
-        if (p.phi < 0.05 || p.phi > Math.PI - 0.05) {
-          p.phiSpeed = -p.phiSpeed;
-          p.phi = clamp(p.phi, 0.05, Math.PI - 0.05);
+        if (phis[i] < 0.05 || phis[i] > Math.PI - 0.05) {
+          phiSpeeds[i] = -phiSpeeds[i];
+          phis[i] = Math.max(0.05, Math.min(Math.PI - 0.05, phis[i]));
         }
 
-        const r = sphereRadius * p.radiusMul;
-        const sp = Math.sin(p.phi);
+        const r = sphereRadius * radiusMuls[i];
+        const sp = Math.sin(phis[i]);
 
-        let x = r * sp * Math.cos(p.theta);
-        let y = r * Math.cos(p.phi);
-        let z = r * sp * Math.sin(p.theta);
+        const x = r * sp * Math.cos(thetas[i]);
+        const y = r * Math.cos(phis[i]);
+        const z = r * sp * Math.sin(thetas[i]);
 
-        // Rotate Y
-        const rx = x * cosY - z * sinY;
-        const rz = x * sinY + z * cosY;
-        x = rx;
-        z = rz;
+        posAttr.setXYZ(i, x, y, z);
 
-        // Rotate X
-        const ry = y * cosX - z * sinX;
-        const rz2 = y * sinX + z * cosX;
-        y = ry;
-        z = rz2;
-
-        const maxR = sphereRadius * 1.3;
-        const depth = z + PERSPECTIVE + maxR;
-        const scale = PERSPECTIVE / depth;
-
-        const sx = cx + x * scale;
-        const sy = cy + y * scale;
-
-        if (sx < -20 || sx > w + 20 || sy < -20 || sy > h + 20) continue;
-
-        // Depth: normalizedZ 0=back, 1=front
-        const normalizedZ = (z + maxR) / (2 * maxR);
-
-        // Back face: nearly invisible
-        if (normalizedZ < 0.25) {
-          const alpha = normalizedZ * 0.08;
-          if (alpha < 0.003) continue;
-          ctx.fillStyle = `rgba(15,20,40,${alpha})`;
-          ctx.beginPath();
-          ctx.arc(sx, sy, Math.max(0.2, p.baseSize * scale), 0, Math.PI * 2);
-          ctx.fill();
-          continue;
-        }
-
-        // Surface normal dot with view direction (Fresnel)
+        // Compute surface normal dot with view direction (before rotation)
+        // For Fresnel/rim effect we use the local z
         const dist = Math.sqrt(x * x + y * y + z * z);
         const nz = z / (dist || 1);
-        const edgeFactor = 1 - Math.abs(nz); // 0=facing camera, 1=edge
+        const edgeFactor = 1.0 - Math.abs(nz); // 0=center, 1=edge
 
         // Diagonal gradient: top-left = cyan, bottom-right = magenta
-        const diagonalMix = clamp((-x + y) / (2 * sphereRadius) + 0.5, 0, 1);
+        const diagonalMix = Math.max(0, Math.min(1, (-x + y) / (2 * sphereRadius) + 0.5));
 
-        // Color: lerp Magenta(180, 50, 200) → Cyan(30, 210, 230)
-        const rC = 180 + (30 - 180) * diagonalMix;
-        const gC = 50 + (210 - 50) * diagonalMix;
-        const bC = 200 + (230 - 200) * diagonalMix;
+        // Lerp between magenta and cyan
+        const cr = magentaR + (cyanR - magentaR) * diagonalMix;
+        const cg = magentaG + (cyanG - magentaG) * diagonalMix;
+        const cb = magentaB + (cyanB - magentaB) * diagonalMix;
 
+        colAttr.setXYZ(i, cr, cg, cb);
+
+        // Alpha: Fresnel rim effect — center nearly invisible, edges bright
         let alpha: number;
-
-        if (edgeFactor >= 0.6) {
-          // RIM: bright glow
-          const rimIntensity = (edgeFactor - 0.6) / 0.4;
-          alpha = 0.2 + rimIntensity * 0.8;
+        if (edgeFactor >= 0.55) {
+          // Rim: bright glow
+          const rimIntensity = (edgeFactor - 0.55) / 0.45;
+          alpha = 0.15 + rimIntensity * 0.7;
         } else {
-          // CENTER: nearly invisible (fades into dark background)
-          alpha = edgeFactor * 0.15;
+          // Center: very faint
+          alpha = edgeFactor * 0.12;
         }
 
-        // Depth fade: back face much darker
-        alpha *= (0.1 + normalizedZ * 0.9);
+        // Depth fade using local z (back face darker)
+        const depthFade = (nz + 1.0) * 0.5; // 0=back, 1=front
+        if (depthFade < 0.3) {
+          alpha *= depthFade * 0.15;
+        } else {
+          alpha *= 0.15 + depthFade * 0.85;
+        }
 
-        if (alpha < 0.003) continue;
-
-        const size = Math.max(0.2, p.baseSize * scale);
-
-        ctx.fillStyle = `rgba(${rC | 0},${gC | 0},${bC | 0},${clamp(alpha, 0, 1)})`;
-        ctx.beginPath();
-        ctx.arc(sx, sy, size, 0, Math.PI * 2);
-        ctx.fill();
+        alphaAttr.setX(i, Math.max(0, Math.min(1, alpha)));
       }
 
-      animRef.current = requestAnimationFrame(draw);
+      posAttr.needsUpdate = true;
+      colAttr.needsUpdate = true;
+      alphaAttr.needsUpdate = true;
+
+      renderer.render(scene, camera);
+      animId = requestAnimationFrame(animate);
     };
 
-    animRef.current = requestAnimationFrame(draw);
+    animId = requestAnimationFrame(animate);
+
+    cleanupRef.current = () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener("resize", resize);
+      geometry.dispose();
+      material.dispose();
+      renderer.dispose();
+      if (container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
+    };
 
     return () => {
-      cancelAnimationFrame(animRef.current);
-      window.removeEventListener("resize", resize);
+      cleanupRef.current?.();
     };
   }, []);
 
-  return <canvas ref={canvasRef} className={`pointer-events-none ${className}`} />;
+  return <div ref={containerRef} className={`pointer-events-none ${className}`} />;
 }
