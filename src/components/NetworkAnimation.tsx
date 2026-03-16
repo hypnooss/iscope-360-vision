@@ -170,7 +170,7 @@ const vertexShader = `
 
     // --- Flat "sand" position with subtle noise movement ---
     float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.5 + uTime * 0.1, aFlatPosition.z * 0.5));
-    vec3 flatPos = aFlatPosition + vec3(0.0, flatNoise * 0.02, 0.0);
+    vec3 flatPos = aFlatPosition + vec3(0.0, flatNoise * 0.008, 0.0);
 
     // --- Morph between sphere and flat ---
     // Use smoothstep for organic easing
@@ -187,9 +187,15 @@ const vertexShader = `
     gl_PointSize = uSize * sizeMultiplier * (100.0 / vDistance) * uPixelRatio;
     gl_PointSize = clamp(gl_PointSize, 1.0, 100.0);
 
-    // Alpha — slightly dimmer in sand state
-    float alphaMultiplier = mix(1.0, 0.6, morphEased);
+    // Alpha — depth fade in sand state (particles further in Z fade out)
+    // aFlatPosition.z ranges from -0.6 to 0.6; normalize to 0..1 depth factor
+    float depthFade = 1.0 - smoothstep(-0.2, 0.6, aFlatPosition.z) * 0.7;
+    float alphaMultiplier = mix(1.0, 0.6 * depthFade, morphEased);
     vAlpha = uAlpha * aAlpha * alphaMultiplier * (300.0 / vDistance);
+
+    // Size — shrink distant particles in sand state for perspective
+    float depthSize = mix(1.0, 0.6 + 0.4 * (1.0 - smoothstep(-0.2, 0.6, aFlatPosition.z)), morphEased);
+    gl_PointSize *= depthSize;
   }
 `;
 
@@ -273,10 +279,10 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const flatZ = (Math.random() - 0.5) * 1.2;
       // Sinusoidal zig-zag dunes for beach sand effect
       const flatY = -0.3
-        + Math.sin(flatX * 4.0) * 0.06
-        + Math.sin(flatZ * 6.0) * 0.04
-        + Math.sin(flatX * 9.0 + flatZ * 5.0) * 0.025
-        + (Math.random() - 0.5) * 0.03;
+        + Math.sin(flatX * 4.0) * 0.02
+        + Math.sin(flatZ * 6.0) * 0.015
+        + Math.sin(flatX * 9.0 + flatZ * 5.0) * 0.01
+        + (Math.random() - 0.5) * 0.01;
       flatPositions[i * 3] = flatX;
       flatPositions[i * 3 + 1] = flatY;
       flatPositions[i * 3 + 2] = flatZ;
