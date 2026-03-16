@@ -191,7 +191,7 @@ export function NetworkAnimation() {
 
         // Size: slight front boost
         const frontSizeMul = normalizedZ > 0.5 ? 1 + (normalizedZ - 0.5) * 0.5 : 1;
-        const size = Math.max(0.2, p.baseSize * scale * 0.9 * frontSizeMul);
+        const size = Math.max(0.25, p.baseSize * scale * 1.2 * frontSizeMul);
 
         // Silhouette-based coloring: edges get dynamic color, center stays teal
         const dx = sx - cx;
