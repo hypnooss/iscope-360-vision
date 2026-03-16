@@ -15,9 +15,9 @@ interface LineChartProps {
 
 type MiniChartProps = BarChartProps | LineChartProps;
 
-const W = 240;
-const H = 72;
-const PAD = { top: 4, bottom: 16, left: 0, right: 0 };
+const W = 280;
+const H = 88;
+const PAD = { top: 4, bottom: 20, left: 10, right: 10 };
 
 export function MiniChart(props: MiniChartProps) {
   const { type, data, color = 'hsl(var(--primary))' } = props;
@@ -38,7 +38,7 @@ export function MiniChart(props: MiniChartProps) {
     return (
       <motion.svg
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-auto mt-4 max-w-[240px]"
+        className="w-full h-auto mt-4 max-w-[280px]"
         initial={{ opacity: 0, y: 8 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
@@ -64,10 +64,10 @@ export function MiniChart(props: MiniChartProps) {
               />
               <text
                 x={x + barW / 2}
-                y={H - 2}
+                y={H - 3}
                 textAnchor="middle"
                 className="fill-muted-foreground"
-                fontSize="7"
+                fontSize="8"
                 fontFamily="var(--font-sans)"
               >
                 {d.label}
@@ -93,7 +93,7 @@ export function MiniChart(props: MiniChartProps) {
   return (
     <motion.svg
       viewBox={`0 0 ${W} ${H}`}
-      className="w-full h-auto mt-4 max-w-[240px]"
+      className="w-full h-auto mt-4 max-w-[280px]"
       initial={{ opacity: 0, y: 8 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
@@ -123,10 +123,10 @@ export function MiniChart(props: MiniChartProps) {
         <text
           key={d.label}
           x={points[i].x}
-          y={H - 2}
+          y={H - 3}
           textAnchor="middle"
           className="fill-muted-foreground"
-          fontSize="7"
+          fontSize="8"
           fontFamily="var(--font-sans)"
         >
           {d.label}

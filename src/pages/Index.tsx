@@ -177,14 +177,14 @@ const Index = () => {
                   type="bar"
                   color="hsl(var(--primary))"
                   data={[
-                    { label: '18', value: 16510 },
-                    { label: '19', value: 17306 },
-                    { label: '20', value: 18325 },
-                    { label: '21', value: 20155 },
-                    { label: '22', value: 25059 },
-                    { label: '23', value: 28902 },
-                    { label: '24', value: 40009 },
-                    { label: '25', value: 45000 },
+                    { label: '2018', value: 16510 },
+                    { label: '2019', value: 17306 },
+                    { label: '2020', value: 18325 },
+                    { label: '2021', value: 20155 },
+                    { label: '2022', value: 25059 },
+                    { label: '2023', value: 28902 },
+                    { label: '2024', value: 40009 },
+                    { label: '2025', value: 45000 },
                   ]}
                 />
               </div>
@@ -202,11 +202,11 @@ const Index = () => {
                   type="line"
                   color="hsl(var(--destructive))"
                   data={[
-                    { label: '19', value: 63 },
-                    { label: '20', value: 44 },
-                    { label: '21', value: 32 },
-                    { label: '22', value: 19 },
-                    { label: '23', value: 5 },
+                    { label: '2019', value: 63 },
+                    { label: '2020', value: 44 },
+                    { label: '2021', value: 32 },
+                    { label: '2022', value: 19 },
+                    { label: '2023', value: 5 },
                   ]}
                 />
               </div>
@@ -224,11 +224,11 @@ const Index = () => {
                   type="line"
                   color="hsl(var(--warning))"
                   data={[
-                    { label: '20', value: 3.86 },
-                    { label: '21', value: 4.24 },
-                    { label: '22', value: 4.35 },
-                    { label: '23', value: 4.45 },
-                    { label: '24', value: 4.88 },
+                    { label: '2020', value: 3.86 },
+                    { label: '2021', value: 4.24 },
+                    { label: '2022', value: 4.35 },
+                    { label: '2023', value: 4.45 },
+                    { label: '2024', value: 4.88 },
                   ]}
                 />
               </div>
