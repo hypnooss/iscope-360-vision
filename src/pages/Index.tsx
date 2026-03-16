@@ -468,7 +468,7 @@ const Index = () => {
 
         {/* ═══ CTA FINAL ═══ */}
         <section id="cta" className="py-[120px] px-6 relative overflow-hidden">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px] pointer-events-none" />
+          
 
           <motion.div
             initial="hidden"
