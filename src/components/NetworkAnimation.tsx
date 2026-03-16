@@ -184,7 +184,7 @@ const vertexShader = `
     gl_Position = projectionMatrix * mvPosition;
 
     // Point size — smaller in sand state
-    float sizeMultiplier = mix(1.0, 0.5, morphEased);
+    float sizeMultiplier = mix(1.0, 2.5, morphEased);
     vDistance = -mvPosition.z;
     gl_PointSize = uSize * sizeMultiplier * (100.0 / vDistance) * uPixelRatio;
     gl_PointSize = clamp(gl_PointSize, 1.0, 100.0);
