@@ -357,86 +357,7 @@ const Index = () => {
           </div>
         </Section>
 
-        {/* ═══ INTEGRATIONS ═══ */}
-        <Section id="integrations">
-          <Reveal>
-            <div className="text-center mb-16">
-              <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4">
-                Conecte com seu <span className="text-primary">ecossistema</span>
-              </h2>
-              <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-                Integrações nativas com as principais plataformas de cloud, segurança e infraestrutura.
-              </p>
-            </div>
-          </Reveal>
-
-          <Reveal delay={0.1}>
-            <div className="relative max-w-[700px] mx-auto py-16">
-              {/* Center badge */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-                <div className="w-20 h-20 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center shadow-[0_0_60px_hsl(175_80%_45%/0.15)]">
-                  <Shield className="w-8 h-8 text-primary" />
-                </div>
-              </div>
-              {/* Integration nodes */}
-              <div className="grid grid-cols-4 gap-6">
-                {[
-                  { name: 'AWS', icon: Cloud },
-                  { name: 'Azure', icon: Server },
-                  { name: 'GCP', icon: Globe },
-                  { name: 'Fortinet', icon: Shield },
-                  { name: 'Palo Alto', icon: ShieldCheck },
-                  { name: 'CrowdStrike', icon: Eye },
-                  { name: 'Tenable', icon: Scan },
-                  { name: 'Qualys', icon: Cpu },
-                ].map((int, i) => (
-                  <div key={int.name} className="flex flex-col items-center gap-3 group">
-                    <div className="w-14 h-14 rounded-xl bg-card border border-border/30 flex items-center justify-center group-hover:border-primary/40 group-hover:-translate-y-1 transition-all duration-300 group-hover:shadow-[0_8px_30px_hsl(175_80%_45%/0.1)]">
-                      <int.icon className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors duration-300" />
-                    </div>
-                    <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground transition-colors duration-300">{int.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Reveal>
-        </Section>
-
-        {/* ═══ COMPLIANCE FRAMEWORKS ═══ */}
-        <Section>
-          <Reveal>
-            <div className="text-center mb-16">
-              <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4">
-                Conformidade com os principais{' '}
-                <span className="text-primary">frameworks</span>
-              </h2>
-              <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-                Verifique automaticamente a aderência da sua infraestrutura aos padrões mais exigentes do mercado.
-              </p>
-            </div>
-          </Reveal>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
-            {[
-              { name: 'CIS Benchmarks', desc: 'Hardening de sistemas e dispositivos de rede', icon: Shield },
-              { name: 'NIST CSF', desc: 'Framework de cibersegurança do governo dos EUA', icon: Layers },
-              { name: 'ISO 27001', desc: 'Gestão de segurança da informação', icon: CheckCircle2 },
-              { name: 'PCI DSS', desc: 'Segurança de dados de cartões de pagamento', icon: Lock },
-              { name: 'SOC 2', desc: 'Controles de segurança, disponibilidade e privacidade', icon: ShieldCheck },
-              { name: 'LGPD', desc: 'Lei Geral de Proteção de Dados brasileira', icon: FileSearch },
-            ].map((fw, i) => (
-              <Reveal key={fw.name} delay={i * 0.08}>
-                <div className="glass-container p-6 md:p-8 text-center group hover:border-primary/30 hover:-translate-y-1 transition-all duration-300">
-                  <div className="inline-flex p-3 rounded-xl bg-primary/10 mb-4 group-hover:bg-primary/15 transition-colors duration-300">
-                    <fw.icon className="w-5 h-5 text-primary" />
-                  </div>
-                  <h3 className="font-heading font-bold text-foreground text-sm md:text-base mb-1">{fw.name}</h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{fw.desc}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </Section>
+        {/* Integrations and Compliance sections removed */}
 
         {/* ═══ TESTIMONIALS ═══ */}
         <Section>
@@ -532,13 +453,13 @@ const Index = () => {
             className="max-w-3xl mx-auto w-full text-center relative z-10"
           >
             <Reveal>
-              <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-6">
+              <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4 leading-tight">
                 Comece a proteger sua infraestrutura{' '}
                 <span className="text-primary">hoje</span>
               </h2>
             </Reveal>
             <Reveal delay={0.1}>
-              <p className="text-muted-foreground max-w-xl mx-auto mb-12 text-lg leading-relaxed">
+              <p className="text-muted-foreground max-w-xl mx-auto mb-10 text-lg leading-relaxed">
                 Descubra vulnerabilidades, melhore sua postura de segurança e mantenha compliance contínuo.
               </p>
             </Reveal>
