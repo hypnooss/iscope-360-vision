@@ -184,19 +184,19 @@ const vertexShader = `
     vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-    // Point size — tighter in sand state to avoid blurry blobs
-    float sizeMultiplier = mix(1.0, 1.35, morphEased);
+    // Point size — preserve globe density, tighten sand particles
+    float sizeMultiplier = mix(1.0, 0.42, morphEased);
     vDistance = -mvPosition.z;
     gl_PointSize = uSize * sizeMultiplier * (100.0 / vDistance) * uPixelRatio;
-    gl_PointSize = clamp(gl_PointSize, 0.8, 72.0);
+    gl_PointSize = clamp(gl_PointSize, 0.6, 56.0);
 
-    // Alpha — depth fade in sand state (particles further in Z fade out)
-    float depthFade = 1.0 - smoothstep(-1.4, 0.4, aFlatPosition.z) * 0.5;
-    float alphaMultiplier = mix(1.0, 0.82 * depthFade, morphEased);
-    vAlpha = uAlpha * aAlpha * alphaMultiplier * (260.0 / vDistance);
+    // Alpha — lighter depth fade so the ridges stay readable
+    float depthFade = 1.0 - smoothstep(-1.2, 1.4, aFlatPosition.z) * 0.35;
+    float alphaMultiplier = mix(1.0, 0.9 * depthFade, morphEased);
+    vAlpha = uAlpha * aAlpha * alphaMultiplier * (240.0 / vDistance);
 
-    // Size — slightly shrink distant particles in sand state for perspective
-    float depthSize = mix(1.0, 0.72 + 0.28 * (1.0 - smoothstep(-1.4, 0.4, aFlatPosition.z)), morphEased);
+    // Size — mild depth perspective in sand state
+    float depthSize = mix(1.0, 0.65 + 0.35 * (1.0 - smoothstep(-1.2, 1.4, aFlatPosition.z)), morphEased);
     gl_PointSize *= depthSize;
   }
 `;
