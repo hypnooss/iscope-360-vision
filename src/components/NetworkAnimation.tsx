@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
 interface Particle {
   theta: number;
@@ -14,7 +14,7 @@ interface Particle {
   phiSpeed: number;
 }
 
-const PARTICLE_COUNT = 20000;
+const PARTICLE_COUNT = 15000;
 const ROTATION_SPEED = 0.00015;
 const PERSPECTIVE = 800;
 
@@ -56,10 +56,13 @@ function createParticles(): Particle[] {
       baseSize = 1.2 + Math.random() * 0.3;
     }
 
-    const brightnessBoost = Math.random() < 0.05 ? 0.3 : (Math.random() < 0.3 ? 0.08 : 0);
+    const brightnessBoost = Math.random() < 0.05 ? 0.3 : Math.random() < 0.3 ? 0.08 : 0;
 
     particles.push({
-      theta, phi, radiusMul, baseSize,
+      theta,
+      phi,
+      radiusMul,
+      baseSize,
       colorSeed: Math.random(),
       brightnessBoost,
       disperseX: (Math.random() - 0.5) * 2,
@@ -80,7 +83,7 @@ export function NetworkAnimation() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d', { alpha: true });
+    const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return;
 
     let dpr = window.devicePixelRatio || 1;
@@ -94,7 +97,7 @@ export function NetworkAnimation() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
-    window.addEventListener('resize', resize);
+    window.addEventListener("resize", resize);
 
     const particles = particlesRef.current;
     const startTime = performance.now();
@@ -202,19 +205,25 @@ export function NetworkAnimation() {
         const vertAngle = Math.atan2(dy, dx); // angle on screen
         const vertNorm = (vertAngle + Math.PI) / (2 * Math.PI);
         const shifted = (vertNorm + p.colorSeed * 0.15) % 1;
-        
+
         // Edge gradient: cyan ↔ magenta
         let edgeR: number, edgeG: number, edgeB: number;
         const zone = shifted * 3;
         if (zone < 1) {
           const t = zone;
-          edgeR = lerp(20, 30, t); edgeG = lerp(184, 200, t); edgeB = lerp(166, 230, t);
+          edgeR = lerp(20, 30, t);
+          edgeG = lerp(184, 200, t);
+          edgeB = lerp(166, 230, t);
         } else if (zone < 2) {
           const t = zone - 1;
-          edgeR = lerp(30, 170, t); edgeG = lerp(200, 60, t); edgeB = lerp(230, 180, t);
+          edgeR = lerp(30, 170, t);
+          edgeG = lerp(200, 60, t);
+          edgeB = lerp(230, 180, t);
         } else {
           const t = zone - 2;
-          edgeR = lerp(170, 20, t); edgeG = lerp(60, 184, t); edgeB = lerp(180, 166, t);
+          edgeR = lerp(170, 20, t);
+          edgeG = lerp(60, 184, t);
+          edgeB = lerp(180, 166, t);
         }
 
         // Blend: center=teal, edges=dynamic
@@ -249,14 +258,9 @@ export function NetworkAnimation() {
 
     return () => {
       cancelAnimationFrame(animRef.current);
-      window.removeEventListener('resize', resize);
+      window.removeEventListener("resize", resize);
     };
   }, []);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      className="pointer-events-none fixed inset-0 z-0"
-    />
-  );
+  return <canvas ref={canvasRef} className="pointer-events-none fixed inset-0 z-0" />;
 }
