@@ -1,186 +1,139 @@
-1: # Status: ✅ Implementado
 
-## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-### Problema resolvido
-Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
+## Rebuild: Landing Page Premium (Stripe/Linear/Vercel quality)
 
-### Mudanças implementadas
+This is a significant rebuild of the landing page to achieve modern premium SaaS quality with motion-driven storytelling, proper typography hierarchy, and polished micro-interactions.
 
-| Componente | Mudança |
-|---|---|
-| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
-| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
-| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
-| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
+---
 
-## Correção de Dados — scheduled_hour UTC→BRT
+### Overview
 
-### Problema resolvido
-Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
+The current page has good content but lacks the visual sophistication of reference sites. The rebuild will focus on: better scroll animations (framer-motion), upgraded typography, proper spacing (120px sections), two-column hero, new sections (Integrations, Social Proof), and refined micro-interactions throughout.
 
-### Solução aplicada
-1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
-2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
-3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
+The existing Canvas 2D particle globe will be kept and optimized — it already performs well and matches the design memory. Replacing it with Three.js would add ~200KB of dependencies for marginal visual improvement given the current aesthetic works.
 
-## Paralelização do run-scheduled-analyses
+---
 
-### Problema resolvido
-A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
+### New Dependencies
 
-### Solução aplicada
-Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
-- `processFirewallComplianceSchedules`
-- `processExternalDomainSchedules`
-- `processAnalyzerSchedules`
-- `processAttackSurfaceSchedules`
-- `processM365AnalyzerSchedules`
-- `processM365ComplianceSchedules`
+- `framer-motion` — scroll-triggered animations with proper easing, stagger, and viewport detection (replaces raw IntersectionObserver)
 
-CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
+### Font Updates
 
-## Timezone Dinâmico — Preferência do Usuário
+**index.html**: Replace current Google Fonts import with:
+- `Inter` (body, 300-700)
+- `Plus Jakarta Sans` (headlines, 500-800) — replaces Space Grotesk for a more modern SaaS feel
 
-### Problema resolvido
-O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
+**tailwind.config.ts**: Update `fontFamily.heading` to `Plus Jakarta Sans`
 
-### Solução implementada
+---
 
-| Componente | Mudança |
-|---|---|
-| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
-| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
-| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
-| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
-| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
-| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
+### File Changes
 
-### Arquitetura
+#### 1. `src/components/Header.tsx` — Enhanced Navbar
+
+- Keep sticky 72px height with backdrop blur
+- Add scroll-aware opacity transition (more opaque on scroll via state)
+- Update nav links: **Produto**, **Features**, **Integrações**, **Docs**, **Contato**
+- CTA button with `hover:translate-y-[-2px]` and soft shadow animation
+- Smoother mobile menu with framer-motion AnimatePresence
+
+#### 2. `src/pages/Index.tsx` — Full Rebuild
+
+All sections get 120px vertical padding (`py-[120px]`), max-w-[1200px] centered container, and framer-motion `motion.div` with viewport-triggered animations using `cubic-bezier(0.22, 1, 0.36, 1)` easing.
+
+**Section structure (10 sections):**
 
 ```text
-┌─────────────────────────────────────────────────────┐
-│  Banco: tudo em UTC + coluna timezone por schedule  │
-├─────────────────────────────────────────────────────┤
-│  Frontend: dateUtils usa timezone do perfil         │
-│  ScheduleDialog: converte dinamicamente para UTC    │
-├─────────────────────────────────────────────────────┤
-│  Edge Function: lê timezone de cada registro        │
-│  e calcula offset via Intl.DateTimeFormat           │
-└─────────────────────────────────────────────────────┘
+ 1. HERO            — Two-column: headline left + particle globe right
+ 2. SOCIAL PROOF    — Logo cloud (grayscale, hover to full opacity)
+ 3. PROBLEM         — Impact stats (21,500+ CVEs, 5 days, $4.88M)
+ 4. REAL PROBLEM    — False positives / alert fatigue (existing content)
+ 5. HOW IT WORKS    — 4-step flow (existing, refined spacing)
+ 6. FEATURES        — 3-column cards (existing, better hover effects)
+ 7. INTEGRATIONS    — Floating logos with animated connection lines
+ 8. COMPLIANCE      — Framework grid (existing, refined)
+ 9. TESTIMONIALS    — Refined quotes (existing content)
+10. BLOG/INSIGHTS   — Article cards (existing content)
+11. FINAL CTA       — Full-width with radial glow
+12. FOOTER          — Refined with consistent links
 ```
 
-## Correção de Dados Duplicados — Exchange Analyzer
+**Key section details:**
 
-### Status: ✅ Implementado
+**HERO (two-column)**:
+- Left: H1 at 64px bold, subheadline 18px max-w-[520px], CTA button (48px height, radius 10px, hover translateY -2px)
+- Right: The existing `<NetworkAnimation />` positioned within a container (no longer fixed full-screen — contained to hero right column)
+- Grid: `grid-cols-[1fr_1.2fr]` on desktop, stacked on mobile
 
-### Problema resolvido
-O Exchange Analyzer usava janelas temporais fixas de 24h tanto no PowerShell (blueprint) quanto nas queries Graph API (edge function), causando sobreposição de dados entre snapshots consecutivos e contagem duplicada de eventos.
+**SOCIAL PROOF (new)**:
+- Title: "Utilizado por equipes de segurança em todo o Brasil"
+- 6-8 company logos in grayscale (simulated with text badges since we have no real logos)
+- `opacity-0.5 hover:opacity-1` transition
 
-### Mudanças implementadas
+**INTEGRATIONS (new)**:
+- Central iScope logo/badge
+- Surrounding integration logos: AWS, Azure, GCP, Fortinet, Palo Alto, CrowdStrike, Tenable, Qualys
+- Animated dashed lines connecting to center (CSS animation)
+- Title: "Conecte com seu ecossistema existente"
 
-| Componente | Mudança |
-|---|---|
-| **Blueprint `m365` (hybrid)** | Comando `exo_message_trace` alterado de `-StartDate (Get-Date).AddHours(-24)` para `-StartDate "{period_start}" -EndDate "{period_end}"`, usando os valores do payload da task |
-| **`supabase/functions/m365-analyzer/index.ts`** | Duas janelas fixas de 24h (fallback Graph API ~linha 2147 e enriquecimento ~linha 2197) substituídas por `snapshot.period_start`/`period_end` com fallback para 24h se ausentes. Filtro `createdDateTime le` adicionado para limite superior |
-| **Frontend** | Sem alteração necessária — agregação já funciona corretamente com snapshots não-sobrepostos |
+**Micro-interactions across all cards:**
+- `hover:translateY(-4px)` with `transition-transform duration-300`
+- Soft glow on hover via `box-shadow`
+- Button scale on hover: `hover:scale-[1.02]`
+- Link underline animation on hover
 
-### Arquitetura final
-```text
-trigger-m365-analyzer:
-  period_start = last_snapshot.period_end (ou now - 2h)
-  period_end = now
-  → Cria snapshot + agent_task com period_start/period_end no payload
+#### 3. `src/components/NetworkAnimation.tsx` — Adaptation
 
-Blueprint (PowerShell):
-  Get-MessageTraceV2 -StartDate "{period_start}" -EndDate "{period_end}"
-  → Agente interpola placeholders do payload
+- Change from `fixed inset-0` to `absolute` positioning so it can be contained within the hero right column
+- Accept optional `className` prop for positioning
+- Reduce particle count from 8000 to 4000 for performance (contained area is smaller)
+- Remove scroll-based morphing (no longer full-page background)
 
-Edge Function (Graph API):
-  $filter=createdDateTime ge {period_start} and createdDateTime le {period_end}
-  → Usa snapshot.period_start/period_end
+#### 4. `src/index.css` — Refinements
 
-Frontend (useM365AnalyzerData.ts):
-  Soma contadores de snapshots consecutivos sem sobreposição
-  → Dados precisos sem duplicação
+- Add `scroll-behavior: smooth` to html
+- Add subtle noise texture utility class
+- Add radial gradient utility for section backgrounds
+- Refine the `feature-card` hover to include `translateY(-4px)` and glow
+
+#### 5. `tailwind.config.ts` — Typography update
+
+- Update heading font to Plus Jakarta Sans
+- Ensure animation keyframes include stagger-friendly variants
+
+---
+
+### Animation System (framer-motion)
+
+Replace `SectionReveal` with a `motion.div` wrapper using:
+
+```
+initial={{ opacity: 0, y: 40 }}
+whileInView={{ opacity: 1, y: 0 }}
+viewport={{ once: true, margin: "-100px" }}
+transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
 ```
 
-## Dashboard Snapshots — Arquitetura de Período Dinâmico
+Stagger children with `staggerChildren: 0.1` in parent variants.
 
-### Status: ✅ Implementado
+---
 
-### Problema resolvido
-Os dashboards operacionais (Exchange, Entra ID, Colaboração) salvavam KPIs numa única coluna JSONB sobrescrita a cada execução, impedindo agregação histórica para períodos dinâmicos (7 dias, 30 dias, etc.).
+### Performance Considerations
 
-### Mudanças implementadas
+- All animations use `transform` and `opacity` only (GPU-accelerated)
+- Particle count reduced to 4000 in contained area
+- `will-change: transform` on animated elements
+- Passive scroll listeners
+- Lazy viewport detection with `once: true`
+- No heavy blur shadows; use pre-computed gradients
 
-| Componente | Mudança |
-|---|---|
-| **Migration SQL** | Nova tabela `m365_dashboard_snapshots` com `tenant_record_id`, `client_id`, `dashboard_type`, `data` (JSONB), `period_start`, `period_end`, `created_at`. RLS com service_role, client_access e super_admin |
-| `exchange-dashboard` Edge Function | INSERT snapshot em `m365_dashboard_snapshots` (type='exchange') + UPDATE cache legado |
-| `entra-id-dashboard` Edge Function | INSERT snapshot (type='entra_id') + UPDATE cache legado |
-| `collaboration-dashboard` Edge Function | INSERT snapshot (type='collaboration') + UPDATE cache legado |
-| `useExchangeDashboard.ts` | Carrega do último snapshot da nova tabela, fallback para cache legado |
-| `useEntraIdDashboard.ts` | Idem |
-| `useCollaborationDashboard.ts` | Idem |
+---
 
-### Próximos passos
-- Adicionar seletor de período no frontend e agregar dados de evento de múltiplos snapshots
-- Auto-trigger dos dashboards no `agent-task-result` ao completar task m365_analyzer
-- Remover colunas de cache legado quando migração estiver consolidada
+### What stays the same
 
-## StorageQuota SharePoint via Agent PowerShell
+- All existing content/copy (stats, testimonials, blog posts, frameworks)
+- Color scheme and CSS variables
+- Auth redirect logic
+- Footer structure (links updated to match new sections)
 
-### Status: ✅ Implementado
-
-### Problema resolvido
-A REST API do SPO Admin (`/_api/StorageQuota()`) frequentemente falha por falta de permissões. O comando PowerShell `Get-PnPTenant | Select StorageQuota` é confiável e retorna o valor em MB.
-
-### Mudanças implementadas
-
-| Componente | Mudança |
-|---|---|
-| `python-agent/agent/executors/powershell.py` | Novo módulo `PnP.PowerShell` no dict `MODULES` com suporte a CBA via thumbprint. Params `spo_admin_domain` e `thumbprint` adicionados a todos os `.format()` de conexão |
-| Blueprint M365 hybrid (DB) | Novo step `spo_tenant_quota` (optional) usando `PnP.PowerShell` com comando `Get-PnPTenant \| Select StorageQuota, StorageQuotaAllocated` |
-| `collaboration-dashboard` Edge Function | Busca quota do agent (`step_results.spo_tenant_quota`) antes do fallback REST API. Converte MB→bytes |
-
-### Fluxo
-```text
-Agent (PnP.PowerShell) → Get-PnPTenant → StorageQuota (MB)
-  ↓ salvo em step_results do agent_task
-collaboration-dashboard → lê step_results do último snapshot completed
-  → storageAllocatedBytes = quotaMB * 1024 * 1024
-  → fallback: REST API SPO Admin (se agent não coletou)
-```
-
-## Correção do `spo_tenant_quota` — URL admin incorreta
-
-### Status: ✅ Implementado
-
-### Problema resolvido
-O campo `tenant_domain` armazenava domínios como `deployitgroup.mail.onmicrosoft.com`, mas a lógica de derivação do SPO admin URL não removia `.mail`, gerando URLs incorretas.
-
-### Mudanças implementadas
-
-| Componente | Mudança |
-|---|---|
-| **Migration SQL** | Adicionada coluna `spo_domain TEXT` em `m365_tenants` para armazenar o prefixo SPO explícito (ex: `precisioglobal`) |
-| **`rpc_get_agent_tasks`** | Incluído `spo_domain` no payload `target` para tasks M365 |
-| `python-agent/agent/tasks.py` | Inclui `spo_domain` no contexto M365 do agente |
-| `python-agent/agent/executors/powershell.py` | Novo método `_derive_spo_domain()` com prioridade: `spo_domain` explícito > derivação de `organization`. Todas as 6 derivações corrigidas para remover `.mail` |
-| `connect-m365-tenant` Edge Function | `fetchOrganizationInfo` extrai `spoDomain` de `verifiedDomains` (domínio `.onmicrosoft.com` sem `.mail`). Salva em `spo_domain` no INSERT |
-
-### Fluxo
-```text
-Onboarding (connect-m365-tenant):
-  GET /organization → verifiedDomains → encontra *.onmicrosoft.com (sem .mail)
-  → Extrai prefixo → salva em m365_tenants.spo_domain
-
-Agent (rpc_get_agent_tasks):
-  target.spo_domain → contexto → _derive_spo_domain(organization, spo_domain)
-  → Prioriza spo_domain explícito, fallback para derivação corrigida
-
-PowerShell:
-  Connect-PnPOnline -Url "https://{spo_domain}-admin.sharepoint.com" ...
-  → URL correta para Get-PnPTenant
-```
