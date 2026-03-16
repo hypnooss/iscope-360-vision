@@ -459,7 +459,7 @@ const Index = () => {
         </section>
 
         {/* ═══ CTA FINAL ═══ */}
-        <section className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
+        <section id="cta" className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
           {/* Subtle glow behind CTA */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px] pointer-events-none" />
 
