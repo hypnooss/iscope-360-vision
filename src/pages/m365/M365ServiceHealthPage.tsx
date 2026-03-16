@@ -116,19 +116,27 @@ function M365ServiceHealthPage() {
     setFilter(prev => (prev?.type === type && prev?.value === value) ? null : { type, value });
   };
 
-  const { data, isLoading, refetch, isFetching, dataUpdatedAt } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useQuery({
     queryKey: ['m365-service-health', selectedTenantId],
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke('m365-service-health', {
         body: { tenant_record_id: selectedTenantId },
       });
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || 'Unknown error');
+      if (error) {
+        console.error('[M365ServiceHealth] Edge function error:', error);
+        throw error;
+      }
+      if (!data?.success) {
+        const msg = data?.error || 'Erro desconhecido ao carregar saúde dos serviços';
+        console.error('[M365ServiceHealth] API error:', msg);
+        throw new Error(msg);
+      }
       return data as { services: ServiceHealth[]; issues: ServiceIssue[] };
     },
     enabled: !!selectedTenantId,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
+    retry: 1,
   });
 
   const services = data?.services || [];
