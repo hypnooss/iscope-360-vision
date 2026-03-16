@@ -168,12 +168,12 @@ const vertexShader = `
 
     vec3 spherePos = drifted * (1.0 + uAmplitude * vNoise * 0.3);
 
-    // --- Flat "sand" position with zig-zag bands on the ground plane ---
-      float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.38 + uTime * 0.05, aFlatPosition.z * 0.24));
-    float zigzag = sin(aFlatPosition.z * 6.5 + uTime * 0.2) * 0.03;
-    float dune = sin(aFlatPosition.z * 3.2 + aFlatPosition.x * 0.7 - uTime * 0.12) * 0.015;
-    float driftX = snoise2d(vec2(aFlatPosition.z * 0.42 - uTime * 0.04, aFlatPosition.x * 0.18)) * 0.008;
-    vec3 flatPos = aFlatPosition + vec3(driftX, zigzag + dune + flatNoise * 0.004, 0.0);
+    // --- Flat "sand" position with visible zig-zag ridges across depth ---
+      float lateral = snoise2d(vec2(aFlatPosition.z * 0.8, aFlatPosition.x * 0.25 + uTime * 0.05)) * 0.006;
+    float ridge = sin(aFlatPosition.z * 8.0 + aFlatPosition.x * 0.35 + uTime * 0.12) * 0.028;
+    float ridgeDetail = sin(aFlatPosition.z * 15.0 - aFlatPosition.x * 0.18 - uTime * 0.08) * 0.009;
+    float microNoise = snoise2d(vec2(aFlatPosition.x * 0.32 + uTime * 0.04, aFlatPosition.z * 0.22)) * 0.004;
+    vec3 flatPos = aFlatPosition + vec3(lateral, ridge + ridgeDetail + microNoise, 0.0);
 
     // --- Morph between sphere and flat ---
     // Use smoothstep for organic easing
@@ -184,19 +184,19 @@ const vertexShader = `
     vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-    // Point size — tighter in sand state to avoid blurry blobs
-    float sizeMultiplier = mix(1.0, 1.35, morphEased);
+    // Point size — preserve globe density, tighten sand particles
+    float sizeMultiplier = mix(1.0, 0.42, morphEased);
     vDistance = -mvPosition.z;
     gl_PointSize = uSize * sizeMultiplier * (100.0 / vDistance) * uPixelRatio;
-    gl_PointSize = clamp(gl_PointSize, 0.8, 72.0);
+    gl_PointSize = clamp(gl_PointSize, 0.6, 56.0);
 
-    // Alpha — depth fade in sand state (particles further in Z fade out)
-    float depthFade = 1.0 - smoothstep(-1.4, 0.4, aFlatPosition.z) * 0.5;
-    float alphaMultiplier = mix(1.0, 0.82 * depthFade, morphEased);
-    vAlpha = uAlpha * aAlpha * alphaMultiplier * (260.0 / vDistance);
+    // Alpha — lighter depth fade so the ridges stay readable
+    float depthFade = 1.0 - smoothstep(-1.2, 1.4, aFlatPosition.z) * 0.35;
+    float alphaMultiplier = mix(1.0, 0.9 * depthFade, morphEased);
+    vAlpha = uAlpha * aAlpha * alphaMultiplier * (240.0 / vDistance);
 
-    // Size — slightly shrink distant particles in sand state for perspective
-    float depthSize = mix(1.0, 0.72 + 0.28 * (1.0 - smoothstep(-1.4, 0.4, aFlatPosition.z)), morphEased);
+    // Size — mild depth perspective in sand state
+    float depthSize = mix(1.0, 0.65 + 0.35 * (1.0 - smoothstep(-1.2, 1.4, aFlatPosition.z)), morphEased);
     gl_PointSize *= depthSize;
   }
 `;
@@ -275,10 +275,15 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       positions[i * 3 + 1] = r * Math.cos(phi);
       positions[i * 3 + 2] = r * sp * Math.sin(theta);
 
-      // Flat "sand" target positions — wide ground plane with shallow height variance
-      const flatX = (Math.random() - 0.5) * 2.6;
-      const flatZ = (Math.random() - 0.5) * 2.2;
-      const flatY = -0.24 + (Math.random() - 0.5) * 0.012;
+      // Flat "sand" target positions — layered bands receding into depth
+      const rowCount = 160;
+      const row = Math.floor(Math.random() * rowCount);
+      const rowT = row / (rowCount - 1);
+      const depthT = Math.pow(rowT, 1.1);
+      const width = 4.4 - depthT * 1.8;
+      const flatX = (Math.random() - 0.5) * width;
+      const flatZ = -1.15 + depthT * 2.3;
+      const flatY = -0.42 + depthT * 0.22 + (Math.random() - 0.5) * 0.004;
       flatPositions[i * 3] = flatX;
       flatPositions[i * 3 + 1] = flatY;
       flatPositions[i * 3 + 2] = flatZ;
@@ -311,7 +316,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
       uSpeed: { value: 0.35 },
-      uSize: { value: 12.0 },
+      uSize: { value: 18.0 },
       uAlpha: { value: 1.0 },
       uDepth: { value: 0.005 },
       uAmplitude: { value: 0.04 },
@@ -363,22 +368,22 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const morph = scrollRef.current;
       uniforms.uMorph.value = morph;
 
-      // Interpolate rotation — preserve globe framing and only tilt for sand
+      // Interpolate rotation — preserve globe framing and lower the sand field
       const rotationFactor = 1.0 - morph;
       points.rotation.y = elapsed * ROTATION_SPEED * 1000 * rotationFactor;
       const globeRotX = Math.sin(elapsed * 0.008) * 0.08;
       points.rotation.x = globeRotX * (1.0 - morph) + 0.55 * morph;
 
-      // Offset Y downward in sand state
-      points.position.y = -currentSphereRadius * 0.25 * morph;
+      // Push the sand lower in the hero so it reads like a ground plane
+      points.position.y = -currentSphereRadius * 0.38 * morph;
 
-      // Interpolate scale — globe radius → wide spread for sand
-      const sandScale = currentSphereRadius * 1.8;
+      // Interpolate scale — keep the field broad but not cloud-like
+      const sandScale = currentSphereRadius * 1.32;
       const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
       points.scale.setScalar(scale);
 
-      // Restore original hero camera framing
-      camera.position.z = 800 - 450 * morph;
+      // Preserve globe camera and avoid over-zooming the sand
+      camera.position.z = 800 - 320 * morph;
       camera.position.y = 0;
       camera.lookAt(0, 0, 0);
       camera.updateProjectionMatrix();
