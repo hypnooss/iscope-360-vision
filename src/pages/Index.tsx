@@ -120,7 +120,7 @@ const Index = () => {
         </section>
 
         {/* ═══ PROBLEM — Impact Numbers (2025 data) ═══ */}
-        <section className="min-h-screen flex items-center justify-center px-6">
+        <section id="problem" className="min-h-screen flex items-center justify-center px-6">
           <div className="max-w-[1100px] mx-auto w-full">
             <SectionReveal>
               <div className="text-center mb-20">
@@ -396,7 +396,7 @@ const Index = () => {
         </section>
 
         {/* ═══ BLOG / INSIGHTS ═══ */}
-        <section className="min-h-screen flex items-center justify-center px-6">
+        <section id="blog" className="min-h-screen flex items-center justify-center px-6">
           <div className="max-w-[1100px] mx-auto w-full">
             <SectionReveal>
               <div className="text-center mb-16">
@@ -459,7 +459,7 @@ const Index = () => {
         </section>
 
         {/* ═══ CTA FINAL ═══ */}
-        <section className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
+        <section id="cta" className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
           {/* Subtle glow behind CTA */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px] pointer-events-none" />
 
@@ -501,10 +501,19 @@ const Index = () => {
             © {new Date().getFullYear()} Precisio Analytics. Todos os direitos reservados.
           </p>
           <div className="flex gap-8">
-            {['Produto', 'Documentação', 'Segurança', 'Contato'].map((link) => (
-              <a key={link} href="#" className="text-sm text-muted-foreground/60 hover:text-foreground transition-colors duration-200">
-                {link}
-              </a>
+            {[
+              { label: 'Produto', href: '#features' },
+              { label: 'Documentação', href: '#blog' },
+              { label: 'Segurança', href: '#problem' },
+              { label: 'Contato', href: '#cta' },
+            ].map((link) => (
+              <button
+                key={link.href}
+                onClick={() => document.querySelector(link.href)?.scrollIntoView({ behavior: 'smooth' })}
+                className="text-sm text-muted-foreground/60 hover:text-foreground transition-colors duration-200"
+              >
+                {link.label}
+              </button>
             ))}
           </div>
         </div>

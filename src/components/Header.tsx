@@ -6,7 +6,9 @@ import { useState } from 'react';
 
 const NAV_LINKS = [
   { label: 'Produto', href: '#features' },
-  { label: 'Como Funciona', href: '#how-it-works' },
+  { label: 'Documentação', href: '#blog' },
+  { label: 'Segurança', href: '#problem' },
+  { label: 'Contato', href: '#cta' },
 ];
 
 export function Header() {
