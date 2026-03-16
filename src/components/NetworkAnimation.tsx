@@ -127,9 +127,7 @@ export function NetworkAnimation() {
 
       const rotY = time * ROTATION_SPEED;
 
-      const rotX =
-        Math.sin(time * 0.00006) * 0.12 +
-        disperseAmount * 1.25;
+      const rotX = Math.sin(time * 0.00006) * 0.12 + disperseAmount * 1.25;
 
       const cosY = Math.cos(rotY);
       const sinY = Math.sin(rotY);
