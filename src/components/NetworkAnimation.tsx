@@ -275,8 +275,8 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
 
       // Flat "sand" target positions — wide XZ plane
       // Spread across a 6x6 normalized area, with subtle Y variation
-      const flatX = (Math.random() - 0.5) * 1.6;
-      const flatZ = (Math.random() - 0.5) * 4.0;
+      const flatX = (Math.random() - 0.5) * 3.0;
+      const flatZ = (Math.random() - 0.5) * 3.0;
       // Sinusoidal zig-zag dunes for beach sand effect
       const flatY = -0.3
         + Math.sin(flatX * 4.0) * 0.06
