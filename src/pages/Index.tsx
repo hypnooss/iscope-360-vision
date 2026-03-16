@@ -115,7 +115,7 @@ const Index = () => {
             className="relative z-10 text-center max-w-[800px] mx-auto"
           >
             <Reveal>
-              <p className="text-xs uppercase tracking-[0.3em] text-primary/70 font-medium mb-6 font-mono">
+              <p className="text-xs uppercase tracking-[0.3em] text-primary/70 font-bold mb-6 font-mono">
                 Plataforma de Segurança &amp; Compliance
               </p>
             </Reveal>
