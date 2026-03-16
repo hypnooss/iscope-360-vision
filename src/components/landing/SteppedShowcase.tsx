@@ -176,6 +176,7 @@ function RiskChart({ opacity }: { opacity: number }) {
                   style={{
                     background: `linear-gradient(90deg, ${row.color}AA, ${row.color}55)`,
                     width: `${parseFloat(exploitPct) * (row.pct / 100)}%`,
+                    transformOrigin: 'left',
                   }}
                   initial={{ scaleX: 0 }}
                   animate={{ scaleX: opacity > 0.3 ? 1 : 0 }}
