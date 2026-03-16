@@ -168,12 +168,12 @@ const vertexShader = `
 
     vec3 spherePos = drifted * (1.0 + uAmplitude * vNoise * 0.3);
 
-    // --- Flat "sand" position with zig-zag bands on the ground plane ---
-      float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.38 + uTime * 0.05, aFlatPosition.z * 0.24));
-    float zigzag = sin(aFlatPosition.z * 6.5 + uTime * 0.2) * 0.03;
-    float dune = sin(aFlatPosition.z * 3.2 + aFlatPosition.x * 0.7 - uTime * 0.12) * 0.015;
-    float driftX = snoise2d(vec2(aFlatPosition.z * 0.42 - uTime * 0.04, aFlatPosition.x * 0.18)) * 0.008;
-    vec3 flatPos = aFlatPosition + vec3(driftX, zigzag + dune + flatNoise * 0.004, 0.0);
+    // --- Flat "sand" position with visible zig-zag ridges across depth ---
+      float lateral = snoise2d(vec2(aFlatPosition.z * 0.8, aFlatPosition.x * 0.25 + uTime * 0.05)) * 0.006;
+    float ridge = sin(aFlatPosition.z * 8.0 + aFlatPosition.x * 0.35 + uTime * 0.12) * 0.028;
+    float ridgeDetail = sin(aFlatPosition.z * 15.0 - aFlatPosition.x * 0.18 - uTime * 0.08) * 0.009;
+    float microNoise = snoise2d(vec2(aFlatPosition.x * 0.32 + uTime * 0.04, aFlatPosition.z * 0.22)) * 0.004;
+    vec3 flatPos = aFlatPosition + vec3(lateral, ridge + ridgeDetail + microNoise, 0.0);
 
     // --- Morph between sphere and flat ---
     // Use smoothstep for organic easing
