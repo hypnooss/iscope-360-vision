@@ -168,12 +168,12 @@ const vertexShader = `
 
     vec3 spherePos = drifted * (1.0 + uAmplitude * vNoise * 0.3);
 
-    // --- Flat "sand" position with subtle noise movement ---
-      float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.5 + uTime * 0.1, aFlatPosition.z * 0.5));
-    float flatNoiseX = snoise2d(vec2(aFlatPosition.z * 0.8 + uTime * 0.08, aFlatPosition.x * 0.3));
-    float dune = sin(aFlatPosition.x * 3.0 + uTime * 0.5) * 0.035
-               + sin(aFlatPosition.x * 1.5 + aFlatPosition.z * 2.0 - uTime * 0.3) * 0.025;
-    vec3 flatPos = aFlatPosition + vec3(flatNoiseX * 0.015, dune + flatNoise * 0.003, 0.0);
+    // --- Flat "sand" position with shallow dune bands on the ground plane ---
+      float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.42 + uTime * 0.06, aFlatPosition.z * 0.28));
+    float flatNoiseZ = snoise2d(vec2(aFlatPosition.x * 0.22 - uTime * 0.04, aFlatPosition.z * 0.35));
+    float dune = sin(aFlatPosition.x * 4.2 + uTime * 0.35) * 0.018
+               + sin(aFlatPosition.x * 2.1 + aFlatPosition.z * 0.9 - uTime * 0.18) * 0.012;
+    vec3 flatPos = aFlatPosition + vec3(0.0, dune + flatNoise * 0.004, flatNoiseZ * 0.02);
 
     // --- Morph between sphere and flat ---
     // Use smoothstep for organic easing
@@ -184,20 +184,19 @@ const vertexShader = `
     vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-    // Point size — smaller in sand state
-    float sizeMultiplier = mix(1.0, 2.5, morphEased);
+    // Point size — tighter in sand state to avoid blurry blobs
+    float sizeMultiplier = mix(1.0, 1.35, morphEased);
     vDistance = -mvPosition.z;
     gl_PointSize = uSize * sizeMultiplier * (100.0 / vDistance) * uPixelRatio;
-    gl_PointSize = clamp(gl_PointSize, 1.0, 100.0);
+    gl_PointSize = clamp(gl_PointSize, 0.8, 72.0);
 
     // Alpha — depth fade in sand state (particles further in Z fade out)
-    // aFlatPosition.z ranges from -0.6 to 0.6; normalize to 0..1 depth factor
-    float depthFade = 1.0 - smoothstep(-1.0, 2.0, aFlatPosition.z) * 0.6;
-    float alphaMultiplier = mix(1.0, 0.7 * depthFade, morphEased);
-    vAlpha = uAlpha * aAlpha * alphaMultiplier * (300.0 / vDistance);
+    float depthFade = 1.0 - smoothstep(-1.4, 0.4, aFlatPosition.z) * 0.5;
+    float alphaMultiplier = mix(1.0, 0.82 * depthFade, morphEased);
+    vAlpha = uAlpha * aAlpha * alphaMultiplier * (260.0 / vDistance);
 
-    // Size — shrink distant particles in sand state for perspective
-    float depthSize = mix(1.0, 0.5 + 0.5 * (1.0 - smoothstep(-1.0, 2.0, aFlatPosition.z)), morphEased);
+    // Size — slightly shrink distant particles in sand state for perspective
+    float depthSize = mix(1.0, 0.72 + 0.28 * (1.0 - smoothstep(-1.4, 0.4, aFlatPosition.z)), morphEased);
     gl_PointSize *= depthSize;
   }
 `;
@@ -313,7 +312,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
       uSpeed: { value: 0.35 },
-      uSize: { value: 18.0 },
+      uSize: { value: 12.0 },
       uAlpha: { value: 1.0 },
       uDepth: { value: 0.005 },
       uAmplitude: { value: 0.04 },
@@ -369,20 +368,20 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const rotationFactor = 1.0 - morph;
       points.rotation.y = elapsed * ROTATION_SPEED * 1000 * rotationFactor;
       const globeRotX = Math.sin(elapsed * 0.008) * 0.08;
-      points.rotation.x = globeRotX * (1.0 - morph) + 0.16 * morph;
+      points.rotation.x = globeRotX * (1.0 - morph) + 0.09 * morph;
 
-      // Offset Y slightly downward in sand state
-      points.position.y = -currentSphereRadius * 0.04 * morph;
+      // Keep the ground field centered behind the hero copy
+      points.position.y = -currentSphereRadius * 0.015 * morph;
 
-      // Interpolate scale — globe radius → wide spread for sand
-      const sandScale = currentSphereRadius * 1.55;
+      // Interpolate scale — globe radius → shallower field for sand
+      const sandScale = currentSphereRadius * 1.42;
       const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
       points.scale.setScalar(scale);
 
-      // Camera framing for a shallower, more MazeHQ-like ground view
-      camera.position.z = 800 - 300 * morph;
-      camera.position.y = 80 * morph;
-      camera.lookAt(0, -currentSphereRadius * 0.05 * morph, 0);
+      // Camera framing for a flatter ground-plane perspective
+      camera.position.z = 800 - 240 * morph;
+      camera.position.y = 54 * morph;
+      camera.lookAt(0, -currentSphereRadius * 0.015 * morph, -currentSphereRadius * 0.22 * morph);
       camera.updateProjectionMatrix();
 
       renderer.render(scene, camera);
