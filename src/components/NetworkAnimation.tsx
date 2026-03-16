@@ -367,7 +367,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       points.rotation.x = Math.sin(elapsed * 0.008) * 0.08 * rotationFactor;
 
       // Interpolate scale — globe radius → wide spread for sand
-      const sandScale = currentSphereRadius * 1.4;
+      const sandScale = currentSphereRadius * 1.2;
       const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
       points.scale.setScalar(scale);
 
