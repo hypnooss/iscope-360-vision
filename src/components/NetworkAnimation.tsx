@@ -9,7 +9,7 @@ interface Particle {
   phiSpeed: number;
 }
 
-const PARTICLE_COUNT = 18000;
+const PARTICLE_COUNT = 25000;
 const ROTATION_SPEED = 0.00008;
 const PERSPECTIVE = 800;
 
@@ -26,17 +26,17 @@ function createParticles(): Particle[] {
     const theta = goldenAngle * i;
     const phi = Math.acos(1 - 2 * t);
 
-    // 10% of particles spread beyond radius for atmosphere
-    const isAtmosphere = Math.random() < 0.1;
+    // 15% of particles spread beyond radius for atmospheric halo
+    const isAtmosphere = Math.random() < 0.15;
     const radiusMul = isAtmosphere
-      ? 1.01 + Math.random() * 0.07
+      ? 1.01 + Math.random() * 0.11
       : 0.99 + Math.random() * 0.02;
 
     particles.push({
       theta,
       phi,
       radiusMul,
-      baseSize: 0.15 + Math.random() * 0.35,
+      baseSize: 0.3 + Math.random() * 0.5,
       thetaSpeed: (Math.random() - 0.5) * 0.002,
       phiSpeed: (Math.random() - 0.5) * 0.001,
     });
@@ -88,7 +88,7 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
 
       const cx = w * 0.5;
       const cy = h * 0.48;
-      const sphereRadius = Math.min(w, h) * 0.55;
+      const sphereRadius = Math.min(w, h) * 0.65;
 
       ctx.clearRect(0, 0, w, h);
 
@@ -142,51 +142,47 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
         // Depth: normalizedZ 0=back, 1=front
         const normalizedZ = (z + maxR) / (2 * maxR);
 
-        // Back face nearly invisible
-        if (normalizedZ < 0.3) {
+        // Back face: nearly invisible
+        if (normalizedZ < 0.25) {
           const alpha = normalizedZ * 0.08;
-          if (alpha < 0.005) continue;
-          ctx.fillStyle = `rgba(20,30,60,${alpha})`;
+          if (alpha < 0.003) continue;
+          ctx.fillStyle = `rgba(15,20,40,${alpha})`;
           ctx.beginPath();
           ctx.arc(sx, sy, Math.max(0.2, p.baseSize * scale), 0, Math.PI * 2);
           ctx.fill();
           continue;
         }
 
-        // Silhouette factor: how close to edge vs center
-        // Use the original (pre-projection) position to compute normal dot with view dir
+        // Surface normal dot with view direction (Fresnel)
         const dist = Math.sqrt(x * x + y * y + z * z);
-        const nz = z / (dist || 1); // normalized z component of surface normal
+        const nz = z / (dist || 1);
         const edgeFactor = 1 - Math.abs(nz); // 0=facing camera, 1=edge
 
-        let rC: number, gC: number, bC: number, alpha: number;
+        // Diagonal gradient: top-left = cyan, bottom-right = magenta
+        const diagonalMix = clamp((-x + y) / (2 * sphereRadius) + 0.5, 0, 1);
 
-        if (edgeFactor > 0.5) {
-          // Edge/silhouette: cyan ↔ magenta based on vertical angle
-          const verticalMix = clamp((y / (sphereRadius || 1)) * 0.5 + 0.5, 0, 1);
-          const edgeIntensity = (edgeFactor - 0.5) * 2; // 0..1
+        // Color: lerp Magenta(180, 50, 200) → Cyan(30, 210, 230)
+        const rC = 180 + (30 - 180) * diagonalMix;
+        const gC = 50 + (210 - 50) * diagonalMix;
+        const bC = 200 + (230 - 200) * diagonalMix;
 
-          // Cyan (34, 208, 223) → Magenta (200, 80, 192)
-          rC = 34 + (200 - 34) * verticalMix;
-          gC = 208 + (80 - 208) * verticalMix;
-          bC = 223 + (192 - 223) * verticalMix;
+        let alpha: number;
 
-          alpha = 0.3 + edgeIntensity * 0.6;
-          // Front face edges brighter
-          alpha *= (0.4 + normalizedZ * 0.6);
+        if (edgeFactor >= 0.6) {
+          // RIM: bright glow
+          const rimIntensity = (edgeFactor - 0.6) / 0.4;
+          alpha = 0.2 + rimIntensity * 0.8;
         } else {
-          // Center: navy with subtle teal tint
-          const centerBlend = edgeFactor / 0.5; // 0=dead center, 1=transition zone
-          rC = 15 + centerBlend * 15;
-          gC = 30 + centerBlend * 60;
-          bC = 60 + centerBlend * 40;
-
-          alpha = 0.15 + normalizedZ * 0.25;
+          // CENTER: nearly invisible (fades into dark background)
+          alpha = edgeFactor * 0.15;
         }
 
-        // Front-face size boost
-        const sizeBoost = normalizedZ > 0.5 ? 1.0 + (normalizedZ - 0.5) * 0.5 : 1.0;
-        const size = Math.max(0.2, p.baseSize * scale * sizeBoost);
+        // Depth fade: back face much darker
+        alpha *= (0.1 + normalizedZ * 0.9);
+
+        if (alpha < 0.003) continue;
+
+        const size = Math.max(0.2, p.baseSize * scale);
 
         ctx.fillStyle = `rgba(${rC | 0},${gC | 0},${bC | 0},${clamp(alpha, 0, 1)})`;
         ctx.beginPath();
