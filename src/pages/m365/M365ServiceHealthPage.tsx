@@ -116,19 +116,27 @@ function M365ServiceHealthPage() {
     setFilter(prev => (prev?.type === type && prev?.value === value) ? null : { type, value });
   };
 
-  const { data, isLoading, refetch, isFetching, dataUpdatedAt } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useQuery({
     queryKey: ['m365-service-health', selectedTenantId],
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke('m365-service-health', {
         body: { tenant_record_id: selectedTenantId },
       });
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || 'Unknown error');
+      if (error) {
+        console.error('[M365ServiceHealth] Edge function error:', error);
+        throw error;
+      }
+      if (!data?.success) {
+        const msg = data?.error || 'Erro desconhecido ao carregar saúde dos serviços';
+        console.error('[M365ServiceHealth] API error:', msg);
+        throw new Error(msg);
+      }
       return data as { services: ServiceHealth[]; issues: ServiceIssue[] };
     },
     enabled: !!selectedTenantId,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
+    retry: 1,
   });
 
   const services = data?.services || [];
@@ -301,6 +309,30 @@ function M365ServiceHealthPage() {
               <Card key={i} className="border-border/50"><CardContent className="p-6"><Skeleton className="h-24 w-full" /></CardContent></Card>
             ))}
           </div>
+        )}
+
+        {/* Error state */}
+        {selectedTenantId && !isLoading && (isError || (!data && !isFetching)) && (
+          <Card className="border-destructive/30 bg-destructive/5">
+            <CardContent className="py-10 text-center space-y-4">
+              <WifiOff className="w-12 h-12 mx-auto text-destructive/70" />
+              <div className="space-y-1.5">
+                <p className="text-base font-semibold text-foreground">Não foi possível carregar a saúde dos serviços</p>
+                <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                  {(error as Error)?.message || 'Erro ao conectar com a API do Microsoft Graph. Verifique as credenciais do tenant.'}
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-3">
+                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                  <RefreshCw className="w-4 h-4 mr-1.5" />
+                  Tentar novamente
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Verifique se a permissão <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-[11px]">ServiceHealth.Read.All</code> está concedida no App Registration do tenant.
+              </p>
+            </CardContent>
+          </Card>
         )}
 
         {selectedTenantId && !isLoading && data && (
