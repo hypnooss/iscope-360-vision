@@ -163,9 +163,10 @@ export function NetworkAnimation() {
           x += p.disperseX * disperseAmount * w * 0.12;
           y += p.disperseY * disperseAmount * h * 0.08;
           z += p.disperseX * disperseAmount * w * 0.15;
-          
+
           if (disperseAmount > 0.4) {
             y += Math.sin(x * 0.002 + time * 0.001) * 25 * disperseAmount;
+          }
         }
 
         // Rotate Y
