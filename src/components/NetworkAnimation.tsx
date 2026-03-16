@@ -189,12 +189,12 @@ const vertexShader = `
 
     // Alpha — depth fade in sand state (particles further in Z fade out)
     // aFlatPosition.z ranges from -0.6 to 0.6; normalize to 0..1 depth factor
-    float depthFade = 1.0 - smoothstep(-0.2, 0.6, aFlatPosition.z) * 0.7;
-    float alphaMultiplier = mix(1.0, 0.6 * depthFade, morphEased);
+    float depthFade = 1.0 - smoothstep(-0.5, 1.5, aFlatPosition.z) * 0.9;
+    float alphaMultiplier = mix(1.0, 0.5 * depthFade, morphEased);
     vAlpha = uAlpha * aAlpha * alphaMultiplier * (300.0 / vDistance);
 
     // Size — shrink distant particles in sand state for perspective
-    float depthSize = mix(1.0, 0.6 + 0.4 * (1.0 - smoothstep(-0.2, 0.6, aFlatPosition.z)), morphEased);
+    float depthSize = mix(1.0, 0.4 + 0.6 * (1.0 - smoothstep(-0.5, 1.5, aFlatPosition.z)), morphEased);
     gl_PointSize *= depthSize;
   }
 `;
@@ -276,7 +276,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       // Flat "sand" target positions — wide XZ plane
       // Spread across a 6x6 normalized area, with subtle Y variation
       const flatX = (Math.random() - 0.5) * 3.0;
-      const flatZ = (Math.random() - 0.5) * 1.2;
+      const flatZ = (Math.random() - 0.5) * 3.0;
       // Sinusoidal zig-zag dunes for beach sand effect
       const flatY = -0.3
         + Math.sin(flatX * 4.0) * 0.02
@@ -370,7 +370,11 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       // Interpolate rotation — fade to 0 in sand state
       const rotationFactor = 1.0 - morph;
       points.rotation.y = elapsed * ROTATION_SPEED * 1000 * rotationFactor;
-      points.rotation.x = Math.sin(elapsed * 0.008) * 0.08 * rotationFactor;
+      const globeRotX = Math.sin(elapsed * 0.008) * 0.08;
+      points.rotation.x = globeRotX * (1.0 - morph) + 0.6 * morph;
+
+      // Offset Y downward in sand state
+      points.position.y = -currentSphereRadius * 0.3 * morph;
 
       // Interpolate scale — globe radius → wide spread for sand
       const sandScale = currentSphereRadius * 1.2;
