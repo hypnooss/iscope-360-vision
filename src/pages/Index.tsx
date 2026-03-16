@@ -202,11 +202,11 @@ const Index = () => {
                   type="line"
                   color="hsl(var(--destructive))"
                   data={[
-                    { label: '19', value: 63 },
-                    { label: '20', value: 44 },
-                    { label: '21', value: 32 },
-                    { label: '22', value: 19 },
-                    { label: '23', value: 5 },
+                    { label: '2019', value: 63 },
+                    { label: '2020', value: 44 },
+                    { label: '2021', value: 32 },
+                    { label: '2022', value: 19 },
+                    { label: '2023', value: 5 },
                   ]}
                 />
               </div>
