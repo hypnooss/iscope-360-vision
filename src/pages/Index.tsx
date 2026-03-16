@@ -97,18 +97,15 @@ const Index = () => {
     <div className="min-h-screen bg-background text-foreground flex flex-col relative">
       <Header />
 
+      {/* Globe — fixed background across entire page */}
+      <div className="fixed inset-0 z-0">
+        <NetworkAnimation className="absolute inset-0" scrollProgress={scrollProgress} />
+      </div>
+
       <main className="flex-1 relative z-10">
 
         {/* ═══ HERO ═══ */}
         <section className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
-          {/* Globe — full background */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.85 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1.4, ease }}
-            className="absolute inset-0 z-0"
-          >
-            <NetworkAnimation className="absolute inset-0" />
             
           </motion.div>
 
