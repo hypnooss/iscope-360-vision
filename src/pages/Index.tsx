@@ -501,10 +501,19 @@ const Index = () => {
             © {new Date().getFullYear()} Precisio Analytics. Todos os direitos reservados.
           </p>
           <div className="flex gap-8">
-            {['Produto', 'Documentação', 'Segurança', 'Contato'].map((link) => (
-              <a key={link} href="#" className="text-sm text-muted-foreground/60 hover:text-foreground transition-colors duration-200">
-                {link}
-              </a>
+            {[
+              { label: 'Produto', href: '#features' },
+              { label: 'Documentação', href: '#blog' },
+              { label: 'Segurança', href: '#problem' },
+              { label: 'Contato', href: '#cta' },
+            ].map((link) => (
+              <button
+                key={link.href}
+                onClick={() => document.querySelector(link.href)?.scrollIntoView({ behavior: 'smooth' })}
+                className="text-sm text-muted-foreground/60 hover:text-foreground transition-colors duration-200"
+              >
+                {link.label}
+              </button>
             ))}
           </div>
         </div>
