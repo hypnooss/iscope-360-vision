@@ -84,65 +84,62 @@ const Index = () => {
       <main className="flex-1 relative z-10">
 
         {/* ═══ HERO ═══ */}
-        <section className="min-h-screen flex items-center px-6 relative overflow-hidden">
-          <div className="max-w-[1200px] mx-auto w-full grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-12 items-center">
-            {/* Left — Copy */}
-            <motion.div
-              initial="hidden"
-              animate="visible"
-              variants={stagger}
-              className="relative z-10"
-            >
-              <Reveal>
-                <p className="text-xs uppercase tracking-[0.3em] text-primary/70 font-medium mb-6 font-mono">
-                  Plataforma de Segurança &amp; Compliance
-                </p>
-              </Reveal>
-              <Reveal delay={0.1}>
-                <h1 className="font-heading text-[2.75rem] sm:text-[3.5rem] lg:text-[4rem] font-extrabold leading-[1.05] tracking-tight mb-6">
-                  Visibilidade inteligente{' '}
-                  <span className="text-primary">para sua infraestrutura</span>
-                </h1>
-              </Reveal>
-              <Reveal delay={0.2}>
-                <p className="text-lg text-muted-foreground max-w-[520px] mb-10 leading-relaxed">
-                  Plataforma completa para análise de compliance, segurança e
-                  boas práticas da sua infraestrutura.
-                </p>
-              </Reveal>
-              <Reveal delay={0.3}>
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <Button
-                    size="lg"
-                    onClick={() => navigate('/auth')}
-                    className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300 shadow-[0_0_30px_hsl(175_80%_45%/0.2)] hover:shadow-[0_0_50px_hsl(175_80%_45%/0.35)]"
-                  >
-                    Acessar Plataforma <ArrowRight className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    onClick={() => document.querySelector('#how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
-                    className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300"
-                  >
-                    Ver como funciona
-                  </Button>
-                </div>
-              </Reveal>
-            </motion.div>
+        <section className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
+          {/* Globe — full background */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 1.4, ease }}
+            className="absolute inset-0 z-0"
+          >
+            <NetworkAnimation className="absolute inset-0" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(175_80%_45%/0.1),transparent_65%)] pointer-events-none" />
+          </motion.div>
 
-            {/* Right — Globe */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 1, ease }}
-              className="relative h-[500px] lg:h-[600px] hidden lg:block"
-            >
-              <NetworkAnimation className="absolute inset-0 z-0" />
-              {/* Radial glow behind globe */}
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(175_80%_45%/0.08),transparent_70%)] pointer-events-none" />
-            </motion.div>
-          </div>
+          {/* Copy — centered overlay */}
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={stagger}
+            className="relative z-10 text-center max-w-[800px] mx-auto"
+          >
+            <Reveal>
+              <p className="text-xs uppercase tracking-[0.3em] text-primary/70 font-medium mb-6 font-mono">
+                Plataforma de Segurança &amp; Compliance
+              </p>
+            </Reveal>
+            <Reveal delay={0.1}>
+              <h1 className="font-heading text-[2.75rem] sm:text-[3.5rem] lg:text-[4.5rem] font-extrabold leading-[1.05] tracking-tight mb-6">
+                Visibilidade inteligente{' '}
+                <span className="text-primary">para sua infraestrutura</span>
+              </h1>
+            </Reveal>
+            <Reveal delay={0.2}>
+              <p className="text-lg text-muted-foreground max-w-[560px] mx-auto mb-10 leading-relaxed">
+                Plataforma completa para análise de compliance, segurança e
+                boas práticas da sua infraestrutura.
+              </p>
+            </Reveal>
+            <Reveal delay={0.3}>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Button
+                  size="lg"
+                  onClick={() => navigate('/auth')}
+                  className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300 shadow-[0_0_30px_hsl(175_80%_45%/0.2)] hover:shadow-[0_0_50px_hsl(175_80%_45%/0.35)]"
+                >
+                  Acessar Plataforma <ArrowRight className="w-4 h-4" />
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => document.querySelector('#how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
+                  className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300"
+                >
+                  Ver como funciona
+                </Button>
+              </div>
+            </Reveal>
+          </motion.div>
 
           {/* Scroll indicator */}
           <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-muted-foreground/40">
