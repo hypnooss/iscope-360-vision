@@ -313,7 +313,7 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
 
     const animate = () => {
       const elapsed = (performance.now() - startTime) * 0.001; // seconds
-      uniforms.uTime.value = elapsed * 0.008; // very slow FBM noise evolution
+      uniforms.uTime.value = elapsed * 0.15; // visible FBM noise evolution
 
       // Slow global rotation
       points.rotation.y = elapsed * ROTATION_SPEED * 1000;
