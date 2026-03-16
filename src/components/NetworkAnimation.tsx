@@ -91,7 +91,7 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
 
       const cx = w * 0.5;
       const cy = h * 0.48;
-      const sphereRadius = Math.min(w, h) * 0.42;
+      const sphereRadius = Math.min(w, h) * 0.55;
 
       ctx.clearRect(0, 0, w, h);
 

@@ -93,7 +93,7 @@ const Index = () => {
             className="absolute inset-0 z-0"
           >
             <NetworkAnimation className="absolute inset-0" />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(175_80%_45%/0.1),transparent_65%)] pointer-events-none" />
+            
           </motion.div>
 
           {/* Copy — centered overlay */}
@@ -125,7 +125,7 @@ const Index = () => {
                 <Button
                   size="lg"
                   onClick={() => navigate('/auth')}
-                  className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300 shadow-[0_0_30px_hsl(175_80%_45%/0.2)] hover:shadow-[0_0_50px_hsl(175_80%_45%/0.35)]"
+                  className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300"
                 >
                   Acessar Plataforma <ArrowRight className="w-4 h-4" />
                 </Button>
@@ -468,7 +468,7 @@ const Index = () => {
 
         {/* ═══ CTA FINAL ═══ */}
         <section id="cta" className="py-[120px] px-6 relative overflow-hidden">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px] pointer-events-none" />
+          
 
           <motion.div
             initial="hidden"
@@ -489,23 +489,14 @@ const Index = () => {
               </p>
             </Reveal>
             <Reveal delay={0.2}>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button
-                  size="lg"
-                  onClick={() => navigate('/auth')}
-                  className="gap-2 px-12 h-14 text-base font-semibold shadow-[0_0_40px_hsl(175_80%_45%/0.25)] hover:shadow-[0_0_60px_hsl(175_80%_45%/0.4)] hover:-translate-y-0.5 transition-all duration-300"
-                >
-                  Acessar Plataforma <ArrowRight className="w-5 h-5" />
-                </Button>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={() => navigate('/auth')}
-                  className="gap-2 px-10 h-14 text-base font-semibold hover:-translate-y-0.5 transition-all duration-300"
-                >
-                  Falar com especialista
-                </Button>
-              </div>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => navigate('/auth')}
+                className="gap-2 px-10 h-14 text-base font-semibold hover:-translate-y-0.5 transition-all duration-300"
+              >
+                Falar com especialista <ArrowRight className="w-5 h-5" />
+              </Button>
             </Reveal>
           </motion.div>
         </section>
