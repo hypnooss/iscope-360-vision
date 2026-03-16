@@ -224,11 +224,11 @@ const Index = () => {
                   type="line"
                   color="hsl(var(--warning))"
                   data={[
-                    { label: '20', value: 3.86 },
-                    { label: '21', value: 4.24 },
-                    { label: '22', value: 4.35 },
-                    { label: '23', value: 4.45 },
-                    { label: '24', value: 4.88 },
+                    { label: '2020', value: 3.86 },
+                    { label: '2021', value: 4.24 },
+                    { label: '2022', value: 4.35 },
+                    { label: '2023', value: 4.45 },
+                    { label: '2024', value: 4.88 },
                   ]}
                 />
               </div>
