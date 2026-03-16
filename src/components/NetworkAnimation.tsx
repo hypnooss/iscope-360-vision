@@ -317,7 +317,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
       uSpeed: { value: 0.35 },
-      uSize: { value: 28.0 },
+      uSize: { value: 18.0 },
       uAlpha: { value: 1.0 },
       uDepth: { value: 0.005 },
       uAmplitude: { value: 0.04 },
