@@ -264,7 +264,7 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
       uSpeed: { value: 0.15 },
-      uSize: { value: 14.0 },
+      uSize: { value: 16.0 },
       uAlpha: { value: 1.0 },
       uDepth: { value: 0.025 },
       uAmplitude: { value: 0.06 },
