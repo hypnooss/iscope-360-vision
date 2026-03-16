@@ -189,7 +189,7 @@ const vertexShader = `
 
     // Alpha — depth fade in sand state (particles further in Z fade out)
     // aFlatPosition.z ranges from -0.6 to 0.6; normalize to 0..1 depth factor
-    float depthFade = 1.0 - smoothstep(-0.5, 1.5, aFlatPosition.z) * 0.6;
+    float depthFade = 1.0 - smoothstep(-1.0, 2.0, aFlatPosition.z) * 0.6;
     float alphaMultiplier = mix(1.0, 0.7 * depthFade, morphEased);
     vAlpha = uAlpha * aAlpha * alphaMultiplier * (300.0 / vDistance);
 
