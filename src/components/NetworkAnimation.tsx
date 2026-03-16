@@ -269,8 +269,8 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
 
       // Flat "sand" target positions — wide XZ plane
       // Spread across a 6x6 normalized area, with subtle Y variation
-      const flatX = (Math.random() - 0.5) * 6.0;
-      const flatZ = (Math.random() - 0.5) * 3.0;
+      const flatX = (Math.random() - 0.5) * 4.0;
+      const flatZ = (Math.random() - 0.5) * 2.0;
       const flatY = -0.3 + (Math.random() - 0.5) * 0.1; // slightly below center
       flatPositions[i * 3] = flatX;
       flatPositions[i * 3 + 1] = flatY;
@@ -362,7 +362,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       points.rotation.x = Math.sin(elapsed * 0.008) * 0.08 * rotationFactor;
 
       // Interpolate scale — globe radius → wide spread for sand
-      const sandScale = currentSphereRadius * 1.8;
+      const sandScale = currentSphereRadius * 1.4;
       const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
       points.scale.setScalar(scale);
 
