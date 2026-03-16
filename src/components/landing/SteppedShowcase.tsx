@@ -316,8 +316,6 @@ export function SteppedShowcase() {
 
   return (
     <section ref={containerRef} className="relative" style={{ height: '300vh' }}>
-      {/* Particle background */}
-      <div className="absolute inset-0 animated-grid-dots grid-radial-mask opacity-60" />
 
       <div className="sticky top-0 h-screen overflow-hidden flex flex-col">
         <ProgressBar scrollProgress={currentProgress} />
