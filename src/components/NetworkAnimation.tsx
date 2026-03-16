@@ -276,12 +276,11 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       positions[i * 3 + 1] = r * Math.cos(phi);
       positions[i * 3 + 2] = r * sp * Math.sin(theta);
 
-      // Flat "sand" target positions — wide XZ plane
-      // Spread across a 6x6 normalized area, with subtle Y variation
-      const flatX = (Math.random() - 0.5) * 2.5;
-      const flatZ = (Math.random() - 0.5) * 2.5;
-      // Sinusoidal zig-zag dunes for beach sand effect
-      const flatY = -0.3 + (Math.random() - 0.5) * 0.015;
+      // Flat "sand" target positions — shallow field receding into depth
+      const flatX = (Math.random() - 0.5) * 3.2;
+      const depth = Math.pow(Math.random(), 1.35);
+      const flatZ = -0.2 - depth * 1.15;
+      const flatY = -0.22 + (Math.random() - 0.5) * 0.01;
       flatPositions[i * 3] = flatX;
       flatPositions[i * 3 + 1] = flatY;
       flatPositions[i * 3 + 2] = flatZ;
