@@ -384,7 +384,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       points.scale.setScalar(scale);
 
       // Move camera closer during morph for stronger perspective
-      camera.position.z = 800 - 200 * morph;
+      camera.position.z = 800 - 450 * morph;
       camera.updateProjectionMatrix();
 
       renderer.render(scene, camera);
