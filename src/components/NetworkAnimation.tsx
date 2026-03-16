@@ -147,7 +147,7 @@ export function NetworkAnimation() {
         }
 
         // Apply morphing to phi: flatten toward equator
-        const morphedPhi = lerp(p.phi, Math.PI * 0.5, flattenAmount * 0.85);
+        const morphedPhi = p.phi + (Math.PI * 0.5 - p.phi) * flattenAmount * 0.35;
 
         // Apply disperse: expand radius and add random offset
         const disperseScale = 1 + disperseAmount * 3.2;
@@ -166,7 +166,6 @@ export function NetworkAnimation() {
           
           if (disperseAmount > 0.4) {
             y += Math.sin(x * 0.002 + time * 0.001) * 25 * disperseAmount;
-          }
         }
 
         // Rotate Y
