@@ -369,18 +369,20 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const rotationFactor = 1.0 - morph;
       points.rotation.y = elapsed * ROTATION_SPEED * 1000 * rotationFactor;
       const globeRotX = Math.sin(elapsed * 0.008) * 0.08;
-      points.rotation.x = globeRotX * (1.0 - morph) + 0.35 * morph;
+      points.rotation.x = globeRotX * (1.0 - morph) + 0.16 * morph;
 
-      // Offset Y downward in sand state
-      points.position.y = -currentSphereRadius * 0.12 * morph;
+      // Offset Y slightly downward in sand state
+      points.position.y = -currentSphereRadius * 0.04 * morph;
 
       // Interpolate scale — globe radius → wide spread for sand
-      const sandScale = currentSphereRadius * 1.8;
+      const sandScale = currentSphereRadius * 1.55;
       const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
       points.scale.setScalar(scale);
 
-      // Move camera closer during morph for stronger perspective
-      camera.position.z = 800 - 450 * morph;
+      // Camera framing for a shallower, more MazeHQ-like ground view
+      camera.position.z = 800 - 300 * morph;
+      camera.position.y = 80 * morph;
+      camera.lookAt(0, -currentSphereRadius * 0.05 * morph, 0);
       camera.updateProjectionMatrix();
 
       renderer.render(scene, camera);
