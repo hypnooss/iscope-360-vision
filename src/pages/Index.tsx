@@ -177,14 +177,14 @@ const Index = () => {
                   type="bar"
                   color="hsl(var(--primary))"
                   data={[
-                    { label: '18', value: 16510 },
-                    { label: '19', value: 17306 },
-                    { label: '20', value: 18325 },
-                    { label: '21', value: 20155 },
-                    { label: '22', value: 25059 },
-                    { label: '23', value: 28902 },
-                    { label: '24', value: 40009 },
-                    { label: '25', value: 45000 },
+                    { label: '2018', value: 16510 },
+                    { label: '2019', value: 17306 },
+                    { label: '2020', value: 18325 },
+                    { label: '2021', value: 20155 },
+                    { label: '2022', value: 25059 },
+                    { label: '2023', value: 28902 },
+                    { label: '2024', value: 40009 },
+                    { label: '2025', value: 45000 },
                   ]}
                 />
               </div>
