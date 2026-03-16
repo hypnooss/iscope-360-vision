@@ -60,6 +60,20 @@ function Reveal({ children, className = '', delay = 0 }: { children: React.React
 const Index = () => {
   const { user, loading, mfaRequired, mfaEnrolled } = useAuth();
   const navigate = useNavigate();
+  const [scrollProgress, setScrollProgress] = useState(0);
+
+  const handleScroll = useCallback(() => {
+    const scrollY = window.scrollY;
+    const windowH = window.innerHeight;
+    // Map scroll from 0 to 1 over the first viewport height
+    const progress = Math.min(1, Math.max(0, scrollY / windowH));
+    setScrollProgress(progress);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
 
   useEffect(() => {
     if (!loading && user) {
