@@ -311,6 +311,30 @@ function M365ServiceHealthPage() {
           </div>
         )}
 
+        {/* Error state */}
+        {selectedTenantId && !isLoading && (isError || (!data && !isFetching)) && (
+          <Card className="border-destructive/30 bg-destructive/5">
+            <CardContent className="py-10 text-center space-y-4">
+              <WifiOff className="w-12 h-12 mx-auto text-destructive/70" />
+              <div className="space-y-1.5">
+                <p className="text-base font-semibold text-foreground">Não foi possível carregar a saúde dos serviços</p>
+                <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                  {(error as Error)?.message || 'Erro ao conectar com a API do Microsoft Graph. Verifique as credenciais do tenant.'}
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-3">
+                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                  <RefreshCw className="w-4 h-4 mr-1.5" />
+                  Tentar novamente
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Verifique se a permissão <code className="px-1.5 py-0.5 rounded bg-muted text-foreground text-[11px]">ServiceHealth.Read.All</code> está concedida no App Registration do tenant.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
         {selectedTenantId && !isLoading && data && (
           <>
             {/* ===== SEÇÃO 2: Status da Plataforma ===== */}
