@@ -267,7 +267,7 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       uSize: { value: 16.0 },
       uAlpha: { value: 1.0 },
       uDepth: { value: 0.005 },
-      uAmplitude: { value: 0.06 },
+      uAmplitude: { value: 0.04 },
       uFrequency: { value: 1.2 },
       uScale: { value: 1.2 },
       // Base color: Cyan #22D0DF
