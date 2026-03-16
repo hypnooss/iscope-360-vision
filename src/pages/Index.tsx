@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { MiniChart } from '@/components/landing/MiniChart';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/Header';
@@ -164,21 +165,74 @@ const Index = () => {
           </Reveal>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
-            {[
-              { number: '21,500+', context: 'CVEs no 1º semestre de 2025', subtext: 'Projeção de 45.000+ no ano — recorde absoluto' },
-              { number: '5 dias', context: 'Tempo médio para exploração', subtext: 'Colapsou de 63 dias em 2019 para 5 em 2023' },
-              { number: '$4.88M', context: 'Custo médio de um data breach', subtext: 'IBM Cost of a Data Breach Report 2024' },
-            ].map((stat, i) => (
-              <Reveal key={stat.context} delay={i * 0.15}>
-                <div className="text-center md:text-left">
-                  <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
-                    {stat.number}
-                  </div>
-                  <div className="text-lg font-semibold text-foreground/90 mb-1">{stat.context}</div>
-                  <div className="text-sm text-muted-foreground">{stat.subtext}</div>
+            {/* CVEs por ano */}
+            <Reveal delay={0}>
+              <div className="text-center md:text-left">
+                <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
+                  21,500+
                 </div>
-              </Reveal>
-            ))}
+                <div className="text-lg font-semibold text-foreground/90 mb-1">CVEs no 1º semestre de 2025</div>
+                <div className="text-sm text-muted-foreground">Projeção de 45.000+ no ano — recorde absoluto</div>
+                <MiniChart
+                  type="bar"
+                  color="hsl(var(--primary))"
+                  data={[
+                    { label: '18', value: 16510 },
+                    { label: '19', value: 17306 },
+                    { label: '20', value: 18325 },
+                    { label: '21', value: 20155 },
+                    { label: '22', value: 25059 },
+                    { label: '23', value: 28902 },
+                    { label: '24', value: 40009 },
+                    { label: '25', value: 45000 },
+                  ]}
+                />
+              </div>
+            </Reveal>
+
+            {/* Tempo de exploração */}
+            <Reveal delay={0.15}>
+              <div className="text-center md:text-left">
+                <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
+                  5 dias
+                </div>
+                <div className="text-lg font-semibold text-foreground/90 mb-1">Tempo médio para exploração</div>
+                <div className="text-sm text-muted-foreground">Colapsou de 63 dias em 2019 para 5 em 2023</div>
+                <MiniChart
+                  type="line"
+                  color="hsl(var(--destructive))"
+                  data={[
+                    { label: '19', value: 63 },
+                    { label: '20', value: 44 },
+                    { label: '21', value: 32 },
+                    { label: '22', value: 19 },
+                    { label: '23', value: 5 },
+                  ]}
+                />
+              </div>
+            </Reveal>
+
+            {/* Custo médio de breach */}
+            <Reveal delay={0.3}>
+              <div className="text-center md:text-left">
+                <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
+                  $4.88M
+                </div>
+                <div className="text-lg font-semibold text-foreground/90 mb-1">Custo médio de um data breach</div>
+                <div className="text-sm text-muted-foreground">IBM Cost of a Data Breach Report 2024</div>
+                <MiniChart
+                  type="line"
+                  color="hsl(var(--warning))"
+                  data={[
+                    { label: '20', value: 3.86 },
+                    { label: '21', value: 4.24 },
+                    { label: '22', value: 4.35 },
+                    { label: '23', value: 4.45 },
+                    { label: '24', value: 4.88 },
+                  ]}
+                />
+              </div>
+            </Reveal>
           </div>
         </Section>
 
