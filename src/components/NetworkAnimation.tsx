@@ -263,13 +263,13 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
     const uniforms = {
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
-      uSpeed: { value: 0.00008 },
+      uSpeed: { value: 0.15 },
       uSize: { value: 14.0 },
       uAlpha: { value: 1.0 },
-      uDepth: { value: 0.008 },
+      uDepth: { value: 0.025 },
       uAmplitude: { value: 0.06 },
       uFrequency: { value: 1.2 },
-      uScale: { value: 0.5 },
+      uScale: { value: 1.2 },
       // Base color: Cyan #22D0DF
       uRcolor: { value: 34.0 },
       uGcolor: { value: 208.0 },
