@@ -381,6 +381,10 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
       points.scale.setScalar(scale);
 
+      // Move camera closer during morph for stronger perspective
+      camera.position.z = 800 - 200 * morph;
+      camera.updateProjectionMatrix();
+
       renderer.render(scene, camera);
       animId = requestAnimationFrame(animate);
     };
