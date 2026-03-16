@@ -374,7 +374,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       points.rotation.x = globeRotX * (1.0 - morph) + 0.35 * morph;
 
       // Offset Y downward in sand state
-      points.position.y = -currentSphereRadius * 0.3 * morph;
+      points.position.y = -currentSphereRadius * 0.5 * morph;
 
       // Interpolate scale — globe radius → wide spread for sand
       const sandScale = currentSphereRadius * 1.2;
