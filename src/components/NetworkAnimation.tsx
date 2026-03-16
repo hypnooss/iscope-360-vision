@@ -266,7 +266,7 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
       uSpeed: { value: 0.15 },
       uSize: { value: 16.0 },
       uAlpha: { value: 1.0 },
-      uDepth: { value: 0.025 },
+      uDepth: { value: 0.005 },
       uAmplitude: { value: 0.06 },
       uFrequency: { value: 1.2 },
       uScale: { value: 1.2 },
