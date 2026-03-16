@@ -120,7 +120,7 @@ const Index = () => {
         </section>
 
         {/* ═══ PROBLEM — Impact Numbers (2025 data) ═══ */}
-        <section className="min-h-screen flex items-center justify-center px-6">
+        <section id="problem" className="min-h-screen flex items-center justify-center px-6">
           <div className="max-w-[1100px] mx-auto w-full">
             <SectionReveal>
               <div className="text-center mb-20">
