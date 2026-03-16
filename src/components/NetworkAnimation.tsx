@@ -317,7 +317,7 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
 
       // Slow global rotation
       points.rotation.y = elapsed * ROTATION_SPEED * 1000;
-      points.rotation.x = Math.sin(elapsed * 0.03) * 0.12;
+      points.rotation.x = Math.sin(elapsed * 0.008) * 0.08;
 
       renderer.render(scene, camera);
       animId = requestAnimationFrame(animate);
