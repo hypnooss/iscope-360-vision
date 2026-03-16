@@ -275,10 +275,15 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       positions[i * 3 + 1] = r * Math.cos(phi);
       positions[i * 3 + 2] = r * sp * Math.sin(theta);
 
-      // Flat "sand" target positions — wide ground plane with shallow height variance
-      const flatX = (Math.random() - 0.5) * 2.6;
-      const flatZ = (Math.random() - 0.5) * 2.2;
-      const flatY = -0.24 + (Math.random() - 0.5) * 0.012;
+      // Flat "sand" target positions — layered bands receding into depth
+      const rowCount = 160;
+      const row = Math.floor(Math.random() * rowCount);
+      const rowT = row / (rowCount - 1);
+      const depthT = Math.pow(rowT, 1.1);
+      const width = 4.4 - depthT * 1.8;
+      const flatX = (Math.random() - 0.5) * width;
+      const flatZ = -1.15 + depthT * 2.3;
+      const flatY = -0.42 + depthT * 0.22 + (Math.random() - 0.5) * 0.004;
       flatPositions[i * 3] = flatX;
       flatPositions[i * 3 + 1] = flatY;
       flatPositions[i * 3 + 2] = flatZ;
