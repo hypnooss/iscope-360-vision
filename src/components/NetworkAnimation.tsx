@@ -168,12 +168,12 @@ const vertexShader = `
 
     vec3 spherePos = drifted * (1.0 + uAmplitude * vNoise * 0.3);
 
-    // --- Flat "sand" position with shallow dune bands on the ground plane ---
-      float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.42 + uTime * 0.06, aFlatPosition.z * 0.28));
-    float flatNoiseZ = snoise2d(vec2(aFlatPosition.x * 0.22 - uTime * 0.04, aFlatPosition.z * 0.35));
-    float dune = sin(aFlatPosition.x * 4.2 + uTime * 0.35) * 0.018
-               + sin(aFlatPosition.x * 2.1 + aFlatPosition.z * 0.9 - uTime * 0.18) * 0.012;
-    vec3 flatPos = aFlatPosition + vec3(0.0, dune + flatNoise * 0.004, flatNoiseZ * 0.02);
+    // --- Flat "sand" position with zig-zag bands on the ground plane ---
+      float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.38 + uTime * 0.05, aFlatPosition.z * 0.24));
+    float zigzag = sin(aFlatPosition.z * 6.5 + uTime * 0.2) * 0.03;
+    float dune = sin(aFlatPosition.z * 3.2 + aFlatPosition.x * 0.7 - uTime * 0.12) * 0.015;
+    float driftX = snoise2d(vec2(aFlatPosition.z * 0.42 - uTime * 0.04, aFlatPosition.x * 0.18)) * 0.008;
+    vec3 flatPos = aFlatPosition + vec3(driftX, zigzag + dune + flatNoise * 0.004, 0.0);
 
     // --- Morph between sphere and flat ---
     // Use smoothstep for organic easing
@@ -275,11 +275,10 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       positions[i * 3 + 1] = r * Math.cos(phi);
       positions[i * 3 + 2] = r * sp * Math.sin(theta);
 
-      // Flat "sand" target positions — shallow field receding into depth
-      const flatX = (Math.random() - 0.5) * 3.2;
-      const depth = Math.pow(Math.random(), 1.35);
-      const flatZ = -0.2 - depth * 1.15;
-      const flatY = -0.22 + (Math.random() - 0.5) * 0.01;
+      // Flat "sand" target positions — wide ground plane with shallow height variance
+      const flatX = (Math.random() - 0.5) * 2.6;
+      const flatZ = (Math.random() - 0.5) * 2.2;
+      const flatY = -0.24 + (Math.random() - 0.5) * 0.012;
       flatPositions[i * 3] = flatX;
       flatPositions[i * 3 + 1] = flatY;
       flatPositions[i * 3 + 2] = flatZ;
@@ -364,24 +363,24 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const morph = scrollRef.current;
       uniforms.uMorph.value = morph;
 
-      // Interpolate rotation — fade to 0 in sand state
+      // Interpolate rotation — preserve globe framing and only tilt for sand
       const rotationFactor = 1.0 - morph;
       points.rotation.y = elapsed * ROTATION_SPEED * 1000 * rotationFactor;
       const globeRotX = Math.sin(elapsed * 0.008) * 0.08;
-      points.rotation.x = globeRotX * (1.0 - morph) + 0.09 * morph;
+      points.rotation.x = globeRotX * (1.0 - morph) + 0.55 * morph;
 
-      // Keep the ground field centered behind the hero copy
-      points.position.y = -currentSphereRadius * 0.015 * morph;
+      // Offset Y downward in sand state
+      points.position.y = -currentSphereRadius * 0.25 * morph;
 
-      // Interpolate scale — globe radius → shallower field for sand
-      const sandScale = currentSphereRadius * 1.42;
+      // Interpolate scale — globe radius → wide spread for sand
+      const sandScale = currentSphereRadius * 1.8;
       const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
       points.scale.setScalar(scale);
 
-      // Camera framing for a flatter ground-plane perspective
-      camera.position.z = 800 - 240 * morph;
-      camera.position.y = 54 * morph;
-      camera.lookAt(0, -currentSphereRadius * 0.015 * morph, -currentSphereRadius * 0.22 * morph);
+      // Restore original hero camera framing
+      camera.position.z = 800 - 450 * morph;
+      camera.position.y = 0;
+      camera.lookAt(0, 0, 0);
       camera.updateProjectionMatrix();
 
       renderer.render(scene, camera);
