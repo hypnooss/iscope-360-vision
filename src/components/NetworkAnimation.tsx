@@ -273,10 +273,10 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const flatZ = (Math.random() - 0.5) * 1.2;
       // Sinusoidal zig-zag dunes for beach sand effect
       const flatY = -0.3
-        + Math.sin(flatX * 4.0) * 0.06
-        + Math.sin(flatZ * 6.0) * 0.04
-        + Math.sin(flatX * 9.0 + flatZ * 5.0) * 0.025
-        + (Math.random() - 0.5) * 0.03;
+        + Math.sin(flatX * 4.0) * 0.02
+        + Math.sin(flatZ * 6.0) * 0.015
+        + Math.sin(flatX * 9.0 + flatZ * 5.0) * 0.01
+        + (Math.random() - 0.5) * 0.01;
       flatPositions[i * 3] = flatX;
       flatPositions[i * 3 + 1] = flatY;
       flatPositions[i * 3 + 2] = flatZ;
