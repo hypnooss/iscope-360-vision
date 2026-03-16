@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 const PARTICLE_COUNT = 18000;
-const ROTATION_SPEED = 0.000015;
+const ROTATION_SPEED = 0.000020;
 
 // === 4D Simplex Noise + FBM vertex shader (ported from MazeHQ) ===
 const vertexShader = `
