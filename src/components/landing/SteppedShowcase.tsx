@@ -255,16 +255,25 @@ export function SteppedShowcase() {
   });
 
   // Per-step opacity + translateY for smooth crossfade
+  // With 400vh height, we have more scroll room. Each step gets ~33% of scroll.
+  // Transitions happen in narrow bands, leaving a wide "hold" zone per step.
   const getStepValues = (stepIndex: number) => {
-    const enterStart = stepIndex === 0 ? 0 : stepIndex / 3 - 0.08;
-    const enterEnd = stepIndex === 0 ? 0.05 : stepIndex / 3 + 0.05;
-    const exitStart = (stepIndex + 1) / 3 - 0.1;
-    const exitEnd = (stepIndex + 1) / 3;
+    // Each step occupies a third: [0, 0.33], [0.33, 0.66], [0.66, 1]
+    const stepSize = 1 / 3;
+    const transitionSize = 0.06; // narrow transition band
+
+    const holdStart = stepIndex * stepSize + (stepIndex === 0 ? 0 : transitionSize);
+    const holdEnd = (stepIndex + 1) * stepSize - (stepIndex === 2 ? 0 : transitionSize);
+    const enterStart = stepIndex * stepSize - transitionSize;
+    const enterEnd = stepIndex * stepSize + transitionSize;
+    const exitStart = (stepIndex + 1) * stepSize - transitionSize;
+    const exitEnd = (stepIndex + 1) * stepSize + transitionSize;
 
     let opacity = 0;
     let y = 30;
 
     if (stepIndex === 0) {
+      // First step: visible immediately, fades out at exitStart
       if (currentProgress < exitStart) {
         opacity = 1;
         y = 0;
@@ -274,6 +283,7 @@ export function SteppedShowcase() {
         y = -20 * t;
       }
     } else if (stepIndex === 2) {
+      // Last step: fades in, stays visible
       if (currentProgress < enterStart) {
         opacity = 0;
         y = 30;
@@ -286,6 +296,7 @@ export function SteppedShowcase() {
         y = 0;
       }
     } else {
+      // Middle step: fades in, holds, fades out
       if (currentProgress < enterStart) {
         opacity = 0;
         y = 30;
