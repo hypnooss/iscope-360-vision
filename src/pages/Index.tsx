@@ -7,7 +7,7 @@ import { NetworkAnimation } from '@/components/NetworkAnimation';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 import {
-  ArrowRight, Shield, Network, Eye, Zap, ChevronDown,
+  ArrowRight, Shield, Network, Eye, Zap,
   Quote, Scan, BarChart3, FileSearch, ShieldCheck,
   AlertTriangle, Clock, Layers, BookOpen, CheckCircle2, Lock,
   BellOff, SlidersHorizontal, Puzzle, Calendar, Tag,
