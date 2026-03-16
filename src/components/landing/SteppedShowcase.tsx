@@ -1,7 +1,7 @@
 import { useRef } from 'react';
-import { motion, useScroll, useTransform, useMotionValueEvent } from 'framer-motion';
+import { motion, useScroll, useMotionValueEvent } from 'framer-motion';
 import { useState } from 'react';
-import { CheckCircle2, Search, Brain, Zap } from 'lucide-react';
+import { CheckCircle2, Search, Brain, Zap, Shield, Ticket, Bell, AlertTriangle } from 'lucide-react';
 
 /* ── Step data ── */
 const steps = [
@@ -33,50 +33,69 @@ const steps = [
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
-/* ── Floating CVE Card ── */
+/* ── Real CVE data ── */
+const realCVEs = [
+  {
+    id: 'CVE-2024-3094',
+    product: 'XZ Utils',
+    score: 10.0,
+    severity: 'Critical',
+    tags: ['RCE', 'Supply Chain', 'In the Wild'],
+  },
+  {
+    id: 'CVE-2024-21762',
+    product: 'FortiOS SSL-VPN',
+    score: 9.8,
+    severity: 'Critical',
+    tags: ['Out-of-bounds Write', 'Exploitable'],
+  },
+  {
+    id: 'CVE-2021-44228',
+    product: 'Apache Log4j',
+    score: 10.0,
+    severity: 'Critical',
+    tags: ['RCE', 'In the Wild', 'CISA KEV'],
+  },
+];
+
+/* ── Enhanced CVE Card ── */
 function CVECard({
   cve,
-  x,
-  y,
   opacity,
-  scale,
-  rotate = 0,
-  size = 'lg',
+  delay = 0,
 }: {
-  cve: string;
-  x: string;
-  y: string;
+  cve: typeof realCVEs[0];
   opacity: number;
-  scale: number;
-  rotate?: number;
-  size?: 'lg' | 'sm';
+  delay?: number;
 }) {
-  const isSmall = size === 'sm';
   return (
     <motion.div
-      className="absolute glass-container rounded-xl"
-      style={{
-        left: x,
-        top: y,
-        opacity,
-        scale,
-        rotate,
-        padding: isSmall ? '10px 16px' : '14px 22px',
+      className="glass-container rounded-2xl p-5 w-full"
+      initial={{ opacity: 0, x: 40, scale: 0.92 }}
+      animate={{
+        opacity: opacity > 0.3 ? 1 : 0,
+        x: opacity > 0.3 ? 0 : 40,
+        scale: opacity > 0.3 ? 1 : 0.92,
       }}
+      transition={{ duration: 0.6, delay, ease: EASE }}
     >
-      <div className="flex items-center gap-2 mb-2">
-        <div className="relative">
-          <div className={`${isSmall ? 'w-2 h-2' : 'w-3 h-3'} rounded-full border border-destructive/40 flex items-center justify-center`}>
-            <div className={`${isSmall ? 'w-1 h-1' : 'w-1.5 h-1.5'} rounded-full bg-destructive animate-pulse`} />
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="relative">
+            <div className="w-2.5 h-2.5 rounded-full bg-destructive animate-pulse" />
           </div>
+          <span className="font-mono text-sm font-semibold text-foreground">{cve.id}</span>
         </div>
-        <span className={`font-mono ${isSmall ? 'text-xs text-foreground/60' : 'text-sm text-foreground/90'}`}>{cve}</span>
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-destructive/15 border border-destructive/25">
+          <span className="font-mono text-xs font-bold text-destructive">{cve.score.toFixed(1)}</span>
+        </div>
       </div>
-      <div className="flex gap-2">
-        {['Exploitable', 'High Likelihood', 'Critical Impact'].map((tag) => (
+      <div className="text-xs text-muted-foreground mb-3">{cve.product}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {cve.tags.map((tag) => (
           <span
             key={tag}
-            className={`font-mono tracking-wide ${isSmall ? 'text-[8px] text-destructive/50' : 'text-[10px] text-destructive/80'}`}
+            className="px-2 py-0.5 rounded-md text-[10px] font-mono tracking-wide bg-destructive/8 text-destructive/70 border border-destructive/10"
           >
             {tag}
           </span>
@@ -86,81 +105,113 @@ function CVECard({
   );
 }
 
-/* ── Sankey-like Chart (step 2 visual) ── */
-function SankeyChart({ opacity }: { opacity: number }) {
+/* ── Enhanced Risk Chart (step 2 visual) ── */
+function RiskChart({ opacity }: { opacity: number }) {
   const rows = [
-    { label: 'Low', count: '380,431', color: 'hsl(var(--warning))', barWidth: '95%' },
-    { label: 'Medium', count: '149,156', color: 'hsl(var(--info))', barWidth: '72%' },
-    { label: 'High', count: '100,455', color: 'hsl(var(--primary))', barWidth: '48%' },
-    { label: 'Critical', count: '89,186', color: 'hsl(var(--destructive))', barWidth: '38%' },
+    { label: 'Critical', total: 89186, exploitable: 8420, color: 'hsl(var(--destructive))', pct: 95 },
+    { label: 'High', total: 100455, exploitable: 4210, color: 'hsl(25, 95%, 53%)', pct: 72 },
+    { label: 'Medium', total: 149156, exploitable: 1890, color: 'hsl(45, 93%, 47%)', pct: 48 },
+    { label: 'Low', total: 380431, exploitable: 320, color: 'hsl(142, 71%, 45%)', pct: 30 },
   ];
 
   return (
     <motion.div
-      className="glass-container rounded-2xl p-6 w-full max-w-[380px] ml-auto"
+      className="glass-container rounded-2xl p-6 w-full max-w-[440px] ml-auto"
       style={{ opacity }}
       initial={{ x: 60, scale: 0.95 }}
       animate={{ x: opacity > 0.3 ? 0 : 60, scale: opacity > 0.3 ? 1 : 0.95 }}
       transition={{ duration: 0.7, ease: EASE }}
     >
-      <div className="text-xs font-mono text-muted-foreground/60 uppercase tracking-wider mb-4">Risk Distribution</div>
-      <div className="space-y-4">
-        {rows.map((row, i) => (
-          <motion.div
-            key={row.label}
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: opacity > 0.3 ? 1 : 0, x: opacity > 0.3 ? 0 : 30 }}
-            transition={{ duration: 0.6, delay: i * 0.12, ease: EASE }}
-            className="flex items-center gap-3"
-          >
-            <div className="w-16 text-right">
-              <div className="text-[11px] text-muted-foreground">{row.label}</div>
-              <div className="font-mono text-xs text-foreground/70">{row.count}</div>
-            </div>
-            <div className="flex-1 h-6 rounded-sm bg-muted/20 overflow-hidden relative">
-              <motion.div
-                className="h-full rounded-sm"
-                style={{ background: `linear-gradient(90deg, ${row.color}66, ${row.color}22)`, width: row.barWidth }}
-                initial={{ scaleX: 0 }}
-                animate={{ scaleX: opacity > 0.3 ? 1 : 0 }}
-                transition={{ duration: 0.8, delay: 0.2 + i * 0.12, ease: EASE }}
-              />
-              <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none">
-                <motion.path
-                  d={`M 0 ${12} Q ${50 + i * 10} ${4 + i * 3}, 100% ${8 + i * 2}`}
-                  stroke={row.color}
-                  strokeWidth="1.5"
-                  fill="none"
-                  opacity="0.4"
-                  initial={{ pathLength: 0 }}
-                  animate={{ pathLength: opacity > 0.3 ? 1 : 0 }}
-                  transition={{ duration: 1.2, delay: 0.4 + i * 0.1 }}
-                />
-              </svg>
-            </div>
-          </motion.div>
-        ))}
+      <div className="flex items-center justify-between mb-5">
+        <div className="text-xs font-mono text-muted-foreground/60 uppercase tracking-wider">Risk Distribution</div>
+        <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground/50">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-sm bg-foreground/20" /> Total
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-sm bg-destructive/60" /> Exploitable
+          </span>
+        </div>
       </div>
-      <div className="flex justify-between mt-4 text-[9px] font-mono text-muted-foreground/40">
-        <span>Exploitable 10%</span>
-        <span>Not Exploitable 90%</span>
+      <div className="space-y-5">
+        {rows.map((row, i) => {
+          const exploitPct = ((row.exploitable / row.total) * 100).toFixed(1);
+          return (
+            <motion.div
+              key={row.label}
+              initial={{ opacity: 0, x: 30 }}
+              animate={{ opacity: opacity > 0.3 ? 1 : 0, x: opacity > 0.3 ? 0 : 30 }}
+              transition={{ duration: 0.6, delay: i * 0.1, ease: EASE }}
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: row.color }} />
+                  <span className="text-xs font-medium text-foreground/80">{row.label}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {row.total.toLocaleString()}
+                  </span>
+                  <span className="font-mono text-[10px] text-destructive/70">
+                    {row.exploitable.toLocaleString()} exploitable
+                  </span>
+                </div>
+              </div>
+              <div className="h-5 rounded-md bg-muted/20 overflow-hidden relative">
+                {/* Total bar */}
+                <motion.div
+                  className="absolute inset-y-0 left-0 rounded-md"
+                  style={{
+                    background: `linear-gradient(90deg, ${row.color}33, ${row.color}11)`,
+                    width: `${row.pct}%`,
+                  }}
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: opacity > 0.3 ? 1 : 0 }}
+                  transition={{ duration: 0.8, delay: 0.15 + i * 0.1, ease: EASE }}
+                  style-origin="left"
+                />
+                {/* Exploitable bar overlay */}
+                <motion.div
+                  className="absolute inset-y-0 left-0 rounded-md"
+                  style={{
+                    background: `linear-gradient(90deg, ${row.color}AA, ${row.color}55)`,
+                    width: `${parseFloat(exploitPct) * (row.pct / 100)}%`,
+                  }}
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: opacity > 0.3 ? 1 : 0 }}
+                  transition={{ duration: 1, delay: 0.3 + i * 0.1, ease: EASE }}
+                />
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+      <div className="mt-5 pt-3 border-t border-muted/20 flex justify-between text-[10px] font-mono text-muted-foreground/40">
+        <span>Total: 719,228 CVEs</span>
+        <span>Exploitable: 14,840 (2.1%)</span>
       </div>
     </motion.div>
   );
 }
 
-/* ── Workflow Step ── */
+/* ── Enhanced Workflow Step ── */
+const workflowSteps = [
+  { num: '01', label: 'Incidente criado automaticamente', icon: AlertTriangle, time: 'agora' },
+  { num: '02', label: 'Regra WAF implantada no FortiGate', icon: Shield, time: 'há 2 min' },
+  { num: '03', label: 'Ticket criado no ServiceNow', icon: Ticket, time: 'há 3 min' },
+  { num: '04', label: 'Notificação enviada para #segurança', icon: Bell, time: 'há 5 min' },
+];
+
 function WorkflowStepCard({
-  num,
-  label,
+  step,
   visible,
   delay = 0,
 }: {
-  num: string;
-  label: string;
+  step: typeof workflowSteps[0];
   visible: boolean;
   delay?: number;
 }) {
+  const Icon = step.icon;
   return (
     <motion.div
       initial={{ opacity: 0, y: 30, scale: 0.9 }}
@@ -168,18 +219,23 @@ function WorkflowStepCard({
       transition={{ duration: 0.6, delay, ease: EASE }}
       className="glass-container px-5 py-4 rounded-xl flex items-center gap-4"
     >
-      <div className="flex-shrink-0 w-10 h-10 rounded-full border border-dashed border-muted-foreground/30 flex items-center justify-center">
-        <span className="font-mono text-sm text-muted-foreground">{num}.</span>
+      <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+        <Icon className="w-4 h-4 text-primary" />
       </div>
-      <span className="text-sm text-foreground/80 flex-1">{label}</span>
-      <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
+      <div className="flex-1">
+        <span className="text-sm text-foreground/80">{step.label}</span>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <span className="text-[10px] font-mono text-muted-foreground/50">{step.time}</span>
+        <CheckCircle2 className="w-4 h-4 text-primary" />
+      </div>
     </motion.div>
   );
 }
 
 /* ── Progress Bar ── */
 function ProgressBar({ scrollProgress }: { scrollProgress: number }) {
-  const totalProgress = Math.min(scrollProgress * 1.1, 1); // slightly accelerate fill
+  const totalProgress = Math.min(scrollProgress * 1.1, 1);
 
   return (
     <div className="sticky top-0 z-30 pt-20 pb-8 bg-gradient-to-b from-background via-background/95 to-transparent">
@@ -192,7 +248,6 @@ function ProgressBar({ scrollProgress }: { scrollProgress: number }) {
 
           return (
             <div key={s.num} className="flex items-start flex-1">
-              {/* Step node */}
               <div className="flex flex-col items-center gap-2 min-w-[80px]">
                 <motion.div
                   className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all duration-500 ${
@@ -215,7 +270,6 @@ function ProgressBar({ scrollProgress }: { scrollProgress: number }) {
                 </div>
               </div>
 
-              {/* Connector line */}
               {i < steps.length - 1 && (
                 <div className="flex-1 mt-5 mx-2">
                   <div className="h-[2px] rounded-full bg-muted-foreground/10 relative overflow-hidden">
@@ -254,16 +308,10 @@ export function SteppedShowcase() {
     setCurrentProgress(v);
   });
 
-  // Per-step opacity + translateY for smooth crossfade
-  // With 400vh height, we have more scroll room. Each step gets ~33% of scroll.
-  // Transitions happen in narrow bands, leaving a wide "hold" zone per step.
   const getStepValues = (stepIndex: number) => {
-    // Each step occupies a third: [0, 0.33], [0.33, 0.66], [0.66, 1]
     const stepSize = 1 / 3;
-    const transitionSize = 0.06; // narrow transition band
+    const transitionSize = 0.06;
 
-    const holdStart = stepIndex * stepSize + (stepIndex === 0 ? 0 : transitionSize);
-    const holdEnd = (stepIndex + 1) * stepSize - (stepIndex === 2 ? 0 : transitionSize);
     const enterStart = stepIndex * stepSize - transitionSize;
     const enterEnd = stepIndex * stepSize + transitionSize;
     const exitStart = (stepIndex + 1) * stepSize - transitionSize;
@@ -273,7 +321,6 @@ export function SteppedShowcase() {
     let y = 30;
 
     if (stepIndex === 0) {
-      // First step: visible immediately, fades out at exitStart
       if (currentProgress < exitStart) {
         opacity = 1;
         y = 0;
@@ -283,7 +330,6 @@ export function SteppedShowcase() {
         y = -20 * t;
       }
     } else if (stepIndex === 2) {
-      // Last step: fades in, stays visible
       if (currentProgress < enterStart) {
         opacity = 0;
         y = 30;
@@ -296,7 +342,6 @@ export function SteppedShowcase() {
         y = 0;
       }
     } else {
-      // Middle step: fades in, holds, fades out
       if (currentProgress < enterStart) {
         opacity = 0;
         y = 30;
@@ -327,13 +372,12 @@ export function SteppedShowcase() {
 
   return (
     <section ref={containerRef} className="relative" style={{ height: '400vh' }}>
-
       <div className="sticky top-0 h-screen overflow-hidden flex flex-col">
         <ProgressBar scrollProgress={currentProgress} />
 
         <div className="flex-1 flex items-center">
           <div className="max-w-[1200px] mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center w-full">
-            {/* Left: Text — crossfade between steps */}
+            {/* Left: Text */}
             <div className="relative min-h-[320px]">
               {steps.map((step, i) => {
                 const { opacity, y } = stepValues[i];
@@ -343,12 +387,10 @@ export function SteppedShowcase() {
                     className="absolute inset-0 flex flex-col justify-center"
                     style={{ opacity, y, pointerEvents: opacity > 0.5 ? 'auto' : 'none' }}
                   >
-                    {/* Decorative big number */}
                     <div className="absolute -left-2 -top-4 font-heading text-[8rem] font-black text-foreground/[0.03] leading-none select-none pointer-events-none">
                       {step.num}
                     </div>
 
-                    {/* Badge */}
                     <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 mb-5 self-start">
                       <step.icon className="w-3.5 h-3.5 text-primary" />
                       <span className="text-xs font-mono text-primary tracking-wider uppercase">{step.badge}</span>
@@ -365,49 +407,72 @@ export function SteppedShowcase() {
               })}
             </div>
 
-            {/* Right: Visuals — crossfade with scale */}
+            {/* Right: Visuals */}
             <div className="relative h-[450px]">
-              {/* Step 0: CVE Cards floating with stagger & rotation */}
+              {/* Step 0: Real CVE Cards staggered */}
               <motion.div
                 style={{ opacity: step0.opacity, pointerEvents: step0.opacity > 0.3 ? 'auto' : 'none' }}
-                className="absolute inset-0"
+                className="absolute inset-0 flex flex-col justify-center gap-3 max-w-[420px] ml-auto"
               >
-                <CVECard cve="CVE-2025-21613" x="5%" y="5%" opacity={step0.opacity} scale={step0.opacity} rotate={-2} />
-                <CVECard cve="CVE-2024-53990" x="15%" y="35%" opacity={step0.opacity} scale={step0.opacity} rotate={1} size="lg" />
-                <CVECard cve="CVE-2024-53194" x="25%" y="62%" opacity={step0.opacity} scale={step0.opacity} rotate={-1} size="sm" />
+                {realCVEs.map((cve, i) => (
+                  <CVECard key={cve.id} cve={cve} opacity={step0.opacity} delay={i * 0.12} />
+                ))}
               </motion.div>
 
-              {/* Step 1: Sankey chart with slide-in */}
+              {/* Step 1: Enhanced Risk Chart */}
               <motion.div
                 style={{ opacity: step1.opacity, pointerEvents: step1.opacity > 0.3 ? 'auto' : 'none' }}
                 className="absolute inset-0 flex items-center"
               >
-                <SankeyChart opacity={step1.opacity} />
+                <RiskChart opacity={step1.opacity} />
               </motion.div>
 
-              {/* Step 2: Workflow with enhanced stagger */}
+              {/* Step 2: Enhanced Workflow */}
               <motion.div
                 style={{ opacity: step2.opacity, pointerEvents: step2.opacity > 0.3 ? 'auto' : 'none' }}
                 className="absolute inset-0 flex flex-col justify-center gap-3 max-w-md ml-auto"
               >
+                {/* CVE Header card */}
                 <motion.div
-                  className="glass-container px-5 py-3 rounded-xl mb-2"
+                  className="glass-container px-5 py-4 rounded-xl mb-1"
                   style={{ opacity: step2.opacity }}
                   initial={{ scale: 0.95 }}
                   animate={{ scale: step2.opacity > 0.5 ? 1 : 0.95 }}
                   transition={{ duration: 0.5, ease: EASE }}
                 >
-                  <div className="font-mono text-sm text-foreground/90 mb-2">CVE-2024-53194</div>
-                  <div className="flex gap-2">
-                    {['Exploitable', 'High Likelihood', 'Critical Impact'].map((t) => (
-                      <span key={t} className="text-[10px] font-mono text-destructive/80">{t}</span>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
+                      <span className="font-mono text-sm font-semibold text-foreground">CVE-2024-21762</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-destructive/15 text-destructive font-bold border border-destructive/20">
+                        CVSS 9.8
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-destructive/10 text-destructive/70 border border-destructive/15">
+                        Critical
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground mb-2">FortiOS SSL-VPN • Out-of-bounds Write</div>
+                  <div className="flex gap-1.5">
+                    {['Exploitable', 'In the Wild', 'CISA KEV'].map((t) => (
+                      <span key={t} className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-destructive/8 text-destructive/60 border border-destructive/10">
+                        {t}
+                      </span>
                     ))}
                   </div>
                 </motion.div>
-                <WorkflowStepCard num="01" label="Incidente criado" visible={step2.opacity > 0.5} delay={0.1} />
-                <WorkflowStepCard num="02" label="Política WAF implantada" visible={step2.opacity > 0.5} delay={0.25} />
-                <WorkflowStepCard num="03" label="Ticket criado" visible={step2.opacity > 0.5} delay={0.4} />
-                <WorkflowStepCard num="04" label="Notificação enviada para #segurança" visible={step2.opacity > 0.5} delay={0.55} />
+
+                {/* Workflow steps */}
+                {workflowSteps.map((step, i) => (
+                  <WorkflowStepCard
+                    key={step.num}
+                    step={step}
+                    visible={step2.opacity > 0.5}
+                    delay={0.1 + i * 0.15}
+                  />
+                ))}
               </motion.div>
             </div>
           </div>
