@@ -360,6 +360,9 @@ const Index = () => {
           </div>
         </Section>
 
+        {/* ═══ STEPPED SHOWCASE (MazeHQ-style) ═══ */}
+        <SteppedShowcase />
+
         {/* Integrations and Compliance sections removed */}
 
         {/* ═══ TESTIMONIALS ═══ */}
