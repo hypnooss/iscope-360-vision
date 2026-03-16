@@ -208,7 +208,10 @@ export function NetworkAnimation() {
         // ondas de energia percorrendo o globo
         const wave = Math.sin(p.theta * 3 + time * 0.0012) + Math.sin(p.phi * 4 + time * 0.0009);
 
-        const shifted = (wave * 0.25 + 0.5 + p.colorSeed * 0.05) % 1;
+        //pulso das ondas de energia
+        const pulse = Math.sin(time * 0.0012 + p.theta * 2) * 0.5 + 0.5;
+
+        const shifted = (wave * 0.2 + pulse * 0.35 + p.colorSeed * 0.05) % 1;
 
         // Edge gradient: cyan ↔ magenta
         let edgeR: number, edgeG: number, edgeB: number;
