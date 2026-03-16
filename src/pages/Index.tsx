@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import {
   ArrowRight, Shield, Network, Eye, Zap, ChevronDown,
   Quote, Scan, BarChart3, FileSearch, ShieldCheck,
+  AlertTriangle, Clock, Layers, BookOpen, CheckCircle2, Lock,
+  BellOff, SlidersHorizontal, Puzzle, Calendar, Tag,
 } from 'lucide-react';
 
 /* ── Scroll Reveal ── */
@@ -71,7 +73,6 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col relative">
       <NetworkAnimation />
-      
 
       <Header />
 
@@ -118,26 +119,26 @@ const Index = () => {
           </div>
         </section>
 
-        {/* ═══ PROBLEM — Impact Numbers ═══ */}
+        {/* ═══ PROBLEM — Impact Numbers (2025 data) ═══ */}
         <section className="min-h-screen flex items-center justify-center px-6">
           <div className="max-w-[1100px] mx-auto w-full">
             <SectionReveal>
               <div className="text-center mb-20">
                 <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-6 leading-tight">
-                  Backlogs de vulnerabilidades{' '}
-                  <span className="text-primary">continuam crescendo</span>
+                  A superfície de ataque{' '}
+                  <span className="text-primary">nunca foi tão grande</span>
                 </h2>
                 <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-                  A cada dia novas ameaças surgem. Manter a visibilidade e o controle da sua infraestrutura não é mais opcional.
+                  Em 2025, o volume de vulnerabilidades e a velocidade de exploração atingiram níveis sem precedentes.
                 </p>
               </div>
             </SectionReveal>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
               {[
-                { number: '40,000', suffix: '+', context: 'Vulnerabilidades publicadas em 2024', subtext: 'CVEs registrados — recorde histórico' },
-                { number: '72', suffix: 'h', context: 'Tempo médio para exploração', subtext: 'Após a publicação de um CVE crítico' },
-                { number: '34', suffix: '%', context: 'Aumento em ataques a infraestrutura', subtext: 'Em relação ao ano anterior' },
+                { number: '21,500', suffix: '+', context: 'CVEs no 1º semestre de 2025', subtext: 'Projeção de 45.000+ no ano — recorde absoluto' },
+                { number: '5', suffix: ' dias', context: 'Tempo médio para exploração', subtext: 'Colapsou de 63 dias em 2019 para 5 em 2023' },
+                { number: '$4.88', suffix: 'M', context: 'Custo médio de um data breach', subtext: 'IBM Cost of a Data Breach Report 2024' },
               ].map((stat, i) => (
                 <SectionReveal key={stat.context} delay={i * 150}>
                   <div className="text-center md:text-left">
@@ -153,8 +154,69 @@ const Index = () => {
           </div>
         </section>
 
+        {/* ═══ THE REAL PROBLEM — False Positives ═══ */}
+        <section className="min-h-screen flex items-center justify-center px-6 bg-background/60">
+          <div className="max-w-[1100px] mx-auto w-full">
+            <SectionReveal>
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-destructive/20 bg-destructive/5 text-destructive text-xs font-mono uppercase tracking-wider mb-8">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  O problema real
+                </div>
+                <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-6 leading-tight">
+                  <span className="text-primary">90%</span> dos alertas são falsos positivos
+                </h2>
+                <p className="text-muted-foreground max-w-2xl mx-auto text-lg leading-relaxed">
+                  Ferramentas tradicionais inundam sua equipe com milhares de alertas sem contexto.
+                  O resultado? Fadiga de alertas, priorização errada e riscos reais ignorados.
+                </p>
+              </div>
+            </SectionReveal>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
+              {[
+                {
+                  icon: BellOff,
+                  title: 'Alertas sem contexto',
+                  description: 'Scanners reportam vulnerabilidades sem considerar sua infraestrutura, ambiente ou controles compensatórios.',
+                  stat: '25h/semana',
+                  statLabel: 'gastas em triagem manual',
+                },
+                {
+                  icon: SlidersHorizontal,
+                  title: 'Priorização manual',
+                  description: 'Sem automação, equipes dependem de planilhas e intuição para decidir o que corrigir primeiro.',
+                  stat: '68%',
+                  statLabel: 'das equipes não conseguem priorizar',
+                },
+                {
+                  icon: Puzzle,
+                  title: 'Ferramentas fragmentadas',
+                  description: 'Firewalls, cloud, endpoints — cada um com seu painel. Nenhuma visão unificada do risco real.',
+                  stat: '6+',
+                  statLabel: 'ferramentas por equipe em média',
+                },
+              ].map((item, i) => (
+                <SectionReveal key={item.title} delay={i * 120}>
+                  <div className="glass-container p-8 h-full flex flex-col group">
+                    <div className="inline-flex p-3 rounded-xl bg-destructive/10 mb-5 self-start group-hover:bg-destructive/15 transition-colors duration-300">
+                      <item.icon className="w-5 h-5 text-destructive" />
+                    </div>
+                    <h3 className="font-heading font-bold text-lg text-foreground mb-3">{item.title}</h3>
+                    <p className="text-[15px] text-muted-foreground leading-relaxed flex-1 mb-6">{item.description}</p>
+                    <div className="border-t border-border/20 pt-4">
+                      <div className="text-2xl font-heading font-extrabold text-foreground">{item.stat}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{item.statLabel}</div>
+                    </div>
+                  </div>
+                </SectionReveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* ═══ SOLUTION — 4-Step Flow ═══ */}
-        <section id="how-it-works" className="min-h-screen flex items-center justify-center px-6 bg-background/60">
+        <section id="how-it-works" className="min-h-screen flex items-center justify-center px-6">
           <div className="max-w-[1100px] mx-auto w-full">
             <SectionReveal>
               <div className="text-center mb-20">
@@ -193,7 +255,7 @@ const Index = () => {
         </section>
 
         {/* ═══ FEATURES — Showcases ═══ */}
-        <section id="features" className="min-h-screen flex items-center justify-center px-6">
+        <section id="features" className="min-h-screen flex items-center justify-center px-6 bg-background/60">
           <div className="max-w-[1100px] mx-auto w-full">
             <SectionReveal>
               <div className="text-center mb-16">
@@ -242,6 +304,44 @@ const Index = () => {
           </div>
         </section>
 
+        {/* ═══ FRAMEWORKS & COMPLIANCE ═══ */}
+        <section className="min-h-screen flex items-center justify-center px-6">
+          <div className="max-w-[1100px] mx-auto w-full">
+            <SectionReveal>
+              <div className="text-center mb-16">
+                <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4">
+                  Conformidade com os principais{' '}
+                  <span className="text-primary">frameworks</span>
+                </h2>
+                <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
+                  Verifique automaticamente a aderência da sua infraestrutura aos padrões mais exigentes do mercado.
+                </p>
+              </div>
+            </SectionReveal>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+              {[
+                { name: 'CIS Benchmarks', desc: 'Hardening de sistemas e dispositivos de rede', icon: Shield },
+                { name: 'NIST CSF', desc: 'Framework de cibersegurança do governo dos EUA', icon: Layers },
+                { name: 'ISO 27001', desc: 'Gestão de segurança da informação', icon: CheckCircle2 },
+                { name: 'PCI DSS', desc: 'Segurança de dados de cartões de pagamento', icon: Lock },
+                { name: 'SOC 2', desc: 'Controles de segurança, disponibilidade e privacidade', icon: ShieldCheck },
+                { name: 'LGPD', desc: 'Lei Geral de Proteção de Dados brasileira', icon: FileSearch },
+              ].map((fw, i) => (
+                <SectionReveal key={fw.name} delay={i * 80}>
+                  <div className="glass-container p-6 md:p-8 text-center group hover:border-primary/30 transition-colors duration-300">
+                    <div className="inline-flex p-3 rounded-xl bg-primary/10 mb-4 group-hover:bg-primary/15 transition-colors duration-300">
+                      <fw.icon className="w-5 h-5 text-primary" />
+                    </div>
+                    <h3 className="font-heading font-bold text-foreground text-sm md:text-base mb-1">{fw.name}</h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{fw.desc}</p>
+                  </div>
+                </SectionReveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* ═══ TESTIMONIALS ═══ */}
         <section className="min-h-screen flex items-center justify-center px-6 bg-background/60">
           <div className="max-w-[1100px] mx-auto w-full">
@@ -250,25 +350,31 @@ const Index = () => {
                 <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4">
                   O que nossos <span className="text-primary">clientes</span> dizem
                 </h2>
+                <p className="text-muted-foreground max-w-xl mx-auto text-lg">
+                  Empresas de diferentes setores confiam no iScope para proteger sua operação.
+                </p>
               </div>
             </SectionReveal>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
                 {
-                  quote: 'O iScope reduziu nosso tempo de auditoria de compliance em mais de 60%. É indispensável para nossa operação.',
+                  quote: 'Reduzimos nosso tempo de auditoria de compliance em 65%. O que levava uma semana agora é feito em um dia com o iScope.',
                   name: 'Carlos M.',
-                  role: 'CISO — Empresa de Tecnologia',
+                  role: 'CISO',
+                  company: 'Empresa de Tecnologia — 2.000+ funcionários',
                 },
                 {
-                  quote: 'Finalmente conseguimos ter visibilidade real do nosso ambiente. Antes do iScope era tudo manual e fragmentado.',
+                  quote: 'Pela primeira vez temos visibilidade real do nosso ambiente multi-cloud. Antes eram 6 ferramentas e nenhuma visão unificada.',
                   name: 'Ana L.',
-                  role: 'CTO — Fintech',
+                  role: 'CTO',
+                  company: 'Fintech — Série B',
                 },
                 {
-                  quote: 'A detecção automática de configurações inseguras já nos evitou dois incidentes graves em seis meses.',
+                  quote: 'A detecção automática de configurações inseguras nos evitou dois incidentes críticos em seis meses. O ROI se pagou no primeiro trimestre.',
                   name: 'Roberto S.',
-                  role: 'Diretor de Infraestrutura — Healthcare',
+                  role: 'Diretor de Infraestrutura',
+                  company: 'Healthcare — 50+ unidades',
                 },
               ].map((t, i) => (
                 <SectionReveal key={t.name} delay={i * 120}>
@@ -280,6 +386,70 @@ const Index = () => {
                     <div className="border-t border-border/20 pt-5">
                       <div className="font-heading font-bold text-foreground text-sm">{t.name}</div>
                       <div className="text-xs text-muted-foreground mt-0.5">{t.role}</div>
+                      <div className="text-xs text-muted-foreground/60 mt-0.5">{t.company}</div>
+                    </div>
+                  </div>
+                </SectionReveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ═══ BLOG / INSIGHTS ═══ */}
+        <section className="min-h-screen flex items-center justify-center px-6">
+          <div className="max-w-[1100px] mx-auto w-full">
+            <SectionReveal>
+              <div className="text-center mb-16">
+                <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4">
+                  Insights de <span className="text-primary">segurança</span>
+                </h2>
+                <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
+                  Análises e perspectivas sobre o cenário atual de cibersegurança e compliance.
+                </p>
+              </div>
+            </SectionReveal>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                {
+                  category: 'Security',
+                  date: 'Mar 2025',
+                  title: '2025: O ano que vulnerabilidades quebraram todos os recordes',
+                  excerpt: 'Com 21.500+ CVEs só no primeiro semestre, entenda por que a abordagem tradicional de patch management não escala mais.',
+                },
+                {
+                  category: 'Product',
+                  date: 'Fev 2025',
+                  title: 'Por que CVSS sozinho não é suficiente para priorizar vulnerabilidades',
+                  excerpt: 'Contexto de negócio, exposição e controles compensatórios: os fatores que o CVSS ignora na priorização de riscos.',
+                },
+                {
+                  category: 'Compliance',
+                  date: 'Jan 2025',
+                  title: 'Compliance não é segurança: por que checklist não funciona',
+                  excerpt: 'A diferença entre estar em conformidade no papel e ter uma postura de segurança efetiva contra ameaças reais.',
+                },
+              ].map((post, i) => (
+                <SectionReveal key={post.title} delay={i * 120}>
+                  <div className="glass-container p-8 h-full flex flex-col group cursor-pointer hover:border-primary/30 transition-colors duration-300">
+                    <div className="flex items-center gap-3 mb-5">
+                      <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] font-mono text-primary/70">
+                        <Tag className="w-3 h-3" />
+                        {post.category}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground/50 font-mono flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        {post.date}
+                      </span>
+                    </div>
+                    <h3 className="font-heading font-bold text-lg text-foreground mb-3 group-hover:text-primary transition-colors duration-300 leading-snug">
+                      {post.title}
+                    </h3>
+                    <p className="text-[14px] text-muted-foreground leading-relaxed flex-1 mb-5">
+                      {post.excerpt}
+                    </p>
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-primary/70 group-hover:text-primary transition-colors duration-300">
+                      Ler artigo <ArrowRight className="w-3.5 h-3.5" />
                     </div>
                   </div>
                 </SectionReveal>
