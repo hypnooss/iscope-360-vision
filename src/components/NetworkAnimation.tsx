@@ -368,22 +368,22 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const morph = scrollRef.current;
       uniforms.uMorph.value = morph;
 
-      // Interpolate rotation — preserve globe framing and only tilt for sand
+      // Interpolate rotation — preserve globe framing and lower the sand field
       const rotationFactor = 1.0 - morph;
       points.rotation.y = elapsed * ROTATION_SPEED * 1000 * rotationFactor;
       const globeRotX = Math.sin(elapsed * 0.008) * 0.08;
       points.rotation.x = globeRotX * (1.0 - morph) + 0.55 * morph;
 
-      // Offset Y downward in sand state
-      points.position.y = -currentSphereRadius * 0.25 * morph;
+      // Push the sand lower in the hero so it reads like a ground plane
+      points.position.y = -currentSphereRadius * 0.38 * morph;
 
-      // Interpolate scale — globe radius → wide spread for sand
-      const sandScale = currentSphereRadius * 1.8;
+      // Interpolate scale — keep the field broad but not cloud-like
+      const sandScale = currentSphereRadius * 1.32;
       const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
       points.scale.setScalar(scale);
 
-      // Restore original hero camera framing
-      camera.position.z = 800 - 450 * morph;
+      // Preserve globe camera and avoid over-zooming the sand
+      camera.position.z = 800 - 320 * morph;
       camera.position.y = 0;
       camera.lookAt(0, 0, 0);
       camera.updateProjectionMatrix();
