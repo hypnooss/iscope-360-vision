@@ -263,7 +263,7 @@ export function NetworkAnimation({ className = '' }: NetworkAnimationProps) {
     const uniforms = {
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
-      uSpeed: { value: 0.00008 },
+      uSpeed: { value: 0.15 },
       uSize: { value: 14.0 },
       uAlpha: { value: 1.0 },
       uDepth: { value: 0.008 },
