@@ -126,7 +126,7 @@ const Index = () => {
               </h1>
             </Reveal>
             <Reveal delay={0.2}>
-              <p className="text-lg text-muted-foreground max-w-[560px] mx-auto mb-10 leading-relaxed">
+              <p className="text-lg text-muted-foreground/80 max-w-[560px] mx-auto mb-10 leading-relaxed">
                 Plataforma completa para análise de compliance, segurança e
                 boas práticas da sua infraestrutura.
               </p>
