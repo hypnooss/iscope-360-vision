@@ -146,11 +146,30 @@ const vertexShader = `
     float b = uBcolor / 255.0 + (noiseFactor * (uBnoise - uBcolor) / 255.0);
     vColor = vec3(r, g, b);
 
-    // Blob deformation via noise
-    vec3 displaced = position * (1.0 + uAmplitude * vNoise);
+    // --- Tangential surface drift ---
+    vec3 normal = normalize(position);
+    float baseRadius = length(position);
 
-    // Per-particle jitter via 2D noise
-    displaced += vec3(uScale * uDepth * aMove * aSpeed * snoise2d(vec2(aIndex, uTime * uSpeed)));
+    // Build tangent frame from normal
+    vec3 up = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+
+    // Per-particle drift direction from aRandomness, animated by noise over time
+    float driftAngle = aRandomness.x * 6.2831853; // unique direction per particle
+    float driftNoise1 = snoise2d(vec2(aIndex * 0.01, uTime * uSpeed));
+    float driftNoise2 = snoise2d(vec2(aIndex * 0.01 + 100.0, uTime * uSpeed * 0.7));
+
+    float driftAmount = uScale * uDepth * 8.0; // surface drift magnitude
+    vec3 surfaceOffset = tangent * (cos(driftAngle) * driftNoise1 * driftAmount * aSpeed.x)
+                       + bitangent * (sin(driftAngle) * driftNoise2 * driftAmount * aSpeed.y);
+
+    // Apply drift then re-project onto sphere to keep shape clean
+    vec3 drifted = position + surfaceOffset;
+    drifted = normalize(drifted) * baseRadius;
+
+    // Subtle radial breathing (blob deformation)
+    vec3 displaced = drifted * (1.0 + uAmplitude * vNoise * 0.3);
 
     // Final position
     vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
