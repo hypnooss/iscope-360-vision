@@ -170,7 +170,7 @@ const vertexShader = `
 
     // --- Flat "sand" position with subtle noise movement ---
     float flatNoise = snoise2d(vec2(aFlatPosition.x * 0.5 + uTime * 0.1, aFlatPosition.z * 0.5));
-    vec3 flatPos = aFlatPosition + vec3(0.0, flatNoise * 0.02, 0.0);
+    vec3 flatPos = aFlatPosition + vec3(0.0, flatNoise * 0.008, 0.0);
 
     // --- Morph between sphere and flat ---
     // Use smoothstep for organic easing
