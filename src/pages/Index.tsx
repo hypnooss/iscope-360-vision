@@ -93,7 +93,7 @@ const Index = () => {
             className="absolute inset-0 z-0"
           >
             <NetworkAnimation className="absolute inset-0" />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(175_80%_45%/0.1),transparent_65%)] pointer-events-none" />
+            
           </motion.div>
 
           {/* Copy — centered overlay */}
