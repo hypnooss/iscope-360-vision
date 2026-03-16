@@ -115,7 +115,7 @@ const Index = () => {
             className="relative z-10 text-center max-w-[800px] mx-auto"
           >
             <Reveal>
-              <p className="text-xs uppercase tracking-[0.3em] text-primary/70 font-medium mb-6 font-mono">
+              <p className="text-xs uppercase tracking-[0.3em] text-primary/70 font-bold mb-6 font-mono">
                 Plataforma de Segurança &amp; Compliance
               </p>
             </Reveal>
@@ -126,7 +126,7 @@ const Index = () => {
               </h1>
             </Reveal>
             <Reveal delay={0.2}>
-              <p className="text-lg text-muted-foreground max-w-[560px] mx-auto mb-10 leading-relaxed">
+              <p className="text-lg text-muted-foreground/80 max-w-[560px] mx-auto mb-10 leading-relaxed">
                 Plataforma completa para análise de compliance, segurança e
                 boas práticas da sua infraestrutura.
               </p>
@@ -154,7 +154,7 @@ const Index = () => {
 
           {/* Scroll indicator */}
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
-            <span className="text-[10px] uppercase tracking-[0.3em] font-mono text-muted-foreground/50">Scroll</span>
+            <span className="text-[10px] uppercase tracking-[0.3em] font-mono text-muted-foreground/70">Scroll</span>
             <div className="relative w-[1.5px] h-8 bg-muted-foreground/20 rounded-full overflow-hidden">
               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[3px] h-[8px] rounded-full bg-primary/70 animate-scroll-dot" />
             </div>
