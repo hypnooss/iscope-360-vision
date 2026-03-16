@@ -149,7 +149,7 @@ export function NetworkAnimation() {
         const morphedPhi = lerp(p.phi, Math.PI * 0.5, flattenAmount * 0.85);
 
         // Apply disperse: expand radius and add random offset
-        const disperseScale = 1 + disperseAmount * 2.5;
+        const disperseScale = 1 + disperseAmount * 6;
         const r = sphereRadius * p.radiusMul * disperseScale;
 
         const sp = Math.sin(morphedPhi);
