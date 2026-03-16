@@ -292,6 +292,9 @@ const Index = () => {
           </div>
         </Section>
 
+        {/* ═══ STEPPED SHOWCASE (MazeHQ-style) ═══ */}
+        <SteppedShowcase />
+
         {/* ═══ HOW IT WORKS ═══ */}
         <Section id="how-it-works">
           <Reveal>
