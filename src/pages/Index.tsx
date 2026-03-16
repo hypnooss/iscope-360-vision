@@ -7,7 +7,7 @@ import { NetworkAnimation } from '@/components/NetworkAnimation';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 import {
-  ArrowRight, Shield, Network, Eye, Zap, ChevronDown,
+  ArrowRight, Shield, Network, Eye, Zap,
   Quote, Scan, BarChart3, FileSearch, ShieldCheck,
   AlertTriangle, Clock, Layers, BookOpen, CheckCircle2, Lock,
   BellOff, SlidersHorizontal, Puzzle, Calendar, Tag,
@@ -143,9 +143,11 @@ const Index = () => {
           </motion.div>
 
           {/* Scroll indicator */}
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-muted-foreground/40">
-            <span className="text-[10px] uppercase tracking-[0.3em] font-mono">Scroll</span>
-            <ChevronDown className="w-4 h-4 animate-bounce" />
+          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3">
+            <span className="text-[9px] uppercase tracking-[0.35em] font-mono text-muted-foreground/30">Scroll</span>
+            <div className="relative w-[1px] h-10 bg-muted-foreground/15 rounded-full overflow-hidden">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[3px] h-[8px] rounded-full bg-primary/60 animate-scroll-dot" />
+            </div>
           </div>
         </section>
 
