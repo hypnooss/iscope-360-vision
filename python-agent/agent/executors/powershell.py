@@ -180,7 +180,7 @@ class PowerShellExecutor(BaseExecutor):
             ])
         else:
             # Derive SPO admin domain from organization (e.g. contoso.onmicrosoft.com -> contoso)
-            spo_admin_domain = (organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]
+            spo_admin_domain = self._derive_spo_domain(organization, spo_domain)
             thumbprint = self._get_thumbprint() or ''
             script_parts.extend([
                 "# Connect with certificate",
