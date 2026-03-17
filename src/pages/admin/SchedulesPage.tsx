@@ -853,7 +853,7 @@ function ScheduleTimeline({ targetId, tasks }: { targetId: string; tasks: Timeli
         <p className="text-xs text-muted-foreground py-2">Nenhuma execução neste período.</p>
       ) : (
         <TooltipProvider delayDuration={200}>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
             {filtered.map((t, i) => (
               <Tooltip key={i}>
                 <TooltipTrigger asChild>
