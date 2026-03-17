@@ -61,12 +61,6 @@ const M365PostureReportPage = lazy(() => import("./pages/m365/M365PostureReportP
 const M365PosturePage = lazy(() => import("./pages/m365/M365PosturePage"));
 
 const OAuthCallbackPage = lazy(() => import("./pages/m365/OAuthCallbackPage"));
-const EntraIdPage = lazy(() => import("./pages/m365/EntraIdPage"));
-const EntraIdSecurityInsightsPage = lazy(() => import("./pages/m365/EntraIdSecurityInsightsPage"));
-const EntraIdApplicationInsightsPage = lazy(() => import("./pages/m365/EntraIdApplicationInsightsPage"));
-const EntraIdAnalysisPage = lazy(() => import("./pages/m365/EntraIdAnalysisPage"));
-
-const CollaborationPage = lazy(() => import("./pages/m365/CollaborationPage"));
 
 const M365AnalyzerDashboardPage = lazy(() => import("./pages/m365/M365AnalyzerDashboardPage"));
 const M365ServiceHealthPage = lazy(() => import("./pages/m365/M365ServiceHealthPage"));
@@ -159,16 +153,11 @@ const App = () => (
                   <Route path="/scope-m365/compliance/report/:reportId" element={<M365PostureReportPage />} />
                   <Route path="/scope-m365/compliance" element={<M365PosturePage />} />
                   <Route path="/scope-m365/oauth-callback" element={<OAuthCallbackPage />} />
-                  <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />
-                  <Route path="/scope-m365/entra-id/security-insights" element={<EntraIdSecurityInsightsPage />} />
-                  <Route path="/scope-m365/entra-id/applications" element={<EntraIdApplicationInsightsPage />} />
-                  <Route path="/scope-m365/entra-id/audit-logs" element={<Navigate to="/scope-m365/entra-id/security-insights" replace />} />
-                  <Route path="/scope-m365/entra-id/analysis" element={<EntraIdAnalysisPage />} />
                   
                   <Route path="/scope-m365/exchange-analyzer" element={<ExchangeAnalyzerPage />} />
                   <Route path="/scope-m365/entra-id-analyzer" element={<EntraIdAnalyzerPage />} />
                   <Route path="/scope-m365/teams-analyzer" element={<TeamsAnalyzerPage />} />
-                  <Route path="/scope-m365/collaboration" element={<CollaborationPage />} />
+                  
                   
                   <Route path="/scope-m365/analyzer" element={<M365AnalyzerDashboardPage />} />
                   <Route path="/scope-m365/service-health" element={<M365ServiceHealthPage />} />

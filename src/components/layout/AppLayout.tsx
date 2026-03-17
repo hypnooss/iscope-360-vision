@@ -142,9 +142,6 @@ const knownModuleNavConfigs: Record<string, { items: NavItem[]; icon: React.Comp
       { label: 'Entra ID Analyzer', href: '/scope-m365/entra-id-analyzer', icon: Shield },
       { label: 'Colaboração Analyzer', href: '/scope-m365/teams-analyzer', icon: Users },
       { label: 'Analyzer', href: '/scope-m365/analyzer', icon: Radar },
-      { label: 'Entra ID', href: '/scope-m365/entra-id', icon: Shield },
-      
-      { label: 'Colaboração', href: '/scope-m365/collaboration', icon: Users },
       { label: 'Saúde do 365', href: '/scope-m365/service-health', icon: HeartPulse },
       { label: 'Execuções', href: '/scope-m365/executions', icon: Activity },
     ],
