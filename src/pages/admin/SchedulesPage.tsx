@@ -969,27 +969,35 @@ function ScheduleTimeline({ targetId, tasks }: { targetId: string; tasks: Timeli
         <p className="text-xs text-muted-foreground py-2">Nenhuma execução neste período.</p>
       ) : (
         <TooltipProvider delayDuration={200}>
-          <div className="flex flex-wrap items-center gap-1.5 mt-1">
-            {filtered.map((t, i) => (
-              <Tooltip key={i}>
-                <TooltipTrigger asChild>
-                  <button
-                    className={cn(
-                      'w-3 h-3 rounded-full transition-transform hover:scale-150 focus:outline-none focus:ring-2 focus:ring-ring',
-                      TIMELINE_STATUS_COLORS[t.status] || 'bg-muted-foreground/50'
+          <div className="flex w-full h-5 rounded-md overflow-hidden bg-muted/30">
+            {filtered.map((t, i) => {
+              const STATUS_BAR_COLORS: Record<string, string> = {
+                completed: '#10b981',
+                failed: '#ef4444',
+                timeout: '#f59e0b',
+                running: '#3b82f6',
+                pending: '#6b7280',
+                cancelled: '#4b5563',
+              };
+              return (
+                <Tooltip key={i}>
+                  <TooltipTrigger asChild>
+                    <button
+                      className="h-full flex-1 min-w-[2px] transition-opacity hover:opacity-75 focus:outline-none focus:ring-1 focus:ring-ring focus:ring-inset"
+                      style={{ backgroundColor: STATUS_BAR_COLORS[t.status] || '#6b7280' }}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs max-w-[250px]">
+                    <div className="font-medium">{TIMELINE_STATUS_LABELS[t.status] || t.status}</div>
+                    <div className="text-muted-foreground">{formatShortDateTimeBR(t.created_at)}</div>
+                    <div className="text-muted-foreground">Duração: {formatTaskDuration(t)}</div>
+                    {t.error_message && (
+                      <div className="text-rose-400 mt-1 line-clamp-2">{t.error_message}</div>
                     )}
-                  />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs max-w-[250px]">
-                  <div className="font-medium">{TIMELINE_STATUS_LABELS[t.status] || t.status}</div>
-                  <div className="text-muted-foreground">{formatShortDateTimeBR(t.created_at)}</div>
-                  <div className="text-muted-foreground">Duração: {formatTaskDuration(t)}</div>
-                  {t.error_message && (
-                    <div className="text-rose-400 mt-1 line-clamp-2">{t.error_message}</div>
-                  )}
-                </TooltipContent>
-              </Tooltip>
-            ))}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
           </div>
         </TooltipProvider>
       )}
