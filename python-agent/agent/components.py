@@ -28,6 +28,7 @@ class ComponentManager:
     CERT_FILE = CERT_DIR / "m365.crt"
     KEY_FILE = CERT_DIR / "m365.key"
     THUMBPRINT_FILE = CERT_DIR / "m365.thumbprint"
+    PFX_FILE = CERT_DIR / "m365.pfx"
 
     def __init__(self, logger):
         self.logger = logger
