@@ -1100,13 +1100,13 @@ function ExecutionsTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')
-        .select('target_id, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
         .in('target_id', execTargetIds)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false })
         .limit(5000);
       if (error) throw error;
-      return (data || []) as TimelineTask[];
+      return (data || []) as (TimelineTask & { task_type: string })[];
     },
   });
 
