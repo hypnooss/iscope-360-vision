@@ -256,7 +256,7 @@ gpgkey=file:///etc/pki/rpm-gpg/microsoft.asc
 
     def _check_m365_certificate(self) -> bool:
         """Check if M365 certificate exists and is valid."""
-        if not self.CERT_FILE.exists() or not self.KEY_FILE.exists():
+        if not self.CERT_FILE.exists() or not self.KEY_FILE.exists() or not self.PFX_FILE.exists():
             return False
 
         # Check if certificate is still valid (not expired)
