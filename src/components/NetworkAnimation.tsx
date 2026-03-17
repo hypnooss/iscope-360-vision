@@ -188,8 +188,8 @@ function createSphereGeometry(count: number) {
 
     // Terrain plane positions - wide XZ spread with wavy Y
     const seed = Math.random();
-    const px = (seed * 2 - 1) * 6.0; // seeded but deterministic per particle
-    const pz = (Math.random() * 2 - 1) * 4.0;
+    const px = (seed * 2 - 1) * 8.0;
+    const pz = (Math.random() * 2 - 1) * 6.0;
     const py = Math.sin(px * 0.8) * Math.cos(pz * 0.6) * 0.3
              + Math.sin(px * 1.5 + pz * 0.9) * 0.15
              + Math.cos(pz * 1.2) * 0.1;
@@ -345,9 +345,9 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     const CAM_BASE_ROT_X = 0;
 
     // Terrain camera targets
-    const CAM_TERRAIN_Z = 8.5;
-    const CAM_TERRAIN_Y = 2.5;
-    const CAM_TERRAIN_ROT_X = -0.45; // look down at terrain
+    const CAM_TERRAIN_Z = 9.0;
+    const CAM_TERRAIN_Y = 1.2;
+    const CAM_TERRAIN_ROT_X = -0.25; // gentle look down at terrain
 
     const tick = () => {
       const elapsed = (performance.now() - start) * 0.001;
@@ -383,10 +383,7 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
       sphere.position.y = BASE_Y;
       halo.position.y = BASE_Y;
 
-      // Skip rendering if fully scrolled past
-      if (scrollProgress < 1.8) {
-        renderer.render(scene, camera);
-      }
+      renderer.render(scene, camera);
 
       frameId = window.requestAnimationFrame(tick);
     };
