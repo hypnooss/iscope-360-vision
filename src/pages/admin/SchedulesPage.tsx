@@ -421,6 +421,33 @@ function SchedulesTab() {
 
   const targetIds = useMemo(() => schedules.map(s => s.targetId), [schedules]);
 
+  // Firewall IDs that have compliance schedules (analysis_schedules)
+  const firewallComplianceIds = useMemo(() => {
+    return schedules.filter(s => s.targetType === 'firewall').map(s => s.targetId);
+  }, [schedules]);
+
+  // ── Dedicated query: latest fortigate_compliance task per firewall ──
+  const { data: latestComplianceTasks } = useQuery({
+    queryKey: ['admin-schedule-compliance-latest', firewallComplianceIds],
+    enabled: firewallComplianceIds.length > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, task_type, status, completed_at')
+        .eq('task_type', 'fortigate_compliance')
+        .in('target_id', firewallComplianceIds)
+        .order('completed_at', { ascending: false });
+      if (error) throw error;
+      const map = new Map<string, TaskRow>();
+      for (const task of (data || []) as any[]) {
+        const key = `${task.target_id}::firewall`;
+        if (!map.has(key)) map.set(key, task);
+      }
+      return map;
+    },
+  });
+
   const { data: latestTasks } = useQuery({
     queryKey: ['admin-schedule-tasks', targetIds],
     enabled: targetIds.length > 0,
@@ -433,7 +460,6 @@ function SchedulesTab() {
         .in('target_type', ['firewall', 'external_domain', 'm365_compliance', 'm365_tenant'])
         .order('completed_at', { ascending: false });
       if (error) throw error;
-      // Key by targetId + targetType so compliance and analyzer don't collide
       const map = new Map<string, TaskRow>();
       for (const task of (data || []) as any[]) {
         const mapped = mapTaskType(task.task_type, '');
@@ -446,6 +472,34 @@ function SchedulesTab() {
 
   // ── 7-day task history for timeline ──
   const sevenDaysAgo = useMemo(() => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), []);
+
+  // ── Dedicated: fortigate_compliance history (timeline) ──
+  const { data: complianceHistory } = useQuery({
+    queryKey: ['admin-schedule-compliance-history', firewallComplianceIds, sevenDaysAgo],
+    enabled: firewallComplianceIds.length > 0 && expandedIds.size > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .eq('task_type', 'fortigate_compliance')
+        .in('target_id', firewallComplianceIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(2000);
+      if (error) throw error;
+      return (data || []) as Array<{
+        target_id: string;
+        task_type: string;
+        status: string;
+        created_at: string;
+        started_at: string | null;
+        completed_at: string | null;
+        execution_time_ms: number | null;
+        error_message: string | null;
+      }>;
+    },
+  });
 
   const { data: taskHistory } = useQuery({
     queryKey: ['admin-schedule-task-history', targetIds, sevenDaysAgo],
@@ -525,11 +579,13 @@ function SchedulesTab() {
         if (diff >= 0 && diff < 6) next6h++;
         if (diff >= 0 && diff < 24) next24h++;
       }
-      const task = latestTasks?.get(`${s.targetId}::${s.targetType}`);
+      const task = s.targetType === 'firewall'
+        ? latestComplianceTasks?.get(`${s.targetId}::firewall`)
+        : latestTasks?.get(`${s.targetId}::${s.targetType}`);
       if (task && task.status === 'failed') failed++;
     }
     return { active, next1h, next6h, next24h, failed };
-  }, [schedules, latestTasks]);
+  }, [schedules, latestTasks, latestComplianceTasks]);
 
   const filtered = useMemo(() => {
     return schedules.filter(s => {
@@ -550,7 +606,10 @@ function SchedulesTab() {
   }, [schedules]);
 
   const renderTaskStatus = (targetId: string, targetType: TargetType) => {
-    const task = latestTasks?.get(`${targetId}::${targetType}`);
+    // Use dedicated compliance query for firewall compliance
+    const task = targetType === 'firewall'
+      ? latestComplianceTasks?.get(`${targetId}::firewall`)
+      : latestTasks?.get(`${targetId}::${targetType}`);
     if (!task) {
       return (
         <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-border gap-1">
@@ -777,6 +836,8 @@ function SchedulesTab() {
                               targetId={schedule.targetId}
                               tasks={schedule.targetType === 'attack_surface'
                                 ? (attackSurfaceHistory?.filter(t => t.target_id === schedule.targetId) || [])
+                                : schedule.targetType === 'firewall'
+                                ? (complianceHistory?.filter(t => t.target_id === schedule.targetId) || [])
                                 : (taskHistory?.filter(t => {
                                     if (t.target_id !== schedule.targetId) return false;
                                     const allowedTypes = TARGET_TO_TASK_TYPES[schedule.targetType] || [];
