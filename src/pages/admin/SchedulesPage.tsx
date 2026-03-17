@@ -1284,7 +1284,7 @@ function ExecutionsTab() {
                       </TableRow>
                       {isExpanded && (
                         <TableRow>
-                          <TableCell colSpan={8} className="p-0 border-b border-border/50">
+                          <TableCell colSpan={8} className="p-0 pb-2 border-b border-border/50">
                             <ScheduleTimeline
                               targetId={row.target_id}
                               tasks={execTaskHistory?.filter(t => t.target_id === row.target_id) || []}
