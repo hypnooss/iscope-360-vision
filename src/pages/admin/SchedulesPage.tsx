@@ -727,7 +727,7 @@ function SchedulesTab() {
                       </TableRow>
                       {isExpanded && (
                         <TableRow key={`${schedule.id}-timeline`}>
-                          <TableCell colSpan={10} className="p-0 border-b border-border/50">
+                          <TableCell colSpan={10} className="p-0 pb-2 border-b border-border/50">
                             <ScheduleTimeline
                               targetId={schedule.targetId}
                               tasks={taskHistory?.filter(t => t.target_id === schedule.targetId) || []}
