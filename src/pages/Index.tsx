@@ -457,7 +457,7 @@ const Index = () => {
         </Section>
 
         {/* ═══ CTA FINAL ═══ */}
-        <section id="cta" className="py-[120px] px-6 relative overflow-hidden">
+        <section id="cta" className="py-[120px] px-6 relative overflow-hidden bg-transparent">
           
 
           <motion.div

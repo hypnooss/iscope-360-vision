@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 const PARTICLE_COUNT = 25000;
-const ROTATION_SPEED = 0.000020;
+const ROTATION_SPEED = 0.00015;
 
 const vertexShader = `
   attribute float aAlpha;
