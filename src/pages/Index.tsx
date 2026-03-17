@@ -103,8 +103,8 @@ const Index = () => {
         <section className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
 
           {/* Globe — contained inside hero */}
-          <div className="absolute inset-0 z-0 flex items-center justify-center">
-            <div className="w-[min(90vw,700px)] h-[min(90vw,700px)]">
+          <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
+            <div className="w-[min(82vw,640px)] h-[min(82vw,640px)] max-w-full max-h-full">
               <NetworkAnimation className="w-full h-full" scrollProgress={scrollProgress} />
             </div>
           </div>
