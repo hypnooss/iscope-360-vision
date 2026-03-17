@@ -444,7 +444,7 @@ function SchedulesTab() {
         .select('target_id, status, created_at, started_at, completed_at, execution_time_ms, error_message')
         .in('target_id', targetIds)
         .gte('created_at', sevenDaysAgo)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(5000);
       if (error) throw error;
       return (data || []) as Array<{
