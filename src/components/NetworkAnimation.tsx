@@ -137,63 +137,49 @@ const vertexShader = `
   }
 
   void main() {
-    // Compute noise for this particle
+    // === noise (matches MazeHQ exactly):
     vNoise = fbm(position * uFrequency);
 
-    // Noise-driven color mixing
+    // === color (matches MazeHQ — note: blue channel uses uGcolor, not uBcolor, matching their source):
     float noiseFactor = clamp(vNoise, 0.0, 1.0) * 4.0;
     float r = uRcolor / 255.0 + (noiseFactor * (uRnoise - uRcolor) / 255.0);
     float g = uGcolor / 255.0 + (noiseFactor * (uGnoise - uGcolor) / 255.0);
-    float b = uBcolor / 255.0 + (noiseFactor * (uBnoise - uBcolor) / 255.0);
+    float b = uBcolor / 255.0 + (noiseFactor * (uBnoise - uGcolor) / 255.0);
     vColor = vec3(r, g, b);
 
-    // --- Sphere position with tangential drift ---
-    vec3 normal = normalize(position);
-    float baseRadius = length(position);
+    // === Sphere displacement (MazeHQ approach):
+    // 1. Blob wave — organic surface deformation
+    vec3 displaced = position * (1.0 + uAmplitude * vNoise);
+    // 2. Noise scatter — particles drift around the surface
+    displaced += vec3(uScale * uDepth * aMove * aSpeed * snoise2d(vec2(aIndex, uTime * uSpeed)));
 
-    vec3 up = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-    vec3 tangent = normalize(cross(up, normal));
-    vec3 bitangent = cross(normal, tangent);
-
-    float driftAngle = aRandomness.x * 6.2831853;
-    float driftNoise1 = snoise2d(vec2(aIndex * 0.01, uTime * uSpeed));
-    float driftNoise2 = snoise2d(vec2(aIndex * 0.01 + 100.0, uTime * uSpeed * 0.7));
-
-    float driftAmount = uScale * uDepth * 8.0;
-    vec3 surfaceOffset = tangent * (cos(driftAngle) * driftNoise1 * driftAmount * aSpeed.x)
-                       + bitangent * (sin(driftAngle) * driftNoise2 * driftAmount * aSpeed.y);
-
-    vec3 drifted = position + surfaceOffset;
-    drifted = normalize(drifted) * baseRadius;
-
-    vec3 spherePos = drifted * (1.0 + uAmplitude * vNoise * 0.3);
+    vec3 spherePos = displaced;
 
     // --- Flat "sand" position with visible zig-zag ridges across depth ---
-      float lateral = snoise2d(vec2(aFlatPosition.z * 0.8, aFlatPosition.x * 0.25 + uTime * 0.05)) * 0.006;
+    float lateral = snoise2d(vec2(aFlatPosition.z * 0.8, aFlatPosition.x * 0.25 + uTime * 0.05)) * 0.006;
     float ridge = sin(aFlatPosition.z * 8.0 + aFlatPosition.x * 0.35 + uTime * 0.12) * 0.028;
     float ridgeDetail = sin(aFlatPosition.z * 15.0 - aFlatPosition.x * 0.18 - uTime * 0.08) * 0.009;
     float microNoise = snoise2d(vec2(aFlatPosition.x * 0.32 + uTime * 0.04, aFlatPosition.z * 0.22)) * 0.004;
     vec3 flatPos = aFlatPosition + vec3(lateral, ridge + ridgeDetail + microNoise, 0.0);
 
     // --- Morph between sphere and flat ---
-    // Use smoothstep for organic easing
     float morphEased = smoothstep(0.0, 1.0, uMorph);
     vec3 finalPos = mix(spherePos, flatPos, morphEased);
 
-    // Final position
+    // === general position (matches MazeHQ):
     vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-    // Point size — preserve globe density, tighten sand particles
-    float sizeMultiplier = mix(1.0, 0.42, morphEased);
+    // === point size (MazeHQ base + sand morph adjustment):
     vDistance = -mvPosition.z;
+    float sizeMultiplier = mix(1.0, 0.42, morphEased);
     gl_PointSize = uSize * sizeMultiplier * (100.0 / vDistance) * uPixelRatio;
-    gl_PointSize = clamp(gl_PointSize, 0.6, 56.0);
+    gl_PointSize = clamp(gl_PointSize, 1.0, 100.0);
 
-    // Alpha — lighter depth fade so the ridges stay readable
+    // === transparency (MazeHQ base: uAlpha * aAlpha * 300/dist, with sand depth fade):
     float depthFade = 1.0 - smoothstep(-1.2, 1.4, aFlatPosition.z) * 0.35;
     float alphaMultiplier = mix(1.0, 0.9 * depthFade, morphEased);
-    vAlpha = uAlpha * aAlpha * alphaMultiplier * (240.0 / vDistance);
+    vAlpha = uAlpha * aAlpha * alphaMultiplier * (300.0 / vDistance);
 
     // Size — mild depth perspective in sand state
     float depthSize = mix(1.0, 0.65 + 0.35 * (1.0 - smoothstep(-1.2, 1.4, aFlatPosition.z)), morphEased);
