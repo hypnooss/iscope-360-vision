@@ -205,6 +205,16 @@ const TASK_TYPE_TO_TARGET: Record<string, TargetType> = {
   attack_surface_scan: 'attack_surface',
 };
 
+// Reverse mapping: targetType → list of task_types that belong to it
+const TARGET_TO_TASK_TYPES: Record<TargetType, string[]> = {
+  firewall: ['fortigate_compliance'],
+  firewall_analyzer: ['fortigate_analyzer'],
+  external_domain: ['external_domain_compliance'],
+  m365_compliance: ['m365_compliance', 'm365_powershell'],
+  m365_analyzer: ['m365_analyzer'],
+  attack_surface: ['attack_surface_scan'],
+};
+
 function mapTaskType(taskType: string, targetType: string): TargetType {
   if (TASK_TYPE_TO_TARGET[taskType]) return TASK_TYPE_TO_TARGET[taskType];
   if (targetType === 'firewall') return 'firewall';
@@ -418,14 +428,17 @@ function SchedulesTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')
-        .select('target_id, status, completed_at')
+        .select('target_id, task_type, status, completed_at')
         .in('target_id', targetIds)
         .in('target_type', ['firewall', 'external_domain', 'm365_compliance', 'm365_tenant'])
         .order('completed_at', { ascending: false });
       if (error) throw error;
+      // Key by targetId + targetType so compliance and analyzer don't collide
       const map = new Map<string, TaskRow>();
-      for (const task of (data || []) as TaskRow[]) {
-        if (!map.has(task.target_id)) map.set(task.target_id, task);
+      for (const task of (data || []) as any[]) {
+        const mapped = mapTaskType(task.task_type, '');
+        const key = `${task.target_id}::${mapped}`;
+        if (!map.has(key)) map.set(key, task);
       }
       return map;
     },
@@ -441,7 +454,7 @@ function SchedulesTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')
-        .select('target_id, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
         .in('target_id', targetIds)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false })
@@ -449,6 +462,7 @@ function SchedulesTab() {
       if (error) throw error;
       return (data || []) as Array<{
         target_id: string;
+        task_type: string;
         status: string;
         created_at: string;
         started_at: string | null;
@@ -504,8 +518,8 @@ function SchedulesTab() {
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [schedules]);
 
-  const renderTaskStatus = (targetId: string) => {
-    const task = latestTasks?.get(targetId);
+  const renderTaskStatus = (targetId: string, targetType: TargetType) => {
+    const task = latestTasks?.get(`${targetId}::${targetType}`);
     if (!task) {
       return (
         <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-border gap-1">
@@ -716,7 +730,7 @@ function SchedulesTab() {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        <TableCell>{renderTaskStatus(schedule.targetId)}</TableCell>
+                        <TableCell>{renderTaskStatus(schedule.targetId, schedule.targetType)}</TableCell>
                         <TableCell>
                           {schedule.isActive ? (
                             <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Ativo</Badge>
@@ -730,7 +744,11 @@ function SchedulesTab() {
                           <TableCell colSpan={10} className="p-0 pb-2 border-b border-border/50">
                             <ScheduleTimeline
                               targetId={schedule.targetId}
-                              tasks={taskHistory?.filter(t => t.target_id === schedule.targetId) || []}
+                              tasks={taskHistory?.filter(t => {
+                                if (t.target_id !== schedule.targetId) return false;
+                                const allowedTypes = TARGET_TO_TASK_TYPES[schedule.targetType] || [];
+                                return allowedTypes.includes(t.task_type);
+                              }) || []}
                             />
                           </TableCell>
                         </TableRow>
@@ -1082,13 +1100,13 @@ function ExecutionsTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')
-        .select('target_id, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
         .in('target_id', execTargetIds)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false })
         .limit(5000);
       if (error) throw error;
-      return (data || []) as TimelineTask[];
+      return (data || []) as (TimelineTask & { task_type: string })[];
     },
   });
 
@@ -1287,7 +1305,7 @@ function ExecutionsTab() {
                           <TableCell colSpan={8} className="p-0 pb-2 border-b border-border/50">
                             <ScheduleTimeline
                               targetId={row.target_id}
-                              tasks={execTaskHistory?.filter(t => t.target_id === row.target_id) || []}
+                              tasks={execTaskHistory?.filter(t => t.target_id === row.target_id && t.task_type === row.task_type) || []}
                             />
                           </TableCell>
                         </TableRow>
