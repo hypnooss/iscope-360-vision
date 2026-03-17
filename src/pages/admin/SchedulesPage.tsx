@@ -691,11 +691,13 @@ function SchedulesTab() {
         ? latestComplianceTasks?.get(`${s.targetId}::firewall`)
         : s.targetType === 'external_domain'
         ? latestDomainTasks?.get(`${s.targetId}::external_domain`)
+        : s.targetType === 'firewall_analyzer'
+        ? latestAnalyzerTasks?.get(`${s.targetId}::firewall_analyzer`)
         : latestTasks?.get(`${s.targetId}::${s.targetType}`);
       if (task && task.status === 'failed') failed++;
     }
     return { active, next1h, next6h, next24h, failed };
-  }, [schedules, latestTasks, latestComplianceTasks, latestDomainTasks]);
+  }, [schedules, latestTasks, latestComplianceTasks, latestDomainTasks, latestAnalyzerTasks]);
 
   const filtered = useMemo(() => {
     return schedules.filter(s => {
