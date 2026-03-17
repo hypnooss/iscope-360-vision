@@ -349,8 +349,12 @@ const Index = () => {
         </Section>
 
         {/* ═══ STEPPED SHOWCASE (MazeHQ-style) ═══ */}
-        <SteppedShowcase />
-
+        <div id="showcase">
+          <SteppedShowcase />
+          <div className="flex justify-center pb-[120px]">
+            <ScrollDown targetId="testimonials" />
+          </div>
+        </div>
         {/* Integrations and Compliance sections removed */}
 
         {/* ═══ TESTIMONIALS ═══ */}
