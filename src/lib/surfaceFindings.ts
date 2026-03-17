@@ -510,6 +510,15 @@ export interface FindingsAsset {
 export function generateFindings(assets: FindingsAsset[]): SurfaceFinding[] {
   const findings: SurfaceFinding[] = [];
   let idCounter = 0;
+
+  // DEBUG: log assets tech info for diagnosing missing findings
+  console.log('[generateFindings] assets count:', assets.length);
+  for (const a of assets) {
+    const nextReact = a.allTechs.filter(t => /next|react/i.test(t));
+    if (nextReact.length > 0) {
+      console.log(`[generateFindings] ${a.ip} (${a.hostname}) techs:`, nextReact);
+    }
+  }
   const nextId = (prefix: string) => `${prefix}-${++idCounter}`;
 
   // ── 1. Risky Services ─────────────────────────────────────

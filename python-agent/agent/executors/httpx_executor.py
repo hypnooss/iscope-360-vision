@@ -378,6 +378,7 @@ class HttpxExecutor(BaseExecutor):
                 base_url = entry.get('url', '')
                 
                 if body:
+                    self.logger.info(f"[httpx] Got response body ({len(body)} bytes) for {base_url}")
                     body_techs = self._fingerprint_body(body)
                     for t in body_techs:
                         if t not in technologies:
@@ -397,6 +398,39 @@ class HttpxExecutor(BaseExecutor):
                                 )
                         except Exception as e:
                             self.logger.warning(f"[httpx] Version probe failed for {base_url}: {e}")
+                else:
+                    self.logger.warning(f"[httpx] No response body in httpx output for {base_url}")
+
+                # ── Fallback: fetch page ourselves when body is empty ──
+                # Wappalyzer tech-detect works independently of body,
+                # so we may have framework names but no body to probe versions from.
+                if not body:
+                    has_nextjs_fb = any('Next.js' in t for t in technologies)
+                    has_react_fb = any('React' in t for t in technologies)
+
+                    if (has_nextjs_fb or has_react_fb) and base_url:
+                        self.logger.info(
+                            f"[httpx] Body empty but Wappalyzer detected frameworks "
+                            f"({', '.join(t for t in technologies if 'Next' in t or 'React' in t)}), "
+                            f"fetching {base_url} manually"
+                        )
+                        fetched_body = self._fetch_chunk(base_url, max_bytes=102400)
+                        if fetched_body:
+                            self.logger.info(f"[httpx] Fallback fetched {len(fetched_body)} bytes from {base_url}")
+                            # Fingerprint the fetched body too
+                            fb_techs = self._fingerprint_body(fetched_body)
+                            for t in fb_techs:
+                                if t not in technologies:
+                                    technologies.append(t)
+                            try:
+                                versions = self._probe_versions(base_url, fetched_body)
+                                if versions:
+                                    technologies = self._apply_versions(technologies, versions)
+                                    self.logger.info(f"[httpx] Fallback version probe results for {base_url}: {versions}")
+                            except Exception as e:
+                                self.logger.warning(f"[httpx] Fallback version probe failed for {base_url}: {e}")
+                        else:
+                            self.logger.warning(f"[httpx] Fallback fetch failed for {base_url}")
 
                 service = {
                     'url': entry.get('url', ''),
