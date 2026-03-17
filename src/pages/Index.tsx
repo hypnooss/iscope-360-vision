@@ -97,68 +97,53 @@ const Index = () => {
     <div className="min-h-screen bg-background text-foreground flex flex-col relative">
       <Header />
 
+      {/* ═══ GLOBE BACKGROUND — Fixed full-screen layer like MazeHQ .s-gfx ═══ */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <NetworkAnimation className="w-full h-full" />
+      </div>
+
       <main className="flex-1 relative z-10">
 
         {/* ═══ HERO ═══ */}
-        <section className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
+        <section className="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
 
-          {/* Globe — oversized and centered behind copy like MazeHQ */}
-          <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
-            <div className="w-[min(96vw,1120px)] h-[min(96vw,1120px)] max-w-none max-h-none -translate-y-[2%] opacity-90">
-              <NetworkAnimation className="w-full h-full" scrollProgress={scrollProgress} />
-            </div>
-          </div>
-
-          {/* Copy — centered overlay */}
+          {/* Copy — centered overlay on top of globe */}
           <motion.div
             initial="hidden"
             animate="visible"
             variants={stagger}
-            className="relative z-10 text-center max-w-[1080px] mx-auto"
+            className="relative z-10 text-center max-w-[960px] mx-auto"
           >
-            <Reveal>
-              <p className="text-[11px] uppercase tracking-[0.38em] text-primary/80 font-bold mb-7 font-mono">
-                Plataforma de Segurança &amp; Compliance
-              </p>
-            </Reveal>
             <Reveal delay={0.1}>
-              <h1 className="font-heading text-[3.2rem] sm:text-[4.4rem] lg:text-[6.2rem] font-extrabold leading-[0.95] tracking-[-0.04em] mb-7 text-foreground">
+              <h1 className="font-heading text-[2.8rem] sm:text-[3.8rem] lg:text-[5.2rem] font-extrabold leading-[0.95] tracking-[-0.035em] mb-6 text-foreground">
                 Visibilidade inteligente{' '}
-                <span className="text-primary">para sua infraestrutura</span>
+                <span className="block text-primary">para sua infraestrutura</span>
               </h1>
             </Reveal>
-            <Reveal delay={0.2}>
-              <p className="text-[1.05rem] sm:text-[1.2rem] text-muted-foreground/78 max-w-[720px] mx-auto mb-11 leading-relaxed">
+            <Reveal delay={0.25}>
+              <p className="text-[1rem] sm:text-[1.15rem] text-muted-foreground/70 max-w-[620px] mx-auto mb-10 leading-relaxed">
                 Plataforma completa para análise de compliance, segurança e
                 boas práticas da sua infraestrutura.
               </p>
             </Reveal>
-            <Reveal delay={0.3}>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button
-                  size="lg"
-                  onClick={() => navigate('/auth')}
-                  className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300"
-                >
-                  Acessar Plataforma <ArrowRight className="w-4 h-4" />
-                </Button>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={() => document.querySelector('#how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
-                  className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300 bg-background/5 backdrop-blur-sm"
-                >
-                  Ver como funciona
-                </Button>
-              </div>
-            </Reveal>
           </motion.div>
 
+          {/* Client logos bar at bottom — like MazeHQ */}
+          <div className="absolute bottom-24 left-0 right-0 z-10">
+            <div className="max-w-[1000px] mx-auto px-6 flex items-center justify-center gap-12 opacity-40">
+              {['Alloy', 'Cohere', 'Forge', 'Lattice', 'Axiom'].map((name) => (
+                <span key={name} className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
+                  {name}
+                </span>
+              ))}
+            </div>
+          </div>
+
           {/* Scroll indicator */}
-          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
-            <span className="text-[10px] uppercase tracking-[0.32em] font-mono text-muted-foreground/60">Scroll</span>
-            <div className="relative w-px h-10 bg-muted-foreground/15 rounded-full overflow-hidden">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[3px] h-[8px] rounded-full bg-primary/70 animate-scroll-dot" />
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-10">
+            <span className="text-[10px] uppercase tracking-[0.32em] font-mono text-muted-foreground/50">Scroll down</span>
+            <div className="relative w-px h-8 bg-muted-foreground/15 rounded-full overflow-hidden">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[3px] h-[8px] rounded-full bg-primary/60 animate-scroll-dot" />
             </div>
           </div>
         </section>
