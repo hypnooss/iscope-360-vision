@@ -727,7 +727,7 @@ function SchedulesTab() {
                       </TableRow>
                       {isExpanded && (
                         <TableRow key={`${schedule.id}-timeline`}>
-                          <TableCell colSpan={10} className="p-0 border-b border-border/50">
+                          <TableCell colSpan={10} className="p-0 pb-2 border-b border-border/50">
                             <ScheduleTimeline
                               targetId={schedule.targetId}
                               tasks={taskHistory?.filter(t => t.target_id === schedule.targetId) || []}
@@ -817,8 +817,8 @@ function ScheduleTimeline({ targetId, tasks }: { targetId: string; tasks: Timeli
   };
 
   return (
-    <div className="px-6 py-4 bg-muted/20">
-      <div className="flex items-center justify-between mb-3">
+    <div className="px-6 py-6 bg-muted/20">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-1">
           {(['24h', '48h', '7d'] as const).map(p => (
             <Button
@@ -853,7 +853,7 @@ function ScheduleTimeline({ targetId, tasks }: { targetId: string; tasks: Timeli
         <p className="text-xs text-muted-foreground py-2">Nenhuma execução neste período.</p>
       ) : (
         <TooltipProvider delayDuration={200}>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
             {filtered.map((t, i) => (
               <Tooltip key={i}>
                 <TooltipTrigger asChild>
@@ -1284,7 +1284,7 @@ function ExecutionsTab() {
                       </TableRow>
                       {isExpanded && (
                         <TableRow>
-                          <TableCell colSpan={8} className="p-0 border-b border-border/50">
+                          <TableCell colSpan={8} className="p-0 pb-2 border-b border-border/50">
                             <ScheduleTimeline
                               targetId={row.target_id}
                               tasks={execTaskHistory?.filter(t => t.target_id === row.target_id) || []}
