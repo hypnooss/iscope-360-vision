@@ -28,6 +28,7 @@ class ComponentManager:
     CERT_FILE = CERT_DIR / "m365.crt"
     KEY_FILE = CERT_DIR / "m365.key"
     THUMBPRINT_FILE = CERT_DIR / "m365.thumbprint"
+    PFX_FILE = CERT_DIR / "m365.pfx"
 
     def __init__(self, logger):
         self.logger = logger
@@ -236,7 +237,7 @@ gpgkey=file:///etc/pki/rpm-gpg/microsoft.asc
             "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; "
             "Install-Module -Name ExchangeOnlineManagement -Scope AllUsers -Force -AllowClobber; "
             "Install-Module -Name Microsoft.Graph.Authentication -Scope AllUsers -Force -AllowClobber; "
-            "Install-Module -Name PnP.PowerShell -Scope AllUsers -Force -AllowClobber"
+            "Install-Module -Name PnP.PowerShell -Scope AllUsers -Force -AllowClobber -AcceptLicense"
         )
 
         result = subprocess.run(
@@ -255,7 +256,7 @@ gpgkey=file:///etc/pki/rpm-gpg/microsoft.asc
 
     def _check_m365_certificate(self) -> bool:
         """Check if M365 certificate exists and is valid."""
-        if not self.CERT_FILE.exists() or not self.KEY_FILE.exists():
+        if not self.CERT_FILE.exists() or not self.KEY_FILE.exists() or not self.PFX_FILE.exists():
             return False
 
         # Check if certificate is still valid (not expired)
@@ -291,6 +292,27 @@ gpgkey=file:///etc/pki/rpm-gpg/microsoft.asc
         # Set secure permissions
         os.chmod(self.KEY_FILE, 0o600)
         os.chmod(self.CERT_FILE, 0o644)
+
+        # Gerar PFX para CBA com PnP.PowerShell (com fallback sem -legacy para OpenSSL < 3)
+        try:
+            subprocess.run([
+                "openssl", "pkcs12", "-export",
+                "-out", str(self.PFX_FILE),
+                "-inkey", str(self.KEY_FILE),
+                "-in", str(self.CERT_FILE),
+                "-passout", "pass:",
+                "-legacy"
+            ], check=True, capture_output=True)
+        except subprocess.CalledProcessError:
+            subprocess.run([
+                "openssl", "pkcs12", "-export",
+                "-out", str(self.PFX_FILE),
+                "-inkey", str(self.KEY_FILE),
+                "-in", str(self.CERT_FILE),
+                "-passout", "pass:"
+            ], check=True, capture_output=True)
+
+        os.chmod(self.PFX_FILE, 0o600)
 
         # Calculate and save thumbprint (SHA1 fingerprint)
         result = subprocess.run(
