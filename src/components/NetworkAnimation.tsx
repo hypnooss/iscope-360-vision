@@ -188,8 +188,8 @@ function createSphereGeometry(count: number) {
 
     // Terrain plane positions - wide XZ spread with wavy Y
     const seed = Math.random();
-    const px = (seed * 2 - 1) * 6.0; // seeded but deterministic per particle
-    const pz = (Math.random() * 2 - 1) * 4.0;
+    const px = (seed * 2 - 1) * 8.0;
+    const pz = (Math.random() * 2 - 1) * 6.0;
     const py = Math.sin(px * 0.8) * Math.cos(pz * 0.6) * 0.3
              + Math.sin(px * 1.5 + pz * 0.9) * 0.15
              + Math.cos(pz * 1.2) * 0.1;
