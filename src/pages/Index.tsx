@@ -345,6 +345,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
+          <ScrollDown targetId="showcase" />
         </Section>
 
         {/* ═══ STEPPED SHOWCASE (MazeHQ-style) ═══ */}
