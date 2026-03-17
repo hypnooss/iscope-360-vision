@@ -198,21 +198,21 @@ function renderTypeBadge(type: TargetType) {
 const TASK_TYPE_TO_TARGET: Record<string, TargetType> = {
   fortigate_compliance: 'firewall',
   fortigate_analyzer: 'firewall_analyzer',
-  external_domain_compliance: 'external_domain',
+  external_domain_analysis: 'external_domain',
   m365_compliance: 'm365_compliance',
   m365_powershell: 'm365_compliance',
   m365_analyzer: 'm365_analyzer',
-  attack_surface_scan: 'attack_surface',
 };
 
 // Reverse mapping: targetType → list of task_types that belong to it
+// attack_surface uses attack_surface_snapshots table, not agent_tasks
 const TARGET_TO_TASK_TYPES: Record<TargetType, string[]> = {
   firewall: ['fortigate_compliance'],
   firewall_analyzer: ['fortigate_analyzer'],
-  external_domain: ['external_domain_compliance'],
+  external_domain: ['external_domain_analysis'],
   m365_compliance: ['m365_compliance', 'm365_powershell'],
   m365_analyzer: ['m365_analyzer'],
-  attack_surface: ['attack_surface_scan'],
+  attack_surface: [],
 };
 
 function mapTaskType(taskType: string, targetType: string): TargetType {
@@ -473,6 +473,37 @@ function SchedulesTab() {
     },
   });
 
+  // ── Attack Surface snapshot history (separate table) ──
+  const attackSurfaceClientIds = useMemo(() => {
+    return schedules.filter(s => s.targetType === 'attack_surface').map(s => s.targetId);
+  }, [schedules]);
+
+  const { data: attackSurfaceHistory } = useQuery({
+    queryKey: ['admin-schedule-as-history', attackSurfaceClientIds, sevenDaysAgo],
+    enabled: attackSurfaceClientIds.length > 0 && expandedIds.size > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attack_surface_snapshots')
+        .select('id, client_id, status, created_at, completed_at')
+        .in('client_id', attackSurfaceClientIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      return (data || []).map((s: any) => ({
+        target_id: s.client_id,
+        task_type: 'attack_surface_snapshot',
+        status: s.status === 'completed' ? 'completed' : s.status === 'pending' ? 'pending' : s.status === 'running' ? 'running' : s.status,
+        created_at: s.created_at,
+        started_at: s.created_at,
+        completed_at: s.completed_at,
+        execution_time_ms: s.completed_at && s.created_at ? new Date(s.completed_at).getTime() - new Date(s.created_at).getTime() : null,
+        error_message: null,
+      }));
+    },
+  });
+
   const toggleExpanded = useCallback((id: string) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
@@ -494,7 +525,7 @@ function SchedulesTab() {
         if (diff >= 0 && diff < 6) next6h++;
         if (diff >= 0 && diff < 24) next24h++;
       }
-      const task = latestTasks?.get(s.targetId);
+      const task = latestTasks?.get(`${s.targetId}::${s.targetType}`);
       if (task && task.status === 'failed') failed++;
     }
     return { active, next1h, next6h, next24h, failed };
@@ -744,11 +775,14 @@ function SchedulesTab() {
                           <TableCell colSpan={10} className="p-0 pb-2 border-b border-border/50">
                             <ScheduleTimeline
                               targetId={schedule.targetId}
-                              tasks={taskHistory?.filter(t => {
-                                if (t.target_id !== schedule.targetId) return false;
-                                const allowedTypes = TARGET_TO_TASK_TYPES[schedule.targetType] || [];
-                                return allowedTypes.includes(t.task_type);
-                              }) || []}
+                              tasks={schedule.targetType === 'attack_surface'
+                                ? (attackSurfaceHistory?.filter(t => t.target_id === schedule.targetId) || [])
+                                : (taskHistory?.filter(t => {
+                                    if (t.target_id !== schedule.targetId) return false;
+                                    const allowedTypes = TARGET_TO_TASK_TYPES[schedule.targetType] || [];
+                                    return allowedTypes.includes(t.task_type);
+                                  }) || [])
+                              }
                             />
                           </TableCell>
                         </TableRow>
