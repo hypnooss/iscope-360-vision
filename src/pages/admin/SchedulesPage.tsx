@@ -280,6 +280,7 @@ function SchedulesTab() {
   const [filterWorkspace, setFilterWorkspace] = useState('all');
   const [filterFrequency, setFilterFrequency] = useState('all');
   const [filterType, setFilterType] = useState('all');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const [, setTick] = useState(0);
   useEffect(() => {
