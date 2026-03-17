@@ -817,7 +817,7 @@ function ScheduleTimeline({ targetId, tasks }: { targetId: string; tasks: Timeli
   };
 
   return (
-    <div className="px-6 py-6 bg-muted/20">
+    <div className="pl-16 pr-6 py-6 bg-muted/20">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-1">
           {(['24h', '48h', '7d'] as const).map(p => (
