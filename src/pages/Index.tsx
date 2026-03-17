@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/Header';
 import { NetworkAnimation } from '@/components/NetworkAnimation';
+import { ScrollDown } from '@/components/landing/ScrollDown';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 import {
@@ -130,11 +131,8 @@ const Index = () => {
           </motion.div>
 
           {/* Scroll indicator */}
-          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-10">
-            <span className="text-[10px] uppercase tracking-[0.32em] font-mono text-muted-foreground/50">Scroll down</span>
-            <div className="relative w-px h-8 bg-muted-foreground/15 rounded-full overflow-hidden">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[3px] h-[8px] rounded-full bg-primary/60 animate-scroll-dot" />
-            </div>
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10">
+            <ScrollDown targetId="problem" />
           </div>
         </section>
 
@@ -223,10 +221,11 @@ const Index = () => {
               </div>
             </Reveal>
           </div>
+          <ScrollDown targetId="real-problem" />
         </Section>
 
         {/* ═══ THE REAL PROBLEM ═══ */}
-        <Section>
+        <Section id="real-problem">
           <Reveal>
             <div className="text-center mb-6">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-destructive/20 bg-destructive/5 text-destructive text-xs font-mono uppercase tracking-wider mb-8">
@@ -276,6 +275,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
+          <ScrollDown targetId="how-it-works" />
         </Section>
 
         {/* ═══ HOW IT WORKS ═══ */}
@@ -311,6 +311,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
+          <ScrollDown targetId="features" />
         </Section>
 
         {/* ═══ FEATURES ═══ */}
@@ -344,15 +345,20 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
+          <ScrollDown targetId="showcase" />
         </Section>
 
         {/* ═══ STEPPED SHOWCASE (MazeHQ-style) ═══ */}
-        <SteppedShowcase />
-
+        <div id="showcase">
+          <SteppedShowcase />
+          <div className="flex justify-center pb-[120px]">
+            <ScrollDown targetId="testimonials" />
+          </div>
+        </div>
         {/* Integrations and Compliance sections removed */}
 
         {/* ═══ TESTIMONIALS ═══ */}
-        <Section>
+        <Section id="testimonials">
           <Reveal>
             <div className="text-center mb-16">
               <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4">
@@ -385,6 +391,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
+          <ScrollDown targetId="blog" />
         </Section>
 
         {/* ═══ BLOG / INSIGHTS ═══ */}
@@ -431,6 +438,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
+          <ScrollDown targetId="cta" />
         </Section>
 
         {/* ═══ CTA FINAL ═══ */}
