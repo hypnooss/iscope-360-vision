@@ -156,7 +156,7 @@ const Index = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
             {/* CVEs por ano */}
             <Reveal delay={0}>
-              <div className="text-center md:text-left">
+              <div className="glass-container p-6 text-center md:text-left h-full">
                 <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
                   21,500+
                 </div>
@@ -181,7 +181,7 @@ const Index = () => {
 
             {/* Tempo de exploração */}
             <Reveal delay={0.15}>
-              <div className="text-center md:text-left">
+              <div className="glass-container p-6 text-center md:text-left h-full">
                 <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
                   5 dias
                 </div>
@@ -203,7 +203,7 @@ const Index = () => {
 
             {/* Custo médio de breach */}
             <Reveal delay={0.3}>
-              <div className="text-center md:text-left">
+              <div className="glass-container p-6 text-center md:text-left h-full">
                 <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
                   $4.88M
                 </div>
@@ -301,7 +301,7 @@ const Index = () => {
             ].map((step, i) => (
               <Reveal key={step.num} delay={i * 0.12}>
                 <div className="text-center relative">
-                  <div className="inline-flex items-center justify-center w-[4.5rem] h-[4.5rem] rounded-2xl bg-card border border-border/40 mb-6 relative z-10 shadow-lg shadow-background/50">
+                  <div className="inline-flex items-center justify-center w-[4.5rem] h-[4.5rem] rounded-2xl bg-card/60 backdrop-blur-xl border border-border/30 mb-6 relative z-10 shadow-lg shadow-background/50">
                     <step.icon className="w-6 h-6 text-primary" />
                   </div>
                   <div className="text-xs font-mono text-primary/60 mb-2 tracking-wider">{step.num}</div>
