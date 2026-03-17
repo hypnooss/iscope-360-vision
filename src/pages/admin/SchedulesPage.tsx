@@ -660,9 +660,11 @@ function SchedulesTab() {
   }, [schedules]);
 
   const renderTaskStatus = (targetId: string, targetType: TargetType) => {
-    // Use dedicated compliance query for firewall compliance
+    // Use dedicated queries for firewall compliance and domain
     const task = targetType === 'firewall'
       ? latestComplianceTasks?.get(`${targetId}::firewall`)
+      : targetType === 'external_domain'
+      ? latestDomainTasks?.get(`${targetId}::external_domain`)
       : latestTasks?.get(`${targetId}::${targetType}`);
     if (!task) {
       return (
