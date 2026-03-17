@@ -383,12 +383,17 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     const points = new THREE.Points(geometry, material);
     scene.add(points);
 
-    // ── Resize ──
+    // ── Resize (dynamic scale like MazeHQ) ──
     const resize = () => {
       const rect = container.getBoundingClientRect();
       renderer.setSize(rect.width, rect.height);
       camera.aspect = rect.width / rect.height;
       camera.updateProjectionMatrix();
+
+      const scaleFactor = Math.min(rect.width, rect.height) * 0.75;
+      points.scale.setScalar(scaleFactor * 0.28);
+      uniforms.uScale.value = scaleFactor * 0.01;
+      uniforms.uPixelRatio.value = Math.min(window.devicePixelRatio, 2);
     };
     resize();
     window.addEventListener("resize", resize);
