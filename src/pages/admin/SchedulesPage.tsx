@@ -675,6 +675,7 @@ function SchedulesTab() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10"></TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Workspace</TableHead>
@@ -687,35 +688,55 @@ function SchedulesTab() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map(schedule => (
-                  <TableRow key={schedule.id}>
-                    <TableCell>{renderTypeBadge(schedule.targetType)}</TableCell>
-                    <TableCell className="font-medium text-foreground">{schedule.targetName}</TableCell>
-                    <TableCell className="text-muted-foreground">{schedule.clientName}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={FREQUENCY_COLORS[schedule.frequency] || ''}>
-                        {FREQUENCY_LABELS[schedule.frequency] || schedule.frequency}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{getScheduleDescription(schedule)}</TableCell>
-                    <TableCell>{renderNextRunShared(schedule.nextRunAt)}</TableCell>
-                    <TableCell>
-                      {schedule.lastScore !== null && schedule.lastScore !== undefined ? (
-                        <Badge variant="outline" className={getScoreColor(schedule.lastScore)}>{schedule.lastScore}</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
+                {filtered.map(schedule => {
+                  const isExpanded = expandedIds.has(schedule.id);
+                  return (
+                    <>
+                      <TableRow key={schedule.id} className="cursor-pointer" onClick={() => toggleExpanded(schedule.id)}>
+                        <TableCell className="w-10 px-2">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); toggleExpanded(schedule.id); }}>
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </Button>
+                        </TableCell>
+                        <TableCell>{renderTypeBadge(schedule.targetType)}</TableCell>
+                        <TableCell className="font-medium text-foreground">{schedule.targetName}</TableCell>
+                        <TableCell className="text-muted-foreground">{schedule.clientName}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={FREQUENCY_COLORS[schedule.frequency] || ''}>
+                            {FREQUENCY_LABELS[schedule.frequency] || schedule.frequency}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{getScheduleDescription(schedule)}</TableCell>
+                        <TableCell>{renderNextRunShared(schedule.nextRunAt)}</TableCell>
+                        <TableCell>
+                          {schedule.lastScore !== null && schedule.lastScore !== undefined ? (
+                            <Badge variant="outline" className={getScoreColor(schedule.lastScore)}>{schedule.lastScore}</Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>{renderTaskStatus(schedule.targetId)}</TableCell>
+                        <TableCell>
+                          {schedule.isActive ? (
+                            <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Ativo</Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-border">Inativo</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && (
+                        <TableRow key={`${schedule.id}-timeline`}>
+                          <TableCell colSpan={10} className="p-0 border-b border-border/50">
+                            <ScheduleTimeline
+                              targetId={schedule.targetId}
+                              tasks={taskHistory?.filter(t => t.target_id === schedule.targetId) || []}
+                            />
+                          </TableCell>
+                        </TableRow>
                       )}
-                    </TableCell>
-                    <TableCell>{renderTaskStatus(schedule.targetId)}</TableCell>
-                    <TableCell>
-                      {schedule.isActive ? (
-                        <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Ativo</Badge>
-                      ) : (
-                        <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-border">Inativo</Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                    </>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
