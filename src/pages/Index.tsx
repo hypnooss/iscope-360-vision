@@ -358,7 +358,7 @@ const Index = () => {
         {/* Integrations and Compliance sections removed */}
 
         {/* ═══ TESTIMONIALS ═══ */}
-        <Section>
+        <Section id="testimonials">
           <Reveal>
             <div className="text-center mb-16">
               <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4">
