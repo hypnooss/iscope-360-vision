@@ -306,6 +306,10 @@ class HttpxExecutor(BaseExecutor):
             if not content:
                 continue
 
+            # Track Turbopack signature for fallback inference
+            if 'TURBOPACK' in content or 'globalThis.TURBOPACK' in content:
+                turbopack_detected = True
+
             # Search for React version in any chunk
             if 'React' not in versions:
                 for pattern in REACT_VERSION_PATTERNS:
@@ -324,9 +328,22 @@ class HttpxExecutor(BaseExecutor):
                         self.logger.info(f"[httpx] Detected Next.js {m.group(1)} from {chunk_type} chunk")
                         break
 
+            # Debug: log preview of chunks without matches
+            if 'React' not in versions and 'Next.js' not in versions:
+                self.logger.debug(f"[httpx] No version in {chunk_type} chunk, preview: {content[:200]}")
 
             if versions.get('React') and versions.get('Next.js'):
                 break  # Got both, no need for more probes
+
+        # Fallback: Turbopack production builds strip versions
+        # Turbopack is stable only in Next.js 15+, which requires React 19+
+        if turbopack_detected or 'TURBOPACK' in (body or ''):
+            if 'Next.js' not in versions:
+                versions['Next.js'] = '15+'
+                self.logger.info("[httpx] Turbopack detected → inferred Next.js 15+")
+            if 'React' not in versions:
+                versions['React'] = '19+'
+                self.logger.info("[httpx] Turbopack detected → inferred React 19+")
 
         return versions
 
