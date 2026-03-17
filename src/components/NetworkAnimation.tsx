@@ -3,6 +3,7 @@ import * as THREE from "three";
 
 const PARTICLE_COUNT = 25000;
 const ROTATION_SPEED = 0.00015;
+const SPHERE_RADIUS = 200;
 
 const vertexShader = `
   attribute float aAlpha;
@@ -255,22 +256,22 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const rMul = isAtmosphere
         ? 1.01 + Math.random() * 0.1
         : 0.98 + Math.random() * 0.04;
-      const r = 1.0 * rMul;
+      const r = SPHERE_RADIUS * rMul;
 
       const sp = Math.sin(phi);
       positions[i * 3] = r * sp * Math.cos(theta);
       positions[i * 3 + 1] = r * Math.cos(phi);
       positions[i * 3 + 2] = r * sp * Math.sin(theta);
 
-      // Flat "sand" target positions — layered bands receding into depth
+      // Flat "sand" target positions — layered bands receding into depth (scaled to world space)
       const rowCount = 160;
       const row = Math.floor(Math.random() * rowCount);
       const rowT = row / (rowCount - 1);
       const depthT = Math.pow(rowT, 1.1);
-      const width = 4.4 - depthT * 1.8;
+      const width = (4.4 - depthT * 1.8) * SPHERE_RADIUS;
       const flatX = (Math.random() - 0.5) * width;
-      const flatZ = -1.15 + depthT * 2.3;
-      const flatY = -0.42 + depthT * 0.22 + (Math.random() - 0.5) * 0.004;
+      const flatZ = (-1.15 + depthT * 2.3) * SPHERE_RADIUS;
+      const flatY = (-0.42 + depthT * 0.22 + (Math.random() - 0.5) * 0.004) * SPHERE_RADIUS;
       flatPositions[i * 3] = flatX;
       flatPositions[i * 3 + 1] = flatY;
       flatPositions[i * 3 + 2] = flatZ;
@@ -305,9 +306,9 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       uSpeed: { value: 1.0 },
       uSize: { value: 10.0 },
       uAlpha: { value: 1.0 },
-      uDepth: { value: 0.15 },
-      uAmplitude: { value: 0.04 },
-      uFrequency: { value: 0.8 },
+      uDepth: { value: 0.3 },
+      uAmplitude: { value: 0.1 },
+      uFrequency: { value: 0.01 },
       uScale: { value: 1.0 },
       uMorph: { value: 0.0 },
       uRcolor: { value: 40.0 },
@@ -330,8 +331,6 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     const points = new THREE.Points(geometry, material);
     scene.add(points);
 
-    let currentSphereRadius = 300;
-
     const resize = () => {
       const rect = container.getBoundingClientRect();
       const w = rect.width;
@@ -339,8 +338,6 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       renderer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-
-      currentSphereRadius = Math.min(w, h) * 0.38;
     };
     resize();
     window.addEventListener("resize", resize);
@@ -362,12 +359,9 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       points.rotation.x = globeRotX * (1.0 - morph) + 0.55 * morph;
 
       // Push the sand lower in the hero so it reads like a ground plane
-      points.position.y = -currentSphereRadius * 0.38 * morph;
+      points.position.y = -SPHERE_RADIUS * 0.38 * morph;
 
-      // Interpolate scale — keep the field broad but not cloud-like
-      const sandScale = currentSphereRadius * 1.32;
-      const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
-      points.scale.setScalar(scale);
+      // No dynamic scaling — positions are already baked at SPHERE_RADIUS
 
       // Preserve globe camera and avoid over-zooming the sand
       camera.position.z = 800 - 320 * morph;
