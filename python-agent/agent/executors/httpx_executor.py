@@ -238,8 +238,8 @@ class HttpxExecutor(BaseExecutor):
 
         return chunk_urls
 
-    def _fetch_chunk(self, url: str) -> Optional[str]:
-        """Fetch first MAX_CHUNK_BYTES of a JS chunk URL."""
+    def _fetch_chunk(self, url: str, max_bytes: int = MAX_CHUNK_BYTES) -> Optional[str]:
+        """Fetch first max_bytes of a URL (JS chunk or HTML page)."""
         try:
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
@@ -247,10 +247,11 @@ class HttpxExecutor(BaseExecutor):
 
             req = urllib.request.Request(url, headers={
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': '*/*',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
             })
             with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT, context=ctx) as resp:
-                return resp.read(MAX_CHUNK_BYTES).decode('utf-8', errors='ignore')
+                return resp.read(max_bytes).decode('utf-8', errors='ignore')
         except Exception as e:
             self.logger.debug(f"[httpx] Failed to fetch chunk {url}: {e}")
             return None
