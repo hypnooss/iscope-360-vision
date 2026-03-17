@@ -594,7 +594,7 @@ function SchedulesTab() {
         .in('target_id', firewallAnalyzerIds)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false })
-        .limit(5000);
+        .limit(10000);
       if (error) throw error;
       return (data || []) as Array<{
         target_id: string;
