@@ -453,7 +453,29 @@ function SchedulesTab() {
     },
   });
 
-  const { data: latestTasks } = useQuery({
+  // ── Dedicated query: latest external_domain_analysis task per domain ──
+  const { data: latestDomainTasks } = useQuery({
+    queryKey: ['admin-schedule-domain-latest', domainIds],
+    enabled: domainIds.length > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, task_type, status, completed_at')
+        .eq('task_type', 'external_domain_analysis')
+        .in('target_id', domainIds)
+        .order('completed_at', { ascending: false });
+      if (error) throw error;
+      const map = new Map<string, TaskRow>();
+      for (const task of (data || []) as any[]) {
+        const key = `${task.target_id}::external_domain`;
+        if (!map.has(key)) map.set(key, task);
+      }
+      return map;
+    },
+  });
+
+
     queryKey: ['admin-schedule-tasks', targetIds],
     enabled: targetIds.length > 0,
     refetchInterval: 60_000,
