@@ -256,22 +256,22 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const rMul = isAtmosphere
         ? 1.01 + Math.random() * 0.1
         : 0.98 + Math.random() * 0.04;
-      const r = 1.0 * rMul;
+      const r = SPHERE_RADIUS * rMul;
 
       const sp = Math.sin(phi);
       positions[i * 3] = r * sp * Math.cos(theta);
       positions[i * 3 + 1] = r * Math.cos(phi);
       positions[i * 3 + 2] = r * sp * Math.sin(theta);
 
-      // Flat "sand" target positions — layered bands receding into depth
+      // Flat "sand" target positions — layered bands receding into depth (scaled to world space)
       const rowCount = 160;
       const row = Math.floor(Math.random() * rowCount);
       const rowT = row / (rowCount - 1);
       const depthT = Math.pow(rowT, 1.1);
-      const width = 4.4 - depthT * 1.8;
+      const width = (4.4 - depthT * 1.8) * SPHERE_RADIUS;
       const flatX = (Math.random() - 0.5) * width;
-      const flatZ = -1.15 + depthT * 2.3;
-      const flatY = -0.42 + depthT * 0.22 + (Math.random() - 0.5) * 0.004;
+      const flatZ = (-1.15 + depthT * 2.3) * SPHERE_RADIUS;
+      const flatY = (-0.42 + depthT * 0.22 + (Math.random() - 0.5) * 0.004) * SPHERE_RADIUS;
       flatPositions[i * 3] = flatX;
       flatPositions[i * 3 + 1] = flatY;
       flatPositions[i * 3 + 2] = flatZ;
