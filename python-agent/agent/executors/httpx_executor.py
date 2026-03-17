@@ -78,7 +78,7 @@ PAGES_ROUTER_CHUNK_PATTERNS = [
 
 # Max bytes to read from each JS chunk
 MAX_CHUNK_BYTES = 51200  # 50KB
-MAX_PROBE_REQUESTS = 6
+MAX_PROBE_REQUESTS = 15
 PROBE_TIMEOUT = 5
 
 
@@ -227,7 +227,7 @@ class HttpxExecutor(BaseExecutor):
             chunk_urls.append((full_url, chunk_type))
 
         # Sort: framework first, then main/webpack/app, then generic
-        priority = {'framework': 0, 'turbopack': 1, 'main': 2, 'webpack': 3, 'app': 4, 'generic': 5}
+        priority = {'framework': 0, 'main': 1, 'webpack': 2, 'app': 3, 'generic': 5, 'turbopack': 5}
         chunk_urls.sort(key=lambda x: priority.get(x[1], 99))
 
         self.logger.info(
@@ -287,6 +287,7 @@ class HttpxExecutor(BaseExecutor):
 
         # Prioritize: framework (React version) > main/webpack (Next.js version) > generic
         probes_done = 0
+        turbopack_detected = False
         for url, chunk_type in chunk_urls:
             if probes_done >= MAX_PROBE_REQUESTS:
                 break
@@ -306,6 +307,10 @@ class HttpxExecutor(BaseExecutor):
             if not content:
                 continue
 
+            # Track Turbopack signature for fallback inference
+            if 'TURBOPACK' in content or 'globalThis.TURBOPACK' in content:
+                turbopack_detected = True
+
             # Search for React version in any chunk
             if 'React' not in versions:
                 for pattern in REACT_VERSION_PATTERNS:
@@ -324,9 +329,22 @@ class HttpxExecutor(BaseExecutor):
                         self.logger.info(f"[httpx] Detected Next.js {m.group(1)} from {chunk_type} chunk")
                         break
 
+            # Debug: log preview of chunks without matches
+            if 'React' not in versions and 'Next.js' not in versions:
+                self.logger.debug(f"[httpx] No version in {chunk_type} chunk, preview: {content[:200]}")
 
             if versions.get('React') and versions.get('Next.js'):
                 break  # Got both, no need for more probes
+
+        # Fallback: Turbopack production builds strip versions
+        # Turbopack is stable only in Next.js 15+, which requires React 19+
+        if turbopack_detected or 'TURBOPACK' in (body or ''):
+            if 'Next.js' not in versions:
+                versions['Next.js'] = '15+'
+                self.logger.info("[httpx] Turbopack detected → inferred Next.js 15+")
+            if 'React' not in versions:
+                versions['React'] = '19+'
+                self.logger.info("[httpx] Turbopack detected → inferred React 19+")
 
         return versions
 
