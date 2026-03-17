@@ -42,7 +42,7 @@ const sphereVertexShader = `
     float frontFade = smoothstep(-0.3, 0.6, sphereNormal.z);
 
     // Core suppression: center semi-transparent, edges bright
-    float coreFade = mix(0.15, 1.0, pow(vRim, 0.4));
+    float coreFade = mix(0.35, 1.0, pow(vRim, 0.3));
     vAlpha = aAlpha * frontFade * coreFade;
 
     // Accent color zone: bottom-right quadrant gets magenta
