@@ -841,9 +841,12 @@ function ScheduleTimeline({ targetId, tasks }: { targetId: string; tasks: Timeli
           {(['24h', '48h', '7d'] as const).map(p => (
             <Button
               key={p}
-              variant={period === p ? 'secondary' : 'ghost'}
+              variant={period === p ? 'default' : 'ghost'}
               size="sm"
-              className="h-7 px-3 text-xs"
+              className={cn(
+                "h-7 px-3 text-xs font-medium",
+                period === p && "bg-primary text-primary-foreground shadow-sm"
+              )}
               onClick={() => setPeriod(p)}
             >
               {p === '7d' ? '7 dias' : p}
