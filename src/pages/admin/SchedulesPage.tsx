@@ -1249,6 +1249,7 @@ function ExecutionsTab() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10"></TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Ativo</TableHead>
                   <TableHead>Workspace</TableHead>
@@ -1259,21 +1260,41 @@ function ExecutionsTab() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map(row => (
-                  <TableRow key={row.id}>
-                    <TableCell>{renderTypeBadge(mapTaskType(row.task_type, row.target_type))}</TableCell>
-                    <TableCell className="font-medium text-foreground">{row.target_name}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.client_name}</TableCell>
-                    <TableCell>{renderExecStatus(row.status)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{row.agent_name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground tabular-nums">
-                      {formatDuration(row.started_at, row.completed_at)}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatShortDateTimeBR(row.created_at)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {filtered.map(row => {
+                  const isExpanded = expandedIds.has(row.id);
+                  return (
+                    <Fragment key={row.id}>
+                      <TableRow className="cursor-pointer" onClick={() => toggleExpanded(row.id)}>
+                        <TableCell className="w-10 px-2">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); toggleExpanded(row.id); }}>
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </Button>
+                        </TableCell>
+                        <TableCell>{renderTypeBadge(mapTaskType(row.task_type, row.target_type))}</TableCell>
+                        <TableCell className="font-medium text-foreground">{row.target_name}</TableCell>
+                        <TableCell className="text-muted-foreground">{row.client_name}</TableCell>
+                        <TableCell>{renderExecStatus(row.status)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{row.agent_name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground tabular-nums">
+                          {formatDuration(row.started_at, row.completed_at)}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatShortDateTimeBR(row.created_at)}
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && (
+                        <TableRow>
+                          <TableCell colSpan={8} className="p-0 border-b border-border/50">
+                            <ScheduleTimeline
+                              targetId={row.target_id}
+                              tasks={execTaskHistory?.filter(t => t.target_id === row.target_id) || []}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
