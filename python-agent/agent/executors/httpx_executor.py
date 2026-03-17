@@ -31,6 +31,9 @@ JS_FRAMEWORK_FINGERPRINTS: List[Tuple[re.Pattern, str]] = [
 # ── Regex to extract script URLs from HTML ────────────────────
 SCRIPT_SRC_RE = re.compile(r'<script[^>]+src=["\']([^"\']+)["\']', re.IGNORECASE)
 
+# ── Generic pattern to capture ALL /_next/static/ JS files ────
+NEXT_STATIC_JS_RE = re.compile(r'/_next/static/[^"\'>\s]+\.js', re.IGNORECASE)
+
 # ── Version patterns to search in JS chunks ──────────────────
 # React version: appears as "18.2.0" near "react" references in framework chunks
 REACT_VERSION_PATTERNS = [
@@ -40,6 +43,11 @@ REACT_VERSION_PATTERNS = [
     re.compile(r'react@(\d+\.\d+\.\d+)'),
     # Common pattern in webpack bundled React
     re.compile(r'["\'](\d+\.\d+\.\d+)["\'][^}]*?react'),
+    # Minified patterns common in App Router builds
+    re.compile(r'\.version="(\d+\.\d+\.\d+)"[^}]*?react', re.IGNORECASE),
+    re.compile(r'version:"(\d+\.\d+\.\d+)"[^}]*?react', re.IGNORECASE),
+    # Broader: version string near ReactDOM in minified code
+    re.compile(r'ReactDOM[^{]*?"(\d+\.\d+\.\d+)"'),
 ]
 
 # Next.js version patterns
@@ -48,14 +56,17 @@ NEXTJS_VERSION_PATTERNS = [
     re.compile(r'next@(\d+\.\d+\.\d+)'),
     re.compile(r'next[/:](\d+\.\d+\.\d+)'),
     re.compile(r'"next"[^}]*?"(\d+\.\d+\.\d+)"'),
+    # Minified patterns
+    re.compile(r'\.version="(\d+\.\d+\.\d+)"[^}]*?next', re.IGNORECASE),
+    re.compile(r'version:"(\d+\.\d+\.\d+)"[^}]*?next', re.IGNORECASE),
 ]
 
-# Chunk URL patterns to probe (ordered by likelihood of containing versions)
-CHUNK_PATTERNS = [
-    re.compile(r'/_next/static/chunks/(framework-[a-f0-9]+\.js)'),
-    re.compile(r'/_next/static/chunks/(main-[a-f0-9]+\.js)'),
-    re.compile(r'/_next/static/chunks/(webpack-[a-f0-9]+\.js)'),
-    re.compile(r'/_next/static/chunks/(pages/_app-[a-f0-9]+\.js)'),
+# Pages Router chunk patterns (used for classification priority)
+PAGES_ROUTER_CHUNK_PATTERNS = [
+    (re.compile(r'framework-[a-f0-9]+\.js'), 'framework'),
+    (re.compile(r'main-[a-f0-9]+\.js'), 'main'),
+    (re.compile(r'webpack-[a-f0-9]+\.js'), 'webpack'),
+    (re.compile(r'pages/_app-[a-f0-9]+\.js'), 'app'),
 ]
 
 # Max bytes to read from each JS chunk
