@@ -383,10 +383,7 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
       sphere.position.y = BASE_Y;
       halo.position.y = BASE_Y;
 
-      // Skip rendering if fully scrolled past
-      if (scrollProgress < 1.8) {
-        renderer.render(scene, camera);
-      }
+      renderer.render(scene, camera);
 
       frameId = window.requestAnimationFrame(tick);
     };
