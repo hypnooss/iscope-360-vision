@@ -1,86 +1,186 @@
+1: # Status: ✅ Implementado
 
+## Centralização de Timezone — America/Sao_Paulo (UTC-3)
 
-## Diagnóstico Real (Confirmado pelo DB + Logs)
+### Problema resolvido
+Todas as datas do sistema agora são exibidas no fuso **America/Sao_Paulo**, independente do fuso do browser do usuário. O agendamento também converte corretamente a hora selecionada (BRT) para UTC.
 
-O banco mostra `technologies: ["Next.js", "React"]` sem versão. Os logs do agente **não mostram NENHUM log de version probing** — nem "Found X chunk URLs", nem "Probing chunk", nem "Version probe failed". Isso significa que o bloco `if body:` na linha 379 **nunca é executado**.
+### Mudanças implementadas
 
-**Root cause**: httpx com `-include-response` grava a resposta no campo `response` do JSON, mas dependendo da versão do httpx instalada, esse campo pode estar vazio ou não existir. O `tech` (Wappalyzer) funciona independentemente e detecta Next.js/React. Mas como `body` é vazio, todo o bloco de fingerprinting + version probing é **silenciosamente pulado**:
+| Componente | Mudança |
+|---|---|
+| `src/lib/dateUtils.ts` | Novo arquivo com helpers centralizados (`formatDateTimeBR`, `formatDateTimeFullBR`, `formatShortDateTimeBR`, `formatDateOnlyBR`, `formatDateLongBR`, `formatDateTimeLongBR`, `formatDateTimeMediumBR`, `toBRT`) |
+| `ScheduleDialog.tsx` | `calculateNextRun` converte hora BRT→UTC; label simplificado |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` converte hora BRT→UTC; suporta `next_run_at` NULL para recálculo sem disparo |
+| ~30 arquivos .tsx | Todas as chamadas `toLocaleString('pt-BR')` e `format(new Date(...))` substituídas por helpers com timezone fixo |
 
-```python
-body = entry.get('body', '') or entry.get('response', '') or ''
-if body:  # ← FALSO! Nunca entra aqui
-    body_techs = self._fingerprint_body(body)
-    ...
-    if (has_nextjs or has_react) and base_url:
-        versions = self._probe_versions(base_url, body)  # ← Nunca executa
+## Correção de Dados — scheduled_hour UTC→BRT
+
+### Problema resolvido
+Os valores `scheduled_hour` existentes nas tabelas de agendamento estavam em UTC (sistema antigo). Com a correção de timezone, passaram a ser interpretados como BRT, causando deslocamento de +3h.
+
+### Solução aplicada
+1. **Migration**: Subtraiu 3h de todos os `scheduled_hour` em 6 tabelas (`analysis_schedules`, `analyzer_schedules`, `m365_compliance_schedules`, `m365_analyzer_schedules`, `attack_surface_schedules`, `external_domain_schedules`)
+2. **Edge Function**: Adicionado suporte a `next_run_at IS NULL` — recalcula sem disparar análise
+3. **Recálculo**: Todos os `next_run_at` foram recalculados corretamente
+
+## Paralelização do run-scheduled-analyses
+
+### Problema resolvido
+A Edge Function processava 6 seções sequencialmente (~140 agendamentos). Com o timeout da função, seções finais (M365 Compliance) nunca eram alcançadas nos horários de pico.
+
+### Solução aplicada
+Refatoração para processar todas as 6 seções em **paralelo** com `Promise.all`:
+- `processFirewallComplianceSchedules`
+- `processExternalDomainSchedules`
+- `processAnalyzerSchedules`
+- `processAttackSurfaceSchedules`
+- `processM365AnalyzerSchedules`
+- `processM365ComplianceSchedules`
+
+CVE refresh continua sequencial (após o Promise.all). Cada função retorna `{ triggered, skipped, errors, total }` para o log de breakdown.
+
+## Timezone Dinâmico — Preferência do Usuário
+
+### Problema resolvido
+O sistema hardcodava `America/Sao_Paulo` em toda exibição e conversão de datas. Usuários em outros fusos viam horários incorretos e agendamentos eram sempre convertidos com offset fixo de +3.
+
+### Solução implementada
+
+| Componente | Mudança |
+|---|---|
+| **Migration SQL** | Adicionada coluna `timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo'` em 6 tabelas de agendamento |
+| `src/lib/dateUtils.ts` | Substituído `TZ` hardcoded por getter/setter dinâmico (`setUserTimezone`/`getUserTimezone`). Adicionado `getUtcOffsetHours()` para conversão dinâmica. `toBRT` renomeado para `toUserTZ` (alias mantido) |
+| `src/contexts/AuthContext.tsx` | Chama `setUserTimezone(profile.timezone)` ao carregar perfil (incluindo cache) |
+| `ScheduleDialog.tsx` | Conversão hora→UTC usa offset dinâmico do timezone do usuário. Salva `timezone` no payload do upsert |
+| `run-scheduled-analyses` Edge Function | `calculateNextRunAt` recebe `timezone` de cada schedule e calcula offset via `Intl.DateTimeFormat` |
+| **33 arquivos consumidores** | Nenhuma mudança necessária — assinaturas das funções format não mudaram |
+
+### Arquitetura
+
+```text
+┌─────────────────────────────────────────────────────┐
+│  Banco: tudo em UTC + coluna timezone por schedule  │
+├─────────────────────────────────────────────────────┤
+│  Frontend: dateUtils usa timezone do perfil         │
+│  ScheduleDialog: converte dinamicamente para UTC    │
+├─────────────────────────────────────────────────────┤
+│  Edge Function: lê timezone de cada registro        │
+│  e calcula offset via Intl.DateTimeFormat           │
+└─────────────────────────────────────────────────────┘
 ```
 
-## Correção em `python-agent/agent/executors/httpx_executor.py`
+## Correção de Dados Duplicados — Exchange Analyzer
 
-### Mudança principal: Fallback de fetch quando body está vazio
+### Status: ✅ Implementado
 
-Na `_parse_output`, **após** o bloco `if body:`, adicionar um fallback: se Next.js ou React foi detectado pelo Wappalyzer mas o body está vazio, **buscar a página nós mesmos** usando `_fetch_chunk(base_url)` e fazer o version probing no conteúdo obtido.
+### Problema resolvido
+O Exchange Analyzer usava janelas temporais fixas de 24h tanto no PowerShell (blueprint) quanto nas queries Graph API (edge function), causando sobreposição de dados entre snapshots consecutivos e contagem duplicada de eventos.
 
-```python
-# Após o bloco "if body:" existente (linha ~398), adicionar:
+### Mudanças implementadas
 
-# Fallback: if Wappalyzer detected Next.js/React but body was empty,
-# fetch the page ourselves for version probing
-if not body:
-    has_nextjs = any('Next.js' in t for t in technologies)
-    has_react = any('React' in t for t in technologies)
-    
-    if (has_nextjs or has_react) and base_url:
-        self.logger.info(f"[httpx] Body empty but Wappalyzer detected frameworks, fetching {base_url}")
-        fetched_body = self._fetch_chunk(base_url)  # reuse existing method
-        if fetched_body:
-            # Also fingerprint the fetched body
-            body_techs = self._fingerprint_body(fetched_body)
-            for t in body_techs:
-                if t not in technologies:
-                    technologies.append(t)
-            try:
-                versions = self._probe_versions(base_url, fetched_body)
-                if versions:
-                    technologies = self._apply_versions(technologies, versions)
-                    self.logger.info(f"[httpx] Fallback version probe results: {versions}")
-            except Exception as e:
-                self.logger.warning(f"[httpx] Fallback version probe failed: {e}")
+| Componente | Mudança |
+|---|---|
+| **Blueprint `m365` (hybrid)** | Comando `exo_message_trace` alterado de `-StartDate (Get-Date).AddHours(-24)` para `-StartDate "{period_start}" -EndDate "{period_end}"`, usando os valores do payload da task |
+| **`supabase/functions/m365-analyzer/index.ts`** | Duas janelas fixas de 24h (fallback Graph API ~linha 2147 e enriquecimento ~linha 2197) substituídas por `snapshot.period_start`/`period_end` com fallback para 24h se ausentes. Filtro `createdDateTime le` adicionado para limite superior |
+| **Frontend** | Sem alteração necessária — agregação já funciona corretamente com snapshots não-sobrepostos |
+
+### Arquitetura final
+```text
+trigger-m365-analyzer:
+  period_start = last_snapshot.period_end (ou now - 2h)
+  period_end = now
+  → Cria snapshot + agent_task com period_start/period_end no payload
+
+Blueprint (PowerShell):
+  Get-MessageTraceV2 -StartDate "{period_start}" -EndDate "{period_end}"
+  → Agente interpola placeholders do payload
+
+Edge Function (Graph API):
+  $filter=createdDateTime ge {period_start} and createdDateTime le {period_end}
+  → Usa snapshot.period_start/period_end
+
+Frontend (useM365AnalyzerData.ts):
+  Soma contadores de snapshots consecutivos sem sobreposição
+  → Dados precisos sem duplicação
 ```
 
-### Mudança secundária: aumentar `_fetch_chunk` para páginas inteiras
+## Dashboard Snapshots — Arquitetura de Período Dinâmico
 
-O `_fetch_chunk` atual lê `MAX_CHUNK_BYTES = 51200` (50KB). O HTML do sgi.ourosafra.com.br tem ~11KB, então 50KB é suficiente. Mas para o fetch da página inicial, precisamos de mais — criar um parâmetro `max_bytes` opcional:
+### Status: ✅ Implementado
 
-```python
-def _fetch_chunk(self, url: str, max_bytes: int = MAX_CHUNK_BYTES) -> Optional[str]:
-    ...
-    return resp.read(max_bytes).decode(...)
+### Problema resolvido
+Os dashboards operacionais (Exchange, Entra ID, Colaboração) salvavam KPIs numa única coluna JSONB sobrescrita a cada execução, impedindo agregação histórica para períodos dinâmicos (7 dias, 30 dias, etc.).
+
+### Mudanças implementadas
+
+| Componente | Mudança |
+|---|---|
+| **Migration SQL** | Nova tabela `m365_dashboard_snapshots` com `tenant_record_id`, `client_id`, `dashboard_type`, `data` (JSONB), `period_start`, `period_end`, `created_at`. RLS com service_role, client_access e super_admin |
+| `exchange-dashboard` Edge Function | INSERT snapshot em `m365_dashboard_snapshots` (type='exchange') + UPDATE cache legado |
+| `entra-id-dashboard` Edge Function | INSERT snapshot (type='entra_id') + UPDATE cache legado |
+| `collaboration-dashboard` Edge Function | INSERT snapshot (type='collaboration') + UPDATE cache legado |
+| `useExchangeDashboard.ts` | Carrega do último snapshot da nova tabela, fallback para cache legado |
+| `useEntraIdDashboard.ts` | Idem |
+| `useCollaborationDashboard.ts` | Idem |
+
+### Próximos passos
+- Adicionar seletor de período no frontend e agregar dados de evento de múltiplos snapshots
+- Auto-trigger dos dashboards no `agent-task-result` ao completar task m365_analyzer
+- Remover colunas de cache legado quando migração estiver consolidada
+
+## StorageQuota SharePoint via Agent PowerShell
+
+### Status: ✅ Implementado
+
+### Problema resolvido
+A REST API do SPO Admin (`/_api/StorageQuota()`) frequentemente falha por falta de permissões. O comando PowerShell `Get-PnPTenant | Select StorageQuota` é confiável e retorna o valor em MB.
+
+### Mudanças implementadas
+
+| Componente | Mudança |
+|---|---|
+| `python-agent/agent/executors/powershell.py` | Novo módulo `PnP.PowerShell` no dict `MODULES` com suporte a CBA via thumbprint. Params `spo_admin_domain` e `thumbprint` adicionados a todos os `.format()` de conexão |
+| Blueprint M365 hybrid (DB) | Novo step `spo_tenant_quota` (optional) usando `PnP.PowerShell` com comando `Get-PnPTenant \| Select StorageQuota, StorageQuotaAllocated` |
+| `collaboration-dashboard` Edge Function | Busca quota do agent (`step_results.spo_tenant_quota`) antes do fallback REST API. Converte MB→bytes |
+
+### Fluxo
+```text
+Agent (PnP.PowerShell) → Get-PnPTenant → StorageQuota (MB)
+  ↓ salvo em step_results do agent_task
+collaboration-dashboard → lê step_results do último snapshot completed
+  → storageAllocatedBytes = quotaMB * 1024 * 1024
+  → fallback: REST API SPO Admin (se agent não coletou)
 ```
 
-E no fallback, chamar com `_fetch_chunk(base_url, max_bytes=102400)` para garantir que pega o HTML inteiro.
+## Correção do `spo_tenant_quota` — URL admin incorreta
 
-### Mudança terciária: logging de diagnóstico
+### Status: ✅ Implementado
 
-Adicionar log quando body está vazio para facilitar debug futuro:
+### Problema resolvido
+O campo `tenant_domain` armazenava domínios como `deployitgroup.mail.onmicrosoft.com`, mas a lógica de derivação do SPO admin URL não removia `.mail`, gerando URLs incorretas.
 
-```python
-if body:
-    self.logger.info(f"[httpx] Got response body ({len(body)} bytes) for {base_url}")
-else:
-    self.logger.warning(f"[httpx] No response body in httpx output for {base_url}")
+### Mudanças implementadas
+
+| Componente | Mudança |
+|---|---|
+| **Migration SQL** | Adicionada coluna `spo_domain TEXT` em `m365_tenants` para armazenar o prefixo SPO explícito (ex: `precisioglobal`) |
+| **`rpc_get_agent_tasks`** | Incluído `spo_domain` no payload `target` para tasks M365 |
+| `python-agent/agent/tasks.py` | Inclui `spo_domain` no contexto M365 do agente |
+| `python-agent/agent/executors/powershell.py` | Novo método `_derive_spo_domain()` com prioridade: `spo_domain` explícito > derivação de `organization`. Todas as 6 derivações corrigidas para remover `.mail` |
+| `connect-m365-tenant` Edge Function | `fetchOrganizationInfo` extrai `spoDomain` de `verifiedDomains` (domínio `.onmicrosoft.com` sem `.mail`). Salva em `spo_domain` no INSERT |
+
+### Fluxo
+```text
+Onboarding (connect-m365-tenant):
+  GET /organization → verifiedDomains → encontra *.onmicrosoft.com (sem .mail)
+  → Extrai prefixo → salva em m365_tenants.spo_domain
+
+Agent (rpc_get_agent_tasks):
+  target.spo_domain → contexto → _derive_spo_domain(organization, spo_domain)
+  → Prioriza spo_domain explícito, fallback para derivação corrigida
+
+PowerShell:
+  Connect-PnPOnline -Url "https://{spo_domain}-admin.sharepoint.com" ...
+  → URL correta para Get-PnPTenant
 ```
-
-### Sobre o alerta frontend ausente
-
-O frontend em `surfaceFindings.ts` (linhas 886-913) TEM a lógica de fallback "Next.js sem versão → alerta Medium". O `allTechs` deveria conter `["Next.js", "React"]`, e o regex `/next\.?js/i` deveria matchear. **Preciso verificar se o finding está sendo gerado mas filtrado**, ou se há um bug na construção do `assets` array. Vou adicionar um `console.log` temporário no `generateFindings` para diagnosticar se o finding está sendo criado.
-
-## Resumo das mudanças
-
-| Arquivo | Mudança |
-|---------|---------|
-| `httpx_executor.py` | Fallback: fetch página quando body vazio + Wappalyzer detectou frameworks |
-| `httpx_executor.py` | `_fetch_chunk` aceita `max_bytes` opcional |
-| `httpx_executor.py` | Logs de diagnóstico para body vazio |
-| `surfaceFindings.ts` | Console.log temporário para debug do finding ausente |
-
