@@ -3,9 +3,10 @@ import * as THREE from "three";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const PARTICLE_COUNT = 16384;
+const HALO_COUNT = 2000;
 const ROTATION_SPEED = 0.02;
 
-// ─── Vertex Shader (exact MazeHQ) ───
+// ─── Vertex Shader ───
 const vertexShader = `
   attribute float aAlpha;
   attribute float aIndex;
@@ -51,36 +52,25 @@ const vertexShader = `
   varying float vDistance;
   varying float vNoise;
   varying vec3 vColor;
+  varying float vRimFactor;
 
   const float PI = 3.1415926535897932384626433832795;
 
-  vec3 mod289_1_0(vec3 x) {
-    return x - floor(x * (1.0 / 289.0)) * 289.0;
-  }
-  vec2 mod289_1_0(vec2 x) {
-    return x - floor(x * (1.0 / 289.0)) * 289.0;
-  }
-  vec3 permute_1_1(vec3 x) {
-    return mod289_1_0(((x*34.0)+1.0)*x);
-  }
+  vec3 mod289_1_0(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec2 mod289_1_0(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec3 permute_1_1(vec3 x) { return mod289_1_0(((x*34.0)+1.0)*x); }
 
   float snoise_1_2(vec2 v) {
-    const vec4 C = vec4(0.211324865405187,
-                        0.366025403784439,
-                       -0.577350269189626,
-                        0.024390243902439);
+    const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
     vec2 i  = floor(v + dot(v, C.yy));
     vec2 x0 = v -   i + dot(i, C.xx);
-    vec2 i1;
-    i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
     vec4 x12 = x0.xyxy + C.xxzz;
     x12.xy -= i1;
     i = mod289_1_0(i);
-    vec3 p = permute_1_1( permute_1_1( i.y + vec3(0.0, i1.y, 1.0 ))
-      + i.x + vec3(0.0, i1.x, 1.0 ));
+    vec3 p = permute_1_1( permute_1_1( i.y + vec3(0.0, i1.y, 1.0 )) + i.x + vec3(0.0, i1.x, 1.0 ));
     vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
-    m = m*m;
-    m = m*m;
+    m = m*m; m = m*m;
     vec3 x = 2.0 * fract(p * C.www) - 1.0;
     vec3 h = abs(x) - 0.5;
     vec3 ox = floor(x + 0.5);
@@ -151,15 +141,11 @@ const vertexShader = `
   }
 
   #define NUM_OCTAVES 5
-
   float fbm(vec3 x) {
-    float v = 0.0;
-    float a = 0.5;
-    vec3 shift = vec3(100);
+    float v = 0.0; float a = 0.5; vec3 shift = vec3(100);
     for (int i = 0; i < NUM_OCTAVES; ++i) {
       v += a * snoise(vec4(x, uTime));
-      x = x * 2.0 + shift;
-      a *= 0.5;
+      x = x * 2.0 + shift; a *= 0.5;
     }
     return v;
   }
@@ -174,9 +160,7 @@ const vertexShader = `
     vColor = vec3(r, g, b);
 
     vec3 displaced = position;
-
     displaced *= (1.0 + (uAmplitude * vNoise));
-
     displaced += vec3(uScale * uDepth * aMove * aSpeed * snoise_1_2(vec2(aIndex, uTime * uSpeed)));
 
     if (uStream > 0.0) {
@@ -192,6 +176,12 @@ const vertexShader = `
       if (uIsMobile) { displaced.xy = rot * displaced.xy; }
     }
 
+    // Rim/Fresnel: how perpendicular is the normal to the view direction
+    vec3 worldNormal = normalize(normalMatrix * normalize(position));
+    vec3 viewDir = normalize(-vec3(modelViewMatrix * vec4(displaced, 1.0)));
+    float rim = 1.0 - abs(dot(worldNormal, viewDir));
+    vRimFactor = pow(rim, 2.0);
+
     vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
@@ -201,34 +191,67 @@ const vertexShader = `
     gl_PointSize *= uPixelRatio;
     clamp(gl_PointSize, 1.0, 100.0);
 
-    vAlpha = uAlpha * aAlpha * (300.0 / vDistance);
+    // Alpha: combine base alpha, distance fade, and rim glow
+    float baseAlpha = uAlpha * aAlpha * (300.0 / vDistance);
+    // Suppress interior particles, boost rim
+    float rimAlpha = mix(0.08, 1.0, vRimFactor);
+    vAlpha = baseAlpha * rimAlpha;
+
     if (aSelection > uSelection) { vAlpha = 0.0; }
   }
 `;
 
-// ─── Fragment Shader (exact MazeHQ) ───
+// ─── Fragment Shader ───
 const fragmentShader = `
   uniform sampler2D pointTexture;
   varying float vAlpha;
   varying vec3 vColor;
+  varying float vRimFactor;
 
   void main() {
     gl_FragColor = vec4(vColor, vAlpha);
     gl_FragColor = gl_FragColor * texture2D( pointTexture, gl_PointCoord );
+    // Boost brightness at the rim
+    gl_FragColor.rgb += vColor * vRimFactor * 0.3;
   }
 `;
 
-/** Generate a radial gradient sprite texture programmatically */
+// ─── Halo vertex shader (simple billboard particles) ───
+const haloVertexShader = `
+  attribute float aAlpha;
+  uniform float uTime;
+  uniform float uPixelRatio;
+  uniform float uSize;
+  varying float vAlpha;
+  varying float vDist;
+
+  void main() {
+    vec3 pos = position;
+    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+    vDist = length(position);
+    gl_PointSize = uSize * uPixelRatio * (200.0 / -mvPosition.z);
+    vAlpha = aAlpha * smoothstep(1.3, 1.05, vDist);
+  }
+`;
+
+const haloFragmentShader = `
+  uniform sampler2D pointTexture;
+  varying float vAlpha;
+
+  void main() {
+    vec4 tex = texture2D(pointTexture, gl_PointCoord);
+    gl_FragColor = vec4(0.13, 0.76, 0.88, vAlpha * 0.35) * tex;
+  }
+`;
+
+/** Generate a radial gradient sprite texture */
 function createPointTexture(): THREE.CanvasTexture {
   const size = 64;
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext("2d")!;
-  const gradient = ctx.createRadialGradient(
-    size / 2, size / 2, 0,
-    size / 2, size / 2, size / 2
-  );
+  const gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
   gradient.addColorStop(0, "rgba(255,255,255,1)");
   gradient.addColorStop(0.4, "rgba(255,255,255,0.8)");
   gradient.addColorStop(1, "rgba(255,255,255,0)");
@@ -241,7 +264,7 @@ function createPointTexture(): THREE.CanvasTexture {
 
 interface NetworkAnimationProps {
   className?: string;
-  scrollProgress?: number; // 0 = globe, 1 = stream/funnel
+  scrollProgress?: number;
 }
 
 export function NetworkAnimation({ className = '', scrollProgress = 0 }: NetworkAnimationProps) {
@@ -249,33 +272,25 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
   const scrollRef = useRef(scrollProgress);
   const isMobile = useIsMobile();
 
-  useEffect(() => {
-    scrollRef.current = scrollProgress;
-  }, [scrollProgress]);
+  useEffect(() => { scrollRef.current = scrollProgress; }, [scrollProgress]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // ── Scene setup ──
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, 1, 1, 2000);
-    camera.position.z = 400;
+    camera.position.z = 3.2;
 
-    const renderer = new THREE.WebGLRenderer({
-      alpha: true,
-      antialias: false,
-      powerPreference: "high-performance",
-    });
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
     container.appendChild(renderer.domElement);
     renderer.domElement.style.pointerEvents = "none";
 
-    // ── Point texture ──
     const pointTexture = createPointTexture();
 
-    // ── Geometry: particles on unit sphere ──
+    // ── Main sphere geometry ──
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(PARTICLE_COUNT * 3);
     const alphas = new Float32Array(PARTICLE_COUNT);
@@ -291,18 +306,14 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     const randomness = new Float32Array(PARTICLE_COUNT * 3);
 
     const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const t = i / PARTICLE_COUNT;
       const theta = goldenAngle * i;
       const phi = Math.acos(1 - 2 * t);
-
-      // Unit sphere
       const sp = Math.sin(phi);
-      positions[i * 3] = sp * Math.cos(theta);
+      positions[i * 3]     = sp * Math.cos(theta);
       positions[i * 3 + 1] = Math.cos(phi);
       positions[i * 3 + 2] = sp * Math.sin(theta);
-
       alphas[i] = 0.3 + Math.random() * 0.7;
       indices[i] = i;
       selections[i] = Math.random();
@@ -311,18 +322,9 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       funnelThicknesses[i] = (Math.random() - 0.5) * 0.1;
       funnelStartShifts[i] = (Math.random() - 0.5) * 0.05;
       funnelEndShifts[i] = (Math.random() - 0.5) * 0.05;
-
-      moves[i * 3] = (Math.random() - 0.5) * 2.0;
-      moves[i * 3 + 1] = (Math.random() - 0.5) * 2.0;
-      moves[i * 3 + 2] = (Math.random() - 0.5) * 2.0;
-
-      speeds[i * 3] = 0.5 + Math.random() * 1.5;
-      speeds[i * 3 + 1] = 0.5 + Math.random() * 1.5;
-      speeds[i * 3 + 2] = 0.5 + Math.random() * 1.5;
-
-      randomness[i * 3] = Math.random() * 2.0 - 1.0;
-      randomness[i * 3 + 1] = Math.random() * 2.0 - 1.0;
-      randomness[i * 3 + 2] = Math.random() * 2.0 - 1.0;
+      moves[i*3] = (Math.random()-0.5)*2; moves[i*3+1] = (Math.random()-0.5)*2; moves[i*3+2] = (Math.random()-0.5)*2;
+      speeds[i*3] = 0.5+Math.random()*1.5; speeds[i*3+1] = 0.5+Math.random()*1.5; speeds[i*3+2] = 0.5+Math.random()*1.5;
+      randomness[i*3] = Math.random()*2-1; randomness[i*3+1] = Math.random()*2-1; randomness[i*3+2] = Math.random()*2-1;
     }
 
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -338,12 +340,11 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     geometry.setAttribute("aSpeed", new THREE.BufferAttribute(speeds, 3));
     geometry.setAttribute("aRandomness", new THREE.BufferAttribute(randomness, 3));
 
-    // ── Uniforms — exact MazeHQ values ──
     const uniforms = {
       pointTexture: { value: pointTexture },
       uIsMobile: { value: isMobile },
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-      uScale: { value: 1.0 },
+      uScale: { value: 0.01 },
       uTime: { value: 0.0 },
       uSpeed: { value: 1.0 },
       uSize: { value: 10.0 },
@@ -362,7 +363,6 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       uFunnelStartShift: { value: 0.0 },
       uFunnelEndShift: { value: 0.0 },
       uFunnelDistortion: { value: 1.0 },
-      // Cyan base → Magenta noise
       uRcolor: { value: 40.0 },
       uGcolor: { value: 197.0 },
       uBcolor: { value: 234.0 },
@@ -372,10 +372,8 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     };
 
     const material = new THREE.ShaderMaterial({
-      vertexShader,
-      fragmentShader,
-      transparent: true,
-      depthWrite: false,
+      vertexShader, fragmentShader,
+      transparent: true, depthWrite: false,
       blending: THREE.AdditiveBlending,
       uniforms,
     });
@@ -383,17 +381,48 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     const points = new THREE.Points(geometry, material);
     scene.add(points);
 
-    // ── Resize (dynamic scale like MazeHQ) ──
+    // ── Halo layer: sparse particles slightly outside sphere ──
+    const haloGeo = new THREE.BufferGeometry();
+    const haloPos = new Float32Array(HALO_COUNT * 3);
+    const haloAlphas = new Float32Array(HALO_COUNT);
+    for (let i = 0; i < HALO_COUNT; i++) {
+      const t = i / HALO_COUNT;
+      const theta = goldenAngle * i * 7.3;
+      const phi = Math.acos(1 - 2 * t);
+      const r = 1.05 + Math.random() * 0.15;
+      const sp = Math.sin(phi);
+      haloPos[i*3] = r * sp * Math.cos(theta);
+      haloPos[i*3+1] = r * Math.cos(phi);
+      haloPos[i*3+2] = r * sp * Math.sin(theta);
+      haloAlphas[i] = 0.2 + Math.random() * 0.5;
+    }
+    haloGeo.setAttribute("position", new THREE.BufferAttribute(haloPos, 3));
+    haloGeo.setAttribute("aAlpha", new THREE.BufferAttribute(haloAlphas, 1));
+
+    const haloMaterial = new THREE.ShaderMaterial({
+      vertexShader: haloVertexShader,
+      fragmentShader: haloFragmentShader,
+      transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        pointTexture: { value: pointTexture },
+        uTime: { value: 0 },
+        uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+        uSize: { value: 15.0 },
+      },
+    });
+
+    const haloPoints = new THREE.Points(haloGeo, haloMaterial);
+    scene.add(haloPoints);
+
+    // ── Resize ──
     const resize = () => {
       const rect = container.getBoundingClientRect();
       renderer.setSize(rect.width, rect.height);
       camera.aspect = rect.width / rect.height;
       camera.updateProjectionMatrix();
-
-      const scaleFactor = Math.min(rect.width, rect.height) * 0.75;
-      points.scale.setScalar(scaleFactor * 0.28);
-      uniforms.uScale.value = scaleFactor * 0.01;
       uniforms.uPixelRatio.value = Math.min(window.devicePixelRatio, 2);
+      haloMaterial.uniforms.uPixelRatio.value = uniforms.uPixelRatio.value;
     };
     resize();
     window.addEventListener("resize", resize);
@@ -405,15 +434,16 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     const animate = () => {
       const elapsed = (performance.now() - startTime) * 0.001;
       uniforms.uTime.value = elapsed * 0.15;
+      haloMaterial.uniforms.uTime.value = elapsed * 0.15;
 
       const stream = scrollRef.current;
       uniforms.uStream.value = stream;
 
-      // Rotation — slow continuous spin, reduces in stream state
       const rotationFactor = 1.0 - stream * 0.8;
       points.rotation.y = elapsed * ROTATION_SPEED * rotationFactor;
-      // Gentle tilt oscillation
       points.rotation.x = Math.sin(elapsed * 0.008) * 0.08 * (1.0 - stream);
+      haloPoints.rotation.y = points.rotation.y;
+      haloPoints.rotation.x = points.rotation.x;
 
       renderer.render(scene, camera);
       animId = requestAnimationFrame(animate);
@@ -424,10 +454,9 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener("resize", resize);
-      geometry.dispose();
-      material.dispose();
-      pointTexture.dispose();
-      renderer.dispose();
+      geometry.dispose(); material.dispose();
+      haloGeo.dispose(); haloMaterial.dispose();
+      pointTexture.dispose(); renderer.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }

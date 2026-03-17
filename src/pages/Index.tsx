@@ -97,15 +97,17 @@ const Index = () => {
     <div className="min-h-screen bg-background text-foreground flex flex-col relative">
       <Header />
 
-      {/* Globe — fixed background across entire page */}
-      <div className="fixed inset-0 z-0">
-        <NetworkAnimation className="absolute inset-0" scrollProgress={scrollProgress} />
-      </div>
-
       <main className="flex-1 relative z-10">
 
         {/* ═══ HERO ═══ */}
         <section className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
+
+          {/* Globe — contained inside hero */}
+          <div className="absolute inset-0 z-0 flex items-center justify-center">
+            <div className="w-[min(90vw,700px)] h-[min(90vw,700px)]">
+              <NetworkAnimation className="w-full h-full" scrollProgress={scrollProgress} />
+            </div>
+          </div>
 
           {/* Copy — centered overlay */}
           <motion.div
