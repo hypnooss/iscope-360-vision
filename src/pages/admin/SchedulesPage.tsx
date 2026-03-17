@@ -791,7 +791,7 @@ function ScheduleTimeline({ targetId, tasks }: { targetId: string; tasks: Timeli
   }, [period]);
 
   const filtered = useMemo(() => {
-    return tasks.filter(t => new Date(t.created_at) >= cutoff);
+    return tasks.filter(t => new Date(t.created_at) >= cutoff).slice().sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [tasks, cutoff]);
 
   const counts = useMemo(() => {
