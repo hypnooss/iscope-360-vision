@@ -730,7 +730,7 @@ function SchedulesTab() {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        <TableCell>{renderTaskStatus(schedule.targetId)}</TableCell>
+                        <TableCell>{renderTaskStatus(schedule.targetId, schedule.targetType)}</TableCell>
                         <TableCell>
                           {schedule.isActive ? (
                             <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Ativo</Badge>
