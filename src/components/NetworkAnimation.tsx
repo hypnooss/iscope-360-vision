@@ -381,8 +381,6 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     });
 
     const points = new THREE.Points(geometry, material);
-    // MazeHQ scaleFactor
-    points.scale.setScalar(SCALE_FACTOR * 280);
     scene.add(points);
 
     // ── Resize ──
