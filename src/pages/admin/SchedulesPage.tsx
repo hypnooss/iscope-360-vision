@@ -473,6 +473,37 @@ function SchedulesTab() {
     },
   });
 
+  // ── Attack Surface snapshot history (separate table) ──
+  const attackSurfaceClientIds = useMemo(() => {
+    return schedules.filter(s => s.targetType === 'attack_surface').map(s => s.targetId);
+  }, [schedules]);
+
+  const { data: attackSurfaceHistory } = useQuery({
+    queryKey: ['admin-schedule-as-history', attackSurfaceClientIds, sevenDaysAgo],
+    enabled: attackSurfaceClientIds.length > 0 && expandedIds.size > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attack_surface_snapshots')
+        .select('id, client_id, status, created_at, completed_at')
+        .in('client_id', attackSurfaceClientIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      return (data || []).map((s: any) => ({
+        target_id: s.client_id,
+        task_type: 'attack_surface_snapshot',
+        status: s.status === 'completed' ? 'completed' : s.status === 'pending' ? 'pending' : s.status === 'running' ? 'running' : s.status,
+        created_at: s.created_at,
+        started_at: s.created_at,
+        completed_at: s.completed_at,
+        execution_time_ms: s.completed_at && s.created_at ? new Date(s.completed_at).getTime() - new Date(s.created_at).getTime() : null,
+        error_message: null,
+      }));
+    },
+  });
+
   const toggleExpanded = useCallback((id: string) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
