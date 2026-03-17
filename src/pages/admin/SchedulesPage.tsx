@@ -693,7 +693,7 @@ function SchedulesTab() {
                   const isExpanded = expandedIds.has(schedule.id);
                   return (
                     <Fragment key={schedule.id}>
-                      <TableRow key={schedule.id} className="cursor-pointer" onClick={() => toggleExpanded(schedule.id)}>
+                      <TableRow className="cursor-pointer" onClick={() => toggleExpanded(schedule.id)}>
                         <TableCell className="w-10 px-2">
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); toggleExpanded(schedule.id); }}>
                             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
