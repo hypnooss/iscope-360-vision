@@ -100,6 +100,11 @@ const Index = () => {
             variants={stagger}
             className="relative z-10 text-center max-w-[960px] mx-auto"
           >
+            <Reveal delay={0.05}>
+              <span className="inline-block px-4 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-semibold tracking-widest uppercase mb-6">
+                Plataforma de Segurança & Compliance
+              </span>
+            </Reveal>
             <Reveal delay={0.1}>
               <h1 className="font-heading text-[2.8rem] sm:text-[3.8rem] lg:text-[5.2rem] font-extrabold leading-[0.95] tracking-[-0.035em] mb-6 text-foreground">
                 Visibilidade inteligente{' '}
@@ -107,23 +112,22 @@ const Index = () => {
               </h1>
             </Reveal>
             <Reveal delay={0.25}>
-              <p className="text-[1rem] sm:text-[1.15rem] text-muted-foreground/70 max-w-[620px] mx-auto mb-10 leading-relaxed">
+              <p className="text-[1rem] sm:text-[1.15rem] text-foreground/80 max-w-[620px] mx-auto mb-10 leading-relaxed">
                 Plataforma completa para análise de compliance, segurança e
                 boas práticas da sua infraestrutura.
               </p>
             </Reveal>
+            <Reveal delay={0.35}>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Button size="lg" className="gap-2 text-base px-8" onClick={() => navigate('/login')}>
+                  Acessar Plataforma <ArrowRight className="w-4 h-4" />
+                </Button>
+                <Button size="lg" variant="outline" className="gap-2 text-base px-8" onClick={() => document.getElementById('problem')?.scrollIntoView({ behavior: 'smooth' })}>
+                  Ver como funciona
+                </Button>
+              </div>
+            </Reveal>
           </motion.div>
-
-          {/* Client logos bar at bottom — like MazeHQ */}
-          <div className="absolute bottom-24 left-0 right-0 z-10">
-            <div className="max-w-[1000px] mx-auto px-6 flex items-center justify-center gap-12 opacity-40">
-              {['Alloy', 'Cohere', 'Forge', 'Lattice', 'Axiom'].map((name) => (
-                <span key={name} className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
-                  {name}
-                </span>
-              ))}
-            </div>
-          </div>
 
           {/* Scroll indicator */}
           <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-10">
