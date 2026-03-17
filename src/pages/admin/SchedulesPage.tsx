@@ -518,8 +518,8 @@ function SchedulesTab() {
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [schedules]);
 
-  const renderTaskStatus = (targetId: string) => {
-    const task = latestTasks?.get(targetId);
+  const renderTaskStatus = (targetId: string, targetType: TargetType) => {
+    const task = latestTasks?.get(`${targetId}::${targetType}`);
     if (!task) {
       return (
         <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-border gap-1">
