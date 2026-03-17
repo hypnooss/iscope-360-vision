@@ -478,7 +478,7 @@ const Index = () => {
       </main>
 
       {/* ═══ FOOTER ═══ */}
-      <footer className="relative z-10 border-t border-border/20">
+      <footer className="relative z-10 border-t border-border/20 bg-background/40 backdrop-blur-xl">
         <div className="max-w-[1200px] mx-auto px-6 py-10 flex flex-col md:flex-row items-center justify-between gap-6">
           <p className="text-sm text-muted-foreground/60">
             © {new Date().getFullYear()} Precisio Analytics. Todos os direitos reservados.

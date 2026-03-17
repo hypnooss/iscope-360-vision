@@ -1,6 +1,4 @@
-import { Menu, X, LogIn } from 'lucide-react';
-import { Button } from './ui/button';
-import { useNavigate } from 'react-router-dom';
+import { Menu, X } from 'lucide-react';
 import logoIscope from '@/assets/logo-iscope.png';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -14,7 +12,6 @@ const NAV_LINKS = [
 ];
 
 export function Header() {
-  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -58,17 +55,6 @@ export function Header() {
           ))}
         </nav>
 
-        {/* Desktop CTA */}
-        <div className="hidden md:block shrink-0">
-          <Button
-            onClick={() => navigate('/auth')}
-            size="sm"
-            className="gap-2 hover:-translate-y-0.5 transition-all duration-300"
-          >
-            <LogIn className="w-4 h-4" /> Acessar Plataforma
-          </Button>
-        </div>
-
         {/* Mobile toggle */}
         <button
           className="md:hidden text-foreground"
@@ -97,9 +83,6 @@ export function Header() {
                 {link.label}
               </button>
             ))}
-            <Button onClick={() => navigate('/auth')} className="w-full mt-2">
-              Acessar Plataforma
-            </Button>
           </motion.div>
         )}
       </AnimatePresence>
