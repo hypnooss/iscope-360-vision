@@ -33,7 +33,7 @@ const sphereVertexShader = `
     vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-    // Rim glow - strong Fresnel effect (bright edges, transparent core)
+    // Rim glow - Fresnel effect
     vec3 viewDir = normalize(-mvPosition.xyz);
     float dotNV = abs(dot(sphereNormal, viewDir));
     vRim = pow(1.0 - dotNV, 2.8);
@@ -41,8 +41,8 @@ const sphereVertexShader = `
     // Back-face culling via alpha
     float frontFade = smoothstep(-0.3, 0.6, sphereNormal.z);
 
-    // Core suppression: center is very transparent, edges are bright
-    float coreFade = mix(0.02, 1.0, pow(vRim, 0.6));
+    // Core suppression: center semi-transparent, edges bright
+    float coreFade = mix(0.15, 1.0, pow(vRim, 0.4));
     vAlpha = aAlpha * frontFade * coreFade;
 
     // Accent color zone: bottom-right quadrant gets magenta
@@ -153,7 +153,7 @@ function createSphereGeometry(count: number) {
     positions[i * 3] = radius * sinPhi * Math.cos(theta);
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
-    alphas[i] = 0.15 + Math.random() * 0.35;
+    alphas[i] = 0.25 + Math.random() * 0.5;
     sizes[i] = 0.7 + Math.random() * 1.0;
     seeds[i] = Math.random();
   }
@@ -200,7 +200,6 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     if (!container) return;
 
     const scene = new THREE.Scene();
-    // Wider FOV to let the globe fill the viewport
     const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
     camera.position.z = 7.0;
 
@@ -251,17 +250,25 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     const sphere = new THREE.Points(sphereGeometry, sphereMaterial);
     const halo = new THREE.Points(haloGeometry, haloMaterial);
 
-    // Globe fills most of the viewport — large scale
     const GLOBE_SCALE = 3.8;
     sphere.scale.setScalar(GLOBE_SCALE);
     halo.scale.setScalar(GLOBE_SCALE * 1.04);
 
-    // Shift globe down slightly so it's centered-lower like MazeHQ
-    sphere.position.y = -0.25;
-    halo.position.y = -0.25;
+    // Initial Y offset (slightly below center)
+    const BASE_Y = -0.25;
+    sphere.position.y = BASE_Y;
+    halo.position.y = BASE_Y;
 
     scene.add(sphere);
     scene.add(halo);
+
+    // Scroll state — globe moves up as user scrolls down (like MazeHQ)
+    let scrollY = 0;
+    const onScroll = () => {
+      scrollY = window.scrollY;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    scrollY = window.scrollY;
 
     const resize = () => {
       const width = Math.max(container.clientWidth, 1);
@@ -287,7 +294,7 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
       sphereMaterial.uniforms.uTime.value = elapsed;
       haloMaterial.uniforms.uTime.value = elapsed;
 
-      // Very slow rotation like MazeHQ
+      // Slow rotation
       sphere.rotation.y = elapsed * ROTATION_SPEED;
       halo.rotation.y = sphere.rotation.y * 1.015;
 
@@ -295,7 +302,21 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
       sphere.rotation.x = Math.sin(elapsed * 0.12) * 0.035;
       halo.rotation.x = sphere.rotation.x;
 
-      renderer.render(scene, camera);
+      // Scroll-driven Y translation: map scrollY pixels to world units
+      // At scrollY = window.innerHeight, globe should be fully off-screen (moved up)
+      const vh = window.innerHeight || 1;
+      const scrollProgress = Math.min(scrollY / vh, 2.0);
+      // Move globe upward in world space as user scrolls
+      // ~8 world units moves it fully out of the 55° FOV at z=7
+      const scrollOffset = scrollProgress * 8.0;
+      sphere.position.y = BASE_Y + scrollOffset;
+      halo.position.y = BASE_Y + scrollOffset;
+
+      // Skip rendering if globe is fully off-screen (perf optimization)
+      if (scrollProgress < 1.8) {
+        renderer.render(scene, camera);
+      }
+
       frameId = window.requestAnimationFrame(tick);
     };
 
@@ -304,6 +325,7 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     return () => {
       window.cancelAnimationFrame(frameId);
       window.removeEventListener("resize", resize);
+      window.removeEventListener("scroll", onScroll);
       sphereGeometry.dispose();
       haloGeometry.dispose();
       sphereMaterial.dispose();
