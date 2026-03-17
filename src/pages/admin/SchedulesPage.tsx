@@ -431,7 +431,11 @@ function SchedulesTab() {
     return schedules.filter(s => s.targetType === 'external_domain').map(s => s.targetId);
   }, [schedules]);
 
-  // ── Dedicated query: latest fortigate_compliance task per firewall ──
+  // Firewall Analyzer IDs
+  const firewallAnalyzerIds = useMemo(() => {
+    return schedules.filter(s => s.targetType === 'firewall_analyzer').map(s => s.targetId);
+  }, [schedules]);
+
   const { data: latestComplianceTasks } = useQuery({
     queryKey: ['admin-schedule-compliance-latest', firewallComplianceIds],
     enabled: firewallComplianceIds.length > 0,
@@ -469,6 +473,28 @@ function SchedulesTab() {
       const map = new Map<string, TaskRow>();
       for (const task of (data || []) as any[]) {
         const key = `${task.target_id}::external_domain`;
+        if (!map.has(key)) map.set(key, task);
+      }
+      return map;
+    },
+  });
+
+  // ── Dedicated query: latest fortigate_analyzer task per firewall ──
+  const { data: latestAnalyzerTasks } = useQuery({
+    queryKey: ['admin-schedule-analyzer-latest', firewallAnalyzerIds],
+    enabled: firewallAnalyzerIds.length > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, task_type, status, completed_at')
+        .eq('task_type', 'fortigate_analyzer')
+        .in('target_id', firewallAnalyzerIds)
+        .order('completed_at', { ascending: false });
+      if (error) throw error;
+      const map = new Map<string, TaskRow>();
+      for (const task of (data || []) as any[]) {
+        const key = `${task.target_id}::firewall_analyzer`;
         if (!map.has(key)) map.set(key, task);
       }
       return map;
@@ -541,6 +567,34 @@ function SchedulesTab() {
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false })
         .limit(2000);
+      if (error) throw error;
+      return (data || []) as Array<{
+        target_id: string;
+        task_type: string;
+        status: string;
+        created_at: string;
+        started_at: string | null;
+        completed_at: string | null;
+        execution_time_ms: number | null;
+        error_message: string | null;
+      }>;
+    },
+  });
+
+  // ── Dedicated: fortigate_analyzer history (timeline) ──
+  const { data: analyzerHistory } = useQuery({
+    queryKey: ['admin-schedule-analyzer-history', firewallAnalyzerIds, sevenDaysAgo],
+    enabled: firewallAnalyzerIds.length > 0 && expandedIds.size > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .eq('task_type', 'fortigate_analyzer')
+        .in('target_id', firewallAnalyzerIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(5000);
       if (error) throw error;
       return (data || []) as Array<{
         target_id: string;
@@ -637,11 +691,13 @@ function SchedulesTab() {
         ? latestComplianceTasks?.get(`${s.targetId}::firewall`)
         : s.targetType === 'external_domain'
         ? latestDomainTasks?.get(`${s.targetId}::external_domain`)
+        : s.targetType === 'firewall_analyzer'
+        ? latestAnalyzerTasks?.get(`${s.targetId}::firewall_analyzer`)
         : latestTasks?.get(`${s.targetId}::${s.targetType}`);
       if (task && task.status === 'failed') failed++;
     }
     return { active, next1h, next6h, next24h, failed };
-  }, [schedules, latestTasks, latestComplianceTasks, latestDomainTasks]);
+  }, [schedules, latestTasks, latestComplianceTasks, latestDomainTasks, latestAnalyzerTasks]);
 
   const filtered = useMemo(() => {
     return schedules.filter(s => {
@@ -667,6 +723,8 @@ function SchedulesTab() {
       ? latestComplianceTasks?.get(`${targetId}::firewall`)
       : targetType === 'external_domain'
       ? latestDomainTasks?.get(`${targetId}::external_domain`)
+      : targetType === 'firewall_analyzer'
+      ? latestAnalyzerTasks?.get(`${targetId}::firewall_analyzer`)
       : latestTasks?.get(`${targetId}::${targetType}`);
     if (!task) {
       return (
@@ -898,6 +956,8 @@ function SchedulesTab() {
                                 ? (complianceHistory?.filter(t => t.target_id === schedule.targetId) || [])
                                 : schedule.targetType === 'external_domain'
                                 ? (domainHistory?.filter(t => t.target_id === schedule.targetId) || [])
+                                : schedule.targetType === 'firewall_analyzer'
+                                ? (analyzerHistory?.filter(t => t.target_id === schedule.targetId) || [])
                                 : (taskHistory?.filter(t => {
                                     if (t.target_id !== schedule.targetId) return false;
                                     const allowedTypes = TARGET_TO_TASK_TYPES[schedule.targetType] || [];
