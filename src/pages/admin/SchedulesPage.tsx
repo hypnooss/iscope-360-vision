@@ -525,7 +525,7 @@ function SchedulesTab() {
         if (diff >= 0 && diff < 6) next6h++;
         if (diff >= 0 && diff < 24) next24h++;
       }
-      const task = latestTasks?.get(s.targetId);
+      const task = latestTasks?.get(`${s.targetId}::${s.targetType}`);
       if (task && task.status === 'failed') failed++;
     }
     return { active, next1h, next6h, next24h, failed };
