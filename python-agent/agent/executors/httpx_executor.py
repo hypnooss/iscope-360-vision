@@ -37,6 +37,9 @@ NEXT_STATIC_JS_RE = re.compile(r'/_next/static/[^"\'>\s]+\.js', re.IGNORECASE)
 # ── Version patterns to search in JS chunks ──────────────────
 # React version: appears as "18.2.0" near "react" references in framework chunks
 REACT_VERSION_PATTERNS = [
+    # Turbopack/App Router: react-dom before, version after
+    re.compile(r'react[.-]?dom[^{]*?version="(\d+\.\d+\.\d+)"', re.IGNORECASE),
+    re.compile(r'react[.-]?dom[^{]*?version:"(\d+\.\d+\.\d+)"', re.IGNORECASE),
     re.compile(r'react[.-]dom\.production[^"]*?"(\d+\.\d+\.\d+)"'),
     re.compile(r'"react"[^}]*?"(\d+\.\d+\.\d+)"'),
     re.compile(r'ReactDOM[^"]*?version["\s:=]+["\'](\d+\.\d+\.\d+)'),
@@ -52,6 +55,9 @@ REACT_VERSION_PATTERNS = [
 
 # Next.js version patterns
 NEXTJS_VERSION_PATTERNS = [
+    # Turbopack/App Router: next before, version after
+    re.compile(r'next[^{]*?version="(\d+\.\d+\.\d+)"', re.IGNORECASE),
+    re.compile(r'next[^{]*?version:"(\d+\.\d+\.\d+)"', re.IGNORECASE),
     re.compile(r'Next\.js["\s:=]+["\']?(\d+\.\d+\.\d+)'),
     re.compile(r'next@(\d+\.\d+\.\d+)'),
     re.compile(r'next[/:](\d+\.\d+\.\d+)'),
@@ -64,6 +70,7 @@ NEXTJS_VERSION_PATTERNS = [
 # Pages Router chunk patterns (used for classification priority)
 PAGES_ROUTER_CHUNK_PATTERNS = [
     (re.compile(r'framework-[a-f0-9]+\.js'), 'framework'),
+    (re.compile(r'turbopack-[a-f0-9]+\.js'), 'turbopack'),
     (re.compile(r'main-[a-f0-9]+\.js'), 'main'),
     (re.compile(r'webpack-[a-f0-9]+\.js'), 'webpack'),
     (re.compile(r'pages/_app-[a-f0-9]+\.js'), 'app'),
@@ -71,7 +78,7 @@ PAGES_ROUTER_CHUNK_PATTERNS = [
 
 # Max bytes to read from each JS chunk
 MAX_CHUNK_BYTES = 51200  # 50KB
-MAX_PROBE_REQUESTS = 3
+MAX_PROBE_REQUESTS = 6
 PROBE_TIMEOUT = 5
 
 
@@ -220,7 +227,7 @@ class HttpxExecutor(BaseExecutor):
             chunk_urls.append((full_url, chunk_type))
 
         # Sort: framework first, then main/webpack/app, then generic
-        priority = {'framework': 0, 'main': 1, 'webpack': 2, 'app': 3, 'generic': 4}
+        priority = {'framework': 0, 'turbopack': 1, 'main': 2, 'webpack': 3, 'app': 4, 'generic': 5}
         chunk_urls.sort(key=lambda x: priority.get(x[1], 99))
 
         self.logger.info(
