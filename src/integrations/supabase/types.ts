@@ -999,6 +999,50 @@ export type Database = {
         }
         Relationships: []
       }
+      cve_sync_history: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          cve_count: number | null
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          source_id: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          cve_count?: number | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          source_id: string
+          started_at?: string
+          status: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          cve_count?: number | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          source_id?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cve_sync_history_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "cve_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dehashed_cache: {
         Row: {
           client_id: string

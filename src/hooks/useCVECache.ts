@@ -73,3 +73,37 @@ export function useCVESources() {
     staleTime: 1000 * 60 * 2,
   });
 }
+
+export interface CVESyncHistoryRow {
+  id: string;
+  source_id: string;
+  status: string;
+  cve_count: number;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export function useCVESyncHistory(sourceIds: string[]) {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  return useQuery({
+    queryKey: ['cve-sync-history', sourceIds],
+    queryFn: async () => {
+      if (sourceIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from('cve_sync_history')
+        .select('*')
+        .in('source_id', sourceIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      return (data || []) as CVESyncHistoryRow[];
+    },
+    enabled: sourceIds.length > 0,
+    staleTime: 1000 * 60 * 2,
+  });
+}
