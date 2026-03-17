@@ -318,6 +318,24 @@ const OBSOLETE_TECH_RULES: ObsoleteTechRule[] = [
     businessImpact: 'Comprometimento do servidor web e de todas as aplicações hospedadas nele.',
     recommendation: 'Atualizar o Windows Server para versão com suporte, que inclui IIS atualizado.',
   },
+  {
+    pattern: /react[\/:\s]?(15\.|16\.|17\.)/i,
+    severity: 'high',
+    name: 'React desatualizado detectado',
+    eolInfo: 'React 15/16/17 possuem vulnerabilidades conhecidas incluindo React2Shell (CVE-2025-29927)',
+    technicalRisk: 'Versões antigas do React e Next.js podem permitir Server-Side Request Forgery e execução remota via middleware header poisoning (React2Shell).',
+    businessImpact: 'Aplicação web vulnerável a ataques que podem resultar em bypass de autenticação, acesso não autorizado ao servidor e exfiltração de dados.',
+    recommendation: 'Atualizar para React 18+ e Next.js 15+ (se aplicável). Verificar se o middleware de autenticação valida o header x-middleware-subrequest.',
+  },
+  {
+    pattern: /next[.\/-]?js[\/:\s]?(9\.|10\.|11\.|12\.|13\.|14\.)/i,
+    severity: 'high',
+    name: 'Next.js desatualizado detectado',
+    eolInfo: 'Next.js < 15 é vulnerável a React2Shell (CVE-2025-29927)',
+    technicalRisk: 'Versões do Next.js anteriores à 15.x possuem uma vulnerabilidade crítica no middleware que permite bypass de autenticação via header x-middleware-subrequest.',
+    businessImpact: 'Atacantes podem contornar toda a camada de autenticação e autorização da aplicação, acessando rotas e dados protegidos.',
+    recommendation: 'Atualizar para Next.js 15.2.3+ ou aplicar o patch de segurança oficial. Bloquear o header x-middleware-subrequest no WAF/reverse proxy.',
+  },
 ];
 
 const ADMIN_PANEL_PATTERNS = [

@@ -4,10 +4,26 @@ Used by Super Agents for attack surface scanning.
 """
 
 import json
+import re
 import subprocess
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 from agent.executors.base import BaseExecutor
+
+# ── JS Framework Fingerprinting Rules ────────────────────────
+# Each tuple: (regex_pattern, technology_name)
+JS_FRAMEWORK_FINGERPRINTS: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r'__NEXT_DATA__', re.IGNORECASE), 'Next.js'),
+    (re.compile(r'/_next/static/', re.IGNORECASE), 'Next.js'),
+    (re.compile(r'data-reactroot|_reactRoot|__react|react-app', re.IGNORECASE), 'React'),
+    (re.compile(r'react\.production\.min\.js|react-dom', re.IGNORECASE), 'React'),
+    (re.compile(r'ng-version=|ng-app|ng-controller', re.IGNORECASE), 'Angular'),
+    (re.compile(r'__NUXT__|__nuxt|nuxt\.js', re.IGNORECASE), 'Nuxt/Vue'),
+    (re.compile(r'data-v-[a-f0-9]|id="__vue"|vue\.runtime', re.IGNORECASE), 'Vue.js'),
+    (re.compile(r'__svelte|svelte-[a-z]|svelte\.dev', re.IGNORECASE), 'Svelte'),
+    (re.compile(r'__remixContext|remix\.run', re.IGNORECASE), 'Remix/React'),
+    (re.compile(r'gatsby', re.IGNORECASE), 'Gatsby/React'),
+]
 
 
 class HttpxExecutor(BaseExecutor):
@@ -77,6 +93,8 @@ class HttpxExecutor(BaseExecutor):
             '-no-color',
             '-timeout', '10',
             '-retries', '1',
+            '-follow-redirects',
+            '-include-response',
         ]
 
         if is_cdn:
@@ -123,6 +141,19 @@ class HttpxExecutor(BaseExecutor):
         except Exception as e:
             return {'error': f'httpx error: {str(e)}'}
 
+    def _fingerprint_body(self, body: str) -> List[str]:
+        """Detect JS frameworks from HTML response body via regex fingerprints."""
+        detected = set()
+        # Only scan first 100KB to avoid performance issues
+        snippet = body[:102400]
+        for pattern, tech_name in JS_FRAMEWORK_FINGERPRINTS:
+            if pattern.search(snippet):
+                detected.add(tech_name)
+        # If Next.js detected, ensure React is also listed
+        if 'Next.js' in detected or 'Remix/React' in detected or 'Gatsby/React' in detected:
+            detected.add('React')
+        return sorted(detected)
+
     def _parse_output(self, stdout: str) -> List[Dict[str, Any]]:
         """Parse httpx JSON lines output."""
         web_services = []
@@ -132,12 +163,24 @@ class HttpxExecutor(BaseExecutor):
                 continue
             try:
                 entry = json.loads(line)
+
+                # Existing tech from Wappalyzer
+                technologies = list(entry.get('tech', []) or [])
+
+                # Fingerprint body for JS frameworks
+                body = entry.get('body', '') or entry.get('response', '') or ''
+                if body:
+                    body_techs = self._fingerprint_body(body)
+                    for t in body_techs:
+                        if t not in technologies:
+                            technologies.append(t)
+
                 service = {
                     'url': entry.get('url', ''),
                     'status_code': entry.get('status_code', 0),
                     'title': entry.get('title', ''),
                     'server': entry.get('webserver', ''),
-                    'technologies': entry.get('tech', []),
+                    'technologies': technologies,
                     'content_length': entry.get('content_length', 0),
                     'tls': {},
                 }
