@@ -587,6 +587,19 @@ function SchedulesTab() {
     },
   });
 
+  // ── Expanded IDs for M365 Compliance and M365 Analyzer ──
+  const expandedM365ComplianceIds = useMemo(() => {
+    return schedules
+      .filter(s => s.targetType === 'm365_compliance' && expandedIds.has(s.id))
+      .map(s => s.targetId);
+  }, [schedules, expandedIds]);
+
+  const expandedM365AnalyzerIds = useMemo(() => {
+    return schedules
+      .filter(s => s.targetType === 'm365_analyzer' && expandedIds.has(s.id))
+      .map(s => s.targetId);
+  }, [schedules, expandedIds]);
+
   // ── Dedicated: fortigate_analyzer history (timeline) ──
   const { data: analyzerHistory } = useQuery({
     queryKey: ['admin-schedule-analyzer-history', expandedFirewallAnalyzerIds, sevenDaysAgo],
@@ -598,6 +611,60 @@ function SchedulesTab() {
         .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
         .eq('task_type', 'fortigate_analyzer')
         .in('target_id', expandedFirewallAnalyzerIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data || []) as Array<{
+        target_id: string;
+        task_type: string;
+        status: string;
+        created_at: string;
+        started_at: string | null;
+        completed_at: string | null;
+        execution_time_ms: number | null;
+        error_message: string | null;
+      }>;
+    },
+  });
+
+  // ── Dedicated: M365 Compliance history (timeline) ──
+  const { data: m365ComplianceHistory } = useQuery({
+    queryKey: ['admin-schedule-m365-compliance-history', expandedM365ComplianceIds, sevenDaysAgo],
+    enabled: expandedM365ComplianceIds.length > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .eq('task_type', 'm365_powershell')
+        .in('target_id', expandedM365ComplianceIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data || []) as Array<{
+        target_id: string;
+        task_type: string;
+        status: string;
+        created_at: string;
+        started_at: string | null;
+        completed_at: string | null;
+        execution_time_ms: number | null;
+        error_message: string | null;
+      }>;
+    },
+  });
+
+  // ── Dedicated: M365 Analyzer history (timeline) ──
+  const { data: m365AnalyzerHistory } = useQuery({
+    queryKey: ['admin-schedule-m365-analyzer-history', expandedM365AnalyzerIds, sevenDaysAgo],
+    enabled: expandedM365AnalyzerIds.length > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .eq('task_type', 'm365_analyzer')
+        .in('target_id', expandedM365AnalyzerIds)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -963,6 +1030,10 @@ function SchedulesTab() {
                                 ? (domainHistory?.filter(t => t.target_id === schedule.targetId) || [])
                                 : schedule.targetType === 'firewall_analyzer'
                                 ? (analyzerHistory?.filter(t => t.target_id === schedule.targetId) || [])
+                                : schedule.targetType === 'm365_compliance'
+                                ? (m365ComplianceHistory?.filter(t => t.target_id === schedule.targetId) || [])
+                                : schedule.targetType === 'm365_analyzer'
+                                ? (m365AnalyzerHistory?.filter(t => t.target_id === schedule.targetId) || [])
                                 : (taskHistory?.filter(t => {
                                     if (t.target_id !== schedule.targetId) return false;
                                     const allowedTypes = TARGET_TO_TASK_TYPES[schedule.targetType] || [];
