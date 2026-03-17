@@ -37,6 +37,9 @@ NEXT_STATIC_JS_RE = re.compile(r'/_next/static/[^"\'>\s]+\.js', re.IGNORECASE)
 # ── Version patterns to search in JS chunks ──────────────────
 # React version: appears as "18.2.0" near "react" references in framework chunks
 REACT_VERSION_PATTERNS = [
+    # Turbopack/App Router: react-dom before, version after
+    re.compile(r'react[.-]?dom[^{]*?version="(\d+\.\d+\.\d+)"', re.IGNORECASE),
+    re.compile(r'react[.-]?dom[^{]*?version:"(\d+\.\d+\.\d+)"', re.IGNORECASE),
     re.compile(r'react[.-]dom\.production[^"]*?"(\d+\.\d+\.\d+)"'),
     re.compile(r'"react"[^}]*?"(\d+\.\d+\.\d+)"'),
     re.compile(r'ReactDOM[^"]*?version["\s:=]+["\'](\d+\.\d+\.\d+)'),
