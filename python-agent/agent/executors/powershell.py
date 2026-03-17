@@ -848,7 +848,8 @@ class PowerShellExecutor(BaseExecutor):
                 organization=organization,
                 auth_mode=auth_mode,
                 username=username,
-                password=password
+                password=password,
+                spo_domain=spo_domain
             )
             
             self.logger.debug(f"PowerShell script built, {len(script)} chars")
