@@ -555,7 +555,7 @@ function SchedulesTab() {
     },
   });
 
-
+  const { data: taskHistory } = useQuery({
     queryKey: ['admin-schedule-task-history', targetIds, sevenDaysAgo],
     enabled: targetIds.length > 0 && expandedIds.size > 0,
     refetchInterval: 60_000,
