@@ -391,6 +391,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
+          <ScrollDown targetId="blog" />
         </Section>
 
         {/* ═══ BLOG / INSIGHTS ═══ */}
