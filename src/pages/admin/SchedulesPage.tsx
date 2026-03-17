@@ -431,7 +431,11 @@ function SchedulesTab() {
     return schedules.filter(s => s.targetType === 'external_domain').map(s => s.targetId);
   }, [schedules]);
 
-  // ── Dedicated query: latest fortigate_compliance task per firewall ──
+  // Firewall Analyzer IDs
+  const firewallAnalyzerIds = useMemo(() => {
+    return schedules.filter(s => s.targetType === 'firewall_analyzer').map(s => s.targetId);
+  }, [schedules]);
+
   const { data: latestComplianceTasks } = useQuery({
     queryKey: ['admin-schedule-compliance-latest', firewallComplianceIds],
     enabled: firewallComplianceIds.length > 0,
