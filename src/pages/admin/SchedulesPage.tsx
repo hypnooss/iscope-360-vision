@@ -1066,6 +1066,32 @@ function ExecutionsTab() {
     });
   }, [rows, search, filterType, filterWorkspace, filterStatus]);
 
+  // ── 7-day task history for execution timeline ──
+  const execTargetIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const r of filtered) ids.add(r.target_id);
+    return Array.from(ids);
+  }, [filtered]);
+
+  const sevenDaysAgo = useMemo(() => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), []);
+
+  const { data: execTaskHistory } = useQuery({
+    queryKey: ['admin-exec-task-history', execTargetIds, sevenDaysAgo],
+    enabled: execTargetIds.length > 0 && expandedIds.size > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .in('target_id', execTargetIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (error) throw error;
+      return (data || []) as TimelineTask[];
+    },
+  });
+
   const renderExecStatus = (status: string) => {
     const cfg = EXEC_STATUS_CONFIG[status] || EXEC_STATUS_CONFIG.pending;
     const Icon = cfg.icon;
