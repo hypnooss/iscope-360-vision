@@ -139,7 +139,8 @@ class PowerShellExecutor(BaseExecutor):
         organization: Optional[str] = None,
         auth_mode: str = "cba",
         username: Optional[str] = None,
-        password: Optional[str] = None
+        password: Optional[str] = None,
+        spo_domain: Optional[str] = None
     ) -> str:
         """Build a PowerShell script for batch execution (legacy mode)."""
         if module not in self.MODULES:
@@ -174,12 +175,12 @@ class PowerShellExecutor(BaseExecutor):
                 f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
                 "",
                 "# Connect with credentials",
-                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]),
+                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=self._derive_spo_domain(organization, spo_domain)),
                 "",
             ])
         else:
             # Derive SPO admin domain from organization (e.g. contoso.onmicrosoft.com -> contoso)
-            spo_admin_domain = (organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]
+            spo_admin_domain = self._derive_spo_domain(organization, spo_domain)
             thumbprint = self._get_thumbprint() or ''
             script_parts.extend([
                 "# Connect with certificate",
@@ -816,6 +817,7 @@ class PowerShellExecutor(BaseExecutor):
         app_id = params.get("app_id") or context.get("app_id")
         tenant_id = params.get("tenant_id") or context.get("tenant_id")
         organization = params.get("organization") or context.get("organization")
+        spo_domain = params.get("spo_domain") or context.get("spo_domain")
         default_timeout = 300 + (max(0, len(commands) - 1) * 30)
         timeout = params.get("timeout", default_timeout)
         username = params.get("username")
@@ -846,7 +848,8 @@ class PowerShellExecutor(BaseExecutor):
                 organization=organization,
                 auth_mode=auth_mode,
                 username=username,
-                password=password
+                password=password,
+                spo_domain=spo_domain
             )
             
             self.logger.debug(f"PowerShell script built, {len(script)} chars")
