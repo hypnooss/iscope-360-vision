@@ -3,6 +3,7 @@ import * as THREE from "three";
 
 const PARTICLE_COUNT = 25000;
 const ROTATION_SPEED = 0.00015;
+const SPHERE_RADIUS = 200;
 
 const vertexShader = `
   attribute float aAlpha;
