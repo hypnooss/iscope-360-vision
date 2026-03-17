@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/Header';
 import { NetworkAnimation } from '@/components/NetworkAnimation';
+import { ScrollDown } from '@/components/landing/ScrollDown';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 import {
