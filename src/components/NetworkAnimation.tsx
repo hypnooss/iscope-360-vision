@@ -345,9 +345,9 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     const CAM_BASE_ROT_X = 0;
 
     // Terrain camera targets
-    const CAM_TERRAIN_Z = 8.5;
-    const CAM_TERRAIN_Y = 2.5;
-    const CAM_TERRAIN_ROT_X = -0.45; // look down at terrain
+    const CAM_TERRAIN_Z = 9.0;
+    const CAM_TERRAIN_Y = 1.2;
+    const CAM_TERRAIN_ROT_X = -0.25; // gentle look down at terrain
 
     const tick = () => {
       const elapsed = (performance.now() - start) * 0.001;
