@@ -444,7 +444,7 @@ function SchedulesTab() {
         .select('target_id, status, created_at, started_at, completed_at, execution_time_ms, error_message')
         .in('target_id', targetIds)
         .gte('created_at', sevenDaysAgo)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(5000);
       if (error) throw error;
       return (data || []) as Array<{
@@ -791,7 +791,7 @@ function ScheduleTimeline({ targetId, tasks }: { targetId: string; tasks: Timeli
   }, [period]);
 
   const filtered = useMemo(() => {
-    return tasks.filter(t => new Date(t.created_at) >= cutoff);
+    return tasks.filter(t => new Date(t.created_at) >= cutoff).slice().sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [tasks, cutoff]);
 
   const counts = useMemo(() => {
@@ -909,6 +909,16 @@ function ExecutionsTab() {
   const [filterWorkspace, setFilterWorkspace] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [timeWindow, setTimeWindow] = useState('24h');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -1055,6 +1065,32 @@ function ExecutionsTab() {
       return true;
     });
   }, [rows, search, filterType, filterWorkspace, filterStatus]);
+
+  // ── 7-day task history for execution timeline ──
+  const execTargetIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const r of filtered) ids.add(r.target_id);
+    return Array.from(ids);
+  }, [filtered]);
+
+  const sevenDaysAgo = useMemo(() => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), []);
+
+  const { data: execTaskHistory } = useQuery({
+    queryKey: ['admin-exec-task-history', execTargetIds, sevenDaysAgo],
+    enabled: execTargetIds.length > 0 && expandedIds.size > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .in('target_id', execTargetIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (error) throw error;
+      return (data || []) as TimelineTask[];
+    },
+  });
 
   const renderExecStatus = (status: string) => {
     const cfg = EXEC_STATUS_CONFIG[status] || EXEC_STATUS_CONFIG.pending;
@@ -1213,6 +1249,7 @@ function ExecutionsTab() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10"></TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Ativo</TableHead>
                   <TableHead>Workspace</TableHead>
@@ -1223,21 +1260,41 @@ function ExecutionsTab() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map(row => (
-                  <TableRow key={row.id}>
-                    <TableCell>{renderTypeBadge(mapTaskType(row.task_type, row.target_type))}</TableCell>
-                    <TableCell className="font-medium text-foreground">{row.target_name}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.client_name}</TableCell>
-                    <TableCell>{renderExecStatus(row.status)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{row.agent_name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground tabular-nums">
-                      {formatDuration(row.started_at, row.completed_at)}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatShortDateTimeBR(row.created_at)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {filtered.map(row => {
+                  const isExpanded = expandedIds.has(row.id);
+                  return (
+                    <Fragment key={row.id}>
+                      <TableRow className="cursor-pointer" onClick={() => toggleExpanded(row.id)}>
+                        <TableCell className="w-10 px-2">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); toggleExpanded(row.id); }}>
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </Button>
+                        </TableCell>
+                        <TableCell>{renderTypeBadge(mapTaskType(row.task_type, row.target_type))}</TableCell>
+                        <TableCell className="font-medium text-foreground">{row.target_name}</TableCell>
+                        <TableCell className="text-muted-foreground">{row.client_name}</TableCell>
+                        <TableCell>{renderExecStatus(row.status)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{row.agent_name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground tabular-nums">
+                          {formatDuration(row.started_at, row.completed_at)}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatShortDateTimeBR(row.created_at)}
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && (
+                        <TableRow>
+                          <TableCell colSpan={8} className="p-0 border-b border-border/50">
+                            <ScheduleTimeline
+                              targetId={row.target_id}
+                              tasks={execTaskHistory?.filter(t => t.target_id === row.target_id) || []}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
