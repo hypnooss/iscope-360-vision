@@ -293,6 +293,27 @@ gpgkey=file:///etc/pki/rpm-gpg/microsoft.asc
         os.chmod(self.KEY_FILE, 0o600)
         os.chmod(self.CERT_FILE, 0o644)
 
+        # Gerar PFX para CBA com PnP.PowerShell (com fallback sem -legacy para OpenSSL < 3)
+        try:
+            subprocess.run([
+                "openssl", "pkcs12", "-export",
+                "-out", str(self.PFX_FILE),
+                "-inkey", str(self.KEY_FILE),
+                "-in", str(self.CERT_FILE),
+                "-passout", "pass:",
+                "-legacy"
+            ], check=True, capture_output=True)
+        except subprocess.CalledProcessError:
+            subprocess.run([
+                "openssl", "pkcs12", "-export",
+                "-out", str(self.PFX_FILE),
+                "-inkey", str(self.KEY_FILE),
+                "-in", str(self.CERT_FILE),
+                "-passout", "pass:"
+            ], check=True, capture_output=True)
+
+        os.chmod(self.PFX_FILE, 0o600)
+
         # Calculate and save thumbprint (SHA1 fingerprint)
         result = subprocess.run(
             ["openssl", "x509", "-in", str(self.CERT_FILE), "-fingerprint", "-sha1", "-noout"],
