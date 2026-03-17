@@ -6,7 +6,7 @@ export function ScrollDown({ targetId }: ScrollDownProps) {
   return (
     <button
       onClick={() => document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth' })}
-      className="flex flex-col items-center gap-2 cursor-pointer group mt-16 mx-auto"
+      className="flex flex-col items-center gap-2 cursor-pointer group mt-8 mx-auto"
       aria-label={`Scroll to ${targetId}`}
     >
       <span className="text-[10px] uppercase tracking-[0.32em] font-mono text-muted-foreground/50 group-hover:text-muted-foreground/80 transition-colors duration-300">
