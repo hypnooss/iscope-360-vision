@@ -153,11 +153,6 @@ const App = () => (
                   <Route path="/scope-m365/compliance/report/:reportId" element={<M365PostureReportPage />} />
                   <Route path="/scope-m365/compliance" element={<M365PosturePage />} />
                   <Route path="/scope-m365/oauth-callback" element={<OAuthCallbackPage />} />
-                  <Route path="/scope-m365/entra-id" element={<EntraIdPage />} />
-                  <Route path="/scope-m365/entra-id/security-insights" element={<EntraIdSecurityInsightsPage />} />
-                  <Route path="/scope-m365/entra-id/applications" element={<EntraIdApplicationInsightsPage />} />
-                  <Route path="/scope-m365/entra-id/audit-logs" element={<Navigate to="/scope-m365/entra-id/security-insights" replace />} />
-                  <Route path="/scope-m365/entra-id/analysis" element={<EntraIdAnalysisPage />} />
                   
                   <Route path="/scope-m365/exchange-analyzer" element={<ExchangeAnalyzerPage />} />
                   <Route path="/scope-m365/entra-id-analyzer" element={<EntraIdAnalyzerPage />} />
