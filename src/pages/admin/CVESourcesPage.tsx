@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
@@ -7,18 +7,24 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent } from '@/components/ui/card';
-import { useCVESources, CVESource } from '@/hooks/useCVECache';
+import { Card } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useCVESources, useCVESyncHistory, CVESource, CVESyncHistoryRow } from '@/hooks/useCVECache';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   RefreshCw, CheckCircle2, XCircle, Clock, Database,
   Shield, AlertTriangle, Activity, Layers, ArrowLeft,
+  ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatShortDateTimeBR } from '@/lib/dateUtils';
 import { cn } from '@/lib/utils';
+
+// ── Constants ──
 
 const MODULE_LABELS: Record<string, string> = {
   firewall: 'Firewall',
@@ -32,12 +38,6 @@ const MODULE_COLORS: Record<string, string> = {
   external_domain: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
 };
 
-const MODULE_BG: Record<string, string> = {
-  firewall: 'bg-orange-500/5 border-orange-500/20',
-  m365: 'bg-blue-500/5 border-blue-500/20',
-  external_domain: 'bg-emerald-500/5 border-emerald-500/20',
-};
-
 const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; label: string; className: string }> = {
   success: { icon: CheckCircle2, label: 'Sincronizado', className: 'text-emerald-400' },
   error: { icon: XCircle, label: 'Erro', className: 'text-rose-400' },
@@ -45,64 +45,126 @@ const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; label: string; 
   pending: { icon: Clock, label: 'Pendente', className: 'text-muted-foreground' },
 };
 
-function SourceCard({ source, onToggle, onSync, isSyncing }: {
-  source: CVESource;
-  onToggle: () => void;
-  onSync: () => void;
-  isSyncing: boolean;
-}) {
-  const statusConfig = STATUS_CONFIG[source.last_sync_status || 'pending'] || STATUS_CONFIG.pending;
-  const StatusIcon = statusConfig.icon;
+const TIMELINE_STATUS_LABELS: Record<string, string> = {
+  success: 'Sucesso',
+  error: 'Erro',
+  partial: 'Parcial',
+};
+
+const STATUS_BAR_COLORS: Record<string, string> = {
+  success: '#10b981',
+  error: '#ef4444',
+  partial: '#f59e0b',
+};
+
+// ── Helpers ──
+
+function formatDurationMs(ms: number | null): string {
+  if (!ms) return '—';
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const remSecs = secs % 60;
+  if (mins < 60) return `${mins}m ${remSecs}s`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m`;
+}
+
+// ── SyncTimeline component ──
+
+function SyncTimeline({ sourceId, history }: { sourceId: string; history: CVESyncHistoryRow[] }) {
+  const [period, setPeriod] = useState<'24h' | '48h' | '7d'>('24h');
+
+  const cutoff = useMemo(() => {
+    const hours = period === '24h' ? 24 : period === '48h' ? 48 : 168;
+    return new Date(Date.now() - hours * 60 * 60 * 1000);
+  }, [period]);
+
+  const filtered = useMemo(() => {
+    return history
+      .filter(h => h.source_id === sourceId && new Date(h.created_at) >= cutoff)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  }, [history, sourceId, cutoff]);
+
+  const counts = useMemo(() => {
+    let success = 0, fail = 0;
+    for (const t of filtered) {
+      if (t.status === 'success') success++;
+      else if (t.status === 'error') fail++;
+    }
+    return { total: filtered.length, success, fail };
+  }, [filtered]);
 
   return (
-    <div className={cn("border rounded-lg p-4 space-y-3 transition-colors", MODULE_BG[source.module_code] || '')}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-semibold text-foreground">{source.source_label}</h3>
-            <Badge variant="outline" className={cn('text-xs', MODULE_COLORS[source.module_code] || '')}>
-              {MODULE_LABELS[source.module_code] || source.module_code}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-3 mt-2 text-sm">
-            <div className="flex items-center gap-1">
-              <StatusIcon className={cn('w-4 h-4', statusConfig.className)} />
-              <span className="text-muted-foreground">{statusConfig.label}</span>
-            </div>
-            {source.last_sync_at && (
-              <span className="text-muted-foreground">
-                {formatDistanceToNow(new Date(source.last_sync_at), { addSuffix: true, locale: ptBR })}
-              </span>
-            )}
-            {source.last_sync_count > 0 && (
-              <span className="text-muted-foreground font-medium">
-                {source.last_sync_count} CVEs
-              </span>
-            )}
-          </div>
-          {source.last_sync_error && (
-            <p className="text-xs text-rose-400 mt-1">{source.last_sync_error}</p>
+    <div className="pl-16 pr-6 py-6 bg-muted/20">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-1">
+          {(['24h', '48h', '7d'] as const).map(p => (
+            <Button
+              key={p}
+              variant={period === p ? 'default' : 'ghost'}
+              size="sm"
+              className={cn(
+                "h-7 px-3 text-xs font-medium",
+                period === p && "bg-primary text-primary-foreground shadow-sm"
+              )}
+              onClick={() => setPeriod(p)}
+            >
+              {p === '7d' ? '7 dias' : p}
+            </Button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>{counts.total} sincronizações</span>
+          {counts.success > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+              {counts.success} ✓
+            </span>
+          )}
+          {counts.fail > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+              {counts.fail} ✗
+            </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <Switch
-            checked={source.is_active}
-            onCheckedChange={onToggle}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!source.is_active || isSyncing}
-            onClick={onSync}
-          >
-            <RefreshCw className={cn('w-4 h-4 mr-1', isSyncing && 'animate-spin')} />
-            Sincronizar
-          </Button>
-        </div>
       </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-2">Nenhuma sincronização neste período.</p>
+      ) : (
+        <TooltipProvider delayDuration={200}>
+          <div className="flex w-full h-5 rounded-md overflow-hidden bg-muted/30">
+            {filtered.map((t, i) => (
+              <Tooltip key={i}>
+                <TooltipTrigger asChild>
+                  <button
+                    className="h-full flex-1 min-w-[2px] transition-opacity hover:opacity-75 focus:outline-none focus:ring-1 focus:ring-ring focus:ring-inset"
+                    style={{ backgroundColor: STATUS_BAR_COLORS[t.status] || '#6b7280' }}
+                  />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs max-w-[250px]">
+                  <div className="font-medium">{TIMELINE_STATUS_LABELS[t.status] || t.status}</div>
+                  <div className="text-muted-foreground">{formatShortDateTimeBR(t.created_at)}</div>
+                  <div className="text-muted-foreground">Duração: {formatDurationMs(t.duration_ms)}</div>
+                  {t.cve_count > 0 && (
+                    <div className="text-muted-foreground">{t.cve_count} CVEs</div>
+                  )}
+                  {t.error_message && (
+                    <div className="text-rose-400 mt-1 line-clamp-2">{t.error_message}</div>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        </TooltipProvider>
+      )}
     </div>
   );
 }
+
+// ── Main Page ──
 
 export default function CVESourcesPage() {
   const { data: sources, isLoading } = useCVESources();
@@ -110,6 +172,22 @@ export default function CVESourcesPage() {
   const navigate = useNavigate();
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const expandedSourceIds = useMemo(() => {
+    return Array.from(expandedIds);
+  }, [expandedIds]);
+
+  const { data: syncHistory } = useCVESyncHistory(expandedSourceIds);
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const stats = useMemo(() => {
     if (!sources) return { total: 0, active: 0, errors: 0, totalCves: 0 };
@@ -119,17 +197,6 @@ export default function CVESourcesPage() {
       errors: sources.filter(s => s.last_sync_status === 'error').length,
       totalCves: sources.reduce((acc, s) => acc + (s.last_sync_count || 0), 0),
     };
-  }, [sources]);
-
-  const grouped = useMemo(() => {
-    if (!sources) return {};
-    const groups: Record<string, CVESource[]> = {};
-    for (const s of sources) {
-      const key = s.module_code;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(s);
-    }
-    return groups;
   }, [sources]);
 
   const handleToggle = async (source: CVESource) => {
@@ -156,6 +223,7 @@ export default function CVESourcesPage() {
       toast.success(`Sincronização de "${source.source_label}" iniciada`);
       queryClient.invalidateQueries({ queryKey: ['cve-sources'] });
       queryClient.invalidateQueries({ queryKey: ['cve-cache'] });
+      queryClient.invalidateQueries({ queryKey: ['cve-sync-history'] });
     } catch {
       toast.error('Erro ao iniciar sincronização');
     } finally {
@@ -173,14 +241,13 @@ export default function CVESourcesPage() {
       toast.success('Sincronização de todas as fontes iniciada');
       queryClient.invalidateQueries({ queryKey: ['cve-sources'] });
       queryClient.invalidateQueries({ queryKey: ['cve-cache'] });
+      queryClient.invalidateQueries({ queryKey: ['cve-sync-history'] });
     } catch {
       toast.error('Erro ao iniciar sincronização');
     } finally {
       setSyncingAll(false);
     }
   };
-
-  const groupOrder = ['firewall', 'm365', 'external_domain'];
 
   return (
     <AppLayout>
@@ -217,7 +284,7 @@ export default function CVESourcesPage() {
         {isLoading ? (
           <div className="space-y-4">
             {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 w-full" />
+              <Skeleton key={i} className="h-14 w-full" />
             ))}
           </div>
         ) : !sources || sources.length === 0 ? (
@@ -226,30 +293,129 @@ export default function CVESourcesPage() {
             <p className="text-muted-foreground">Nenhuma fonte configurada.</p>
           </Card>
         ) : (
-          <div className="space-y-6">
-            {groupOrder.filter(g => grouped[g]).map(moduleCode => (
-              <div key={moduleCode} className="space-y-3">
-                <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-                  <Badge variant="outline" className={cn('text-xs', MODULE_COLORS[moduleCode] || '')}>
-                    {MODULE_LABELS[moduleCode] || moduleCode}
-                  </Badge>
-                </h2>
-                <div className="space-y-2">
-                  {grouped[moduleCode].map(source => (
-                    <SourceCard
-                      key={source.id}
-                      source={source}
-                      onToggle={() => handleToggle(source)}
-                      onSync={() => handleSync(source)}
-                      isSyncing={syncingId === source.id}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="rounded-lg border border-border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-10" />
+                  <TableHead>Fonte</TableHead>
+                  <TableHead>Módulo</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Último Sync</TableHead>
+                  <TableHead>Próxima Execução</TableHead>
+                  <TableHead className="text-right">CVEs</TableHead>
+                  <TableHead className="w-24 text-center">Ativa</TableHead>
+                  <TableHead className="w-32" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sources.map(source => {
+                  const isExpanded = expandedIds.has(source.id);
+                  const statusConfig = STATUS_CONFIG[source.last_sync_status || 'pending'] || STATUS_CONFIG.pending;
+                  const StatusIcon = statusConfig.icon;
+                  const isSyncing = syncingId === source.id;
+
+                  return (
+                    <Fragment key={source.id}>
+                      <TableRow
+                        className={cn("cursor-pointer", isExpanded && "bg-muted/30")}
+                        onClick={() => toggleExpand(source.id)}
+                      >
+                        <TableCell className="w-10">
+                          {isExpanded ? (
+                            <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                          )}
+                        </TableCell>
+                        <TableCell className="font-medium text-foreground">
+                          {source.source_label}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn('text-xs', MODULE_COLORS[source.module_code] || '')}>
+                            {MODULE_LABELS[source.module_code] || source.module_code}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            <StatusIcon className={cn('w-4 h-4', statusConfig.className)} />
+                            <span className="text-sm text-muted-foreground">{statusConfig.label}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {source.last_sync_at
+                            ? formatDistanceToNow(new Date(source.last_sync_at), { addSuffix: true, locale: ptBR })
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {source.next_run_at
+                            ? renderNextRun(source.next_run_at)
+                            : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        <TableCell className="text-right font-medium text-foreground">
+                          {source.last_sync_count || 0}
+                        </TableCell>
+                        <TableCell className="text-center" onClick={e => e.stopPropagation()}>
+                          <Switch
+                            checked={source.is_active}
+                            onCheckedChange={() => handleToggle(source)}
+                          />
+                        </TableCell>
+                        <TableCell onClick={e => e.stopPropagation()}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!source.is_active || isSyncing}
+                            onClick={() => handleSync(source)}
+                          >
+                            <RefreshCw className={cn('w-4 h-4 mr-1', isSyncing && 'animate-spin')} />
+                            Sync
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && (
+                        <TableRow key={`${source.id}-timeline`}>
+                          <TableCell colSpan={9} className="p-0 pb-2 border-b border-border/50">
+                            <SyncTimeline
+                              sourceId={source.id}
+                              history={syncHistory || []}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>
     </AppLayout>
   );
+}
+
+// ── Next run renderer ──
+
+function renderNextRun(nextRunAt: string) {
+  const next = new Date(nextRunAt);
+  const now = new Date();
+  const diffMin = Math.round((next.getTime() - now.getTime()) / 60000);
+
+  if (diffMin < -5) {
+    return <span className="text-destructive font-medium">Atrasado</span>;
+  }
+  if (diffMin < 0) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+        </span>
+        <span className="text-amber-400 font-medium">Executando...</span>
+      </div>
+    );
+  }
+  const relative = formatDistanceToNow(next, { addSuffix: true, locale: ptBR });
+  return <span className="text-foreground">{relative}</span>;
 }
