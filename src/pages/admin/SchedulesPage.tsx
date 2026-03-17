@@ -475,7 +475,7 @@ function SchedulesTab() {
     },
   });
 
-
+  const { data: latestTasks } = useQuery({
     queryKey: ['admin-schedule-tasks', targetIds],
     enabled: targetIds.length > 0,
     refetchInterval: 60_000,
