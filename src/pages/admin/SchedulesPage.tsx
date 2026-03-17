@@ -636,7 +636,7 @@ function SchedulesTab() {
       const { data, error } = await supabase
         .from('agent_tasks')
         .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
-        .in('task_type', ['m365_compliance', 'm365_powershell'])
+        .eq('task_type', 'm365_powershell')
         .in('target_id', expandedM365ComplianceIds)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false });
