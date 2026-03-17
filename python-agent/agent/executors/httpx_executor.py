@@ -277,15 +277,18 @@ class HttpxExecutor(BaseExecutor):
             self.logger.debug(f"[httpx] No chunk URLs found in HTML for {base_url}")
             return versions
 
-        # Prioritize: framework (React version) > main/webpack (Next.js version)
+        # Prioritize: framework (React version) > main/webpack (Next.js version) > generic
         probes_done = 0
         for url, chunk_type in chunk_urls:
             if probes_done >= MAX_PROBE_REQUESTS:
                 break
-            # Skip if we already have the version this chunk would give us
+            # Skip named chunks if we already have what they'd give us
             if chunk_type == 'framework' and 'React' in versions:
                 continue
             if chunk_type in ('main', 'webpack', 'app') and 'Next.js' in versions:
+                continue
+            # Skip generic chunks only if we have BOTH versions
+            if chunk_type == 'generic' and 'React' in versions and 'Next.js' in versions:
                 continue
 
             self.logger.info(f"[httpx] Probing {chunk_type} chunk: {url}")
@@ -295,8 +298,8 @@ class HttpxExecutor(BaseExecutor):
             if not content:
                 continue
 
-            # Search for React version in framework chunks
-            if chunk_type == 'framework' and 'React' not in versions:
+            # Search for React version in any chunk
+            if 'React' not in versions:
                 for pattern in REACT_VERSION_PATTERNS:
                     m = pattern.search(content)
                     if m:
