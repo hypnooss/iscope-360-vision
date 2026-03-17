@@ -426,6 +426,11 @@ function SchedulesTab() {
     return schedules.filter(s => s.targetType === 'firewall').map(s => s.targetId);
   }, [schedules]);
 
+  // Domain IDs that have domain schedules
+  const domainIds = useMemo(() => {
+    return schedules.filter(s => s.targetType === 'external_domain').map(s => s.targetId);
+  }, [schedules]);
+
   // ── Dedicated query: latest fortigate_compliance task per firewall ──
   const { data: latestComplianceTasks } = useQuery({
     queryKey: ['admin-schedule-compliance-latest', firewallComplianceIds],
@@ -442,6 +447,28 @@ function SchedulesTab() {
       const map = new Map<string, TaskRow>();
       for (const task of (data || []) as any[]) {
         const key = `${task.target_id}::firewall`;
+        if (!map.has(key)) map.set(key, task);
+      }
+      return map;
+    },
+  });
+
+  // ── Dedicated query: latest external_domain_analysis task per domain ──
+  const { data: latestDomainTasks } = useQuery({
+    queryKey: ['admin-schedule-domain-latest', domainIds],
+    enabled: domainIds.length > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, task_type, status, completed_at')
+        .eq('task_type', 'external_domain_analysis')
+        .in('target_id', domainIds)
+        .order('completed_at', { ascending: false });
+      if (error) throw error;
+      const map = new Map<string, TaskRow>();
+      for (const task of (data || []) as any[]) {
+        const key = `${task.target_id}::external_domain`;
         if (!map.has(key)) map.set(key, task);
       }
       return map;
@@ -484,6 +511,33 @@ function SchedulesTab() {
         .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
         .eq('task_type', 'fortigate_compliance')
         .in('target_id', firewallComplianceIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(2000);
+      if (error) throw error;
+      return (data || []) as Array<{
+        target_id: string;
+        task_type: string;
+        status: string;
+        created_at: string;
+        started_at: string | null;
+        completed_at: string | null;
+        execution_time_ms: number | null;
+        error_message: string | null;
+      }>;
+    },
+  });
+  // ── Dedicated: external_domain_analysis history (timeline) ──
+  const { data: domainHistory } = useQuery({
+    queryKey: ['admin-schedule-domain-history', domainIds, sevenDaysAgo],
+    enabled: domainIds.length > 0 && expandedIds.size > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .eq('task_type', 'external_domain_analysis')
+        .in('target_id', domainIds)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false })
         .limit(2000);
@@ -581,11 +635,13 @@ function SchedulesTab() {
       }
       const task = s.targetType === 'firewall'
         ? latestComplianceTasks?.get(`${s.targetId}::firewall`)
+        : s.targetType === 'external_domain'
+        ? latestDomainTasks?.get(`${s.targetId}::external_domain`)
         : latestTasks?.get(`${s.targetId}::${s.targetType}`);
       if (task && task.status === 'failed') failed++;
     }
     return { active, next1h, next6h, next24h, failed };
-  }, [schedules, latestTasks, latestComplianceTasks]);
+  }, [schedules, latestTasks, latestComplianceTasks, latestDomainTasks]);
 
   const filtered = useMemo(() => {
     return schedules.filter(s => {
@@ -606,9 +662,11 @@ function SchedulesTab() {
   }, [schedules]);
 
   const renderTaskStatus = (targetId: string, targetType: TargetType) => {
-    // Use dedicated compliance query for firewall compliance
+    // Use dedicated queries for firewall compliance and domain
     const task = targetType === 'firewall'
       ? latestComplianceTasks?.get(`${targetId}::firewall`)
+      : targetType === 'external_domain'
+      ? latestDomainTasks?.get(`${targetId}::external_domain`)
       : latestTasks?.get(`${targetId}::${targetType}`);
     if (!task) {
       return (
@@ -838,6 +896,8 @@ function SchedulesTab() {
                                 ? (attackSurfaceHistory?.filter(t => t.target_id === schedule.targetId) || [])
                                 : schedule.targetType === 'firewall'
                                 ? (complianceHistory?.filter(t => t.target_id === schedule.targetId) || [])
+                                : schedule.targetType === 'external_domain'
+                                ? (domainHistory?.filter(t => t.target_id === schedule.targetId) || [])
                                 : (taskHistory?.filter(t => {
                                     if (t.target_id !== schedule.targetId) return false;
                                     const allowedTypes = TARGET_TO_TASK_TYPES[schedule.targetType] || [];
