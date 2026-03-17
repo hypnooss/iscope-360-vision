@@ -316,14 +316,6 @@ class HttpxExecutor(BaseExecutor):
                         self.logger.info(f"[httpx] Detected Next.js {m.group(1)} from {chunk_type} chunk")
                         break
 
-            # Also check framework chunk for Next.js and vice-versa
-            if chunk_type != 'framework' and 'React' not in versions:
-                for pattern in REACT_VERSION_PATTERNS:
-                    m = pattern.search(content)
-                    if m:
-                        versions['React'] = m.group(1)
-                        self.logger.info(f"[httpx] Detected React {m.group(1)} from {chunk_type} chunk")
-                        break
 
             if versions.get('React') and versions.get('Next.js'):
                 break  # Got both, no need for more probes
