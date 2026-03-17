@@ -201,8 +201,8 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
 
     const scene = new THREE.Scene();
     // Wider FOV to let the globe fill the viewport
-    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
-    camera.position.z = 3.6;
+    const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
+    camera.position.z = 7.0;
 
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
