@@ -101,11 +101,6 @@ const Index = () => {
             variants={stagger}
             className="relative z-10 text-center max-w-[960px] mx-auto"
           >
-            <Reveal delay={0.05}>
-              <span className="inline-block px-4 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-semibold tracking-widest uppercase mb-6">
-                Plataforma de Segurança & Compliance
-              </span>
-            </Reveal>
             <Reveal delay={0.1}>
               <h1 className="font-heading text-[2.8rem] sm:text-[3.8rem] lg:text-[5.2rem] font-extrabold leading-[0.95] tracking-[-0.035em] mb-6 text-foreground">
                 Visibilidade inteligente{' '}
