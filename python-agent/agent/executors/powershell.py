@@ -139,7 +139,8 @@ class PowerShellExecutor(BaseExecutor):
         organization: Optional[str] = None,
         auth_mode: str = "cba",
         username: Optional[str] = None,
-        password: Optional[str] = None
+        password: Optional[str] = None,
+        spo_domain: Optional[str] = None
     ) -> str:
         """Build a PowerShell script for batch execution (legacy mode)."""
         if module not in self.MODULES:
