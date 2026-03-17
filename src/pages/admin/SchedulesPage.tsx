@@ -956,6 +956,8 @@ function SchedulesTab() {
                                 ? (complianceHistory?.filter(t => t.target_id === schedule.targetId) || [])
                                 : schedule.targetType === 'external_domain'
                                 ? (domainHistory?.filter(t => t.target_id === schedule.targetId) || [])
+                                : schedule.targetType === 'firewall_analyzer'
+                                ? (analyzerHistory?.filter(t => t.target_id === schedule.targetId) || [])
                                 : (taskHistory?.filter(t => {
                                     if (t.target_id !== schedule.targetId) return false;
                                     const allowedTypes = TARGET_TO_TASK_TYPES[schedule.targetType] || [];
