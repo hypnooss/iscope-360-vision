@@ -750,6 +750,137 @@ function SchedulesTab() {
 }
 
 // ══════════════════════════════════════════════════════
+// ── Schedule Timeline Component ──
+// ══════════════════════════════════════════════════════
+
+interface TimelineTask {
+  target_id: string;
+  status: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  execution_time_ms: number | null;
+  error_message: string | null;
+}
+
+const TIMELINE_STATUS_COLORS: Record<string, string> = {
+  completed: 'bg-emerald-500',
+  failed: 'bg-rose-500',
+  timeout: 'bg-amber-500',
+  running: 'bg-blue-500 animate-pulse',
+  pending: 'bg-muted-foreground/50',
+  cancelled: 'bg-muted-foreground/30',
+};
+
+const TIMELINE_STATUS_LABELS: Record<string, string> = {
+  completed: 'Sucesso',
+  failed: 'Falhou',
+  timeout: 'Timeout',
+  running: 'Executando',
+  pending: 'Pendente',
+  cancelled: 'Cancelada',
+};
+
+function ScheduleTimeline({ targetId, tasks }: { targetId: string; tasks: TimelineTask[] }) {
+  const [period, setPeriod] = useState<'24h' | '48h' | '7d'>('24h');
+
+  const cutoff = useMemo(() => {
+    const hours = period === '24h' ? 24 : period === '48h' ? 48 : 168;
+    return new Date(Date.now() - hours * 60 * 60 * 1000);
+  }, [period]);
+
+  const filtered = useMemo(() => {
+    return tasks.filter(t => new Date(t.created_at) >= cutoff);
+  }, [tasks, cutoff]);
+
+  const counts = useMemo(() => {
+    let success = 0, fail = 0;
+    for (const t of filtered) {
+      if (t.status === 'completed') success++;
+      else if (t.status === 'failed' || t.status === 'timeout') fail++;
+    }
+    return { total: filtered.length, success, fail };
+  }, [filtered]);
+
+  const formatTaskDuration = (t: TimelineTask) => {
+    if (t.execution_time_ms) {
+      const secs = Math.floor(t.execution_time_ms / 1000);
+      if (secs < 60) return `${secs}s`;
+      const mins = Math.floor(secs / 60);
+      const remSecs = secs % 60;
+      if (mins < 60) return `${mins}m ${remSecs}s`;
+      const hrs = Math.floor(mins / 60);
+      return `${hrs}h ${mins % 60}m`;
+    }
+    return formatDuration(t.started_at, t.completed_at);
+  };
+
+  return (
+    <div className="px-6 py-4 bg-muted/20">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-1">
+          {(['24h', '48h', '7d'] as const).map(p => (
+            <Button
+              key={p}
+              variant={period === p ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={() => setPeriod(p)}
+            >
+              {p === '7d' ? '7 dias' : p}
+            </Button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>{counts.total} execuções</span>
+          {counts.success > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+              {counts.success} ✓
+            </span>
+          )}
+          {counts.fail > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+              {counts.fail} ✗
+            </span>
+          )}
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-2">Nenhuma execução neste período.</p>
+      ) : (
+        <TooltipProvider delayDuration={200}>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {filtered.map((t, i) => (
+              <Tooltip key={i}>
+                <TooltipTrigger asChild>
+                  <button
+                    className={cn(
+                      'w-3 h-3 rounded-full transition-transform hover:scale-150 focus:outline-none focus:ring-2 focus:ring-ring',
+                      TIMELINE_STATUS_COLORS[t.status] || 'bg-muted-foreground/50'
+                    )}
+                  />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs max-w-[250px]">
+                  <div className="font-medium">{TIMELINE_STATUS_LABELS[t.status] || t.status}</div>
+                  <div className="text-muted-foreground">{formatShortDateTimeBR(t.created_at)}</div>
+                  <div className="text-muted-foreground">Duração: {formatTaskDuration(t)}</div>
+                  {t.error_message && (
+                    <div className="text-rose-400 mt-1 line-clamp-2">{t.error_message}</div>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        </TooltipProvider>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════
 // ── Executions Tab (new) ──
 // ══════════════════════════════════════════════════════
 
