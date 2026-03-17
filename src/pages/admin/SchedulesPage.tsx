@@ -205,6 +205,16 @@ const TASK_TYPE_TO_TARGET: Record<string, TargetType> = {
   attack_surface_scan: 'attack_surface',
 };
 
+// Reverse mapping: targetType → list of task_types that belong to it
+const TARGET_TO_TASK_TYPES: Record<TargetType, string[]> = {
+  firewall: ['fortigate_compliance'],
+  firewall_analyzer: ['fortigate_analyzer'],
+  external_domain: ['external_domain_compliance'],
+  m365_compliance: ['m365_compliance', 'm365_powershell'],
+  m365_analyzer: ['m365_analyzer'],
+  attack_surface: ['attack_surface_scan'],
+};
+
 function mapTaskType(taskType: string, targetType: string): TargetType {
   if (TASK_TYPE_TO_TARGET[taskType]) return TASK_TYPE_TO_TARGET[taskType];
   if (targetType === 'firewall') return 'firewall';
