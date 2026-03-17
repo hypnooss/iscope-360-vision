@@ -197,8 +197,9 @@ const fragmentShader = `
     float dist = length(gl_PointCoord - vec2(0.5));
     if (dist > 0.5) discard;
 
-    float softEdge = 1.0 - smoothstep(0.3, 0.5, dist);
-    gl_FragColor = vec4(vColor, vAlpha * softEdge);
+    // Gaussian soft-glow falloff mimicking MazeHQ particle texture
+    float alpha = exp(-dist * dist * 8.0);
+    gl_FragColor = vec4(vColor, vAlpha * alpha);
   }
 `;
 
