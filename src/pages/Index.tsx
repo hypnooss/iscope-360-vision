@@ -225,7 +225,7 @@ const Index = () => {
         </Section>
 
         {/* ═══ THE REAL PROBLEM ═══ */}
-        <Section>
+        <Section id="real-problem">
           <Reveal>
             <div className="text-center mb-6">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-destructive/20 bg-destructive/5 text-destructive text-xs font-mono uppercase tracking-wider mb-8">
