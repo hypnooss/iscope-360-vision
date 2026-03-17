@@ -115,7 +115,7 @@ const Index = () => {
             </Reveal>
             <Reveal delay={0.35}>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button size="lg" className="gap-2 text-base px-8" onClick={() => navigate('/login')}>
+                <Button size="lg" className="gap-2 text-base px-8" onClick={() => navigate('/auth')}>
                   Acessar Plataforma <ArrowRight className="w-4 h-4" />
                 </Button>
                 <Button size="lg" variant="outline" className="gap-2 text-base px-8" onClick={() => document.getElementById('problem')?.scrollIntoView({ behavior: 'smooth' })}>
