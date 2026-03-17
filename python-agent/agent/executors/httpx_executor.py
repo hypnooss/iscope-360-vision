@@ -194,22 +194,40 @@ class HttpxExecutor(BaseExecutor):
     def _extract_chunk_urls(self, body: str, base_url: str) -> List[Tuple[str, str]]:
         """Extract JS chunk URLs from HTML and classify them.
         
+        Supports both Pages Router (framework-*.js) and App Router (generic hashes).
         Returns list of (full_url, chunk_type) where chunk_type is
-        'framework', 'main', 'webpack', or 'app'.
+        'framework', 'main', 'webpack', 'app', or 'generic'.
         """
         chunk_urls = []
         seen = set()
+        snippet = body[:102400]
 
-        # Find all script src attributes
-        for match in SCRIPT_SRC_RE.finditer(body[:102400]):
-            src = match.group(1)
-            for i, pattern in enumerate(CHUNK_PATTERNS):
+        # Extract ALL /_next/static/*.js URLs from HTML
+        for match in NEXT_STATIC_JS_RE.finditer(snippet):
+            src = match.group(0)
+            full_url = urljoin(base_url, src) if not src.startswith('http') else src
+            if full_url in seen:
+                continue
+            seen.add(full_url)
+
+            # Classify: check Pages Router named patterns first
+            chunk_type = 'generic'
+            for pattern, ctype in PAGES_ROUTER_CHUNK_PATTERNS:
                 if pattern.search(src):
-                    chunk_type = ['framework', 'main', 'webpack', 'app'][i]
-                    full_url = urljoin(base_url, src) if not src.startswith('http') else src
-                    if full_url not in seen:
-                        seen.add(full_url)
-                        chunk_urls.append((full_url, chunk_type))
+                    chunk_type = ctype
+                    break
+
+            chunk_urls.append((full_url, chunk_type))
+
+        # Sort: framework first, then main/webpack/app, then generic
+        priority = {'framework': 0, 'main': 1, 'webpack': 2, 'app': 3, 'generic': 4}
+        chunk_urls.sort(key=lambda x: priority.get(x[1], 99))
+
+        self.logger.info(
+            f"[httpx] Found {len(chunk_urls)} Next.js chunk URLs "
+            f"({sum(1 for _, t in chunk_urls if t != 'generic')} named, "
+            f"{sum(1 for _, t in chunk_urls if t == 'generic')} generic)"
+        )
 
         return chunk_urls
 
