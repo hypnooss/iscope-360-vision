@@ -179,7 +179,7 @@ html {
   }
 
   .feature-card {
-    @apply bg-card/50 backdrop-blur-xl border border-border/30 rounded-xl p-7;
+    @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] rounded-xl p-7;
     transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
