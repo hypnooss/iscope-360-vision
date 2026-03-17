@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, Clock, Search, CheckCircle, CheckCircle2, XCircle, MinusCircle, AlertTriangle, Timer, RefreshCw, Shield, Globe, Crosshair, Database, Activity, ListChecks, Ban } from 'lucide-react';
+import { Calendar, Clock, Search, CheckCircle, CheckCircle2, XCircle, MinusCircle, AlertTriangle, Timer, RefreshCw, Shield, Globe, Crosshair, Database, Activity, ListChecks, Ban, ChevronDown, ChevronUp } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow, differenceInHours, differenceInMinutes, differenceInSeconds, format } from 'date-fns';
@@ -279,6 +280,7 @@ function SchedulesTab() {
   const [filterWorkspace, setFilterWorkspace] = useState('all');
   const [filterFrequency, setFilterFrequency] = useState('all');
   const [filterType, setFilterType] = useState('all');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -428,6 +430,42 @@ function SchedulesTab() {
       return map;
     },
   });
+
+  // ── 7-day task history for timeline ──
+  const sevenDaysAgo = useMemo(() => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), []);
+
+  const { data: taskHistory } = useQuery({
+    queryKey: ['admin-schedule-task-history', targetIds, sevenDaysAgo],
+    enabled: targetIds.length > 0 && expandedIds.size > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .in('target_id', targetIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return (data || []) as Array<{
+        target_id: string;
+        status: string;
+        created_at: string;
+        started_at: string | null;
+        completed_at: string | null;
+        execution_time_ms: number | null;
+        error_message: string | null;
+      }>;
+    },
+  });
+
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const stats = useMemo(() => {
     if (!schedules.length) return { active: 0, next1h: 0, next6h: 0, next24h: 0, failed: 0 };
@@ -637,6 +675,7 @@ function SchedulesTab() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10"></TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Workspace</TableHead>
@@ -649,35 +688,55 @@ function SchedulesTab() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map(schedule => (
-                  <TableRow key={schedule.id}>
-                    <TableCell>{renderTypeBadge(schedule.targetType)}</TableCell>
-                    <TableCell className="font-medium text-foreground">{schedule.targetName}</TableCell>
-                    <TableCell className="text-muted-foreground">{schedule.clientName}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={FREQUENCY_COLORS[schedule.frequency] || ''}>
-                        {FREQUENCY_LABELS[schedule.frequency] || schedule.frequency}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{getScheduleDescription(schedule)}</TableCell>
-                    <TableCell>{renderNextRunShared(schedule.nextRunAt)}</TableCell>
-                    <TableCell>
-                      {schedule.lastScore !== null && schedule.lastScore !== undefined ? (
-                        <Badge variant="outline" className={getScoreColor(schedule.lastScore)}>{schedule.lastScore}</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
+                {filtered.map(schedule => {
+                  const isExpanded = expandedIds.has(schedule.id);
+                  return (
+                    <>
+                      <TableRow key={schedule.id} className="cursor-pointer" onClick={() => toggleExpanded(schedule.id)}>
+                        <TableCell className="w-10 px-2">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); toggleExpanded(schedule.id); }}>
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </Button>
+                        </TableCell>
+                        <TableCell>{renderTypeBadge(schedule.targetType)}</TableCell>
+                        <TableCell className="font-medium text-foreground">{schedule.targetName}</TableCell>
+                        <TableCell className="text-muted-foreground">{schedule.clientName}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={FREQUENCY_COLORS[schedule.frequency] || ''}>
+                            {FREQUENCY_LABELS[schedule.frequency] || schedule.frequency}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{getScheduleDescription(schedule)}</TableCell>
+                        <TableCell>{renderNextRunShared(schedule.nextRunAt)}</TableCell>
+                        <TableCell>
+                          {schedule.lastScore !== null && schedule.lastScore !== undefined ? (
+                            <Badge variant="outline" className={getScoreColor(schedule.lastScore)}>{schedule.lastScore}</Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>{renderTaskStatus(schedule.targetId)}</TableCell>
+                        <TableCell>
+                          {schedule.isActive ? (
+                            <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Ativo</Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-border">Inativo</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && (
+                        <TableRow key={`${schedule.id}-timeline`}>
+                          <TableCell colSpan={10} className="p-0 border-b border-border/50">
+                            <ScheduleTimeline
+                              targetId={schedule.targetId}
+                              tasks={taskHistory?.filter(t => t.target_id === schedule.targetId) || []}
+                            />
+                          </TableCell>
+                        </TableRow>
                       )}
-                    </TableCell>
-                    <TableCell>{renderTaskStatus(schedule.targetId)}</TableCell>
-                    <TableCell>
-                      {schedule.isActive ? (
-                        <Badge variant="outline" className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Ativo</Badge>
-                      ) : (
-                        <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-border">Inativo</Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                    </>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -687,6 +746,137 @@ function SchedulesTab() {
       {/* CVE Sources Sync Section */}
       <CVESourcesSection />
     </>
+  );
+}
+
+// ══════════════════════════════════════════════════════
+// ── Schedule Timeline Component ──
+// ══════════════════════════════════════════════════════
+
+interface TimelineTask {
+  target_id: string;
+  status: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  execution_time_ms: number | null;
+  error_message: string | null;
+}
+
+const TIMELINE_STATUS_COLORS: Record<string, string> = {
+  completed: 'bg-emerald-500',
+  failed: 'bg-rose-500',
+  timeout: 'bg-amber-500',
+  running: 'bg-blue-500 animate-pulse',
+  pending: 'bg-muted-foreground/50',
+  cancelled: 'bg-muted-foreground/30',
+};
+
+const TIMELINE_STATUS_LABELS: Record<string, string> = {
+  completed: 'Sucesso',
+  failed: 'Falhou',
+  timeout: 'Timeout',
+  running: 'Executando',
+  pending: 'Pendente',
+  cancelled: 'Cancelada',
+};
+
+function ScheduleTimeline({ targetId, tasks }: { targetId: string; tasks: TimelineTask[] }) {
+  const [period, setPeriod] = useState<'24h' | '48h' | '7d'>('24h');
+
+  const cutoff = useMemo(() => {
+    const hours = period === '24h' ? 24 : period === '48h' ? 48 : 168;
+    return new Date(Date.now() - hours * 60 * 60 * 1000);
+  }, [period]);
+
+  const filtered = useMemo(() => {
+    return tasks.filter(t => new Date(t.created_at) >= cutoff);
+  }, [tasks, cutoff]);
+
+  const counts = useMemo(() => {
+    let success = 0, fail = 0;
+    for (const t of filtered) {
+      if (t.status === 'completed') success++;
+      else if (t.status === 'failed' || t.status === 'timeout') fail++;
+    }
+    return { total: filtered.length, success, fail };
+  }, [filtered]);
+
+  const formatTaskDuration = (t: TimelineTask) => {
+    if (t.execution_time_ms) {
+      const secs = Math.floor(t.execution_time_ms / 1000);
+      if (secs < 60) return `${secs}s`;
+      const mins = Math.floor(secs / 60);
+      const remSecs = secs % 60;
+      if (mins < 60) return `${mins}m ${remSecs}s`;
+      const hrs = Math.floor(mins / 60);
+      return `${hrs}h ${mins % 60}m`;
+    }
+    return formatDuration(t.started_at, t.completed_at);
+  };
+
+  return (
+    <div className="px-6 py-4 bg-muted/20">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-1">
+          {(['24h', '48h', '7d'] as const).map(p => (
+            <Button
+              key={p}
+              variant={period === p ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={() => setPeriod(p)}
+            >
+              {p === '7d' ? '7 dias' : p}
+            </Button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>{counts.total} execuções</span>
+          {counts.success > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+              {counts.success} ✓
+            </span>
+          )}
+          {counts.fail > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+              {counts.fail} ✗
+            </span>
+          )}
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-2">Nenhuma execução neste período.</p>
+      ) : (
+        <TooltipProvider delayDuration={200}>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {filtered.map((t, i) => (
+              <Tooltip key={i}>
+                <TooltipTrigger asChild>
+                  <button
+                    className={cn(
+                      'w-3 h-3 rounded-full transition-transform hover:scale-150 focus:outline-none focus:ring-2 focus:ring-ring',
+                      TIMELINE_STATUS_COLORS[t.status] || 'bg-muted-foreground/50'
+                    )}
+                  />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs max-w-[250px]">
+                  <div className="font-medium">{TIMELINE_STATUS_LABELS[t.status] || t.status}</div>
+                  <div className="text-muted-foreground">{formatShortDateTimeBR(t.created_at)}</div>
+                  <div className="text-muted-foreground">Duração: {formatTaskDuration(t)}</div>
+                  {t.error_message && (
+                    <div className="text-rose-400 mt-1 line-clamp-2">{t.error_message}</div>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        </TooltipProvider>
+      )}
+    </div>
   );
 }
 
