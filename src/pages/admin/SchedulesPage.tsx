@@ -723,6 +723,8 @@ function SchedulesTab() {
       ? latestComplianceTasks?.get(`${targetId}::firewall`)
       : targetType === 'external_domain'
       ? latestDomainTasks?.get(`${targetId}::external_domain`)
+      : targetType === 'firewall_analyzer'
+      ? latestAnalyzerTasks?.get(`${targetId}::firewall_analyzer`)
       : latestTasks?.get(`${targetId}::${targetType}`);
     if (!task) {
       return (
