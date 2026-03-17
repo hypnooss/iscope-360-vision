@@ -287,6 +287,7 @@ class HttpxExecutor(BaseExecutor):
 
         # Prioritize: framework (React version) > main/webpack (Next.js version) > generic
         probes_done = 0
+        turbopack_detected = False
         for url, chunk_type in chunk_urls:
             if probes_done >= MAX_PROBE_REQUESTS:
                 break
