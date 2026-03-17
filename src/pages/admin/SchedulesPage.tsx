@@ -836,6 +836,8 @@ function SchedulesTab() {
                               targetId={schedule.targetId}
                               tasks={schedule.targetType === 'attack_surface'
                                 ? (attackSurfaceHistory?.filter(t => t.target_id === schedule.targetId) || [])
+                                : schedule.targetType === 'firewall'
+                                ? (complianceHistory?.filter(t => t.target_id === schedule.targetId) || [])
                                 : (taskHistory?.filter(t => {
                                     if (t.target_id !== schedule.targetId) return false;
                                     const allowedTypes = TARGET_TO_TASK_TYPES[schedule.targetType] || [];
