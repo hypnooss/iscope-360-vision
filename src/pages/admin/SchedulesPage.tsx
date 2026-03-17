@@ -581,6 +581,34 @@ function SchedulesTab() {
     },
   });
 
+  // ── Dedicated: fortigate_analyzer history (timeline) ──
+  const { data: analyzerHistory } = useQuery({
+    queryKey: ['admin-schedule-analyzer-history', firewallAnalyzerIds, sevenDaysAgo],
+    enabled: firewallAnalyzerIds.length > 0 && expandedIds.size > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .eq('task_type', 'fortigate_analyzer')
+        .in('target_id', firewallAnalyzerIds)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (error) throw error;
+      return (data || []) as Array<{
+        target_id: string;
+        task_type: string;
+        status: string;
+        created_at: string;
+        started_at: string | null;
+        completed_at: string | null;
+        execution_time_ms: number | null;
+        error_message: string | null;
+      }>;
+    },
+  });
+
   const { data: taskHistory } = useQuery({
     queryKey: ['admin-schedule-task-history', targetIds, sevenDaysAgo],
     enabled: targetIds.length > 0 && expandedIds.size > 0,
