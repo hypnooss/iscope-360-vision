@@ -878,6 +878,41 @@ export function generateFindings(assets: FindingsAsset[]): SurfaceFinding[] {
     }
   }
 
+  // ── 5b. Unversioned Next.js / React fallback ─────────────
+  {
+    const unversionedAffected: AffectedAsset[] = [];
+    const unversionedEvidence: SurfaceFindingEvidence[] = [];
+
+    for (const asset of assets) {
+      const hasNextjs = asset.allTechs.some(t => /next\.?js/i.test(t));
+      const hasVersionedNextjs = asset.allTechs.some(t => /next[.\/-]?js[\/:\s]?\d/i.test(t));
+
+      if (hasNextjs && !hasVersionedNextjs) {
+        unversionedAffected.push({ hostname: asset.hostname, ip: asset.ip });
+        unversionedEvidence.push({
+          label: asset.ip,
+          value: `Next.js detectado sem versão — tecnologias: ${asset.allTechs.filter(t => /next|react/i.test(t)).join(', ')}`,
+        });
+      }
+    }
+
+    if (unversionedAffected.length > 0) {
+      findings.push({
+        id: nextId('tech'),
+        name: 'Next.js detectado sem versão identificada — possível React2Shell',
+        status: 'fail',
+        severity: 'medium',
+        category: 'obsolete_tech',
+        description: `Next.js foi detectado mas a versão não pôde ser extraída automaticamente. Versões anteriores a 15 são vulneráveis ao React2Shell (CVE-2025-29927). Detectado em ${unversionedAffected.length} ${unversionedAffected.length === 1 ? 'ativo' : 'ativos'}.`,
+        technicalRisk: 'Sem a versão exata, não é possível confirmar automaticamente se a aplicação é vulnerável. Next.js < 15 permite bypass de autenticação via header x-middleware-subrequest, possibilitando acesso não autorizado a rotas protegidas.',
+        businessImpact: 'Se a versão for inferior a 15, atacantes podem contornar toda a camada de autenticação da aplicação e acessar dados protegidos.',
+        recommendation: 'Verificar manualmente a versão do Next.js acessando os JS bundles (/_next/static/chunks/) ou inspecionando o código-fonte. Se a versão for inferior a 15, atualizar imediatamente para Next.js 15+.',
+        affectedAssets: unversionedAffected,
+        evidence: unversionedEvidence,
+      });
+    }
+  }
+
   // ── 6. Security Headers (NSE: http-security-headers) ──────
   {
     const headerMap = new Map<string, AffectedAsset[]>(); // header -> affected
