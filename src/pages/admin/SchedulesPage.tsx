@@ -479,6 +479,28 @@ function SchedulesTab() {
     },
   });
 
+  // ── Dedicated query: latest fortigate_analyzer task per firewall ──
+  const { data: latestAnalyzerTasks } = useQuery({
+    queryKey: ['admin-schedule-analyzer-latest', firewallAnalyzerIds],
+    enabled: firewallAnalyzerIds.length > 0,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agent_tasks')
+        .select('target_id, task_type, status, completed_at')
+        .eq('task_type', 'fortigate_analyzer')
+        .in('target_id', firewallAnalyzerIds)
+        .order('completed_at', { ascending: false });
+      if (error) throw error;
+      const map = new Map<string, TaskRow>();
+      for (const task of (data || []) as any[]) {
+        const key = `${task.target_id}::firewall_analyzer`;
+        if (!map.has(key)) map.set(key, task);
+      }
+      return map;
+    },
+  });
+
   const { data: latestTasks } = useQuery({
     queryKey: ['admin-schedule-tasks', targetIds],
     enabled: targetIds.length > 0,
