@@ -33,10 +33,12 @@ const sphereVertexShader = `
     float breathe = sin(uTime * 0.25 + aSeed * 6.28318) * 0.008;
     vec3 displaced = position + sphereNormal * breathe;
 
-    // Terrain position with time-based wave animation
+    // Terrain position with time-based wave + drift animation
     vec3 terrainPos = aPlanePos;
-    terrainPos.y += sin(uTime * 0.3 + aPlanePos.x * 0.5) * 0.08;
-    terrainPos.y += cos(uTime * 0.2 + aPlanePos.z * 0.4) * 0.06;
+    terrainPos.x += sin(uTime * 0.15 + aSeed * 6.28) * 0.12;
+    terrainPos.z += cos(uTime * 0.1 + aSeed * 4.0) * 0.08;
+    terrainPos.y += sin(uTime * 0.3 + aPlanePos.x * 0.5) * 0.12;
+    terrainPos.y += cos(uTime * 0.2 + aPlanePos.z * 0.4) * 0.08;
 
     // Morph between sphere and terrain
     vec3 finalPos = mix(displaced, terrainPos, uMorph);
