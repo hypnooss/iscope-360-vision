@@ -237,7 +237,7 @@ gpgkey=file:///etc/pki/rpm-gpg/microsoft.asc
             "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; "
             "Install-Module -Name ExchangeOnlineManagement -Scope AllUsers -Force -AllowClobber; "
             "Install-Module -Name Microsoft.Graph.Authentication -Scope AllUsers -Force -AllowClobber; "
-            "Install-Module -Name PnP.PowerShell -Scope AllUsers -Force -AllowClobber"
+            "Install-Module -Name PnP.PowerShell -Scope AllUsers -Force -AllowClobber -AcceptLicense"
         )
 
         result = subprocess.run(
