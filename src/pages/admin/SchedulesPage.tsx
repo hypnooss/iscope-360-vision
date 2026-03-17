@@ -198,21 +198,21 @@ function renderTypeBadge(type: TargetType) {
 const TASK_TYPE_TO_TARGET: Record<string, TargetType> = {
   fortigate_compliance: 'firewall',
   fortigate_analyzer: 'firewall_analyzer',
-  external_domain_compliance: 'external_domain',
+  external_domain_analysis: 'external_domain',
   m365_compliance: 'm365_compliance',
   m365_powershell: 'm365_compliance',
   m365_analyzer: 'm365_analyzer',
-  attack_surface_scan: 'attack_surface',
 };
 
 // Reverse mapping: targetType → list of task_types that belong to it
+// attack_surface uses attack_surface_snapshots table, not agent_tasks
 const TARGET_TO_TASK_TYPES: Record<TargetType, string[]> = {
   firewall: ['fortigate_compliance'],
   firewall_analyzer: ['fortigate_analyzer'],
-  external_domain: ['external_domain_compliance'],
+  external_domain: ['external_domain_analysis'],
   m365_compliance: ['m365_compliance', 'm365_powershell'],
   m365_analyzer: ['m365_analyzer'],
-  attack_surface: ['attack_surface_scan'],
+  attack_surface: [],
 };
 
 function mapTaskType(taskType: string, targetType: string): TargetType {
