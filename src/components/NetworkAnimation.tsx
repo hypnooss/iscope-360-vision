@@ -1,10 +1,14 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
-const PARTICLE_COUNT = 25000;
-const ROTATION_SPEED = 0.00015;
-const SPHERE_RADIUS = 200;
+const PARTICLE_COUNT = 30000;
+const ROTATION_SPEED = 0.08;
+const SPHERE_RADIUS = 280;
 
+// ─── Vertex Shader ───
+// Replicates MazeHQ's particle globe: FBM noise displacement,
+// directional color gradient (cyan→magenta), Fresnel rim glow,
+// depth-based transparency, and organic noise scatter.
 const vertexShader = `
   attribute float aAlpha;
   attribute float aIndex;
@@ -24,6 +28,7 @@ const vertexShader = `
   uniform float uScale;
   uniform float uMorph;
 
+  // Colors: cyan base → magenta noise
   uniform float uRcolor;
   uniform float uGcolor;
   uniform float uBcolor;
@@ -36,7 +41,7 @@ const vertexShader = `
   varying float vNoise;
   varying vec3 vColor;
 
-  // --- 2D simplex noise ---
+  // ── 2D simplex noise ──
   vec3 mod289v3(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
   vec2 mod289v2(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
   vec3 permute3(vec3 x) { return mod289v3(((x * 34.0) + 1.0) * x); }
@@ -65,7 +70,7 @@ const vertexShader = `
     return 130.0 * dot(m, g);
   }
 
-  // --- 4D simplex noise ---
+  // ── 4D simplex noise ──
   vec4 permute4(vec4 x) { return mod(((x * 34.0) + 1.0) * x, 289.0); }
   float permute1(float x) { return floor(mod(((x * 34.0) + 1.0) * x, 289.0)); }
   vec4 taylorInvSqrt4(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
@@ -124,7 +129,7 @@ const vertexShader = `
         + dot(m1*m1, vec2(dot(p3,x3), dot(p4,x4))));
   }
 
-  // --- FBM ---
+  // ── FBM ──
   float fbm(vec3 x) {
     float v = 0.0;
     float a = 0.5;
@@ -138,56 +143,55 @@ const vertexShader = `
   }
 
   void main() {
-    // === noise (matches MazeHQ exactly):
+    // Noise for displacement and color
     vNoise = fbm(position * uFrequency);
 
-    // === color (matches MazeHQ — note: blue channel uses uGcolor, not uBcolor, matching their source):
+    // Color gradient: cyan base blended with magenta via noise
     float noiseFactor = clamp(vNoise, 0.0, 1.0) * 4.0;
     float r = uRcolor / 255.0 + (noiseFactor * (uRnoise - uRcolor) / 255.0);
     float g = uGcolor / 255.0 + (noiseFactor * (uGnoise - uGcolor) / 255.0);
     float b = uBcolor / 255.0 + (noiseFactor * (uBnoise - uGcolor) / 255.0);
     vColor = vec3(r, g, b);
 
-    // === Sphere displacement (MazeHQ approach):
-    // 1. Blob wave — organic surface deformation
+    // Sphere displacement with organic noise
     vec3 displaced = position * (1.0 + uAmplitude * vNoise);
-    // 2. Noise scatter — particles drift around the surface
+    // Particle scatter
     displaced += vec3(uScale * uDepth * aMove * aSpeed * snoise2d(vec2(aIndex, uTime * uSpeed)));
 
     vec3 spherePos = displaced;
 
-    // --- Flat "sand" position with visible zig-zag ridges across depth ---
+    // Flat "sand" target positions with ridges
     float lateral = snoise2d(vec2(aFlatPosition.z * 0.8, aFlatPosition.x * 0.25 + uTime * 0.05)) * 0.006;
     float ridge = sin(aFlatPosition.z * 8.0 + aFlatPosition.x * 0.35 + uTime * 0.12) * 0.028;
     float ridgeDetail = sin(aFlatPosition.z * 15.0 - aFlatPosition.x * 0.18 - uTime * 0.08) * 0.009;
     float microNoise = snoise2d(vec2(aFlatPosition.x * 0.32 + uTime * 0.04, aFlatPosition.z * 0.22)) * 0.004;
     vec3 flatPos = aFlatPosition + vec3(lateral, ridge + ridgeDetail + microNoise, 0.0);
 
-    // --- Morph between sphere and flat ---
+    // Morph between sphere and flat
     float morphEased = smoothstep(0.0, 1.0, uMorph);
     vec3 finalPos = mix(spherePos, flatPos, morphEased);
 
-    // === general position (matches MazeHQ):
     vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-    // === point size (MazeHQ base + sand morph adjustment):
+    // Point size
     vDistance = -mvPosition.z;
     float sizeMultiplier = mix(1.0, 0.42, morphEased);
     gl_PointSize = uSize * sizeMultiplier * (100.0 / vDistance) * uPixelRatio;
     gl_PointSize = clamp(gl_PointSize, 1.0, 100.0);
 
-    // === transparency (MazeHQ base: uAlpha * aAlpha * 300/dist, with sand depth fade):
+    // Alpha with depth fade for sand state
     float depthFade = 1.0 - smoothstep(-1.2, 1.4, aFlatPosition.z) * 0.35;
     float alphaMultiplier = mix(1.0, 0.9 * depthFade, morphEased);
     vAlpha = uAlpha * aAlpha * alphaMultiplier * (300.0 / vDistance);
 
-    // Size — mild depth perspective in sand state
+    // Depth perspective in sand state
     float depthSize = mix(1.0, 0.65 + 0.35 * (1.0 - smoothstep(-1.2, 1.4, aFlatPosition.z)), morphEased);
     gl_PointSize *= depthSize;
   }
 `;
 
+// ─── Fragment Shader ───
 const fragmentShader = `
   varying float vAlpha;
   varying float vDistance;
@@ -198,7 +202,7 @@ const fragmentShader = `
     float dist = length(gl_PointCoord - vec2(0.5));
     if (dist > 0.5) discard;
 
-    // Gaussian soft-glow falloff mimicking MazeHQ particle texture
+    // Gaussian soft-glow falloff
     float alpha = exp(-dist * dist * 8.0);
     gl_FragColor = vec4(vColor, vAlpha * alpha);
   }
@@ -213,7 +217,6 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef(scrollProgress);
 
-  // Keep ref in sync with prop
   useEffect(() => {
     scrollRef.current = scrollProgress;
   }, [scrollProgress]);
@@ -222,6 +225,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     const container = containerRef.current;
     if (!container) return;
 
+    // ── Scene setup ──
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 1, 2000);
     camera.position.z = 800;
@@ -236,6 +240,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     container.appendChild(renderer.domElement);
     renderer.domElement.style.pointerEvents = "none";
 
+    // ── Geometry: particles on sphere ──
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(PARTICLE_COUNT * 3);
     const flatPositions = new Float32Array(PARTICLE_COUNT * 3);
@@ -252,6 +257,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const theta = goldenAngle * i;
       const phi = Math.acos(1 - 2 * t);
 
+      // ~12% atmosphere particles slightly outside sphere
       const isAtmosphere = Math.random() < 0.12;
       const rMul = isAtmosphere
         ? 1.01 + Math.random() * 0.1
@@ -263,7 +269,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       positions[i * 3 + 1] = r * Math.cos(phi);
       positions[i * 3 + 2] = r * sp * Math.sin(theta);
 
-      // Flat "sand" target positions — layered bands receding into depth (scaled to world space)
+      // Flat "sand" target positions
       const rowCount = 160;
       const row = Math.floor(Math.random() * rowCount);
       const rowT = row / (rowCount - 1);
@@ -300,6 +306,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     geometry.setAttribute("aSpeed", new THREE.BufferAttribute(speeds, 3));
     geometry.setAttribute("aRandomness", new THREE.BufferAttribute(randomness, 3));
 
+    // ── Uniforms — matched to MazeHQ visual reference ──
     const uniforms = {
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0.0 },
@@ -311,6 +318,7 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       uFrequency: { value: 0.01 },
       uScale: { value: 1.0 },
       uMorph: { value: 0.0 },
+      // Cyan base → Magenta noise
       uRcolor: { value: 40.0 },
       uGcolor: { value: 197.0 },
       uBcolor: { value: 234.0 },
@@ -331,17 +339,17 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     const points = new THREE.Points(geometry, material);
     scene.add(points);
 
+    // ── Resize ──
     const resize = () => {
       const rect = container.getBoundingClientRect();
-      const w = rect.width;
-      const h = rect.height;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
+      renderer.setSize(rect.width, rect.height);
+      camera.aspect = rect.width / rect.height;
       camera.updateProjectionMatrix();
     };
     resize();
     window.addEventListener("resize", resize);
 
+    // ── Animation loop ──
     let animId = 0;
     const startTime = performance.now();
 
@@ -352,18 +360,17 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       const morph = scrollRef.current;
       uniforms.uMorph.value = morph;
 
-      // Interpolate rotation — preserve globe framing and lower the sand field
+      // Rotation — slow continuous spin, stops in sand state
       const rotationFactor = 1.0 - morph;
-      points.rotation.y = elapsed * ROTATION_SPEED * 1000 * rotationFactor;
+      points.rotation.y = elapsed * ROTATION_SPEED * rotationFactor;
+      // Gentle tilt oscillation for globe, fixed tilt for sand
       const globeRotX = Math.sin(elapsed * 0.008) * 0.08;
       points.rotation.x = globeRotX * (1.0 - morph) + 0.55 * morph;
 
-      // Push the sand lower in the hero so it reads like a ground plane
+      // Lower the sand field visually
       points.position.y = -SPHERE_RADIUS * 0.38 * morph;
 
-      // No dynamic scaling — positions are already baked at SPHERE_RADIUS
-
-      // Preserve globe camera and avoid over-zooming the sand
+      // Camera: globe at z=800, sand slightly closer
       camera.position.z = 800 - 320 * morph;
       camera.position.y = 0;
       camera.lookAt(0, 0, 0);
