@@ -102,9 +102,9 @@ const Index = () => {
         {/* ═══ HERO ═══ */}
         <section className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
 
-          {/* Globe — contained inside hero */}
+          {/* Globe — oversized and centered behind copy like MazeHQ */}
           <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
-            <div className="w-[min(82vw,640px)] h-[min(82vw,640px)] max-w-full max-h-full">
+            <div className="w-[min(96vw,1120px)] h-[min(96vw,1120px)] max-w-none max-h-none -translate-y-[2%] opacity-90">
               <NetworkAnimation className="w-full h-full" scrollProgress={scrollProgress} />
             </div>
           </div>
@@ -114,21 +114,21 @@ const Index = () => {
             initial="hidden"
             animate="visible"
             variants={stagger}
-            className="relative z-10 text-center max-w-[800px] mx-auto"
+            className="relative z-10 text-center max-w-[1080px] mx-auto"
           >
             <Reveal>
-              <p className="text-xs uppercase tracking-[0.3em] text-primary/70 font-bold mb-6 font-mono">
+              <p className="text-[11px] uppercase tracking-[0.38em] text-primary/80 font-bold mb-7 font-mono">
                 Plataforma de Segurança &amp; Compliance
               </p>
             </Reveal>
             <Reveal delay={0.1}>
-              <h1 className="font-heading text-[2.75rem] sm:text-[3.5rem] lg:text-[4.5rem] font-extrabold leading-[1.05] tracking-tight mb-6">
+              <h1 className="font-heading text-[3.2rem] sm:text-[4.4rem] lg:text-[6.2rem] font-extrabold leading-[0.95] tracking-[-0.04em] mb-7 text-foreground">
                 Visibilidade inteligente{' '}
                 <span className="text-primary">para sua infraestrutura</span>
               </h1>
             </Reveal>
             <Reveal delay={0.2}>
-              <p className="text-lg text-muted-foreground/80 max-w-[560px] mx-auto mb-10 leading-relaxed">
+              <p className="text-[1.05rem] sm:text-[1.2rem] text-muted-foreground/78 max-w-[720px] mx-auto mb-11 leading-relaxed">
                 Plataforma completa para análise de compliance, segurança e
                 boas práticas da sua infraestrutura.
               </p>
@@ -146,7 +146,7 @@ const Index = () => {
                   size="lg"
                   variant="outline"
                   onClick={() => document.querySelector('#how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
-                  className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300"
+                  className="gap-2 h-12 px-6 rounded-[10px] font-semibold hover:-translate-y-0.5 transition-all duration-300 bg-background/5 backdrop-blur-sm"
                 >
                   Ver como funciona
                 </Button>
@@ -156,8 +156,8 @@ const Index = () => {
 
           {/* Scroll indicator */}
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
-            <span className="text-[10px] uppercase tracking-[0.3em] font-mono text-muted-foreground/70">Scroll</span>
-            <div className="relative w-[1.5px] h-8 bg-muted-foreground/20 rounded-full overflow-hidden">
+            <span className="text-[10px] uppercase tracking-[0.32em] font-mono text-muted-foreground/60">Scroll</span>
+            <div className="relative w-px h-10 bg-muted-foreground/15 rounded-full overflow-hidden">
               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[3px] h-[8px] rounded-full bg-primary/70 animate-scroll-dot" />
             </div>
           </div>
