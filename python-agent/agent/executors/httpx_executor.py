@@ -70,6 +70,7 @@ NEXTJS_VERSION_PATTERNS = [
 # Pages Router chunk patterns (used for classification priority)
 PAGES_ROUTER_CHUNK_PATTERNS = [
     (re.compile(r'framework-[a-f0-9]+\.js'), 'framework'),
+    (re.compile(r'turbopack-[a-f0-9]+\.js'), 'turbopack'),
     (re.compile(r'main-[a-f0-9]+\.js'), 'main'),
     (re.compile(r'webpack-[a-f0-9]+\.js'), 'webpack'),
     (re.compile(r'pages/_app-[a-f0-9]+\.js'), 'app'),
