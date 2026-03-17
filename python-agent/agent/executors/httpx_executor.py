@@ -55,6 +55,9 @@ REACT_VERSION_PATTERNS = [
 
 # Next.js version patterns
 NEXTJS_VERSION_PATTERNS = [
+    # Turbopack/App Router: next before, version after
+    re.compile(r'next[^{]*?version="(\d+\.\d+\.\d+)"', re.IGNORECASE),
+    re.compile(r'next[^{]*?version:"(\d+\.\d+\.\d+)"', re.IGNORECASE),
     re.compile(r'Next\.js["\s:=]+["\']?(\d+\.\d+\.\d+)'),
     re.compile(r'next@(\d+\.\d+\.\d+)'),
     re.compile(r'next[/:](\d+\.\d+\.\d+)'),
