@@ -61,12 +61,6 @@ const M365PostureReportPage = lazy(() => import("./pages/m365/M365PostureReportP
 const M365PosturePage = lazy(() => import("./pages/m365/M365PosturePage"));
 
 const OAuthCallbackPage = lazy(() => import("./pages/m365/OAuthCallbackPage"));
-const EntraIdPage = lazy(() => import("./pages/m365/EntraIdPage"));
-const EntraIdSecurityInsightsPage = lazy(() => import("./pages/m365/EntraIdSecurityInsightsPage"));
-const EntraIdApplicationInsightsPage = lazy(() => import("./pages/m365/EntraIdApplicationInsightsPage"));
-const EntraIdAnalysisPage = lazy(() => import("./pages/m365/EntraIdAnalysisPage"));
-
-const CollaborationPage = lazy(() => import("./pages/m365/CollaborationPage"));
 
 const M365AnalyzerDashboardPage = lazy(() => import("./pages/m365/M365AnalyzerDashboardPage"));
 const M365ServiceHealthPage = lazy(() => import("./pages/m365/M365ServiceHealthPage"));
