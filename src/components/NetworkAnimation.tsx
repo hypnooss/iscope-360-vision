@@ -331,8 +331,6 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
     const points = new THREE.Points(geometry, material);
     scene.add(points);
 
-    let currentSphereRadius = 300;
-
     const resize = () => {
       const rect = container.getBoundingClientRect();
       const w = rect.width;
@@ -340,8 +338,6 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       renderer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-
-      currentSphereRadius = Math.min(w, h) * 0.38;
     };
     resize();
     window.addEventListener("resize", resize);
@@ -363,12 +359,9 @@ export function NetworkAnimation({ className = '', scrollProgress = 0 }: Network
       points.rotation.x = globeRotX * (1.0 - morph) + 0.55 * morph;
 
       // Push the sand lower in the hero so it reads like a ground plane
-      points.position.y = -currentSphereRadius * 0.38 * morph;
+      points.position.y = -SPHERE_RADIUS * 0.38 * morph;
 
-      // Interpolate scale — keep the field broad but not cloud-like
-      const sandScale = currentSphereRadius * 1.32;
-      const scale = currentSphereRadius + (sandScale - currentSphereRadius) * morph;
-      points.scale.setScalar(scale);
+      // No dynamic scaling — positions are already baked at SPHERE_RADIUS
 
       // Preserve globe camera and avoid over-zooming the sand
       camera.position.z = 800 - 320 * morph;
