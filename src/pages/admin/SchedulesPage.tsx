@@ -775,11 +775,14 @@ function SchedulesTab() {
                           <TableCell colSpan={10} className="p-0 pb-2 border-b border-border/50">
                             <ScheduleTimeline
                               targetId={schedule.targetId}
-                              tasks={taskHistory?.filter(t => {
-                                if (t.target_id !== schedule.targetId) return false;
-                                const allowedTypes = TARGET_TO_TASK_TYPES[schedule.targetType] || [];
-                                return allowedTypes.includes(t.task_type);
-                              }) || []}
+                              tasks={schedule.targetType === 'attack_surface'
+                                ? (attackSurfaceHistory?.filter(t => t.target_id === schedule.targetId) || [])
+                                : (taskHistory?.filter(t => {
+                                    if (t.target_id !== schedule.targetId) return false;
+                                    const allowedTypes = TARGET_TO_TASK_TYPES[schedule.targetType] || [];
+                                    return allowedTypes.includes(t.task_type);
+                                  }) || [])
+                              }
                             />
                           </TableCell>
                         </TableRow>
