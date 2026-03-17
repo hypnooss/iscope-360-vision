@@ -428,14 +428,17 @@ function SchedulesTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')
-        .select('target_id, status, completed_at')
+        .select('target_id, task_type, status, completed_at')
         .in('target_id', targetIds)
         .in('target_type', ['firewall', 'external_domain', 'm365_compliance', 'm365_tenant'])
         .order('completed_at', { ascending: false });
       if (error) throw error;
+      // Key by targetId + targetType so compliance and analyzer don't collide
       const map = new Map<string, TaskRow>();
-      for (const task of (data || []) as TaskRow[]) {
-        if (!map.has(task.target_id)) map.set(task.target_id, task);
+      for (const task of (data || []) as any[]) {
+        const mapped = mapTaskType(task.task_type, '');
+        const key = `${task.target_id}::${mapped}`;
+        if (!map.has(key)) map.set(key, task);
       }
       return map;
     },
