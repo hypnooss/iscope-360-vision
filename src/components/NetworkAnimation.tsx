@@ -3,8 +3,7 @@ import * as THREE from "three";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const PARTICLE_COUNT = 16384;
-const ROTATION_SPEED = 0.08;
-const SCALE_FACTOR = 0.75;
+const ROTATION_SPEED = 0.02;
 
 // ─── Vertex Shader (exact MazeHQ) ───
 const vertexShader = `
