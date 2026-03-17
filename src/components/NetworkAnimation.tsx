@@ -153,7 +153,7 @@ function createSphereGeometry(count: number) {
     positions[i * 3] = radius * sinPhi * Math.cos(theta);
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
-    alphas[i] = 0.25 + Math.random() * 0.5;
+    alphas[i] = 0.4 + Math.random() * 0.5;
     sizes[i] = 0.7 + Math.random() * 1.0;
     seeds[i] = Math.random();
   }
