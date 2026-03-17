@@ -426,6 +426,11 @@ function SchedulesTab() {
     return schedules.filter(s => s.targetType === 'firewall').map(s => s.targetId);
   }, [schedules]);
 
+  // Domain IDs that have domain schedules
+  const domainIds = useMemo(() => {
+    return schedules.filter(s => s.targetType === 'external_domain').map(s => s.targetId);
+  }, [schedules]);
+
   // ── Dedicated query: latest fortigate_compliance task per firewall ──
   const { data: latestComplianceTasks } = useQuery({
     queryKey: ['admin-schedule-compliance-latest', firewallComplianceIds],
