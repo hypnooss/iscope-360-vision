@@ -604,7 +604,10 @@ function SchedulesTab() {
   }, [schedules]);
 
   const renderTaskStatus = (targetId: string, targetType: TargetType) => {
-    const task = latestTasks?.get(`${targetId}::${targetType}`);
+    // Use dedicated compliance query for firewall compliance
+    const task = targetType === 'firewall'
+      ? latestComplianceTasks?.get(`${targetId}::firewall`)
+      : latestTasks?.get(`${targetId}::${targetType}`);
     if (!task) {
       return (
         <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-border gap-1">
