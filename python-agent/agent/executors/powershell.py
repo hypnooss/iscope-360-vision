@@ -175,7 +175,7 @@ class PowerShellExecutor(BaseExecutor):
                 f'$cred = New-Object System.Management.Automation.PSCredential("{username}", $secPassword)',
                 "",
                 "# Connect with credentials",
-                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=(organization or '').replace('.mail.onmicrosoft.com', '').replace('.onmicrosoft.com', '').split('.')[0]),
+                module_config["connect_credential"].format(tenant_id=tenant_id, spo_admin_domain=self._derive_spo_domain(organization, spo_domain)),
                 "",
             ])
         else:
