@@ -454,7 +454,7 @@ function SchedulesTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_tasks')
-        .select('target_id, status, created_at, started_at, completed_at, execution_time_ms, error_message')
+        .select('target_id, task_type, status, created_at, started_at, completed_at, execution_time_ms, error_message')
         .in('target_id', targetIds)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false })
@@ -462,6 +462,7 @@ function SchedulesTab() {
       if (error) throw error;
       return (data || []) as Array<{
         target_id: string;
+        task_type: string;
         status: string;
         created_at: string;
         started_at: string | null;
