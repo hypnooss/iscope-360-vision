@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, Fragment } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -444,7 +444,8 @@ function SchedulesTab() {
         .select('target_id, status, created_at, started_at, completed_at, execution_time_ms, error_message')
         .in('target_id', targetIds)
         .gte('created_at', sevenDaysAgo)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(5000);
       if (error) throw error;
       return (data || []) as Array<{
         target_id: string;
@@ -691,8 +692,8 @@ function SchedulesTab() {
                 {filtered.map(schedule => {
                   const isExpanded = expandedIds.has(schedule.id);
                   return (
-                    <>
-                      <TableRow key={schedule.id} className="cursor-pointer" onClick={() => toggleExpanded(schedule.id)}>
+                    <Fragment key={schedule.id}>
+                      <TableRow className="cursor-pointer" onClick={() => toggleExpanded(schedule.id)}>
                         <TableCell className="w-10 px-2">
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); toggleExpanded(schedule.id); }}>
                             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -734,7 +735,7 @@ function SchedulesTab() {
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </TableBody>
