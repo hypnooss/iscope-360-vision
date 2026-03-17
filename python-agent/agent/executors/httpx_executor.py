@@ -227,7 +227,7 @@ class HttpxExecutor(BaseExecutor):
             chunk_urls.append((full_url, chunk_type))
 
         # Sort: framework first, then main/webpack/app, then generic
-        priority = {'framework': 0, 'turbopack': 1, 'main': 2, 'webpack': 3, 'app': 4, 'generic': 5}
+        priority = {'framework': 0, 'main': 1, 'webpack': 2, 'app': 3, 'generic': 5, 'turbopack': 5}
         chunk_urls.sort(key=lambda x: priority.get(x[1], 99))
 
         self.logger.info(
