@@ -31,6 +31,9 @@ JS_FRAMEWORK_FINGERPRINTS: List[Tuple[re.Pattern, str]] = [
 # ── Regex to extract script URLs from HTML ────────────────────
 SCRIPT_SRC_RE = re.compile(r'<script[^>]+src=["\']([^"\']+)["\']', re.IGNORECASE)
 
+# ── Generic pattern to capture ALL /_next/static/ JS files ────
+NEXT_STATIC_JS_RE = re.compile(r'/_next/static/[^"\'>\s]+\.js', re.IGNORECASE)
+
 # ── Version patterns to search in JS chunks ──────────────────
 # React version: appears as "18.2.0" near "react" references in framework chunks
 REACT_VERSION_PATTERNS = [
@@ -40,6 +43,11 @@ REACT_VERSION_PATTERNS = [
     re.compile(r'react@(\d+\.\d+\.\d+)'),
     # Common pattern in webpack bundled React
     re.compile(r'["\'](\d+\.\d+\.\d+)["\'][^}]*?react'),
+    # Minified patterns common in App Router builds
+    re.compile(r'\.version="(\d+\.\d+\.\d+)"[^}]*?react', re.IGNORECASE),
+    re.compile(r'version:"(\d+\.\d+\.\d+)"[^}]*?react', re.IGNORECASE),
+    # Broader: version string near ReactDOM in minified code
+    re.compile(r'ReactDOM[^{]*?"(\d+\.\d+\.\d+)"'),
 ]
 
 # Next.js version patterns
@@ -48,14 +56,17 @@ NEXTJS_VERSION_PATTERNS = [
     re.compile(r'next@(\d+\.\d+\.\d+)'),
     re.compile(r'next[/:](\d+\.\d+\.\d+)'),
     re.compile(r'"next"[^}]*?"(\d+\.\d+\.\d+)"'),
+    # Minified patterns
+    re.compile(r'\.version="(\d+\.\d+\.\d+)"[^}]*?next', re.IGNORECASE),
+    re.compile(r'version:"(\d+\.\d+\.\d+)"[^}]*?next', re.IGNORECASE),
 ]
 
-# Chunk URL patterns to probe (ordered by likelihood of containing versions)
-CHUNK_PATTERNS = [
-    re.compile(r'/_next/static/chunks/(framework-[a-f0-9]+\.js)'),
-    re.compile(r'/_next/static/chunks/(main-[a-f0-9]+\.js)'),
-    re.compile(r'/_next/static/chunks/(webpack-[a-f0-9]+\.js)'),
-    re.compile(r'/_next/static/chunks/(pages/_app-[a-f0-9]+\.js)'),
+# Pages Router chunk patterns (used for classification priority)
+PAGES_ROUTER_CHUNK_PATTERNS = [
+    (re.compile(r'framework-[a-f0-9]+\.js'), 'framework'),
+    (re.compile(r'main-[a-f0-9]+\.js'), 'main'),
+    (re.compile(r'webpack-[a-f0-9]+\.js'), 'webpack'),
+    (re.compile(r'pages/_app-[a-f0-9]+\.js'), 'app'),
 ]
 
 # Max bytes to read from each JS chunk
@@ -183,22 +194,40 @@ class HttpxExecutor(BaseExecutor):
     def _extract_chunk_urls(self, body: str, base_url: str) -> List[Tuple[str, str]]:
         """Extract JS chunk URLs from HTML and classify them.
         
+        Supports both Pages Router (framework-*.js) and App Router (generic hashes).
         Returns list of (full_url, chunk_type) where chunk_type is
-        'framework', 'main', 'webpack', or 'app'.
+        'framework', 'main', 'webpack', 'app', or 'generic'.
         """
         chunk_urls = []
         seen = set()
+        snippet = body[:102400]
 
-        # Find all script src attributes
-        for match in SCRIPT_SRC_RE.finditer(body[:102400]):
-            src = match.group(1)
-            for i, pattern in enumerate(CHUNK_PATTERNS):
+        # Extract ALL /_next/static/*.js URLs from HTML
+        for match in NEXT_STATIC_JS_RE.finditer(snippet):
+            src = match.group(0)
+            full_url = urljoin(base_url, src) if not src.startswith('http') else src
+            if full_url in seen:
+                continue
+            seen.add(full_url)
+
+            # Classify: check Pages Router named patterns first
+            chunk_type = 'generic'
+            for pattern, ctype in PAGES_ROUTER_CHUNK_PATTERNS:
                 if pattern.search(src):
-                    chunk_type = ['framework', 'main', 'webpack', 'app'][i]
-                    full_url = urljoin(base_url, src) if not src.startswith('http') else src
-                    if full_url not in seen:
-                        seen.add(full_url)
-                        chunk_urls.append((full_url, chunk_type))
+                    chunk_type = ctype
+                    break
+
+            chunk_urls.append((full_url, chunk_type))
+
+        # Sort: framework first, then main/webpack/app, then generic
+        priority = {'framework': 0, 'main': 1, 'webpack': 2, 'app': 3, 'generic': 4}
+        chunk_urls.sort(key=lambda x: priority.get(x[1], 99))
+
+        self.logger.info(
+            f"[httpx] Found {len(chunk_urls)} Next.js chunk URLs "
+            f"({sum(1 for _, t in chunk_urls if t != 'generic')} named, "
+            f"{sum(1 for _, t in chunk_urls if t == 'generic')} generic)"
+        )
 
         return chunk_urls
 
@@ -248,15 +277,18 @@ class HttpxExecutor(BaseExecutor):
             self.logger.debug(f"[httpx] No chunk URLs found in HTML for {base_url}")
             return versions
 
-        # Prioritize: framework (React version) > main/webpack (Next.js version)
+        # Prioritize: framework (React version) > main/webpack (Next.js version) > generic
         probes_done = 0
         for url, chunk_type in chunk_urls:
             if probes_done >= MAX_PROBE_REQUESTS:
                 break
-            # Skip if we already have the version this chunk would give us
+            # Skip named chunks if we already have what they'd give us
             if chunk_type == 'framework' and 'React' in versions:
                 continue
             if chunk_type in ('main', 'webpack', 'app') and 'Next.js' in versions:
+                continue
+            # Skip generic chunks only if we have BOTH versions
+            if chunk_type == 'generic' and 'React' in versions and 'Next.js' in versions:
                 continue
 
             self.logger.info(f"[httpx] Probing {chunk_type} chunk: {url}")
@@ -266,8 +298,8 @@ class HttpxExecutor(BaseExecutor):
             if not content:
                 continue
 
-            # Search for React version in framework chunks
-            if chunk_type == 'framework' and 'React' not in versions:
+            # Search for React version in any chunk
+            if 'React' not in versions:
                 for pattern in REACT_VERSION_PATTERNS:
                     m = pattern.search(content)
                     if m:
@@ -284,14 +316,6 @@ class HttpxExecutor(BaseExecutor):
                         self.logger.info(f"[httpx] Detected Next.js {m.group(1)} from {chunk_type} chunk")
                         break
 
-            # Also check framework chunk for Next.js and vice-versa
-            if chunk_type != 'framework' and 'React' not in versions:
-                for pattern in REACT_VERSION_PATTERNS:
-                    m = pattern.search(content)
-                    if m:
-                        versions['React'] = m.group(1)
-                        self.logger.info(f"[httpx] Detected React {m.group(1)} from {chunk_type} chunk")
-                        break
 
             if versions.get('React') and versions.get('Next.js'):
                 break  # Got both, no need for more probes
