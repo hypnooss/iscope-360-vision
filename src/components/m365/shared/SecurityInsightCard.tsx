@@ -118,7 +118,7 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-4">
         {sorted.map(insight => {
           const isPass = insight.status === 'pass';
           const isNA = !isPass && isNAInsight(insight);
