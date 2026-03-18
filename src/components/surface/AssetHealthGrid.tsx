@@ -350,8 +350,8 @@ export function AssetHealthGrid({ assets, findings, onAssetClick, onRescan, resc
               )}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </TooltipProvider>
   );
 }
