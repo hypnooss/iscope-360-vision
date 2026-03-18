@@ -140,18 +140,12 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
               )}
               onClick={() => setSelectedInsight(insight)}
             >
-              <div className="flex flex-col gap-2 pl-5 pr-3 py-3">
-                {/* Line 1: Icon + Title + Dot */}
+              <div className="flex flex-col gap-1.5 pl-5 pr-3 py-2.5">
+                {/* Line 1: Title + Dot */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-start gap-2 flex-1 min-w-0">
-                    <Icon className={cn(
-                      'w-4 h-4 shrink-0 mt-0.5',
-                      isNA ? 'text-slate-400' : isPass ? 'text-emerald-400' : sevConfig?.color
-                    )} />
-                    <span className="text-sm font-semibold leading-tight line-clamp-2">
-                      {insight.name}
-                    </span>
-                  </div>
+                  <span className="text-xs font-semibold leading-tight line-clamp-2 flex-1 min-w-0">
+                    {insight.name}
+                  </span>
                   <DataSourceDot source="analyzed" />
                 </div>
 
