@@ -340,9 +340,7 @@ const Index = () => {
         </Section>
 
         {/* ═══ STEPPED SHOWCASE (MazeHQ-style) ═══ */}
-        <div id="showcase">
-          <SteppedShowcase />
-        </div>
+        <SteppedShowcase />
         {/* Integrations and Compliance sections removed */}
 
         {/* ═══ TESTIMONIALS ═══ */}
