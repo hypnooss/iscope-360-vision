@@ -1,63 +1,64 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 interface ScrollDownProps {
   sectionIds: string[];
 }
 
+const SNAP_TOLERANCE_PX = 24;
+
 export function ScrollDown({ sectionIds }: ScrollDownProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const activeSections = useRef(new Map<string, boolean>());
 
   const currentIndex = activeId ? sectionIds.indexOf(activeId) : -1;
   const isLastSection = currentIndex >= sectionIds.length - 1;
 
   useEffect(() => {
-    const observers: IntersectionObserver[] = [];
+    let frame = 0;
 
-    // Use a narrow band in the center of the viewport to detect which section is "active"
-    // rootMargin: -45% top, -45% bottom → only the middle 10% of viewport triggers
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          activeSections.current.set(entry.target.id, entry.isIntersecting);
-        });
+    const updateActiveSection = () => {
+      let closestId: string | null = null;
+      let closestDistance = Number.POSITIVE_INFINITY;
 
-        // Find the first section that's intersecting the center band
-        let found: string | null = null;
-        for (const id of sectionIds) {
-          if (activeSections.current.get(id)) {
-            found = id;
-            break;
-          }
+      sectionIds.forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+
+        const distance = Math.abs(el.getBoundingClientRect().top);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestId = id;
         }
-        setActiveId(found);
-      },
-      {
-        rootMargin: '-45% 0px -45% 0px',
-        threshold: 0,
-      }
-    );
+      });
 
-    sectionIds.forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) {
-        observer.observe(el);
-      }
-    });
-    observers.push(observer);
+      setActiveId(closestDistance <= SNAP_TOLERANCE_PX ? closestId : null);
+      frame = 0;
+    };
+
+    const requestUpdate = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateActiveSection);
+    };
+
+    requestUpdate();
+    window.addEventListener('scroll', requestUpdate, { passive: true });
+    window.addEventListener('resize', requestUpdate);
 
     return () => {
-      observers.forEach((o) => o.disconnect());
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+      window.removeEventListener('scroll', requestUpdate);
+      window.removeEventListener('resize', requestUpdate);
     };
   }, [sectionIds]);
 
   const handleClick = useCallback(() => {
     if (isLastSection || currentIndex < 0) return;
     const nextId = sectionIds[currentIndex + 1];
-    document.getElementById(nextId)?.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById(nextId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [currentIndex, isLastSection, sectionIds]);
 
-  const isVisible = !!activeId && !isLastSection;
+  const isVisible = currentIndex >= 0 && !isLastSection;
 
   return (
     <button
