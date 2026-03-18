@@ -255,8 +255,8 @@ export function AssetHealthGrid({ assets, findings, onAssetClick, onRescan, resc
 
   return (
     <TooltipProvider delayDuration={200}>
-      <Card className="border-border/50">
-        <CardContent className="pt-6">
+      <div>
+        <div className="pt-2">
           {healthData.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">Nenhum ativo com serviços expostos</p>
           ) : (
@@ -350,8 +350,8 @@ export function AssetHealthGrid({ assets, findings, onAssetClick, onRescan, resc
               )}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </TooltipProvider>
   );
 }
