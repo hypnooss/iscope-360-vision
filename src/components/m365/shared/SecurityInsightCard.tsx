@@ -20,11 +20,11 @@ const severityIcons: Record<string, React.ElementType> = {
 };
 
 const severityCardStyles: Record<string, { borderL: string; border: string }> = {
-  critical: { borderL: 'border-l-red-500', border: 'border-red-500/50' },
-  high: { borderL: 'border-l-orange-500', border: 'border-orange-500/50' },
-  medium: { borderL: 'border-l-yellow-500', border: 'border-yellow-500/50' },
-  low: { borderL: 'border-l-blue-400', border: 'border-blue-400/50' },
-  info: { borderL: 'border-l-slate-400', border: 'border-slate-500/50' },
+  critical: { borderL: 'border-l-red-500', border: 'border-red-500' },
+  high: { borderL: 'border-l-orange-500', border: 'border-orange-500' },
+  medium: { borderL: 'border-l-yellow-500', border: 'border-yellow-500' },
+  low: { borderL: 'border-l-blue-400', border: 'border-blue-400' },
+  info: { borderL: 'border-l-slate-400', border: 'border-slate-400' },
 };
 
 const severityBadgeStyles: Record<string, string> = {
