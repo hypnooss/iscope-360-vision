@@ -389,7 +389,8 @@ export default function LicensingHubPage() {
             ) : filteredFirewalls.length === 0 ? (
               <EmptyState message={activeFilter ? 'Nenhum firewall corresponde ao filtro selecionado' : 'Nenhum dado de licenciamento de firewall encontrado'} />
             ) : (
-              <div className="rounded-lg border border-border overflow-hidden">
+              <Card>
+                <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -440,7 +441,8 @@ export default function LicensingHubPage() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
+                </CardContent>
+              </Card>
             )}
           </TabsContent>
 
@@ -453,7 +455,8 @@ export default function LicensingHubPage() {
             ) : filteredTls.length === 0 ? (
               <EmptyState message={activeFilter ? 'Nenhum certificado corresponde ao filtro selecionado' : 'Nenhum certificado TLS encontrado nos scans de superfície'} />
             ) : (
-              <div className="rounded-lg border border-border overflow-hidden">
+              <Card>
+                <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -480,7 +483,8 @@ export default function LicensingHubPage() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
+                </CardContent>
+              </Card>
             )}
           </TabsContent>
 
@@ -493,7 +497,8 @@ export default function LicensingHubPage() {
             ) : filteredDomains.length === 0 ? (
               <EmptyState message={activeFilter ? 'Nenhum domínio corresponde ao filtro selecionado' : 'Nenhum domínio externo cadastrado ou sem dados WHOIS coletados'} />
             ) : (
-              <div className="rounded-lg border border-border overflow-hidden">
+              <Card>
+                <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -520,7 +525,8 @@ export default function LicensingHubPage() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
+                </CardContent>
+              </Card>
             )}
           </TabsContent>
 
@@ -566,7 +572,8 @@ export default function LicensingHubPage() {
             ) : (
               <>
                 {visibleM365.length > 0 && (
-                  <div className="rounded-lg border border-border overflow-hidden">
+                  <Card>
+                    <CardContent className="p-0">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -605,7 +612,8 @@ export default function LicensingHubPage() {
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
+                    </CardContent>
+                  </Card>
                 )}
               </>
             )}
