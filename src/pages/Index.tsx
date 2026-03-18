@@ -36,7 +36,7 @@ function Section({ children, className = '', id }: { children: React.ReactNode; 
       whileInView="visible"
       viewport={{ once: true, margin: '-100px' }}
       variants={stagger}
-      className={`py-[120px] px-6 ${className}`}
+      className={`py-[160px] px-6 ${className}`}
     >
       <div className="max-w-[1200px] mx-auto w-full">
         {children}
