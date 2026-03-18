@@ -22,19 +22,19 @@ const severityIcons: Record<string, React.ElementType> = {
   info: Info,
 };
 
-const severityBorderColors: Record<string, string> = {
-  critical: 'border-l-red-500',
-  high: 'border-l-orange-500',
-  medium: 'border-l-amber-500',
-  low: 'border-l-blue-500',
-  info: 'border-l-slate-400',
+const severityCardStyles: Record<string, { borderL: string; border: string }> = {
+  critical: { borderL: 'border-l-red-500', border: 'border-red-500/20' },
+  high: { borderL: 'border-l-orange-500', border: 'border-orange-500/20' },
+  medium: { borderL: 'border-l-yellow-500', border: 'border-yellow-500/20' },
+  low: { borderL: 'border-l-blue-400', border: 'border-blue-400/20' },
+  info: { borderL: 'border-l-slate-400', border: 'border-slate-500/20' },
 };
 
 const severityBadgeStyles: Record<string, string> = {
   critical: 'bg-red-500/15 text-red-400 border-red-500/30',
   high: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
-  medium: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-  low: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  medium: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+  low: 'bg-blue-400/15 text-blue-400 border-blue-400/30',
   info: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
 };
 
@@ -124,7 +124,11 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
           const isNA = !isPass && isNAInsight(insight);
           const sevConfig = SEVERITY_CONFIG[insight.severity];
           const Icon = isNA ? MinusCircle : isPass ? CheckCircle2 : (severityIcons[insight.severity] || Shield);
-          const borderColor = isNA ? 'border-l-slate-400' : isPass ? 'border-l-emerald-500' : severityBorderColors[insight.severity];
+          const cardStyle = isNA
+            ? { borderL: 'border-l-slate-400', border: 'border-slate-500/20' }
+            : isPass
+            ? { borderL: 'border-l-emerald-500', border: 'border-emerald-500/20' }
+            : severityCardStyles[insight.severity] || { borderL: '', border: '' };
           const categoryLabel = M365_ANALYZER_CATEGORY_LABELS[insight.category];
           const trend = insight.metadata?.trend as string | undefined;
           const TrendIcon = trend ? trendIcons[trend] : undefined;
@@ -133,8 +137,9 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
             <Card
               key={insight.id}
               className={cn(
-                'border-l-4 cursor-pointer transition-all hover:shadow-md hover:scale-[1.01]',
-                borderColor,
+                'border-l-4 cursor-pointer transition-all hover:bg-muted/30',
+                cardStyle.borderL,
+                cardStyle.border,
                 isPass && 'opacity-80 hover:opacity-100',
                 isNA && 'opacity-70 hover:opacity-90'
               )}
