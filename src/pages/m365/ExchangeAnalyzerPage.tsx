@@ -188,8 +188,8 @@ export default function ExchangeAnalyzerPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8 space-y-10">
-        <PageBreadcrumb items={[{ label: 'Microsoft 365' }, { label: 'Exchange Analyzer' }]} />
+    <div className="p-6 lg:p-8 space-y-6">
+        <PageBreadcrumb items={[{ label: 'Microsoft 365', href: '/scope-m365/dashboard' }, { label: 'Exchange Analyzer' }]} />
 
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
