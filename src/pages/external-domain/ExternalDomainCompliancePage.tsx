@@ -695,11 +695,7 @@ export default function ExternalDomainCompliancePage() {
           <div>
             {/* Command Center Header */}
             <div className="mb-8">
-              <div className="relative overflow-hidden rounded-2xl border border-primary/20" style={{ background: "linear-gradient(145deg, hsl(220 18% 11%), hsl(220 18% 8%))" }}>
-                <div className="absolute inset-0 opacity-30 pointer-events-none" style={{
-                  backgroundImage: `linear-gradient(hsl(175 80% 45% / 0.03) 1px, transparent 1px), linear-gradient(90deg, hsl(175 80% 45% / 0.03) 1px, transparent 1px)`,
-                  backgroundSize: "32px 32px"
-                }} />
+              <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-card">
                 <div className="relative p-8">
                   <div className="text-center mb-8">
                     <h2 className="text-2xl md:text-3xl font-bold tracking-[0.2em] text-foreground uppercase">{selectedDomain?.domain}</h2>
