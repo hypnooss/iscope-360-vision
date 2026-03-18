@@ -389,7 +389,8 @@ export default function LicensingHubPage() {
             ) : filteredFirewalls.length === 0 ? (
               <EmptyState message={activeFilter ? 'Nenhum firewall corresponde ao filtro selecionado' : 'Nenhum dado de licenciamento de firewall encontrado'} />
             ) : (
-              <div className="rounded-lg border border-border overflow-hidden">
+              <Card>
+                <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
