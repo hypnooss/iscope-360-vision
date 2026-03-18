@@ -455,7 +455,8 @@ export default function LicensingHubPage() {
             ) : filteredTls.length === 0 ? (
               <EmptyState message={activeFilter ? 'Nenhum certificado corresponde ao filtro selecionado' : 'Nenhum certificado TLS encontrado nos scans de superfície'} />
             ) : (
-              <div className="rounded-lg border border-border overflow-hidden">
+              <Card>
+                <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
