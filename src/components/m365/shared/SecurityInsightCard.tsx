@@ -123,11 +123,15 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
           const isNA = !isPass && isNAInsight(insight);
           const sevConfig = SEVERITY_CONFIG[insight.severity];
           const Icon = isNA ? MinusCircle : isPass ? CheckCircle2 : (severityIcons[insight.severity] || Shield);
+          const failCardStyle = failBorderMode === 'critical'
+            ? severityCardStyles.critical
+            : (severityCardStyles[insight.severity] || { borderL: '', border: '' });
+
           const cardStyle = isNA
             ? { borderL: 'border-l-slate-400', border: 'border-slate-400' }
             : isPass
               ? { borderL: 'border-l-emerald-500', border: 'border-emerald-500' }
-              : severityCardStyles[insight.severity] || { borderL: '', border: '' };
+              : failCardStyle;
           const categoryLabel = M365_ANALYZER_CATEGORY_LABELS[insight.category];
           const trend = insight.metadata?.trend as string | undefined;
           const TrendIcon = trend ? trendIcons[trend] : undefined;
