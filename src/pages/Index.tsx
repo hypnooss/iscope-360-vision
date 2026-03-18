@@ -465,6 +465,8 @@ const Index = () => {
         </section>
       </main>
 
+      <ScrollDown sectionIds={['hero','problem','real-problem','how-it-works','features','showcase','testimonials','blog','cta']} />
+
       {/* ═══ FOOTER ═══ */}
       <footer className="relative z-10 border-t border-border/20 bg-background/40 backdrop-blur-xl">
         <div className="max-w-[1200px] mx-auto px-6 py-10 flex flex-col md:flex-row items-center justify-between gap-6">
