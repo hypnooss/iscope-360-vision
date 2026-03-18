@@ -62,6 +62,20 @@ const Index = () => {
   const { user, loading, mfaRequired, mfaEnrolled } = useAuth();
   const navigate = useNavigate();
 
+
+  const scrollSlots = [
+    { anchorId: 'hero', nextTargetId: 'problem', endAnchorId: 'problem-cards-start' },
+    { anchorId: 'problem', nextTargetId: 'real-problem', endAnchorId: 'problem-cards-start' },
+    { anchorId: 'real-problem', nextTargetId: 'how-it-works', endAnchorId: 'how-it-works' },
+    { anchorId: 'how-it-works', nextTargetId: 'features', endAnchorId: 'features' },
+    { anchorId: 'features', nextTargetId: 'showcase-step-1', endAnchorId: 'showcase-step-1' },
+    { anchorId: 'showcase-step-1', nextTargetId: 'showcase-step-2', endAnchorId: 'showcase-step-1-end' },
+    { anchorId: 'showcase-step-2', nextTargetId: 'showcase-step-3', endAnchorId: 'showcase-step-2-end' },
+    { anchorId: 'showcase-step-3', nextTargetId: 'testimonials', endAnchorId: 'showcase-step-3-end' },
+    { anchorId: 'testimonials', nextTargetId: 'blog', endAnchorId: 'blog' },
+    { anchorId: 'blog', nextTargetId: 'cta', endAnchorId: 'cta' },
+  ];
+
   useEffect(() => {
     if (!loading && user) {
       if (mfaRequired) {
@@ -142,6 +156,7 @@ const Index = () => {
             </div>
           </Reveal>
 
+          <div id="problem-cards-start" aria-hidden="true" className="h-0" />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
             {/* CVEs por ano */}
             <Reveal delay={0}>
@@ -463,7 +478,7 @@ const Index = () => {
         </section>
       </main>
 
-      <ScrollDown sectionIds={['hero','problem','real-problem','how-it-works','features','showcase-step-1','showcase-step-2','showcase-step-3','testimonials','blog','cta']} />
+      <ScrollDown slots={scrollSlots} />
 
       {/* ═══ FOOTER ═══ */}
       <footer className="relative z-10 border-t border-border/20 bg-background/40 backdrop-blur-xl">
