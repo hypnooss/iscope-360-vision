@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 
-const ALIGNMENT_TOLERANCE = 5;
+const ALIGNMENT_TOLERANCE = 15;
 const DEBOUNCE_MS = 100;
 
 export function ScrollDownIndicator() {
@@ -12,7 +12,7 @@ export function ScrollDownIndicator() {
     for (const section of sections) {
       const rect = section.getBoundingClientRect();
       const alignedTop = Math.abs(rect.top) < ALIGNMENT_TOLERANCE;
-      const fillsViewport = rect.top < ALIGNMENT_TOLERANCE && rect.bottom > window.innerHeight;
+      const fillsViewport = rect.top < window.innerHeight * 0.15 && rect.bottom > window.innerHeight;
 
       if (alignedTop || fillsViewport) {
         setIsVisible(true);
@@ -58,7 +58,7 @@ export function ScrollDownIndicator() {
     for (let i = 0; i < sections.length; i++) {
       const rect = sections[i].getBoundingClientRect();
       const alignedTop = Math.abs(rect.top) < ALIGNMENT_TOLERANCE;
-      const fillsViewport = rect.top < ALIGNMENT_TOLERANCE && rect.bottom > window.innerHeight;
+      const fillsViewport = rect.top < window.innerHeight * 0.15 && rect.bottom > window.innerHeight;
 
       if (alignedTop || fillsViewport) {
         currentIndex = i;
