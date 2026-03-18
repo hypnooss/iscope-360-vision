@@ -22,6 +22,7 @@ import { ExchangeCategorySheet } from '@/components/m365/exchange/ExchangeCatego
 import type { ExchangeOperationalCategory } from '@/components/m365/exchange/ExchangeAnalyzerCategoryGrid';
 import { ExchangeSecurityInsightCards } from '@/components/m365/exchange/ExchangeSecurityInsightCards';
 import { ExchangeThreatProtectionSection } from '@/components/m365/exchange/ExchangeThreatProtectionSection';
+import { TenantSelector } from '@/components/m365/posture';
 import { useLatestM365AnalyzerSnapshot, useM365AnalyzerProgress } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -187,8 +188,8 @@ export default function ExchangeAnalyzerPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8 space-y-10">
-        <PageBreadcrumb items={[{ label: 'Microsoft 365' }, { label: 'Exchange Analyzer' }]} />
+    <div className="p-6 lg:p-8 space-y-6">
+        <PageBreadcrumb items={[{ label: 'Microsoft 365', href: '/scope-m365/dashboard' }, { label: 'Exchange Analyzer' }]} />
 
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -208,19 +209,12 @@ export default function ExchangeAnalyzerPage() {
                 </SelectContent>
               </Select>
             )}
-            <Select value={selectedTenantId ?? ''} onValueChange={selectTenant}>
-              <SelectTrigger className="w-[220px]">
-                <Mail className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Selecionar tenant" />
-              </SelectTrigger>
-              <SelectContent>
-                {tenants.map(t => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.displayName} {t.domain && `(${t.domain})`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <TenantSelector
+              tenants={tenants}
+              selectedId={selectedTenantId}
+              onSelect={selectTenant}
+              loading={tenantsLoading}
+            />
             <Button onClick={handleTriggerAnalysis} disabled={triggering || isAnalysisRunning || !selectedTenantId || loading}>
               {triggering || isAnalysisRunning || loading
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
