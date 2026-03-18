@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { formatDistanceToNow, differenceInHours, differenceInMinutes, differenceInSeconds, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { formatShortDateTimeBR } from '@/lib/dateUtils';
-import { useCVESources } from '@/hooks/useCVECache';
+import { useCVESources, useCVESyncHistory, CVESyncHistoryRow } from '@/hooks/useCVECache';
 
 // ── Shared renderer ──
 function renderNextRunShared(nextRunAt: string | null) {
