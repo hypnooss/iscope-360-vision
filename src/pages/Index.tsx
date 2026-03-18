@@ -95,7 +95,7 @@ const Index = () => {
       <main className="flex-1 relative z-10">
 
         {/* ═══ HERO ═══ */}
-        <section id="hero" className="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
+        <section id="hero" data-section className="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
 
           {/* Copy — centered overlay on top of globe */}
           <motion.div
