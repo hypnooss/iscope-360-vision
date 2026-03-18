@@ -40,7 +40,7 @@ export function ScrollDown({ sectionIds }: ScrollDownProps) {
   return (
     <button
       onClick={handleClick}
-      className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 cursor-pointer group transition-all duration-500 ${
+      className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 cursor-pointer group transition-all duration-500 ${
         isLastSection ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
       aria-label="Scroll to next section"

@@ -36,7 +36,7 @@ function Section({ children, className = '', id }: { children: React.ReactNode; 
       whileInView="visible"
       viewport={{ once: true, margin: '-100px' }}
       variants={stagger}
-      className={`py-[120px] px-6 ${className}`}
+      className={`py-[160px] px-6 ${className}`}
     >
       <div className="max-w-[1200px] mx-auto w-full">
         {children}
@@ -340,9 +340,7 @@ const Index = () => {
         </Section>
 
         {/* ═══ STEPPED SHOWCASE (MazeHQ-style) ═══ */}
-        <div id="showcase">
-          <SteppedShowcase />
-        </div>
+        <SteppedShowcase />
         {/* Integrations and Compliance sections removed */}
 
         {/* ═══ TESTIMONIALS ═══ */}
@@ -465,7 +463,7 @@ const Index = () => {
         </section>
       </main>
 
-      <ScrollDown sectionIds={['hero','problem','real-problem','how-it-works','features','showcase','testimonials','blog','cta']} />
+      <ScrollDown sectionIds={['hero','problem','real-problem','how-it-works','features','showcase-step-1','showcase-step-2','showcase-step-3','testimonials','blog','cta']} />
 
       {/* ═══ FOOTER ═══ */}
       <footer className="relative z-10 border-t border-border/20 bg-background/40 backdrop-blur-xl">
