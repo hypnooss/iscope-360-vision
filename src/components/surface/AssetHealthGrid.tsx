@@ -266,7 +266,7 @@ export function AssetHealthGrid({ assets, findings, onAssetClick, onRescan, resc
                     <div
                       key={asset.ip}
                       className={cn(
-                        'rounded-lg border bg-card/50 pl-5 pr-3 py-3 border-l-4 cursor-pointer transition-colors',
+                        'rounded-lg border bg-card pl-5 pr-3 py-3 border-l-4 cursor-pointer transition-colors',
                         CARD_STYLES.ok.border, CARD_STYLES.ok.hover, CARD_STYLES.ok.borderL
                       )}
                       onClick={() => onAssetClick(asset.ip)}
@@ -303,7 +303,7 @@ export function AssetHealthGrid({ assets, findings, onAssetClick, onRescan, resc
                     <div
                       key={asset.ip}
                       className={cn(
-                        'rounded-lg border bg-card/50 pl-5 pr-3 py-3 border-l-4 cursor-pointer transition-colors',
+                        'rounded-lg border bg-card pl-5 pr-3 py-3 border-l-4 cursor-pointer transition-colors',
                         CARD_STYLES[asset.worstSeverity]?.border,
                         CARD_STYLES[asset.worstSeverity]?.hover, CARD_STYLES[asset.worstSeverity]?.borderL
                       )}
