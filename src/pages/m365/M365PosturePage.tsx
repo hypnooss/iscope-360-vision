@@ -556,8 +556,7 @@ export default function M365PosturePage() {
               tenants={tenants}
               selectedId={selectedTenantId}
               onSelect={selectTenant}
-              loading={isLoading}
-              disabled={isBlocked}
+              loading={tenantsLoading}
             />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
