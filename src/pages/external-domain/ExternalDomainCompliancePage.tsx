@@ -703,8 +703,7 @@ export default function ExternalDomainCompliancePage() {
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
                     <div className="flex flex-col items-center justify-center">
-                      <div className="relative">
-                        <div className="absolute inset-0 blur-3xl opacity-20" style={{ background: "radial-gradient(circle, hsl(175 80% 45%), transparent 70%)" }} />
+                      <div>
                         <ScoreGauge score={report.overallScore} size={180} />
                       </div>
                       <div className="flex gap-3 mt-14">

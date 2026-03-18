@@ -594,11 +594,7 @@ export default function M365PostureReportPage() {
                     
                     {/* Left Panel: Score + Stats */}
                     <div className="flex flex-col items-center justify-center">
-                      <div className="relative">
-                        <div 
-                          className="absolute inset-0 blur-3xl opacity-20"
-                          style={{ background: "radial-gradient(circle, hsl(175 80% 45%), transparent 70%)" }}
-                        />
+                      <div>
                         {/* Unified ScoreGauge with premium design */}
                         <ScoreGauge 
                           score={reportData.score} 
