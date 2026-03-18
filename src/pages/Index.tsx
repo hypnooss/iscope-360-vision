@@ -32,6 +32,7 @@ function Section({ children, className = '', id }: { children: React.ReactNode; 
   return (
     <motion.section
       id={id}
+      data-section
       initial="hidden"
       whileInView="visible"
       viewport={{ once: true, margin: '-100px' }}
