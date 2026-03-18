@@ -394,10 +394,6 @@ export default function ExternalDomainCompliancePage() {
     });
   }, [report?.categories, categoryConfigs]);
 
-  const criticalOnlyCount = useMemo(() => {
-    if (!report?.categories) return 0;
-    return report.categories.flatMap(c => c.checks).filter(check => check.status === 'fail' && check.severity === 'critical').length;
-  }, [report]);
 
   const dnsSummary = report?.dnsSummary;
   const dnssecStatus = (() => {
@@ -726,20 +722,6 @@ export default function ExternalDomainCompliancePage() {
               </div>
             </div>
 
-            {/* Critical banner */}
-            {criticalOnlyCount > 0 && (
-              <div className="glass-card rounded-xl p-4 mb-8 border-destructive/50 bg-destructive/5 animate-fade-in">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-destructive/20"><XCircle className="w-5 h-5 text-destructive" /></div>
-                  <div>
-                    <h3 className="font-semibold text-destructive">
-                      {criticalOnlyCount} {criticalOnlyCount === 1 ? 'problema crítico encontrado' : 'problemas críticos encontrados'}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">Revise as falhas abaixo e aplique as correções recomendadas.</p>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* DNS Map */}
             <DNSMapSection
