@@ -394,10 +394,6 @@ export default function ExternalDomainCompliancePage() {
     });
   }, [report?.categories, categoryConfigs]);
 
-  const criticalOnlyCount = useMemo(() => {
-    if (!report?.categories) return 0;
-    return report.categories.flatMap(c => c.checks).filter(check => check.status === 'fail' && check.severity === 'critical').length;
-  }, [report]);
 
   const dnsSummary = report?.dnsSummary;
   const dnssecStatus = (() => {
