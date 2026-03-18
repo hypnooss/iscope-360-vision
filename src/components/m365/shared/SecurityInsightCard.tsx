@@ -140,10 +140,10 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
               )}
               onClick={() => setSelectedInsight(insight)}
             >
-              <div className="flex flex-col gap-1.5 pl-5 pr-3 py-2.5">
+              <div className="flex flex-col gap-2 pl-5 pr-3 py-3.5">
                 {/* Line 1: Title + Dot */}
                 <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-semibold leading-tight line-clamp-2 flex-1 min-w-0">
+                  <span className="text-sm font-bold leading-snug line-clamp-2 flex-1 min-w-0">
                     {insight.name}
                   </span>
                   <DataSourceDot source="analyzed" />
@@ -152,35 +152,35 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                 {/* Line 2: Category + Info badges */}
                 <div className="flex flex-wrap items-center gap-1.5">
                   {categoryLabel && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
+                    <Badge variant="outline" className="text-[11px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
                       <Tag className="w-3 h-3 mr-0.5" />
                       {categoryLabel}
                     </Badge>
                   )}
 
                   {!isPass && insight.count != null && insight.count > 0 && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
+                    <Badge variant="outline" className="text-[11px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
                       <Hash className="w-3 h-3 mr-0.5" />
                       {insight.count} ocorrências
                     </Badge>
                   )}
 
                   {!isPass && insight.affectedUsers && insight.affectedUsers.length > 0 && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
+                    <Badge variant="outline" className="text-[11px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
                       <Users className="w-3 h-3 mr-0.5" />
                       {insight.affectedUsers.length} usuários
                     </Badge>
                   )}
 
                   {!isPass && (insight.metadata as any)?.complianceCorrelation && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-violet-500/15 text-violet-400 border-violet-500/30">
+                    <Badge variant="outline" className="text-[11px] px-1.5 py-0 bg-violet-500/15 text-violet-400 border-violet-500/30">
                       <Link2 className="w-3 h-3 mr-0.5" />
                       Compliance
                     </Badge>
                   )}
 
                   {!isPass && trend && TrendIcon && (
-                    <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', trendStyles[trend])}>
+                    <Badge variant="outline" className={cn('text-[11px] px-1.5 py-0', trendStyles[trend])}>
                       <TrendIcon className="w-3 h-3 mr-0.5" />
                       {trend === 'up' ? 'Crescente' : 'Decrescente'}
                     </Badge>
@@ -190,7 +190,7 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                     if (key === 'trend') return null;
                     if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)))) {
                       return (
-                        <Badge key={key} variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
+                        <Badge key={key} variant="outline" className="text-[11px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
                           {key.replace(/_/g, ' ')}: {String(value)}
                         </Badge>
                       );
@@ -200,19 +200,19 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                 </div>
 
                 {/* Line 3: Severity badge */}
-                <div className="flex items-center">
+                <div className="flex items-center pt-0.5">
                   {isNA ? (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-500/15 text-slate-400 border-slate-500/30">
+                    <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-slate-500/15 text-slate-400 border-slate-500/30">
                       <MinusCircle className="w-3 h-3 mr-0.5" />
                       N/A
                     </Badge>
                   ) : isPass ? (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                    <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
                       <CheckCircle2 className="w-3 h-3 mr-0.5" />
                       OK
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', severityBadgeStyles[insight.severity])}>
+                    <Badge variant="outline" className={cn('text-[11px] px-2 py-0.5', severityBadgeStyles[insight.severity])}>
                       {sevConfig?.label ?? insight.severity}
                     </Badge>
                   )}
