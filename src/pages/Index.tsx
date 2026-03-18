@@ -62,6 +62,20 @@ const Index = () => {
   const { user, loading, mfaRequired, mfaEnrolled } = useAuth();
   const navigate = useNavigate();
 
+
+  const scrollSlots = [
+    { anchorId: 'hero', nextTargetId: 'problem', endAnchorId: 'problem-cards-start' },
+    { anchorId: 'problem', nextTargetId: 'real-problem', endAnchorId: 'problem-cards-start' },
+    { anchorId: 'real-problem', nextTargetId: 'how-it-works', endAnchorId: 'how-it-works' },
+    { anchorId: 'how-it-works', nextTargetId: 'features', endAnchorId: 'features' },
+    { anchorId: 'features', nextTargetId: 'showcase-step-1', endAnchorId: 'showcase-step-1' },
+    { anchorId: 'showcase-step-1', nextTargetId: 'showcase-step-2', endAnchorId: 'showcase-step-1-end' },
+    { anchorId: 'showcase-step-2', nextTargetId: 'showcase-step-3', endAnchorId: 'showcase-step-2-end' },
+    { anchorId: 'showcase-step-3', nextTargetId: 'testimonials', endAnchorId: 'showcase-step-3-end' },
+    { anchorId: 'testimonials', nextTargetId: 'blog', endAnchorId: 'blog' },
+    { anchorId: 'blog', nextTargetId: 'cta', endAnchorId: 'cta' },
+  ];
+
   useEffect(() => {
     if (!loading && user) {
       if (mfaRequired) {
