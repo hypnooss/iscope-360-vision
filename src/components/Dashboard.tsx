@@ -201,24 +201,6 @@ export function Dashboard({ report, onRefresh, isRefreshing, firewallName, firew
           }
         />
 
-        {/* Critical Issues Banner */}
-        {report.failed > 0 && (
-          <div className="glass-card rounded-xl p-4 mb-8 border-destructive/50 bg-destructive/5 animate-fade-in">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-destructive/20">
-                <XCircle className="w-5 h-5 text-destructive" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-destructive">
-                  {report.failed} {report.failed === 1 ? 'problema crítico encontrado' : 'problemas críticos encontrados'}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Revise as falhas abaixo e aplique as correções recomendadas.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* CVE Section */}
         {report.firmwareVersion && (
