@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { useLicensingHub, getLicenseStatus, LicenseStatus, FirewallLicense, DomainWhois } from '@/hooks/useLicensingHub';
 import { supabase } from '@/integrations/supabase/client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -262,6 +263,7 @@ export default function LicensingHubPage() {
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
+        <PageBreadcrumb items={[{ label: 'Gestão de Ativos' }]} />
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
