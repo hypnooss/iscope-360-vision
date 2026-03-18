@@ -153,6 +153,18 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                     Compliance
                   </Badge>
                 )}
+
+                {!isPass && insight.metadata && Object.entries(insight.metadata).map(([key, value]) => {
+                  if (key === 'trend') return null;
+                  if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)))) {
+                    return (
+                      <Badge key={key} variant="outline" className="text-[11px] px-1.5 py-0 bg-secondary/50 text-muted-foreground border-border/60">
+                        {key.replace(/_/g, ' ')}: {String(value)}
+                      </Badge>
+                    );
+                  }
+                  return null;
+                })}
               </div>
 
               <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
@@ -178,18 +190,6 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                     {trend === 'up' ? 'Crescente' : 'Decrescente'}
                   </Badge>
                 )}
-
-                {!isPass && insight.metadata && Object.entries(insight.metadata).map(([key, value]) => {
-                  if (key === 'trend') return null;
-                  if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)))) {
-                    return (
-                      <Badge key={key} variant="outline" className="text-[11px] px-1.5 py-0 bg-secondary/50 text-muted-foreground border-border/60">
-                        {key.replace(/_/g, ' ')}: {String(value)}
-                      </Badge>
-                    );
-                  }
-                  return null;
-                })}
               </div>
             </div>
           );
