@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { formatDistanceToNow, differenceInHours, differenceInMinutes, differenceInSeconds, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { formatShortDateTimeBR } from '@/lib/dateUtils';
-import { useCVESources } from '@/hooks/useCVECache';
+import { useCVESources, useCVESyncHistory, CVESyncHistoryRow } from '@/hooks/useCVECache';
 
 // ── Shared renderer ──
 function renderNextRunShared(nextRunAt: string | null) {
@@ -1647,8 +1647,129 @@ const CVE_STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; label: stri
   pending: { icon: Clock, label: 'Pendente', className: 'text-muted-foreground' },
 };
 
+const CVE_TIMELINE_STATUS_LABELS: Record<string, string> = {
+  success: 'Sucesso',
+  error: 'Erro',
+  partial: 'Parcial',
+};
+
+const CVE_STATUS_BAR_COLORS: Record<string, string> = {
+  success: '#10b981',
+  error: '#ef4444',
+  partial: '#f59e0b',
+};
+
+function CVESyncTimeline({ sourceId, history }: { sourceId: string; history: CVESyncHistoryRow[] }) {
+  const [period, setPeriod] = useState<'24h' | '48h' | '7d'>('24h');
+
+  const cutoff = useMemo(() => {
+    const hours = period === '24h' ? 24 : period === '48h' ? 48 : 168;
+    return new Date(Date.now() - hours * 60 * 60 * 1000);
+  }, [period]);
+
+  const filtered = useMemo(() => {
+    return history
+      .filter(h => h.source_id === sourceId && new Date(h.created_at) >= cutoff)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  }, [history, sourceId, cutoff]);
+
+  const counts = useMemo(() => {
+    let success = 0, fail = 0;
+    for (const t of filtered) {
+      if (t.status === 'success') success++;
+      else if (t.status === 'error') fail++;
+    }
+    return { total: filtered.length, success, fail };
+  }, [filtered]);
+
+  const formatDurMs = (ms: number | null) => {
+    if (!ms) return '—';
+    const secs = Math.floor(ms / 1000);
+    if (secs < 60) return `${secs}s`;
+    const mins = Math.floor(secs / 60);
+    return mins < 60 ? `${mins}m ${secs % 60}s` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  };
+
+  return (
+    <div className="pl-16 pr-6 py-6 bg-muted/20">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-1">
+          {(['24h', '48h', '7d'] as const).map(p => (
+            <Button
+              key={p}
+              variant={period === p ? 'default' : 'ghost'}
+              size="sm"
+              className={cn(
+                "h-7 px-3 text-xs font-medium",
+                period === p && "bg-primary text-primary-foreground shadow-sm"
+              )}
+              onClick={() => setPeriod(p)}
+            >
+              {p === '7d' ? '7 dias' : p}
+            </Button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>{counts.total} sincronizações</span>
+          {counts.success > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+              {counts.success} ✓
+            </span>
+          )}
+          {counts.fail > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+              {counts.fail} ✗
+            </span>
+          )}
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-2">Nenhuma sincronização neste período.</p>
+      ) : (
+        <TooltipProvider delayDuration={200}>
+          <div className="flex w-full h-5 rounded-md overflow-hidden bg-muted/30">
+            {filtered.map((t, i) => (
+              <Tooltip key={i}>
+                <TooltipTrigger asChild>
+                  <button
+                    className="h-full flex-1 min-w-[2px] transition-opacity hover:opacity-75 focus:outline-none focus:ring-1 focus:ring-ring focus:ring-inset"
+                    style={{ backgroundColor: CVE_STATUS_BAR_COLORS[t.status] || '#6b7280' }}
+                  />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs max-w-[250px]">
+                  <div className="font-medium">{CVE_TIMELINE_STATUS_LABELS[t.status] || t.status}</div>
+                  <div className="text-muted-foreground">{formatShortDateTimeBR(t.created_at)}</div>
+                  <div className="text-muted-foreground">Duração: {formatDurMs(t.duration_ms)}</div>
+                  {t.cve_count > 0 && <div className="text-muted-foreground">{t.cve_count} CVEs</div>}
+                  {t.error_message && <div className="text-rose-400 mt-1 line-clamp-2">{t.error_message}</div>}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        </TooltipProvider>
+      )}
+    </div>
+  );
+}
+
 function CVESourcesSection() {
   const { data: sources, isLoading } = useCVESources();
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const expandedSourceIds = useMemo(() => Array.from(expandedIds), [expandedIds]);
+  const { data: syncHistory } = useCVESyncHistory(expandedSourceIds);
+
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   if (isLoading) {
     return (
@@ -1676,6 +1797,7 @@ function CVESourcesSection() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10" />
                 <TableHead>Fonte</TableHead>
                 <TableHead>Módulo</TableHead>
                 <TableHead>Status</TableHead>
@@ -1689,34 +1811,56 @@ function CVESourcesSection() {
                 const statusCfg = CVE_STATUS_CONFIG[source.last_sync_status || 'pending'] || CVE_STATUS_CONFIG.pending;
                 const StatusIcon = statusCfg.icon;
                 const isPartial = source.last_sync_error?.toLowerCase().includes('parcial');
+                const isExpanded = expandedIds.has(source.id);
 
                 return (
-                  <TableRow key={source.id}>
-                    <TableCell className="font-medium text-foreground">{source.source_label}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={cn('text-xs', CVE_MODULE_COLORS[source.module_code] || '')}>
-                        {CVE_MODULE_LABELS[source.module_code] || source.module_code}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <StatusIcon className={cn('w-4 h-4', statusCfg.className)} />
-                        <span className="text-sm text-muted-foreground">{statusCfg.label}</span>
-                        {isPartial && (
-                          <Badge variant="outline" className="text-[10px] bg-amber-500/15 text-amber-400 border-amber-500/30 px-1.5 py-0">
-                            parcial
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {source.last_sync_at
-                        ? formatDistanceToNow(new Date(source.last_sync_at), { addSuffix: true, locale: ptBR })
-                        : '—'}
-                    </TableCell>
-                    <TableCell>{renderNextRunShared(source.next_run_at)}</TableCell>
-                    <TableCell className="text-right font-medium text-foreground">{source.last_sync_count || 0}</TableCell>
-                  </TableRow>
+                  <Fragment key={source.id}>
+                    <TableRow
+                      className="cursor-pointer"
+                      onClick={() => toggleExpand(source.id)}
+                    >
+                      <TableCell className="w-10 px-3">
+                        {isExpanded
+                          ? <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                          : <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                        }
+                      </TableCell>
+                      <TableCell className="font-medium text-foreground">{source.source_label}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={cn('text-xs', CVE_MODULE_COLORS[source.module_code] || '')}>
+                          {CVE_MODULE_LABELS[source.module_code] || source.module_code}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          <StatusIcon className={cn('w-4 h-4', statusCfg.className)} />
+                          <span className="text-sm text-muted-foreground">{statusCfg.label}</span>
+                          {isPartial && (
+                            <Badge variant="outline" className="text-[10px] bg-amber-500/15 text-amber-400 border-amber-500/30 px-1.5 py-0">
+                              parcial
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {source.last_sync_at
+                          ? formatDistanceToNow(new Date(source.last_sync_at), { addSuffix: true, locale: ptBR })
+                          : '—'}
+                      </TableCell>
+                      <TableCell>{renderNextRunShared(source.next_run_at)}</TableCell>
+                      <TableCell className="text-right font-medium text-foreground">{source.last_sync_count || 0}</TableCell>
+                    </TableRow>
+                    {isExpanded && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="p-0 pb-2 border-b border-border/50">
+                          <CVESyncTimeline
+                            sourceId={source.id}
+                            history={syncHistory || []}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
                 );
               })}
             </TableBody>
