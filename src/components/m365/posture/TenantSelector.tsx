@@ -66,7 +66,7 @@ export function TenantSelector({
             onClick={() => onSelect(tenant.id)}
             className={cn(
               'flex items-center justify-between cursor-pointer',
-              tenant.id === selectedId && 'bg-accent'
+              tenant.id === selectedId && 'bg-accent/30'
             )}
           >
             <div className="flex flex-col">
