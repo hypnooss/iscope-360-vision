@@ -379,21 +379,6 @@ export default function LicensingHubPage() {
 
           {/* Firewalls Tab */}
           <TabsContent value="firewalls">
-            <div className="flex items-center justify-end mb-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => queryClient.invalidateQueries({ queryKey: ['fortinet-eol'] })}
-                disabled={loadingEol}
-              >
-                {loadingEol ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                )}
-                Atualizar Ciclo de Vida
-              </Button>
-            </div>
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
