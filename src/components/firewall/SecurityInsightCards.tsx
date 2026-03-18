@@ -83,7 +83,7 @@ export function SecurityInsightCards({ snapshot }: SecurityInsightCardsProps) {
         </div>
       </div>
 
-      <SharedSecurityInsightCards insights={mappedInsights} hideHeader failBorderMode="critical" />
+      <SharedSecurityInsightCards insights={mappedInsights} hideHeader />
     </div>
   );
 }

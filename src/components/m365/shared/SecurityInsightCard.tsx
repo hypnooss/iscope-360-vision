@@ -11,20 +11,16 @@ import {
 import { DataSourceDot } from './DataSourceDot';
 import { IncidentDetailSheet } from '@/components/m365/analyzer/IncidentDetailSheet';
 
-const severityIcons: Record<string, React.ElementType> = {
-  critical: AlertTriangle,
-  high: AlertTriangle,
-  medium: AlertCircle,
-  low: Info,
-  info: Info,
-};
+// ─── Exact same pattern as AssetHealthGrid CARD_STYLES ───────────────────────
 
-const severityCardStyles: Record<string, { borderL: string; border: string }> = {
-  critical: { borderL: 'border-l-red-500', border: 'border-red-500' },
-  high: { borderL: 'border-l-orange-500', border: 'border-orange-500' },
-  medium: { borderL: 'border-l-yellow-500', border: 'border-yellow-500' },
-  low: { borderL: 'border-l-blue-400', border: 'border-blue-400' },
-  info: { borderL: 'border-l-slate-400', border: 'border-slate-400' },
+const CARD_STYLES: Record<string, { borderL: string; border: string; hover: string }> = {
+  critical: { borderL: 'border-l-red-500', border: 'border-red-500/20', hover: 'hover:bg-muted/30' },
+  high:     { borderL: 'border-l-orange-500', border: 'border-orange-500/20', hover: 'hover:bg-muted/30' },
+  medium:   { borderL: 'border-l-yellow-500', border: 'border-yellow-500/20', hover: 'hover:bg-muted/30' },
+  low:      { borderL: 'border-l-blue-400', border: 'border-blue-400/20', hover: 'hover:bg-muted/30' },
+  info:     { borderL: 'border-l-slate-400', border: 'border-slate-400/20', hover: 'hover:bg-muted/30' },
+  pass:     { borderL: 'border-l-emerald-500', border: 'border-emerald-500/20', hover: 'hover:bg-muted/30' },
+  na:       { borderL: 'border-l-slate-400', border: 'border-slate-400/20', hover: 'hover:bg-muted/30' },
 };
 
 const severityBadgeStyles: Record<string, string> = {
@@ -50,30 +46,20 @@ interface SecurityInsightCardsProps {
   loading?: boolean;
   title?: string;
   hideHeader?: boolean;
-  failBorderMode?: 'severity' | 'critical';
 }
 
 function isNAInsight(insight: M365AnalyzerInsight): boolean {
   if (insight.status === 'pass') return false;
   if (insight.status === 'fail') return false;
   if (insight.status === 'not_applicable') return true;
-
   const name = insight.name.toLowerCase();
   const configKeywords = ['desabilitado', 'disabled', 'configuração', 'configuracao', 'policy', 'habilitado', 'enabled'];
-
   if (configKeywords.some(kw => name.includes(kw))) return true;
-
-  if (
-    (insight.count === undefined || insight.count === 0) &&
-    (!insight.affectedUsers || insight.affectedUsers.length === 0)
-  ) {
-    return true;
-  }
-
+  if ((insight.count === undefined || insight.count === 0) && (!insight.affectedUsers || insight.affectedUsers.length === 0)) return true;
   return false;
 }
 
-export function SecurityInsightCards({ insights, loading, title = 'Insights de Segurança', hideHeader, failBorderMode = 'severity' }: SecurityInsightCardsProps) {
+export function SecurityInsightCards({ insights, loading, title = 'Insights de Segurança', hideHeader }: SecurityInsightCardsProps) {
   const [selectedInsight, setSelectedInsight] = useState<M365AnalyzerInsight | null>(null);
 
   const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -81,7 +67,6 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
   const failInsights = insights
     .filter(i => i.status !== 'pass' && !isNAInsight(i))
     .sort((a, b) => (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5));
-
   const passInsights = insights.filter(i => i.status === 'pass');
   const naInsights = insights.filter(i => i.status !== 'pass' && isNAInsight(i));
   const sorted = [...failInsights, ...passInsights, ...naInsights];
@@ -117,33 +102,22 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
         {sorted.map(insight => {
           const isPass = insight.status === 'pass';
           const isNA = !isPass && isNAInsight(insight);
           const sevConfig = SEVERITY_CONFIG[insight.severity];
-          const Icon = isNA ? MinusCircle : isPass ? CheckCircle2 : (severityIcons[insight.severity] || Shield);
-          const failCardStyle = failBorderMode === 'critical'
-            ? severityCardStyles.critical
-            : (severityCardStyles[insight.severity] || { borderL: '', border: '' });
-
-          const cardStyle = isNA
-            ? { borderL: 'border-l-slate-400', border: 'border-slate-400' }
-            : isPass
-              ? { borderL: 'border-l-emerald-500', border: 'border-emerald-500' }
-              : failCardStyle;
+          const styleKey = isNA ? 'na' : isPass ? 'pass' : (insight.severity in CARD_STYLES ? insight.severity : 'info');
+          const cs = CARD_STYLES[styleKey];
           const categoryLabel = M365_ANALYZER_CATEGORY_LABELS[insight.category];
           const trend = insight.metadata?.trend as string | undefined;
           const TrendIcon = trend ? trendIcons[trend] : undefined;
 
+          // Bypass cn/twMerge for border classes — use template literal like AssetHealthGrid
           return (
             <div
               key={insight.id}
-              className={cn(
-                'rounded-lg border bg-card pl-5 pr-3 py-3 border-l-4 cursor-pointer transition-colors hover:bg-muted/30',
-                cardStyle.borderL,
-                cardStyle.border
-              )}
+              className={`rounded-lg border bg-card pl-5 pr-3 py-3 border-l-4 cursor-pointer transition-colors ${cs.border} ${cs.hover} ${cs.borderL}`}
               onClick={() => setSelectedInsight(insight)}
             >
               <div className="flex items-center gap-1.5 mb-1">
