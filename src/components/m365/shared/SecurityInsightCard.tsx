@@ -33,8 +33,8 @@ const severityCardStyles: Record<string, { borderL: string; border: string }> = 
 const severityBadgeStyles: Record<string, string> = {
   critical: 'bg-red-500/15 text-red-400 border-red-500/30',
   high: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
-  medium: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-  low: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  medium: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+  low: 'bg-blue-400/15 text-blue-400 border-blue-400/30',
   info: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
 };
 
