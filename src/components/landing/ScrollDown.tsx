@@ -6,11 +6,11 @@ interface ScrollDownProps {
 
 export function ScrollDown({ sectionIds }: ScrollDownProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isVisible, setIsVisible] = useState(true);
   const anchorsRef = useRef<number[]>([]);
-  const midpointsRef = useRef<number[]>([]);
   const rafRef = useRef(0);
 
-  // Build the position map
+  // Build absolute position map
   const recalcPositions = useCallback(() => {
     const scrollY = window.scrollY;
     const positions = sectionIds.map((id) => {
@@ -19,23 +19,24 @@ export function ScrollDown({ sectionIds }: ScrollDownProps) {
       return scrollY + el.getBoundingClientRect().top;
     });
     anchorsRef.current = positions;
-
-    // Midpoints between consecutive anchors
-    const mids: number[] = [];
-    for (let i = 0; i < positions.length - 1; i++) {
-      mids.push((positions[i] + positions[i + 1]) / 2);
-    }
-    midpointsRef.current = mids;
   }, [sectionIds]);
 
-  // Determine current index from scroll position
-  const updateIndex = useCallback(() => {
+  // Determine current index AND visibility from scroll position
+  const updateState = useCallback(() => {
     const y = window.scrollY;
-    const mids = midpointsRef.current;
+    const vh = window.innerHeight;
+    const anchors = anchorsRef.current;
+    if (anchors.length === 0) return;
+
+    // Find active section using midpoints
+    const midpoints: number[] = [];
+    for (let i = 0; i < anchors.length - 1; i++) {
+      midpoints.push((anchors[i] + anchors[i + 1]) / 2);
+    }
 
     let idx = 0;
-    for (let i = 0; i < mids.length; i++) {
-      if (y >= mids[i]) {
+    for (let i = 0; i < midpoints.length; i++) {
+      if (y >= midpoints[i]) {
         idx = i + 1;
       } else {
         break;
@@ -43,25 +44,46 @@ export function ScrollDown({ sectionIds }: ScrollDownProps) {
     }
 
     setCurrentIndex(idx);
+
+    // Visibility: show only in the "comfort zone" near anchors
+    // The button is visible when scrollY is within [anchor - 0.1vh, anchor + 0.7vh] of the active anchor
+    // and hidden in the last section
+    const isLast = idx >= sectionIds.length - 1;
+    if (isLast) {
+      setIsVisible(false);
+      rafRef.current = 0;
+      return;
+    }
+
+    const currentAnchor = anchors[idx];
+    const nextAnchor = idx < anchors.length - 1 ? anchors[idx + 1] : currentAnchor + vh;
+    const sectionHeight = nextAnchor - currentAnchor;
+
+    // Show if within 85% of the section (hide near the transition boundary)
+    const distanceIntoSection = y - currentAnchor;
+    const transitionZone = sectionHeight * 0.15; // last 15% = transition zone, hide button
+
+    const inComfortZone = distanceIntoSection >= -vh * 0.1 && distanceIntoSection < sectionHeight - transitionZone;
+
+    setIsVisible(inComfortZone);
     rafRef.current = 0;
-  }, []);
+  }, [sectionIds]);
 
   useEffect(() => {
-    // Initial calculation after layout settles
     const initTimer = setTimeout(() => {
       recalcPositions();
-      updateIndex();
-    }, 100);
+      updateState();
+    }, 150);
 
     const onScroll = () => {
       if (!rafRef.current) {
-        rafRef.current = requestAnimationFrame(updateIndex);
+        rafRef.current = requestAnimationFrame(updateState);
       }
     };
 
     const onResize = () => {
       recalcPositions();
-      updateIndex();
+      updateState();
     };
 
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -73,17 +95,13 @@ export function ScrollDown({ sectionIds }: ScrollDownProps) {
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onResize);
     };
-  }, [recalcPositions, updateIndex]);
-
-  const isLastSection = currentIndex >= sectionIds.length - 1;
+  }, [recalcPositions, updateState]);
 
   const handleClick = useCallback(() => {
-    if (isLastSection) return;
+    if (currentIndex >= sectionIds.length - 1) return;
     const nextId = sectionIds[currentIndex + 1];
     document.getElementById(nextId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [currentIndex, isLastSection, sectionIds]);
-
-  const isVisible = !isLastSection;
+  }, [currentIndex, sectionIds]);
 
   return (
     <button
