@@ -125,7 +125,7 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                 <DataSourceDot source="analyzed" className="ml-auto" />
               </div>
 
-              <div className="flex items-center gap-1.5 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap mt-2">
                 {categoryLabel && (
                   <Badge variant="outline" className="text-[11px] px-1.5 py-0 bg-secondary/50 text-muted-foreground border-border/60">
                     <Tag className="w-3 h-3 mr-0.5" />
