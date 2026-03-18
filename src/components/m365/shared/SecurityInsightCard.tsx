@@ -140,7 +140,7 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
               )}
               onClick={() => setSelectedInsight(insight)}
             >
-              <div className="flex flex-col gap-2 p-4">
+              <div className="flex flex-col gap-2 pl-5 pr-3 py-3">
                 {/* Line 1: Icon + Title + Dot */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-2 flex-1 min-w-0">
