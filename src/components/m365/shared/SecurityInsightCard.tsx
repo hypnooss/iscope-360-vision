@@ -22,12 +22,12 @@ const severityIcons: Record<string, React.ElementType> = {
   info: Info,
 };
 
-const severityBorderColors: Record<string, string> = {
-  critical: 'border-l-red-500',
-  high: 'border-l-orange-500',
-  medium: 'border-l-amber-500',
-  low: 'border-l-blue-500',
-  info: 'border-l-slate-400',
+const severityCardStyles: Record<string, { borderL: string; border: string }> = {
+  critical: { borderL: 'border-l-red-500', border: 'border-red-500/20' },
+  high: { borderL: 'border-l-orange-500', border: 'border-orange-500/20' },
+  medium: { borderL: 'border-l-yellow-500', border: 'border-yellow-500/20' },
+  low: { borderL: 'border-l-blue-400', border: 'border-blue-400/20' },
+  info: { borderL: 'border-l-slate-400', border: 'border-slate-500/20' },
 };
 
 const severityBadgeStyles: Record<string, string> = {
