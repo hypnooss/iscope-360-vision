@@ -21,6 +21,7 @@ import { EntraIdCategorySheet } from '@/components/m365/entra-id/EntraIdCategory
 import type { EntraIdOperationalCategory } from '@/components/m365/entra-id/EntraIdAnalyzerCategoryGrid';
 import { EntraIdSecurityInsightCards } from '@/components/m365/entra-id/EntraIdSecurityInsightCards';
 import { EntraIdLoginMap } from '@/components/m365/entra-id/EntraIdLoginMap';
+import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';

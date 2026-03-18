@@ -20,6 +20,7 @@ import { TeamsAnalyzerCategoryGrid } from '@/components/m365/teams/TeamsAnalyzer
 import { TeamsCategorySheet } from '@/components/m365/teams/TeamsCategorySheet';
 import type { TeamsOperationalCategory } from '@/components/m365/teams/TeamsAnalyzerCategoryGrid';
 import { TeamsSecurityInsightCards } from '@/components/m365/teams/TeamsSecurityInsightCards';
+import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
