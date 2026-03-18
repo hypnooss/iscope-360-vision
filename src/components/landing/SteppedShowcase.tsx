@@ -376,9 +376,9 @@ export function SteppedShowcase() {
   return (
     <section ref={containerRef} className="relative" style={{ height: '400vh' }}>
       {/* Scroll anchors for ScrollDown navigation */}
-      <div id="showcase-step-1" className="absolute w-full" style={{ top: '0', height: '33.33%' }} />
-      <div id="showcase-step-2" className="absolute w-full" style={{ top: '33.33%', height: '33.33%' }} />
-      <div id="showcase-step-3" className="absolute w-full" style={{ top: '66.66%', height: '33.33%' }} />
+      <div id="showcase-step-1" aria-hidden="true" className="absolute w-full pointer-events-none" style={{ top: '0', height: '33.33%' }} />
+      <div id="showcase-step-2" aria-hidden="true" className="absolute w-full pointer-events-none" style={{ top: '33.33%', height: '33.33%' }} />
+      <div id="showcase-step-3" aria-hidden="true" className="absolute w-full pointer-events-none" style={{ top: '66.66%', height: '33.33%' }} />
       <div className="sticky top-0 h-screen overflow-hidden flex flex-col">
         <ProgressBar scrollProgress={currentProgress} />
 
