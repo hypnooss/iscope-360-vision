@@ -441,7 +441,8 @@ export default function LicensingHubPage() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
+                </CardContent>
+              </Card>
             )}
           </TabsContent>
 
