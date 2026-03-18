@@ -212,7 +212,7 @@ const Index = () => {
               </div>
             </Reveal>
           </div>
-          <ScrollDown targetId="real-problem" />
+          
         </Section>
 
         {/* ═══ THE REAL PROBLEM ═══ */}
