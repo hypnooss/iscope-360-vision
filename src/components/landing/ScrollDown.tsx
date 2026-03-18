@@ -4,68 +4,70 @@ interface ScrollDownProps {
   sectionIds: string[];
 }
 
+/**
+ * Slot-based ScrollDown: visibility is determined by explicit vertical ranges,
+ * not heuristic midpoints. Each section anchor defines a "visible window" where
+ * the button can appear. Outside those windows = button hidden.
+ */
 export function ScrollDown({ sectionIds }: ScrollDownProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isVisible, setIsVisible] = useState(true);
-  const anchorsRef = useRef<number[]>([]);
+  const [nextTarget, setNextTarget] = useState<string | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const slotsRef = useRef<{ id: string; top: number }[]>([]);
   const rafRef = useRef(0);
 
-  // Build absolute position map
+  // Build absolute position map from DOM
   const recalcPositions = useCallback(() => {
     const scrollY = window.scrollY;
-    const positions = sectionIds.map((id) => {
+    slotsRef.current = sectionIds.map((id) => {
       const el = document.getElementById(id);
-      if (!el) return 0;
-      return scrollY + el.getBoundingClientRect().top;
+      if (!el) return { id, top: 0 };
+      return { id, top: scrollY + el.getBoundingClientRect().top };
     });
-    anchorsRef.current = positions;
   }, [sectionIds]);
 
-  // Determine current index AND visibility from scroll position
+  // Determine visibility and next target using strict range windows
   const updateState = useCallback(() => {
     const y = window.scrollY;
     const vh = window.innerHeight;
-    const anchors = anchorsRef.current;
-    if (anchors.length === 0) return;
+    const slots = slotsRef.current;
+    if (slots.length < 2) return;
 
-    // Find active section using midpoints
-    const midpoints: number[] = [];
-    for (let i = 0; i < anchors.length - 1; i++) {
-      midpoints.push((anchors[i] + anchors[i + 1]) / 2);
-    }
+    // For each slot, define the visible window:
+    // visibleStart = slotTop + vh * 0.05  (small margin after landing)
+    // visibleEnd   = nextSlotTop - vh * 0.35 (hide well before next section header appears)
+    // This creates a clear dead zone between sections where button is hidden.
+    const marginTop = vh * 0.05;
+    const marginBottom = vh * 0.35;
 
-    let idx = 0;
-    for (let i = 0; i < midpoints.length; i++) {
-      if (y >= midpoints[i]) {
-        idx = i + 1;
-      } else {
+    let foundSlot = false;
+
+    for (let i = 0; i < slots.length - 1; i++) {
+      const slotTop = slots[i].top;
+      const nextSlotTop = slots[i + 1].top;
+      const sectionHeight = nextSlotTop - slotTop;
+
+      // Skip very small sections (< 50% vh) — they're transition anchors
+      // For those, merge the window with the next real section
+      if (sectionHeight < vh * 0.3) continue;
+
+      const visibleStart = slotTop + marginTop;
+      const visibleEnd = nextSlotTop - marginBottom;
+
+      // Only show if there's a meaningful visible window
+      if (visibleEnd <= visibleStart) continue;
+
+      if (y >= visibleStart && y < visibleEnd) {
+        setIsVisible(true);
+        setNextTarget(slots[i + 1].id);
+        foundSlot = true;
         break;
       }
     }
 
-    setCurrentIndex(idx);
-
-    // Visibility: show only in the "comfort zone" near anchors
-    // The button is visible when scrollY is within [anchor - 0.1vh, anchor + 0.7vh] of the active anchor
-    // and hidden in the last section
-    const isLast = idx >= sectionIds.length - 1;
-    if (isLast) {
+    if (!foundSlot) {
       setIsVisible(false);
-      rafRef.current = 0;
-      return;
     }
 
-    const currentAnchor = anchors[idx];
-    const nextAnchor = idx < anchors.length - 1 ? anchors[idx + 1] : currentAnchor + vh;
-    const sectionHeight = nextAnchor - currentAnchor;
-
-    // Show if within 85% of the section (hide near the transition boundary)
-    const distanceIntoSection = y - currentAnchor;
-    const transitionZone = sectionHeight * 0.15; // last 15% = transition zone, hide button
-
-    const inComfortZone = distanceIntoSection >= -vh * 0.1 && distanceIntoSection < sectionHeight - transitionZone;
-
-    setIsVisible(inComfortZone);
     rafRef.current = 0;
   }, [sectionIds]);
 
@@ -73,7 +75,7 @@ export function ScrollDown({ sectionIds }: ScrollDownProps) {
     const initTimer = setTimeout(() => {
       recalcPositions();
       updateState();
-    }, 150);
+    }, 200);
 
     const onScroll = () => {
       if (!rafRef.current) {
@@ -98,10 +100,9 @@ export function ScrollDown({ sectionIds }: ScrollDownProps) {
   }, [recalcPositions, updateState]);
 
   const handleClick = useCallback(() => {
-    if (currentIndex >= sectionIds.length - 1) return;
-    const nextId = sectionIds[currentIndex + 1];
-    document.getElementById(nextId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [currentIndex, sectionIds]);
+    if (!nextTarget) return;
+    document.getElementById(nextTarget)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [nextTarget]);
 
   return (
     <button
