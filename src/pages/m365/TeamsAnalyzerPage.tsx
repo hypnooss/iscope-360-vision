@@ -20,6 +20,7 @@ import { TeamsAnalyzerCategoryGrid } from '@/components/m365/teams/TeamsAnalyzer
 import { TeamsCategorySheet } from '@/components/m365/teams/TeamsCategorySheet';
 import type { TeamsOperationalCategory } from '@/components/m365/teams/TeamsAnalyzerCategoryGrid';
 import { TeamsSecurityInsightCards } from '@/components/m365/teams/TeamsSecurityInsightCards';
+import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -185,19 +186,12 @@ export default function TeamsAnalyzerPage() {
                 </SelectContent>
               </Select>
             )}
-            <Select value={selectedTenantId ?? ''} onValueChange={selectTenant}>
-              <SelectTrigger className="w-[220px]">
-                <Users className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Selecionar tenant" />
-              </SelectTrigger>
-              <SelectContent>
-                {tenants.map(t => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.displayName} {t.domain && `(${t.domain})`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <TenantSelector
+              tenants={tenants}
+              selectedId={selectedTenantId}
+              onSelect={selectTenant}
+              loading={tenantsLoading}
+            />
             <Button onClick={handleTriggerAnalysis} disabled={triggering || !selectedTenantId || loading}>
               {triggering || loading
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>

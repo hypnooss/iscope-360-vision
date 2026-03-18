@@ -21,6 +21,7 @@ import { EntraIdCategorySheet } from '@/components/m365/entra-id/EntraIdCategory
 import type { EntraIdOperationalCategory } from '@/components/m365/entra-id/EntraIdAnalyzerCategoryGrid';
 import { EntraIdSecurityInsightCards } from '@/components/m365/entra-id/EntraIdSecurityInsightCards';
 import { EntraIdLoginMap } from '@/components/m365/entra-id/EntraIdLoginMap';
+import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { useLatestM365AnalyzerSnapshot } from '@/hooks/useM365AnalyzerData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -219,19 +220,12 @@ export default function EntraIdAnalyzerPage() {
                 </SelectContent>
               </Select>
             )}
-            <Select value={selectedTenantId ?? ''} onValueChange={selectTenant}>
-              <SelectTrigger className="w-[220px]">
-                <Shield className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Selecionar tenant" />
-              </SelectTrigger>
-              <SelectContent>
-                {tenants.map(t => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.displayName} {t.domain && `(${t.domain})`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <TenantSelector
+              tenants={tenants}
+              selectedId={selectedTenantId}
+              onSelect={selectTenant}
+              loading={tenantsLoading}
+            />
             <Button onClick={handleTriggerAnalysis} disabled={triggering || !selectedTenantId || loading}>
               {triggering || loading
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
