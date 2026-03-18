@@ -58,7 +58,7 @@ export function ScrollDownIndicator() {
     for (let i = 0; i < sections.length; i++) {
       const rect = sections[i].getBoundingClientRect();
       const alignedTop = Math.abs(rect.top) < ALIGNMENT_TOLERANCE;
-      const fillsViewport = rect.top < ALIGNMENT_TOLERANCE && rect.bottom > window.innerHeight;
+      const fillsViewport = rect.top < window.innerHeight * 0.15 && rect.bottom > window.innerHeight;
 
       if (alignedTop || fillsViewport) {
         currentIndex = i;
