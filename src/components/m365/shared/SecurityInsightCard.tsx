@@ -123,9 +123,9 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
           const sevConfig = SEVERITY_CONFIG[insight.severity];
           const Icon = isNA ? MinusCircle : isPass ? CheckCircle2 : (severityIcons[insight.severity] || Shield);
           const cardStyle = isNA
-            ? { borderL: 'border-l-slate-400', border: 'border-slate-500/20' }
+            ? { borderL: 'border-l-slate-400', border: 'border-slate-500/40' }
             : isPass
-              ? { borderL: 'border-l-emerald-500', border: 'border-emerald-500/20' }
+              ? { borderL: 'border-l-emerald-500', border: 'border-emerald-500/40' }
               : severityCardStyles[insight.severity] || { borderL: '', border: '' };
           const categoryLabel = M365_ANALYZER_CATEGORY_LABELS[insight.category];
           const trend = insight.metadata?.trend as string | undefined;
