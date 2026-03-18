@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/Header';
 import { NetworkAnimation } from '@/components/NetworkAnimation';
-import { ScrollDown } from '@/components/landing/ScrollDown';
+import { ScrollDownIndicator } from '@/components/landing/ScrollDownIndicator';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 import {
@@ -32,6 +32,7 @@ function Section({ children, className = '', id }: { children: React.ReactNode; 
   return (
     <motion.section
       id={id}
+      data-section
       initial="hidden"
       whileInView="visible"
       viewport={{ once: true, margin: '-100px' }}
@@ -63,18 +64,6 @@ const Index = () => {
   const navigate = useNavigate();
 
 
-  const scrollSlots = [
-    { anchorId: 'hero', nextTargetId: 'problem', endAnchorId: 'problem-cards-start' },
-    { anchorId: 'problem', nextTargetId: 'real-problem', endAnchorId: 'problem-cards-start' },
-    { anchorId: 'real-problem', nextTargetId: 'how-it-works', endAnchorId: 'how-it-works' },
-    { anchorId: 'how-it-works', nextTargetId: 'features', endAnchorId: 'features' },
-    { anchorId: 'features', nextTargetId: 'showcase-step-1', endAnchorId: 'showcase-step-1' },
-    { anchorId: 'showcase-step-1', nextTargetId: 'showcase-step-2', endAnchorId: 'showcase-step-1-end' },
-    { anchorId: 'showcase-step-2', nextTargetId: 'showcase-step-3', endAnchorId: 'showcase-step-2-end' },
-    { anchorId: 'showcase-step-3', nextTargetId: 'testimonials', endAnchorId: 'showcase-step-3-end' },
-    { anchorId: 'testimonials', nextTargetId: 'blog', endAnchorId: 'blog' },
-    { anchorId: 'blog', nextTargetId: 'cta', endAnchorId: 'cta' },
-  ];
 
   useEffect(() => {
     if (!loading && user) {
@@ -106,7 +95,7 @@ const Index = () => {
       <main className="flex-1 relative z-10">
 
         {/* ═══ HERO ═══ */}
-        <section id="hero" className="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
+        <section id="hero" data-section className="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
 
           {/* Copy — centered overlay on top of globe */}
           <motion.div
@@ -443,7 +432,7 @@ const Index = () => {
         </Section>
 
         {/* ═══ CTA FINAL ═══ */}
-        <section id="cta" className="py-[120px] px-6 relative overflow-hidden bg-transparent">
+        <section id="cta" data-section className="py-[120px] px-6 relative overflow-hidden bg-transparent">
           
 
           <motion.div
@@ -478,7 +467,7 @@ const Index = () => {
         </section>
       </main>
 
-      <ScrollDown slots={scrollSlots} />
+      <ScrollDownIndicator />
 
       {/* ═══ FOOTER ═══ */}
       <footer className="relative z-10 border-t border-border/20 bg-background/40 backdrop-blur-xl">
