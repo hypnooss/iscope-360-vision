@@ -5,68 +5,59 @@ interface ScrollDownProps {
 }
 
 export function ScrollDown({ sectionIds }: ScrollDownProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isSnapped, setIsSnapped] = useState(true);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const activeSections = useRef(new Map<string, boolean>());
+
+  const currentIndex = activeId ? sectionIds.indexOf(activeId) : -1;
   const isLastSection = currentIndex >= sectionIds.length - 1;
-  const visibleSections = useRef(new Set<string>());
 
   useEffect(() => {
     const observers: IntersectionObserver[] = [];
 
-    // Observer for tracking current section (low threshold)
-    sectionIds.forEach((id, index) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-
-      const observer = new IntersectionObserver(
-        ([entry]) => {
-          if (entry.isIntersecting) {
-            setCurrentIndex(index);
-          }
-        },
-        { threshold: 0.3 }
-      );
-
-      observer.observe(el);
-      observers.push(observer);
-    });
-
-    // Observer for snap detection (high threshold)
-    const snapObserver = new IntersectionObserver(
+    // Use a narrow band in the center of the viewport to detect which section is "active"
+    // rootMargin: -45% top, -45% bottom → only the middle 10% of viewport triggers
+    const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            visibleSections.current.add(entry.target.id);
-          } else {
-            visibleSections.current.delete(entry.target.id);
-          }
+          activeSections.current.set(entry.target.id, entry.isIntersecting);
         });
-        setIsSnapped(visibleSections.current.size > 0);
+
+        // Find the first section that's intersecting the center band
+        let found: string | null = null;
+        for (const id of sectionIds) {
+          if (activeSections.current.get(id)) {
+            found = id;
+            break;
+          }
+        }
+        setActiveId(found);
       },
-      { threshold: 0.3 }
+      {
+        rootMargin: '-45% 0px -45% 0px',
+        threshold: 0,
+      }
     );
 
     sectionIds.forEach((id) => {
       const el = document.getElementById(id);
       if (el) {
-        snapObserver.observe(el);
-        observers.push(snapObserver);
+        observer.observe(el);
       }
     });
+    observers.push(observer);
 
     return () => {
       observers.forEach((o) => o.disconnect());
-      snapObserver.disconnect();
     };
   }, [sectionIds]);
 
   const handleClick = useCallback(() => {
-    if (isLastSection) return;
+    if (isLastSection || currentIndex < 0) return;
     const nextId = sectionIds[currentIndex + 1];
     document.getElementById(nextId)?.scrollIntoView({ behavior: 'smooth' });
   }, [currentIndex, isLastSection, sectionIds]);
 
-  const isVisible = isSnapped && !isLastSection;
+  const isVisible = !!activeId && !isLastSection;
 
   return (
     <button
