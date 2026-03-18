@@ -4,61 +4,79 @@ interface ScrollDownProps {
   sectionIds: string[];
 }
 
-const SNAP_TOLERANCE_PX = 24;
-
 export function ScrollDown({ sectionIds }: ScrollDownProps) {
-  const [activeId, setActiveId] = useState<string | null>(null);
-
-  const currentIndex = activeId ? sectionIds.indexOf(activeId) : -1;
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isScrolling, setIsScrolling] = useState(false);
   const isLastSection = currentIndex >= sectionIds.length - 1;
 
   useEffect(() => {
     let frame = 0;
+    let scrollTimeout: ReturnType<typeof setTimeout>;
 
     const updateActiveSection = () => {
-      let closestId: string | null = null;
-      let closestDistance = Number.POSITIVE_INFINITY;
+      const vh = window.innerHeight;
 
-      sectionIds.forEach((id) => {
+      // Find section whose bounds contain the viewport center
+      let bestIndex = -1;
+      let bestOverlap = 0;
+
+      sectionIds.forEach((id, index) => {
         const el = document.getElementById(id);
         if (!el) return;
 
-        const distance = Math.abs(el.getBoundingClientRect().top);
-        if (distance < closestDistance) {
-          closestDistance = distance;
-          closestId = id;
+        const rect = el.getBoundingClientRect();
+        // How much of this section overlaps the viewport
+        const overlapTop = Math.max(0, rect.top);
+        const overlapBottom = Math.min(vh, rect.bottom);
+        const overlap = Math.max(0, overlapBottom - overlapTop);
+
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          bestIndex = index;
         }
       });
 
-      setActiveId(closestDistance <= SNAP_TOLERANCE_PX ? closestId : null);
+      if (bestIndex >= 0) {
+        setCurrentIndex(bestIndex);
+      }
+
       frame = 0;
     };
 
-    const requestUpdate = () => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(updateActiveSection);
+    const onScroll = () => {
+      setIsScrolling(true);
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => setIsScrolling(false), 150);
+
+      if (!frame) {
+        frame = window.requestAnimationFrame(updateActiveSection);
+      }
     };
 
-    requestUpdate();
-    window.addEventListener('scroll', requestUpdate, { passive: true });
-    window.addEventListener('resize', requestUpdate);
+    // Initial check
+    updateActiveSection();
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', () => {
+      if (!frame) frame = window.requestAnimationFrame(updateActiveSection);
+    });
 
     return () => {
-      if (frame) {
-        window.cancelAnimationFrame(frame);
-      }
-      window.removeEventListener('scroll', requestUpdate);
-      window.removeEventListener('resize', requestUpdate);
+      if (frame) window.cancelAnimationFrame(frame);
+      clearTimeout(scrollTimeout);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
     };
   }, [sectionIds]);
 
   const handleClick = useCallback(() => {
-    if (isLastSection || currentIndex < 0) return;
+    if (isLastSection) return;
     const nextId = sectionIds[currentIndex + 1];
     document.getElementById(nextId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [currentIndex, isLastSection, sectionIds]);
 
-  const isVisible = currentIndex >= 0 && !isLastSection;
+  // Visible when not scrolling and not on the last section
+  const isVisible = !isScrolling && !isLastSection;
 
   return (
     <button
