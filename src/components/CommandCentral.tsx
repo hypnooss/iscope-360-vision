@@ -84,22 +84,8 @@ export function CommandCentralLayout({ title, score, skipGaugeAnimation, miniSta
   return (
     <div className="max-w-full mb-8">
       <div 
-        className="relative overflow-hidden rounded-2xl border border-primary/20"
-        style={{
-          background: "linear-gradient(145deg, hsl(220 18% 11%), hsl(220 18% 8%))"
-        }}
+        className="relative overflow-hidden rounded-2xl border border-border/50 bg-card"
       >
-        {/* Grid pattern overlay */}
-        <div 
-          className="absolute inset-0 opacity-30 pointer-events-none"
-          style={{
-            backgroundImage: `
-              linear-gradient(hsl(175 80% 45% / 0.03) 1px, transparent 1px),
-              linear-gradient(90deg, hsl(175 80% 45% / 0.03) 1px, transparent 1px)
-            `,
-            backgroundSize: "32px 32px"
-          }}
-        />
 
         <div className="relative p-8">
           {/* Identification Strip */}
@@ -115,11 +101,7 @@ export function CommandCentralLayout({ title, score, skipGaugeAnimation, miniSta
             
             {/* Left Panel: Score + Stats */}
             <div className="flex flex-col items-center justify-center">
-              <div className="relative">
-                <div 
-                  className="absolute inset-0 blur-3xl opacity-20"
-                  style={{ background: "radial-gradient(circle, hsl(175 80% 45%), transparent 70%)" }}
-                />
+              <div>
                 <ScoreGauge score={score} size={180} skipAnimation={skipGaugeAnimation} />
               </div>
 

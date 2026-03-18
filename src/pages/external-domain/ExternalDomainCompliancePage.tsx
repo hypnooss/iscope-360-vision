@@ -695,11 +695,7 @@ export default function ExternalDomainCompliancePage() {
           <div>
             {/* Command Center Header */}
             <div className="mb-8">
-              <div className="relative overflow-hidden rounded-2xl border border-primary/20" style={{ background: "linear-gradient(145deg, hsl(220 18% 11%), hsl(220 18% 8%))" }}>
-                <div className="absolute inset-0 opacity-30 pointer-events-none" style={{
-                  backgroundImage: `linear-gradient(hsl(175 80% 45% / 0.03) 1px, transparent 1px), linear-gradient(90deg, hsl(175 80% 45% / 0.03) 1px, transparent 1px)`,
-                  backgroundSize: "32px 32px"
-                }} />
+              <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-card">
                 <div className="relative p-8">
                   <div className="text-center mb-8">
                     <h2 className="text-2xl md:text-3xl font-bold tracking-[0.2em] text-foreground uppercase">{selectedDomain?.domain}</h2>
@@ -707,8 +703,7 @@ export default function ExternalDomainCompliancePage() {
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
                     <div className="flex flex-col items-center justify-center">
-                      <div className="relative">
-                        <div className="absolute inset-0 blur-3xl opacity-20" style={{ background: "radial-gradient(circle, hsl(175 80% 45%), transparent 70%)" }} />
+                      <div>
                         <ScoreGauge score={report.overallScore} size={180} />
                       </div>
                       <div className="flex gap-3 mt-14">
