@@ -20,11 +20,11 @@ const severityIcons: Record<string, React.ElementType> = {
 };
 
 const severityCardStyles: Record<string, { borderL: string; border: string }> = {
-  critical: { borderL: 'border-l-red-500', border: 'border-red-500/20' },
-  high: { borderL: 'border-l-orange-500', border: 'border-orange-500/20' },
-  medium: { borderL: 'border-l-amber-500', border: 'border-amber-500/20' },
-  low: { borderL: 'border-l-blue-500', border: 'border-blue-500/20' },
-  info: { borderL: 'border-l-slate-400', border: 'border-slate-500/20' },
+  critical: { borderL: 'border-l-red-500', border: 'border-red-500/40' },
+  high: { borderL: 'border-l-orange-500', border: 'border-orange-500/40' },
+  medium: { borderL: 'border-l-amber-500', border: 'border-amber-500/40' },
+  low: { borderL: 'border-l-blue-500', border: 'border-blue-500/40' },
+  info: { borderL: 'border-l-slate-400', border: 'border-slate-500/40' },
 };
 
 const severityBadgeStyles: Record<string, string> = {
@@ -123,9 +123,9 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
           const sevConfig = SEVERITY_CONFIG[insight.severity];
           const Icon = isNA ? MinusCircle : isPass ? CheckCircle2 : (severityIcons[insight.severity] || Shield);
           const cardStyle = isNA
-            ? { borderL: 'border-l-slate-400', border: 'border-slate-500/20' }
+            ? { borderL: 'border-l-slate-400', border: 'border-slate-500/40' }
             : isPass
-              ? { borderL: 'border-l-emerald-500', border: 'border-emerald-500/20' }
+              ? { borderL: 'border-l-emerald-500', border: 'border-emerald-500/40' }
               : severityCardStyles[insight.severity] || { borderL: '', border: '' };
           const categoryLabel = M365_ANALYZER_CATEGORY_LABELS[insight.category];
           const trend = insight.metadata?.trend as string | undefined;
