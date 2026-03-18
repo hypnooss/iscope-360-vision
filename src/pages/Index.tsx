@@ -302,7 +302,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          <ScrollDown targetId="features" />
+          
         </Section>
 
         {/* ═══ FEATURES ═══ */}
