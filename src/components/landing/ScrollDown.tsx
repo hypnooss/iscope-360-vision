@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 interface ScrollDownProps {
   sectionIds: string[];
@@ -6,68 +6,76 @@ interface ScrollDownProps {
 
 export function ScrollDown({ sectionIds }: ScrollDownProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isScrolling, setIsScrolling] = useState(false);
-  const isLastSection = currentIndex >= sectionIds.length - 1;
+  const anchorsRef = useRef<number[]>([]);
+  const midpointsRef = useRef<number[]>([]);
+  const rafRef = useRef(0);
+
+  // Build the position map
+  const recalcPositions = useCallback(() => {
+    const scrollY = window.scrollY;
+    const positions = sectionIds.map((id) => {
+      const el = document.getElementById(id);
+      if (!el) return 0;
+      return scrollY + el.getBoundingClientRect().top;
+    });
+    anchorsRef.current = positions;
+
+    // Midpoints between consecutive anchors
+    const mids: number[] = [];
+    for (let i = 0; i < positions.length - 1; i++) {
+      mids.push((positions[i] + positions[i + 1]) / 2);
+    }
+    midpointsRef.current = mids;
+  }, [sectionIds]);
+
+  // Determine current index from scroll position
+  const updateIndex = useCallback(() => {
+    const y = window.scrollY;
+    const mids = midpointsRef.current;
+
+    let idx = 0;
+    for (let i = 0; i < mids.length; i++) {
+      if (y >= mids[i]) {
+        idx = i + 1;
+      } else {
+        break;
+      }
+    }
+
+    setCurrentIndex(idx);
+    rafRef.current = 0;
+  }, []);
 
   useEffect(() => {
-    let frame = 0;
-    let scrollTimeout: ReturnType<typeof setTimeout>;
-
-    const updateActiveSection = () => {
-      const vh = window.innerHeight;
-
-      // Find section whose bounds contain the viewport center
-      let bestIndex = -1;
-      let bestOverlap = 0;
-
-      sectionIds.forEach((id, index) => {
-        const el = document.getElementById(id);
-        if (!el) return;
-
-        const rect = el.getBoundingClientRect();
-        // How much of this section overlaps the viewport
-        const overlapTop = Math.max(0, rect.top);
-        const overlapBottom = Math.min(vh, rect.bottom);
-        const overlap = Math.max(0, overlapBottom - overlapTop);
-
-        if (overlap > bestOverlap) {
-          bestOverlap = overlap;
-          bestIndex = index;
-        }
-      });
-
-      if (bestIndex >= 0) {
-        setCurrentIndex(bestIndex);
-      }
-
-      frame = 0;
-    };
+    // Initial calculation after layout settles
+    const initTimer = setTimeout(() => {
+      recalcPositions();
+      updateIndex();
+    }, 100);
 
     const onScroll = () => {
-      setIsScrolling(true);
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => setIsScrolling(false), 150);
-
-      if (!frame) {
-        frame = window.requestAnimationFrame(updateActiveSection);
+      if (!rafRef.current) {
+        rafRef.current = requestAnimationFrame(updateIndex);
       }
     };
 
-    // Initial check
-    updateActiveSection();
+    const onResize = () => {
+      recalcPositions();
+      updateIndex();
+    };
 
     window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', () => {
-      if (!frame) frame = window.requestAnimationFrame(updateActiveSection);
-    });
+    window.addEventListener('resize', onResize);
 
     return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      clearTimeout(scrollTimeout);
+      clearTimeout(initTimer);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('resize', onResize);
     };
-  }, [sectionIds]);
+  }, [recalcPositions, updateIndex]);
+
+  const isLastSection = currentIndex >= sectionIds.length - 1;
 
   const handleClick = useCallback(() => {
     if (isLastSection) return;
@@ -75,8 +83,7 @@ export function ScrollDown({ sectionIds }: ScrollDownProps) {
     document.getElementById(nextId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [currentIndex, isLastSection, sectionIds]);
 
-  // Visible when not scrolling and not on the last section
-  const isVisible = !isScrolling && !isLastSection;
+  const isVisible = !isLastSection;
 
   return (
     <button
