@@ -467,7 +467,7 @@ const Index = () => {
         </section>
       </main>
 
-      <ScrollDown slots={scrollSlots} />
+      <ScrollDownIndicator />
 
       {/* ═══ FOOTER ═══ */}
       <footer className="relative z-10 border-t border-border/20 bg-background/40 backdrop-blur-xl">
