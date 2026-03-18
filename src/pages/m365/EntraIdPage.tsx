@@ -76,36 +76,32 @@ export default function EntraIdPage() {
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Microsoft 365', href: '/scope-m365/dashboard' }, { label: 'Entra ID' }]} />
 
-        {/* SEÇÃO 1: Contexto do Tenant */}
-        <Card className="border-primary/20 bg-card/80">
-          <CardContent className="py-4">
-            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-              <div className="flex items-center gap-4 flex-wrap">
-                <TenantSelector tenants={tenants} selectedId={selectedTenantId} onSelect={selectTenant} loading={tenantsLoading} />
-                <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Conectado</Badge>
-                {data?.analyzedAt && (
-                  <span className="text-xs text-muted-foreground">
-                    Atualizado em {formatDateTimeMediumBR(data.analyzedAt)}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="gap-2 text-xs" disabled>
-                  <Download className="w-3.5 h-3.5" />Exportar
-                </Button>
-                <Button variant="outline" size="sm" className="gap-2 text-xs" asChild>
-                  <a href="https://entra.microsoft.com" target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="w-3.5 h-3.5" />Abrir no Entra ID
-                  </a>
-                </Button>
-                <Button size="sm" className="gap-2 text-xs" onClick={refresh} disabled={refreshing}>
-                  <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-                  {refreshing ? 'Atualizando...' : 'Atualizar'}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Entra ID</h1>
+            <p className="text-muted-foreground">Análise de identidade e postura de segurança do Entra ID</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <TenantSelector tenants={tenants} selectedId={selectedTenantId} onSelect={selectTenant} loading={tenantsLoading} />
+            {data?.analyzedAt && (
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                {formatDateTimeMediumBR(data.analyzedAt)}
+              </span>
+            )}
+            <Button variant="outline" size="sm" className="gap-2 text-xs" disabled>
+              <Download className="w-3.5 h-3.5" />Exportar
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2 text-xs" asChild>
+              <a href="https://entra.microsoft.com" target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="w-3.5 h-3.5" />Abrir no Entra ID
+              </a>
+            </Button>
+            <Button size="sm" className="gap-2 text-xs" onClick={refresh} disabled={refreshing}>
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Atualizando...' : 'Atualizar'}
+            </Button>
+          </div>
+        </div>
 
         {/* Error */}
         {error && (

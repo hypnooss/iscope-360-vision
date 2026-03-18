@@ -76,43 +76,32 @@ export default function CollaborationPage() {
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Microsoft 365', href: '/scope-m365/dashboard' }, { label: 'Colaboração' }]} />
 
-        {/* SEÇÃO 1: Contexto do Tenant */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Colaboração</h1>
             <p className="text-muted-foreground">Dashboard de governança do Microsoft Teams e SharePoint Online</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="gap-2">
-              <Download className="w-4 h-4" />Exportar
+          <div className="flex items-center gap-3">
+            <TenantSelector tenants={tenants} selectedId={selectedTenantId} onSelect={selectTenant} loading={tenantsLoading} />
+            {d?.analyzedAt && (
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                {formatDateTimeMediumBR(d.analyzedAt)}
+              </span>
+            )}
+            <Button variant="outline" size="sm" className="gap-2 text-xs">
+              <Download className="w-3.5 h-3.5" />Exportar
             </Button>
-            <Button variant="outline" size="sm" className="gap-2" asChild>
+            <Button variant="outline" size="sm" className="gap-2 text-xs" asChild>
               <a href="https://admin.microsoft.com" target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="w-4 h-4" />M365 Admin
+                <ExternalLink className="w-3.5 h-3.5" />M365 Admin
               </a>
             </Button>
-            <Button className="gap-2" size="sm" onClick={refresh} disabled={refreshing}>
-              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <Button size="sm" className="gap-2 text-xs" onClick={refresh} disabled={refreshing}>
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
               {refreshing ? 'Atualizando...' : 'Atualizar'}
             </Button>
           </div>
         </div>
-
-        <Card className="border-primary/20 bg-primary/5">
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <TenantSelector tenants={tenants} selectedId={selectedTenantId} onSelect={selectTenant} loading={tenantsLoading} />
-              <div className="flex items-center gap-3">
-                {d?.analyzedAt && (
-                  <span className="text-xs text-muted-foreground">
-                    Atualizado em {formatDateTimeMediumBR(d.analyzedAt)}
-                  </span>
-                )}
-                <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Conectado</Badge>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Error */}
         {error && (
