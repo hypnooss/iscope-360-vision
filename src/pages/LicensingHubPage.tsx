@@ -264,27 +264,14 @@ export default function LicensingHubPage() {
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Gestão de Ativos' }]} />
+
         {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Gestão de Ativos</h1>
-            <p className="text-sm text-muted-foreground">Controle centralizado de ativos, licenças e certificados</p>
+            <p className="text-muted-foreground">Controle centralizado de ativos, licenças e certificados</p>
           </div>
-
           <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => queryClient.invalidateQueries({ queryKey: ['fortinet-eol'] })}
-              disabled={loadingEol}
-            >
-              {loadingEol ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4 mr-2" />
-              )}
-              Atualizar Ciclo de Vida
-            </Button>
             {isSuperRole && workspaces && workspaces.length > 0 && (
               <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
                 <SelectTrigger className="w-[220px]">
@@ -297,6 +284,18 @@ export default function LicensingHubPage() {
                 </SelectContent>
               </Select>
             )}
+            <Button
+              className="gap-2"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['fortinet-eol'] })}
+              disabled={loadingEol}
+            >
+              {loadingEol ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              Atualizar Ciclo de Vida
+            </Button>
           </div>
         </div>
 
