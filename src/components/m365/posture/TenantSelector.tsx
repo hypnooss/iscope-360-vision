@@ -72,7 +72,10 @@ export function TenantSelector({
             <div className="flex flex-col">
               <span className="font-medium">{tenant.domain}</span>
               {tenant.displayName && (
-                <span className="text-xs text-muted-foreground">
+                <span className={cn(
+                  "text-xs",
+                  tenant.id === selectedId ? "text-foreground/80" : "text-foreground/60"
+                )}>
                   {tenant.displayName}
                 </span>
               )}
