@@ -199,7 +199,7 @@ export default function EntraIdAnalyzerPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8 space-y-10">
+      <div className="p-6 lg:p-8 space-y-6">
         <PageBreadcrumb items={[{ label: 'Microsoft 365' }, { label: 'Entra ID Analyzer' }]} />
 
         {/* Header */}
