@@ -137,7 +137,7 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
             <Card
               key={insight.id}
               className={cn(
-                'border-l-4 cursor-pointer transition-all hover:bg-muted/30',
+                'border-l-4 cursor-pointer transition-all hover:shadow-md hover:scale-[1.01]',
                 cardStyle.borderL,
                 cardStyle.border,
                 isPass && 'opacity-80 hover:opacity-100',
