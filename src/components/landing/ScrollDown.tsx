@@ -1,81 +1,67 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 
-interface ScrollDownProps {
-  sectionIds: string[];
+interface ScrollSlot {
+  anchorId: string;
+  nextTargetId: string;
+  endAnchorId: string;
 }
 
-/**
- * Slot-based ScrollDown: visibility is determined by explicit vertical ranges,
- * not heuristic midpoints. Each section anchor defines a "visible window" where
- * the button can appear. Outside those windows = button hidden.
- */
-export function ScrollDown({ sectionIds }: ScrollDownProps) {
+interface ScrollDownProps {
+  slots: ScrollSlot[];
+}
+
+export function ScrollDown({ slots }: ScrollDownProps) {
   const [nextTarget, setNextTarget] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const slotsRef = useRef<{ id: string; top: number }[]>([]);
+  const positionsRef = useRef<Record<string, number>>({});
   const rafRef = useRef(0);
 
-  // Build absolute position map from DOM
   const recalcPositions = useCallback(() => {
     const scrollY = window.scrollY;
-    slotsRef.current = sectionIds.map((id) => {
-      const el = document.getElementById(id);
-      if (!el) return { id, top: 0 };
-      return { id, top: scrollY + el.getBoundingClientRect().top };
-    });
-  }, [sectionIds]);
+    const ids = Array.from(
+      new Set(slots.flatMap(({ anchorId, endAnchorId, nextTargetId }) => [anchorId, endAnchorId, nextTargetId]))
+    );
 
-  // Determine visibility and next target using strict range windows
+    positionsRef.current = ids.reduce<Record<string, number>>((acc, id) => {
+      const el = document.getElementById(id);
+      if (!el) return acc;
+      acc[id] = scrollY + el.getBoundingClientRect().top;
+      return acc;
+    }, {});
+  }, [slots]);
+
   const updateState = useCallback(() => {
     const y = window.scrollY;
-    const vh = window.innerHeight;
-    const slots = slotsRef.current;
-    if (slots.length < 2) return;
+    const positions = positionsRef.current;
 
-    // For each slot, define the visible window:
-    // visibleStart = slotTop + vh * 0.05  (small margin after landing)
-    // visibleEnd   = nextSlotTop - vh * 0.35 (hide well before next section header appears)
-    // This creates a clear dead zone between sections where button is hidden.
-    const marginTop = vh * 0.05;
-    const marginBottom = vh * 0.35;
+    for (const slot of slots) {
+      const start = positions[slot.anchorId];
+      const end = positions[slot.endAnchorId];
 
-    let foundSlot = false;
+      if (typeof start !== 'number' || typeof end !== 'number' || end <= start) {
+        continue;
+      }
 
-    for (let i = 0; i < slots.length - 1; i++) {
-      const slotTop = slots[i].top;
-      const nextSlotTop = slots[i + 1].top;
-      const sectionHeight = nextSlotTop - slotTop;
-
-      // Skip very small sections (< 50% vh) — they're transition anchors
-      // For those, merge the window with the next real section
-      if (sectionHeight < vh * 0.3) continue;
-
-      const visibleStart = slotTop + marginTop;
-      const visibleEnd = nextSlotTop - marginBottom;
-
-      // Only show if there's a meaningful visible window
-      if (visibleEnd <= visibleStart) continue;
-
-      if (y >= visibleStart && y < visibleEnd) {
+      if (y >= start && y < end) {
         setIsVisible(true);
-        setNextTarget(slots[i + 1].id);
-        foundSlot = true;
-        break;
+        setNextTarget(slot.nextTargetId);
+        rafRef.current = 0;
+        return;
       }
     }
 
-    if (!foundSlot) {
-      setIsVisible(false);
-    }
-
+    setIsVisible(false);
     rafRef.current = 0;
-  }, [sectionIds]);
+  }, [slots]);
 
   useEffect(() => {
-    const initTimer = setTimeout(() => {
+    const sync = () => {
       recalcPositions();
       updateState();
-    }, 200);
+    };
+
+    const frame = requestAnimationFrame(sync);
+    const initTimer = setTimeout(sync, 250);
 
     const onScroll = () => {
       if (!rafRef.current) {
@@ -84,8 +70,7 @@ export function ScrollDown({ sectionIds }: ScrollDownProps) {
     };
 
     const onResize = () => {
-      recalcPositions();
-      updateState();
+      sync();
     };
 
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -93,6 +78,7 @@ export function ScrollDown({ sectionIds }: ScrollDownProps) {
 
     return () => {
       clearTimeout(initTimer);
+      cancelAnimationFrame(frame);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onResize);

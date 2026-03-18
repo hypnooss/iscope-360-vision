@@ -375,10 +375,13 @@ export function SteppedShowcase() {
 
   return (
     <section ref={containerRef} className="relative" style={{ height: '400vh' }}>
-      {/* Scroll anchors for ScrollDown — positioned at exact scroll-lock points (0vh, 133vh, 266vh from container top) */}
+      {/* Scroll anchors for ScrollDown — each step now has a start + hide marker to keep the button out of transition zones */}
       <div id="showcase-step-1" aria-hidden="true" className="absolute w-full pointer-events-none" style={{ top: '0' }} />
+      <div id="showcase-step-1-end" aria-hidden="true" className="absolute w-full pointer-events-none" style={{ top: 'calc(109.33vh)' }} />
       <div id="showcase-step-2" aria-hidden="true" className="absolute w-full pointer-events-none" style={{ top: 'calc(133.33vh)' }} />
+      <div id="showcase-step-2-end" aria-hidden="true" className="absolute w-full pointer-events-none" style={{ top: 'calc(242.67vh)' }} />
       <div id="showcase-step-3" aria-hidden="true" className="absolute w-full pointer-events-none" style={{ top: 'calc(266.66vh)' }} />
+      <div id="showcase-step-3-end" aria-hidden="true" className="absolute w-full pointer-events-none" style={{ top: 'calc(360vh)' }} />
       <div className="sticky top-0 h-screen overflow-hidden flex flex-col">
         <ProgressBar scrollProgress={currentProgress} />
 
