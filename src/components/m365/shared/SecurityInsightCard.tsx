@@ -124,7 +124,11 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
           const isNA = !isPass && isNAInsight(insight);
           const sevConfig = SEVERITY_CONFIG[insight.severity];
           const Icon = isNA ? MinusCircle : isPass ? CheckCircle2 : (severityIcons[insight.severity] || Shield);
-          const borderColor = isNA ? 'border-l-slate-400' : isPass ? 'border-l-emerald-500' : severityBorderColors[insight.severity];
+          const cardStyle = isNA
+            ? { borderL: 'border-l-slate-400', border: 'border-slate-500/20' }
+            : isPass
+            ? { borderL: 'border-l-emerald-500', border: 'border-emerald-500/20' }
+            : severityCardStyles[insight.severity] || { borderL: '', border: '' };
           const categoryLabel = M365_ANALYZER_CATEGORY_LABELS[insight.category];
           const trend = insight.metadata?.trend as string | undefined;
           const TrendIcon = trend ? trendIcons[trend] : undefined;
@@ -133,8 +137,9 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
             <Card
               key={insight.id}
               className={cn(
-                'border-l-4 cursor-pointer transition-all hover:shadow-md hover:scale-[1.01]',
-                borderColor,
+                'border-l-4 cursor-pointer transition-all hover:bg-muted/30',
+                cardStyle.borderL,
+                cardStyle.border,
                 isPass && 'opacity-80 hover:opacity-100',
                 isNA && 'opacity-70 hover:opacity-90'
               )}
