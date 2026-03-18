@@ -209,19 +209,12 @@ export default function ExchangeAnalyzerPage() {
                 </SelectContent>
               </Select>
             )}
-            <Select value={selectedTenantId ?? ''} onValueChange={selectTenant}>
-              <SelectTrigger className="w-[220px]">
-                <Mail className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Selecionar tenant" />
-              </SelectTrigger>
-              <SelectContent>
-                {tenants.map(t => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.displayName} {t.domain && `(${t.domain})`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <TenantSelector
+              tenants={tenants}
+              selectedId={selectedTenantId}
+              onSelect={selectTenant}
+              loading={tenantsLoading}
+            />
             <Button onClick={handleTriggerAnalysis} disabled={triggering || isAnalysisRunning || !selectedTenantId || loading}>
               {triggering || isAnalysisRunning || loading
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analisando...</>
