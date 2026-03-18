@@ -50,6 +50,7 @@ interface SecurityInsightCardsProps {
   loading?: boolean;
   title?: string;
   hideHeader?: boolean;
+  failBorderMode?: 'severity' | 'critical';
 }
 
 function isNAInsight(insight: M365AnalyzerInsight): boolean {
