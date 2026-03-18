@@ -266,28 +266,38 @@ export default function LicensingHubPage() {
         <PageBreadcrumb items={[{ label: 'Gestão de Ativos' }]} />
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-primary/10">
-              <Key className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Gestão de Ativos</h1>
-              <p className="text-sm text-muted-foreground">Controle centralizado de ativos, licenças e certificados</p>
-            </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Gestão de Ativos</h1>
+            <p className="text-sm text-muted-foreground">Controle centralizado de ativos, licenças e certificados</p>
           </div>
 
-          {isSuperRole && workspaces && workspaces.length > 0 && (
-            <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Selecionar workspace" />
-              </SelectTrigger>
-              <SelectContent>
-                {workspaces.map(ws => (
-                  <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['fortinet-eol'] })}
+              disabled={loadingEol}
+            >
+              {loadingEol ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              Atualizar Ciclo de Vida
+            </Button>
+            {isSuperRole && workspaces && workspaces.length > 0 && (
+              <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Selecionar workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {workspaces.map(ws => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </div>
 
         {/* Summary Cards (clickable filters) */}
@@ -369,21 +379,6 @@ export default function LicensingHubPage() {
 
           {/* Firewalls Tab */}
           <TabsContent value="firewalls">
-            <div className="flex items-center justify-end mb-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => queryClient.invalidateQueries({ queryKey: ['fortinet-eol'] })}
-                disabled={loadingEol}
-              >
-                {loadingEol ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                )}
-                Atualizar Ciclo de Vida
-              </Button>
-            </div>
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
