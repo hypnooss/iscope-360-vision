@@ -140,31 +140,73 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
               )}
               onClick={() => setSelectedInsight(insight)}
             >
-              <CardHeader className="pb-2 pt-4 px-4">
+              <div className="flex flex-col gap-2 p-4">
+                {/* Line 1: Icon + Title + Dot */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-2 flex-1 min-w-0">
                     <Icon className={cn(
                       'w-4 h-4 shrink-0 mt-0.5',
                       isNA ? 'text-slate-400' : isPass ? 'text-emerald-400' : sevConfig?.color
                     )} />
-                    <div className="min-w-0">
-                      <CardTitle className="text-sm font-semibold leading-tight line-clamp-2">
-                        {insight.name}
-                      </CardTitle>
-                      {categoryLabel && (
-                        <span className="text-[11px] text-muted-foreground mt-0.5 block">
-                          {categoryLabel}
-                        </span>
-                      )}
-                    </div>
+                    <span className="text-sm font-semibold leading-tight line-clamp-2">
+                      {insight.name}
+                    </span>
                   </div>
                   <DataSourceDot source="analyzed" />
                 </div>
-              </CardHeader>
 
-              <CardContent className="pt-0 pb-3 px-4">
-                <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                  {/* Severity / OK / N/A badge */}
+                {/* Line 2: Category + Info badges */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {categoryLabel && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
+                      <Tag className="w-3 h-3 mr-0.5" />
+                      {categoryLabel}
+                    </Badge>
+                  )}
+
+                  {!isPass && insight.count != null && insight.count > 0 && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
+                      <Hash className="w-3 h-3 mr-0.5" />
+                      {insight.count} ocorrências
+                    </Badge>
+                  )}
+
+                  {!isPass && insight.affectedUsers && insight.affectedUsers.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
+                      <Users className="w-3 h-3 mr-0.5" />
+                      {insight.affectedUsers.length} usuários
+                    </Badge>
+                  )}
+
+                  {!isPass && (insight.metadata as any)?.complianceCorrelation && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-violet-500/15 text-violet-400 border-violet-500/30">
+                      <Link2 className="w-3 h-3 mr-0.5" />
+                      Compliance
+                    </Badge>
+                  )}
+
+                  {!isPass && trend && TrendIcon && (
+                    <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', trendStyles[trend])}>
+                      <TrendIcon className="w-3 h-3 mr-0.5" />
+                      {trend === 'up' ? 'Crescente' : 'Decrescente'}
+                    </Badge>
+                  )}
+
+                  {!isPass && insight.metadata && Object.entries(insight.metadata).map(([key, value]) => {
+                    if (key === 'trend') return null;
+                    if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)))) {
+                      return (
+                        <Badge key={key} variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
+                          {key.replace(/_/g, ' ')}: {String(value)}
+                        </Badge>
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+
+                {/* Line 3: Severity badge */}
+                <div className="flex items-center">
                   {isNA ? (
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-500/15 text-slate-400 border-slate-500/30">
                       <MinusCircle className="w-3 h-3 mr-0.5" />
@@ -180,62 +222,8 @@ export function SecurityInsightCards({ insights, loading, title = 'Insights de S
                       {sevConfig?.label ?? insight.severity}
                     </Badge>
                   )}
-
-                  {/* Occurrences */}
-                  {!isPass && insight.count != null && insight.count > 0 && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
-                      <Hash className="w-3 h-3 mr-0.5" />
-                      {insight.count} ocorrências
-                    </Badge>
-                  )}
-
-                  {/* Affected Users */}
-                  {!isPass && insight.affectedUsers && insight.affectedUsers.length > 0 && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
-                      <Users className="w-3 h-3 mr-0.5" />
-                      {insight.affectedUsers.length} usuários
-                    </Badge>
-                  )}
-
-                  {/* Category */}
-                  {categoryLabel && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
-                      <Tag className="w-3 h-3 mr-0.5" />
-                      {categoryLabel}
-                    </Badge>
-                  )}
-
-                  {/* Compliance Correlation */}
-                  {!isPass && (insight.metadata as any)?.complianceCorrelation && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-violet-500/15 text-violet-400 border-violet-500/30">
-                      <Link2 className="w-3 h-3 mr-0.5" />
-                      Compliance
-                    </Badge>
-                  )}
-
-                  {/* Trend */}
-                  {!isPass && trend && TrendIcon && (
-                    <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', trendStyles[trend])}>
-                      <TrendIcon className="w-3 h-3 mr-0.5" />
-                      {trend === 'up' ? 'Crescente' : 'Decrescente'}
-                    </Badge>
-                  )}
-
-                  {/* Metadata numeric values as badges */}
-                  {!isPass && insight.metadata && Object.entries(insight.metadata).map(([key, value]) => {
-                    if (key === 'trend') return null;
-                    if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)))) {
-                      return (
-                        <Badge key={key} variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/50 text-muted-foreground">
-                          {key.replace(/_/g, ' ')}: {String(value)}
-                        </Badge>
-                      );
-                    }
-                    return null;
-                  })}
                 </div>
-
-              </CardContent>
+              </div>
             </Card>
           );
         })}
