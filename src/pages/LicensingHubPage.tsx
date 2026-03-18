@@ -497,7 +497,8 @@ export default function LicensingHubPage() {
             ) : filteredDomains.length === 0 ? (
               <EmptyState message={activeFilter ? 'Nenhum domínio corresponde ao filtro selecionado' : 'Nenhum domínio externo cadastrado ou sem dados WHOIS coletados'} />
             ) : (
-              <div className="rounded-lg border border-border overflow-hidden">
+              <Card>
+                <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
