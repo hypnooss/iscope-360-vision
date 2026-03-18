@@ -572,7 +572,8 @@ export default function LicensingHubPage() {
             ) : (
               <>
                 {visibleM365.length > 0 && (
-                  <div className="rounded-lg border border-border overflow-hidden">
+                  <Card>
+                    <CardContent className="p-0">
                     <Table>
                       <TableHeader>
                         <TableRow>
