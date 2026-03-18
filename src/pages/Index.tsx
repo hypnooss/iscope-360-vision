@@ -92,7 +92,7 @@ const Index = () => {
       <main className="flex-1 relative z-10">
 
         {/* ═══ HERO ═══ */}
-        <section className="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
+        <section id="hero" className="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
 
           {/* Copy — centered overlay on top of globe */}
           <motion.div
@@ -125,10 +125,6 @@ const Index = () => {
             </Reveal>
           </motion.div>
 
-          {/* Scroll indicator */}
-          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10">
-            <ScrollDown targetId="problem" />
-          </div>
         </section>
 
 
@@ -216,7 +212,7 @@ const Index = () => {
               </div>
             </Reveal>
           </div>
-          <ScrollDown targetId="real-problem" />
+          
         </Section>
 
         {/* ═══ THE REAL PROBLEM ═══ */}
@@ -270,7 +266,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          <ScrollDown targetId="how-it-works" />
+          
         </Section>
 
         {/* ═══ HOW IT WORKS ═══ */}
@@ -306,7 +302,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          <ScrollDown targetId="features" />
+          
         </Section>
 
         {/* ═══ FEATURES ═══ */}
@@ -340,15 +336,12 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          <ScrollDown targetId="showcase" />
+          
         </Section>
 
         {/* ═══ STEPPED SHOWCASE (MazeHQ-style) ═══ */}
         <div id="showcase">
           <SteppedShowcase />
-          <div className="flex justify-center pb-[120px]">
-            <ScrollDown targetId="testimonials" />
-          </div>
         </div>
         {/* Integrations and Compliance sections removed */}
 
@@ -386,7 +379,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          <ScrollDown targetId="blog" />
+          
         </Section>
 
         {/* ═══ BLOG / INSIGHTS ═══ */}
@@ -433,7 +426,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          <ScrollDown targetId="cta" />
+          
         </Section>
 
         {/* ═══ CTA FINAL ═══ */}
@@ -471,6 +464,8 @@ const Index = () => {
           </motion.div>
         </section>
       </main>
+
+      <ScrollDown sectionIds={['hero','problem','real-problem','how-it-works','features','showcase','testimonials','blog','cta']} />
 
       {/* ═══ FOOTER ═══ */}
       <footer className="relative z-10 border-t border-border/20 bg-background/40 backdrop-blur-xl">
