@@ -156,6 +156,7 @@ const Index = () => {
             </div>
           </Reveal>
 
+          <div id="problem-cards-start" aria-hidden="true" className="h-0" />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
             {/* CVEs por ano */}
             <Reveal delay={0}>
