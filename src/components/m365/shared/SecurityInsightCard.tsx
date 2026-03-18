@@ -73,7 +73,7 @@ function isNAInsight(insight: M365AnalyzerInsight): boolean {
   return false;
 }
 
-export function SecurityInsightCards({ insights, loading, title = 'Insights de Segurança', hideHeader }: SecurityInsightCardsProps) {
+export function SecurityInsightCards({ insights, loading, title = 'Insights de Segurança', hideHeader, failBorderMode = 'severity' }: SecurityInsightCardsProps) {
   const [selectedInsight, setSelectedInsight] = useState<M365AnalyzerInsight | null>(null);
 
   const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
