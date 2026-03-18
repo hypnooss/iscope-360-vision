@@ -9,7 +9,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { CollaborationScoreCard } from '@/components/m365/collaboration/CollaborationScoreCard';
 import { TeamsOverviewCards } from '@/components/m365/collaboration/TeamsOverviewCards';

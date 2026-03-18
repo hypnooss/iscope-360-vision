@@ -9,7 +9,6 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { PageBreadcrumb } from '@/components/layout/PageBreadcrumb';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { TenantSelector } from '@/components/m365/posture/TenantSelector';
 import { IdentityScoreCard } from '@/components/m365/entra-id/IdentityScoreCard';
 import { IdentityOverviewCards } from '@/components/m365/entra-id/IdentityOverviewCards';
