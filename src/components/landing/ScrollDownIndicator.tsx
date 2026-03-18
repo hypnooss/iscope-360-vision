@@ -12,7 +12,7 @@ export function ScrollDownIndicator() {
     for (const section of sections) {
       const rect = section.getBoundingClientRect();
       const alignedTop = Math.abs(rect.top) < ALIGNMENT_TOLERANCE;
-      const fillsViewport = rect.top < ALIGNMENT_TOLERANCE && rect.bottom > window.innerHeight;
+      const fillsViewport = rect.top < window.innerHeight * 0.15 && rect.bottom > window.innerHeight;
 
       if (alignedTop || fillsViewport) {
         setIsVisible(true);
