@@ -43,7 +43,7 @@ export function ScrollDown({ sectionIds }: ScrollDownProps) {
         });
         setIsSnapped(visibleSections.current.size > 0);
       },
-      { threshold: 0.5 }
+      { threshold: 0.3 }
     );
 
     sectionIds.forEach((id) => {
