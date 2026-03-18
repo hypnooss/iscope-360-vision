@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { Key, Shield, Globe, Cloud, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Info } from 'lucide-react';
+import { Key, Shield, Globe, Cloud, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Info, Building2 } from 'lucide-react';
 
 // ====== Helpers ======
 
@@ -275,7 +275,8 @@ export default function LicensingHubPage() {
             {isSuperRole && workspaces && workspaces.length > 0 && (
               <Select value={selectedWorkspaceId || ''} onValueChange={setSelectedWorkspaceId}>
                 <SelectTrigger className="w-[220px]">
-                  <SelectValue placeholder="Selecionar workspace" />
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Selecione o workspace" />
                 </SelectTrigger>
                 <SelectContent>
                   {workspaces.map(ws => (
