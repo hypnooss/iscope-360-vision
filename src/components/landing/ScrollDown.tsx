@@ -1,13 +1,49 @@
+import { useEffect, useState, useCallback } from 'react';
+
 interface ScrollDownProps {
-  targetId: string;
+  sectionIds: string[];
 }
 
-export function ScrollDown({ targetId }: ScrollDownProps) {
+export function ScrollDown({ sectionIds }: ScrollDownProps) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const isLastSection = currentIndex >= sectionIds.length - 1;
+
+  useEffect(() => {
+    const observers: IntersectionObserver[] = [];
+
+    sectionIds.forEach((id, index) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setCurrentIndex(index);
+          }
+        },
+        { threshold: 0.3 }
+      );
+
+      observer.observe(el);
+      observers.push(observer);
+    });
+
+    return () => observers.forEach((o) => o.disconnect());
+  }, [sectionIds]);
+
+  const handleClick = useCallback(() => {
+    if (isLastSection) return;
+    const nextId = sectionIds[currentIndex + 1];
+    document.getElementById(nextId)?.scrollIntoView({ behavior: 'smooth' });
+  }, [currentIndex, isLastSection, sectionIds]);
+
   return (
     <button
-      onClick={() => document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth' })}
-      className="flex flex-col items-center gap-2 cursor-pointer group mt-8 mx-auto"
-      aria-label={`Scroll to ${targetId}`}
+      onClick={handleClick}
+      className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 cursor-pointer group transition-all duration-500 ${
+        isLastSection ? 'opacity-0 pointer-events-none' : 'opacity-100'
+      }`}
+      aria-label="Scroll to next section"
     >
       <span className="text-[10px] uppercase tracking-[0.32em] font-mono text-muted-foreground/50 group-hover:text-muted-foreground/80 transition-colors duration-300">
         Scroll down

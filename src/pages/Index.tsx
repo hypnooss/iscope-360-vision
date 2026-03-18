@@ -426,7 +426,7 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          <ScrollDown targetId="cta" />
+          
         </Section>
 
         {/* ═══ CTA FINAL ═══ */}
