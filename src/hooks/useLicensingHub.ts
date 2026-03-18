@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffectiveAuth } from '@/hooks/useEffectiveAuth';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
+import { usePreview } from '@/contexts/PreviewContext';
 
 // ====== TYPES ======
 
@@ -238,6 +239,7 @@ function extractTlsFromSnapshot(results: any, clientName: string): TlsCertificat
 export function useLicensingHub() {
   const { role } = useAuth();
   const { effectiveRole } = useEffectiveAuth();
+  const { isPreviewMode, previewTarget } = usePreview();
   const displayRole = effectiveRole || role;
   const isSuperRole = displayRole === 'super_admin' || displayRole === 'super_suporte';
 
@@ -259,14 +261,17 @@ export function useLicensingHub() {
       const { data } = await supabase.from('user_clients').select('client_id').eq('user_id', user.id);
       return data?.map(uc => uc.client_id) || [];
     },
-    enabled: !isSuperRole,
+    enabled: !isSuperRole && !isPreviewMode,
   });
 
   const activeClientIds = useMemo(() => {
     if (isSuperRole && selectedWorkspaceId) return [selectedWorkspaceId];
+    if (isPreviewMode && previewTarget?.workspaces?.length) {
+      return previewTarget.workspaces.map(w => w.id);
+    }
     if (!isSuperRole && userWorkspaces?.length) return userWorkspaces;
     return [];
-  }, [isSuperRole, selectedWorkspaceId, userWorkspaces]);
+  }, [isSuperRole, selectedWorkspaceId, isPreviewMode, previewTarget, userWorkspaces]);
 
   // ====== FIREWALLS ======
   const { data: firewallLicenses = [], isLoading: loadingFirewalls } = useQuery({
