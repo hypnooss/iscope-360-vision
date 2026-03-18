@@ -375,6 +375,10 @@ export function SteppedShowcase() {
 
   return (
     <section ref={containerRef} className="relative" style={{ height: '400vh' }}>
+      {/* Scroll anchors for ScrollDown navigation */}
+      <div id="showcase-step-1" className="absolute top-0" />
+      <div id="showcase-step-2" className="absolute" style={{ top: '33.33%' }} />
+      <div id="showcase-step-3" className="absolute" style={{ top: '66.66%' }} />
       <div className="sticky top-0 h-screen overflow-hidden flex flex-col">
         <ProgressBar scrollProgress={currentProgress} />
 
