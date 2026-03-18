@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 
-const ALIGNMENT_TOLERANCE = 5;
+const ALIGNMENT_TOLERANCE = 15;
 const DEBOUNCE_MS = 100;
 
 export function ScrollDownIndicator() {
