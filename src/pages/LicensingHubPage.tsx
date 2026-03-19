@@ -320,6 +320,31 @@ export default function LicensingHubPage() {
     return domainWhois.filter(d => matchesFilter(d.daysLeft, activeFilter));
   }, [domainWhois, activeFilter]);
 
+  // Sorted data
+  const sortedFirewalls = useMemo(() => sortItems(filteredFirewalls, fwSort.sortKey, fwSort.sortDir, (fw, key) => {
+    if (key === 'firewallName') return fw.firewallName;
+    if (key === 'model') return fw.model ?? '';
+    if (key === 'workspaceName') return fw.workspaceName;
+    if (key === 'forticareDays') return fw.forticare.daysLeft;
+    return '';
+  }), [filteredFirewalls, fwSort.sortKey, fwSort.sortDir]);
+
+  const sortedTls = useMemo(() => sortItems(filteredTls, tlsSort.sortKey, tlsSort.sortDir, (cert, key) => {
+    if (key === 'ipPort') return `${cert.ip}:${cert.port}`;
+    if (key === 'subjectCn') return cert.subjectCn;
+    if (key === 'issuer') return cert.issuer;
+    if (key === 'daysLeft') return cert.daysLeft;
+    return '';
+  }), [filteredTls, tlsSort.sortKey, tlsSort.sortDir]);
+
+  const sortedDomains = useMemo(() => sortItems(filteredDomains, domSort.sortKey, domSort.sortDir, (d, key) => {
+    if (key === 'domain') return d.domain;
+    if (key === 'clientName') return d.clientName;
+    if (key === 'registrar') return d.registrar ?? '';
+    if (key === 'daysLeft') return d.daysLeft;
+    return '';
+  }), [filteredDomains, domSort.sortKey, domSort.sortDir]);
+
   const shouldHideM365 = (lic: { daysLeft: number | null; capabilityStatus: string }) =>
     lic.capabilityStatus === 'Suspended' ||
     (lic.daysLeft !== null && lic.daysLeft < -60);
@@ -328,6 +353,17 @@ export default function LicensingHubPage() {
     const visible = filteredM365.filter(lic => !shouldHideM365(lic));
     const hidden = filteredM365.filter(lic => shouldHideM365(lic));
     return { visibleM365: showOldExpired ? filteredM365 : visible, hiddenM365Count: hidden.length };
+  }, [filteredM365, showOldExpired]);
+
+  const sortedM365 = useMemo(() => sortItems(visibleM365, m365Sort.sortKey, m365Sort.sortDir, (lic, key) => {
+    if (key === 'tenantDisplayName') return lic.tenantDisplayName;
+    if (key === 'displayName') return lic.displayName;
+    if (key === 'capabilityStatus') return lic.capabilityStatus;
+    if (key === 'totalUnits') return lic.totalUnits;
+    if (key === 'consumedUnits') return lic.consumedUnits;
+    if (key === 'daysLeft') return lic.daysLeft;
+    return '';
+  }), [visibleM365, m365Sort.sortKey, m365Sort.sortDir]);
   }, [filteredM365, showOldExpired]);
 
   return (
