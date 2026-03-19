@@ -615,16 +615,16 @@ export default function UsersPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Usuário</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Módulos</TableHead>
-                    <TableHead>Clientes</TableHead>
-                    <TableHead>Cadastro</TableHead>
+                   <SortableHead label="Usuário" sortKey="full_name" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                    <SortableHead label="Role" sortKey="role" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                    <SortableHead label="Módulos" sortKey="moduleCount" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                    <SortableHead label="Clientes" sortKey="clientCount" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                    <SortableHead label="Cadastro" sortKey="created_at" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredUsers.map((u) => (
+                  {sortedUsers.map((u) => (
                     <TableRow key={u.id}>
                       <TableCell>
                         <div>
