@@ -173,3 +173,6 @@ verify_jwt = false
 
 [functions.trigger-external-domain-analysis]
 verify_jwt = false
+
+[functions.agent-monitor]
+verify_jwt = false

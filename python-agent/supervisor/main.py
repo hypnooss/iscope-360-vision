@@ -27,6 +27,7 @@ from supervisor.config import (
     WORKER_INSTALL_DIR,
     WORKER_HEALTH_FILE,
     WORKER_PID_FILE,
+    MONITOR_INTERVAL,
     SUPABASE_URL,
     SUPABASE_ANON_KEY,
 )
@@ -44,6 +45,7 @@ from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
 from agent.realtime_commands import ShellCommandPoller
 from supervisor.realtime_shell import RealtimeShell
+from monitor.worker import MonitorWorker
 
 # Cross-update paths
 SUPERVISOR_RESTART_FLAG = Path("/var/lib/iscope-agent/supervisor_restart.flag")
@@ -102,6 +104,13 @@ def main():
     # --- Start worker on boot ---
     worker.start()
 
+    # --- Start monitor thread ---
+    monitor_thread = MonitorWorker(
+        api=api, state=state, logger=logger,
+        interval=MONITOR_INTERVAL, disk_path="/"
+    )
+    monitor_thread.start()
+
     # --- Realtime Shell: on-demand WebSocket (started via heartbeat flag) ---
     realtime_shell = None
     realtime_active = False
@@ -126,6 +135,7 @@ def main():
             except Exception:
                 logger.info("[Supervisor] Restart flag detectada. Encerrando para systemd reiniciar.")
             SUPERVISOR_RESTART_FLAG.unlink(missing_ok=True)
+            monitor_thread.stop()
             worker.stop()
             sys.exit(0)
 
@@ -143,6 +153,7 @@ def main():
             consecutive_errors += 1
             if result["error"] == "AGENT_STOPPED":
                 logger.critical("Backend bloqueou o agent. Parando Worker e encerrando.")
+                monitor_thread.stop()
                 worker.stop()
                 sys.exit(1)
 
