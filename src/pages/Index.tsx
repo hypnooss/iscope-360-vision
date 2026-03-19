@@ -318,7 +318,7 @@ const Index = () => {
               { icon: Shield, title: 'Detecção de Riscos', description: 'Identifica vulnerabilidades e configurações inseguras automaticamente em toda a sua infraestrutura.', highlight: 'Tempo real' },
               { icon: Eye, title: 'Visibilidade Total', description: 'Dashboards unificados com visão 360° do ambiente — firewalls, cloud, endpoints e serviços.', highlight: 'Visão 360°' },
             ].map((f, i) => (
-              <Reveal key={f.title} delay={i * 0.1} variant={fadeBlur} preserveBackdrop>
+              <Reveal key={f.title} delay={i * 0.1}>
                 <div className="feature-card group h-full flex flex-col">
                   <div className="inline-flex p-3.5 rounded-xl bg-primary/10 mb-5 group-hover:bg-primary/15 transition-colors duration-300 self-start">
                     <f.icon className="w-6 h-6 text-primary" />
