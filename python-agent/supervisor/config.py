@@ -22,8 +22,8 @@ WORKER_INSTALL_DIR = Path(os.getenv("AGENT_INSTALL_DIR", "/opt/iscope-agent"))
 WORKER_HEALTH_FILE = Path("/var/lib/iscope-agent/worker.health")
 WORKER_PID_FILE = Path("/var/lib/iscope-agent/worker.pid")
 
-# Monitor
-MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL", "60"))
+# Monitor is now an independent service (iscope-monitor.service)
+# MONITOR_INTERVAL moved to monitor/main.py
 
 # Supabase Realtime (for instant remote commands)
 SUPABASE_URL = os.getenv("SUPABASE_URL")  # ex: https://akbosdbyheezghieiefz.supabase.co
