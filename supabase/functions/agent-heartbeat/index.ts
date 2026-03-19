@@ -32,6 +32,8 @@ interface HeartbeatSuccessResponse {
   update_info?: UpdateInfo;
   supervisor_update_available?: boolean;
   supervisor_update_info?: UpdateInfo;
+  monitor_update_available?: boolean;
+  monitor_update_info?: UpdateInfo;
   azure_certificate_key_id?: string;
   check_components?: boolean;
   request_certificate?: boolean;
