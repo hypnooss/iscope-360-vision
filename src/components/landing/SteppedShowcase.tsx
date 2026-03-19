@@ -611,15 +611,12 @@ export function SteppedShowcase() {
                       </div>
                       <div>
                         <span className="font-mono text-base font-bold text-foreground tracking-tight">CVE-2024-21762</span>
-                        <div className="text-sm text-muted-foreground mt-0.5">FortiOS SSL-VPN • Out-of-bounds Write</div>
+                        <div className="text-sm text-muted-foreground mt-0.5">FortiOS SSL-VPN</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex items-center justify-center px-2.5 h-8 rounded-lg bg-destructive/15 border border-destructive/30">
                         <span className="font-mono text-sm font-bold text-destructive">9.8</span>
-                      </div>
-                      <div className="flex items-center justify-center px-2.5 h-8 rounded-lg bg-destructive/10 border border-destructive/20">
-                        <span className="font-mono text-xs font-semibold text-destructive">Critical</span>
                       </div>
                     </div>
                   </div>
