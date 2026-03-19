@@ -8,6 +8,7 @@ interface HeartbeatRequest {
   status: string;
   agent_version: string;
   supervisor_version?: string;
+  monitor_version?: string;
   certificate_thumbprint?: string;
   certificate_public_key?: string;
   capabilities?: string[];
