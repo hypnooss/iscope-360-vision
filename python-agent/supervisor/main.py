@@ -188,17 +188,35 @@ def main():
             consecutive_errors = 0
             interval = result.get("next_heartbeat_in", HEARTBEAT_INTERVAL)
 
-            # Handle AGENT update
+            # Handle AGENT update (also serves as fresh install if agent/ is missing)
             if result.get("update_available") and result.get("update_info"):
                 _handle_update(result, updater, worker, agent_version, logger)
+                # If agent was missing and got installed, start the worker
+                if agent_missing and (agent_dir / "__init__.py").exists():
+                    logger.info("[Supervisor] Agent instalado com sucesso — iniciando Worker")
+                    worker.start()
+                    agent_missing = False
 
             # Handle SUPERVISOR update signal
             if result.get("supervisor_update_available") and result.get("supervisor_update_info"):
                 _handle_supervisor_update_signal(result, logger)
 
-            # Handle MONITOR update
-            if result.get("monitor_update_available") and result.get("monitor_update_info") and monitor_thread:
+            # Handle MONITOR update (also serves as fresh install if monitor/ is missing)
+            if result.get("monitor_update_available") and result.get("monitor_update_info"):
                 _handle_monitor_update(result, monitor_updater, monitor_thread, monitor_version, logger)
+                # If monitor was missing and got installed, start monitor thread
+                if monitor_missing and (monitor_dir / "__init__.py").exists():
+                    logger.info("[Supervisor] Monitor instalado com sucesso — iniciando MonitorWorker")
+                    try:
+                        from monitor.worker import MonitorWorker
+                        monitor_thread = MonitorWorker(
+                            api=api, state=state, logger=logger,
+                            interval=MONITOR_INTERVAL, disk_path="/"
+                        )
+                        monitor_thread.start()
+                        monitor_missing = False
+                    except Exception as e:
+                        logger.warning(f"[Supervisor] Monitor instalado mas falha ao iniciar: {e}")
 
             # Handle component check
             if result.get("check_components"):
