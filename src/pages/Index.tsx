@@ -115,7 +115,7 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col relative">
+    <div className="min-h-screen text-foreground flex flex-col relative">
       <Header />
 
       {/* ═══ GLOBE BACKGROUND — Fixed full-screen layer like MazeHQ .s-gfx ═══ */}
