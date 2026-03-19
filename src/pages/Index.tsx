@@ -116,7 +116,7 @@ const Index = () => {
             variants={stagger}
             className="relative z-10 text-center max-w-[960px] mx-auto"
           >
-            <Reveal delay={0.1} variant={fadeUpScale}>
+            <Reveal delay={0.1}>
               <h1 className="font-heading text-[2.8rem] sm:text-[3.8rem] lg:text-[5.2rem] font-extrabold leading-[0.95] tracking-[-0.035em] mb-6 text-foreground">
                 Visibilidade inteligente{' '}
                 <span className="block text-primary">para sua infraestrutura</span>
