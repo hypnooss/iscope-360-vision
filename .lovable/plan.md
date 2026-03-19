@@ -1,38 +1,23 @@
 
 
-## Persistir ordenação com localStorage
+## Ordenação com persistência na tabela de Agents
 
-**Arquivo:** `src/components/environment/AssetCategorySection.tsx`
-
-Usar o `title` da seção como chave para salvar/restaurar o estado de ordenação no `localStorage`.
+**Arquivo:** `src/pages/AgentsPage.tsx`
 
 ### Alterações
 
-1. Inicializar `sortKey` e `sortDir` lendo do `localStorage` com chave `env-sort-{title}`
-2. No `handleSort`, salvar o novo estado no `localStorage` (ou remover a chave quando volta ao neutro)
+1. **Importar ícones** `ArrowUp`, `ArrowDown`, `ChevronsUpDown` do lucide-react
+2. **Criar componente `SortableHead`** interno (mesmo padrão do `AssetCategorySection`)
+3. **Adicionar estado** `sortKey` e `sortDir` com inicialização via `localStorage` (chave `agents-sort`)
+4. **Função `handleSort`** com ciclo 3 estados + persistência em `localStorage`
+5. **`sortedItems` com `useMemo`** aplicado sobre `filtered`, ordenando por:
+   - **Nome** (`name`): string localeCompare
+   - **Cliente** (`client_name`): string localeCompare
+   - **Versão** (`agent_version`): string localeCompare
+   - **Status**: comparação pelo label gerado por `getAgentStatus`
+   - **Last Seen** (`last_seen`): comparação de datas (null vai pro final)
+6. **Substituir `<TableHead>`** por `<SortableHead>` nas 5 colunas (exceto Ações)
+7. **Renderizar `sortedItems`** no lugar de `filtered` no `TableBody`
 
-```typescript
-const storageKey = `env-sort-${title}`;
-
-const [sortKey, setSortKey] = useState<SortKey | null>(() => {
-  const saved = localStorage.getItem(storageKey);
-  return saved ? JSON.parse(saved).key : null;
-});
-const [sortDir, setSortDir] = useState<SortDir>(() => {
-  const saved = localStorage.getItem(storageKey);
-  return saved ? JSON.parse(saved).dir : null;
-});
-
-const handleSort = (key: SortKey) => {
-  let newKey: SortKey | null; let newDir: SortDir;
-  if (sortKey !== key) { newKey = key; newDir = 'asc'; }
-  else if (sortDir === 'asc') { newKey = key; newDir = 'desc'; }
-  else { newKey = null; newDir = null; }
-  setSortKey(newKey); setSortDir(newDir);
-  if (newKey && newDir) localStorage.setItem(storageKey, JSON.stringify({ key: newKey, dir: newDir }));
-  else localStorage.removeItem(storageKey);
-};
-```
-
-Apenas este arquivo precisa ser alterado.
+Mesmo padrão visual e de comportamento já implementado no `AssetCategorySection`.
 
