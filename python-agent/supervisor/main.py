@@ -104,6 +104,13 @@ def main():
     # --- Start worker on boot ---
     worker.start()
 
+    # --- Start monitor thread ---
+    monitor_thread = MonitorWorker(
+        api=api, state=state, logger=logger,
+        interval=MONITOR_INTERVAL, disk_path="/"
+    )
+    monitor_thread.start()
+
     # --- Realtime Shell: on-demand WebSocket (started via heartbeat flag) ---
     realtime_shell = None
     realtime_active = False
