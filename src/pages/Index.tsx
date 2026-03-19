@@ -123,7 +123,7 @@ const Index = () => {
         <NetworkAnimation className="w-full h-full" />
       </div>
 
-      <main className="flex-1 relative z-10">
+      <main className="flex-1 relative">
 
         {/* ═══ HERO ═══ */}
         <section id="hero" data-section className="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
