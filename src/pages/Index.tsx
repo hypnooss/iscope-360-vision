@@ -180,7 +180,7 @@ const Index = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
             {/* CVEs por ano */}
             <Reveal delay={0}>
-              <div className="feature-card p-6 text-center md:text-left h-full">
+              <div className="feature-card relative z-0 p-6 text-center md:text-left h-full">
                 <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
                   21,500+
                 </div>
@@ -205,7 +205,7 @@ const Index = () => {
 
             {/* Tempo de exploração */}
             <Reveal delay={0.15}>
-              <div className="feature-card p-6 text-center md:text-left h-full">
+              <div className="feature-card relative z-0 p-6 text-center md:text-left h-full">
                 <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
                   5 dias
                 </div>
@@ -227,7 +227,7 @@ const Index = () => {
 
             {/* Custo médio de breach */}
             <Reveal delay={0.3}>
-              <div className="feature-card p-6 text-center md:text-left h-full">
+              <div className="feature-card relative z-0 p-6 text-center md:text-left h-full">
                 <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
                   $4.88M
                 </div>
@@ -283,7 +283,7 @@ const Index = () => {
               },
             ].map((item, i) => (
               <Reveal key={item.title} delay={i * 0.12} variant={i === 1 ? fadeUp : i === 0 ? fadeLeft : fadeRight}>
-                <div className="feature-card p-8 h-full flex flex-col group hover:-translate-y-1 transition-transform duration-300">
+                <div className="feature-card relative z-0 p-8 h-full flex flex-col group hover:-translate-y-1 transition-transform duration-300">
                   <div className="inline-flex p-3 rounded-xl bg-destructive/10 mb-5 self-start group-hover:bg-destructive/15 transition-colors duration-300">
                     <item.icon className="w-5 h-5 text-destructive" />
                   </div>
@@ -322,7 +322,7 @@ const Index = () => {
               { num: '04', icon: ShieldCheck, title: 'Corrija', desc: 'Recomendações acionáveis para melhorar sua postura de segurança.' },
             ].map((step, i) => (
               <Reveal key={step.num} delay={i * 0.12} variant={scaleIn}>
-                <div className="text-center relative feature-card p-6">
+                <div className="text-center relative z-0 feature-card p-6">
                   <div className="inline-flex items-center justify-center w-[4.5rem] h-[4.5rem] rounded-2xl bg-card/60 backdrop-blur-xl border border-border/30 mb-6 relative z-10 shadow-lg shadow-background/50">
                     <step.icon className="w-6 h-6 text-primary" />
                   </div>
@@ -394,7 +394,7 @@ const Index = () => {
               { quote: 'A detecção automática de configurações inseguras nos evitou dois incidentes críticos em seis meses. O ROI se pagou no primeiro trimestre.', name: 'Roberto S.', role: 'Diretor de Infraestrutura', company: 'Healthcare — 50+ unidades' },
             ].map((t, i) => (
               <Reveal key={t.name} delay={i * 0.12} variant={fadeRight}>
-                <div className="feature-card p-8 h-full flex flex-col group hover:-translate-y-1 transition-transform duration-300">
+                <div className="feature-card relative z-0 p-8 h-full flex flex-col group hover:-translate-y-1 transition-transform duration-300">
                   <Quote className="w-8 h-8 text-primary/20 mb-4 shrink-0" />
                   <p className="text-[15px] text-foreground/80 leading-relaxed mb-8 flex-1 italic">
                     "{t.quote}"
@@ -431,7 +431,7 @@ const Index = () => {
               { category: 'Compliance', date: 'Jan 2025', title: 'Compliance não é segurança: por que checklist não funciona', excerpt: 'A diferença entre estar em conformidade no papel e ter uma postura de segurança efetiva contra ameaças reais.' },
             ].map((post, i) => (
               <Reveal key={post.title} delay={i * 0.12}>
-                <div className="feature-card p-8 h-full flex flex-col group cursor-pointer hover:border-primary/30 hover:-translate-y-1 transition-all duration-300">
+                <div className="feature-card relative z-0 p-8 h-full flex flex-col group cursor-pointer hover:border-primary/30 hover:-translate-y-1 transition-all duration-300">
                   <div className="flex items-center gap-3 mb-5">
                     <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] font-mono text-primary/70">
                       <Tag className="w-3 h-3" />
