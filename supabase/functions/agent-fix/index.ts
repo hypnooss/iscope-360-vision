@@ -76,6 +76,7 @@ fi
 log "Parando serviços..."
 systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 systemctl stop "$LEGACY_SERVICE_NAME" 2>/dev/null || true
+systemctl stop "iscope-monitor" 2>/dev/null || true
 ok "Serviços parados"
 
 get_signed_url() {
