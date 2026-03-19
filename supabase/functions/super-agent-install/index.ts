@@ -1018,6 +1018,9 @@ $SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $SERVICE_NAME
 $SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $LEGACY_SERVICE_NAME
 $SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl start $LEGACY_SERVICE_NAME
 $SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl stop $LEGACY_SERVICE_NAME
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart iscope-monitor
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl start iscope-monitor
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl stop iscope-monitor
 $SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/nmap
 SUDOERS
   chmod 440 "$sudoers_file"
