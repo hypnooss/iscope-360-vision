@@ -106,6 +106,8 @@ Deno.serve(async (req) => {
       stale_tasks: staleTasks?.length ?? 0,
       orphaned_snapshots: orphanedSnapshots?.length ?? 0,
       orphaned_m365_snapshots: orphanedM365?.length ?? 0,
+      synced_snapshots: syncedSnapshots,
+      synced_m365_snapshots: syncedM365Snapshots,
       errors: [e1, e2, e3, e4].filter(Boolean).map(e => e?.message),
     };
 
