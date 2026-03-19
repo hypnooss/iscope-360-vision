@@ -1,26 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Terminal, Power, PowerOff, Wifi, WifiOff, Loader2 } from "lucide-react";
-import { toast } from "sonner";
-
-interface AgentCommand {
-  id: string;
-  agent_id: string;
-  command: string;
-  status: string;
-  stdout: string | null;
-  stderr: string | null;
-  exit_code: number | null;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  timeout_seconds: number;
-  cwd?: string | null;
-}
 
 interface TerminalLine {
   type: "input" | "output" | "error" | "system";
@@ -35,24 +18,17 @@ interface RemoteTerminalProps {
 
 export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   const { user, isSuperAdmin } = useAuth();
-  const queryClient = useQueryClient();
   const isSuperAdminUser = isSuperAdmin();
 
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [realtimeConnected, setRealtimeConnected] = useState(false);
-  const [agentReady, setAgentReady] = useState(false);
+  const [channelReady, setChannelReady] = useState(false);
   const [lines, setLines] = useState<TerminalLine[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const [pendingCommandIds, setPendingCommandIds] = useState<Set<string>>(new Set());
+  const [pendingCommands, setPendingCommands] = useState<Set<string>>(new Set());
   const [currentCwd, setCurrentCwd] = useState("/");
-  // Track which command IDs have already had streaming lines added
-  const streamedCommandIds = useRef<Set<string>>(new Set());
-
-  const probeCommandIds = useRef<Set<string>>(new Set());
-  const signalInFlightRef = useRef(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -60,225 +36,116 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
 
   const prompt = `root@${agentName}:${currentCwd === "/" ? "/" : currentCwd}#`;
 
-  // Send a silent probe command to detect agent readiness + get cwd
-  const sendProbeCommand = useCallback(async () => {
-    try {
-      const { data, error } = await (supabase
-        .from("agent_commands" as any)
-        .insert({
-          agent_id: agentId,
-          command: "__probe__ pwd",
-          created_by: user?.id,
-          status: "pending",
-          timeout_seconds: 30,
-        })
-        .select()
-        .single() as any);
-
-      if (error) {
-        console.error("Failed to send probe command:", error);
-        return;
-      }
-      const cmd = data as AgentCommand;
-      probeCommandIds.current.add(cmd.id);
-      setPendingCommandIds((prev) => new Set(prev).add(cmd.id));
-    } catch (e) {
-      console.error("Probe command error:", e);
-    }
-  }, [agentId, user?.id]);
-
-  // Auto-scroll to bottom
+  // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [lines]);
 
-  // Focus input when clicking terminal area
   const focusInput = useCallback(() => {
-    if (connected && realtimeConnected) inputRef.current?.focus();
-  }, [connected, realtimeConnected]);
+    if (connected && channelReady) inputRef.current?.focus();
+  }, [connected, channelReady]);
 
-  // Cleanup shell_session_active on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (connected) {
-        (supabase
-          .from("agents" as any)
-          .update({ shell_session_active: false })
-          .eq("id", agentId) as any).then(() => {});
+      if (channelRef.current) {
+        // Send disconnect event to agent
+        channelRef.current.send({
+          type: "broadcast",
+          event: "disconnect",
+          payload: {},
+        });
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
+      // Reset shell_session_active
+      (supabase
+        .from("agents" as any)
+        .update({ shell_session_active: false })
+        .eq("id", agentId) as any).then(() => {});
     };
-  }, [connected, agentId]);
+  }, [agentId]);
 
-  // Handle realtime subscription for command results
+  // Setup broadcast channel when connected
   useEffect(() => {
     if (!connected || !isSuperAdminUser) return;
 
-    const channel = supabase
-      .channel(`shell-results-${agentId}`)
-      .on(
-        "postgres_changes" as any,
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "agent_commands",
-          filter: `agent_id=eq.${agentId}`,
-        },
-        (payload: any) => {
-          const cmd = payload.new as AgentCommand;
-          const isProbe = probeCommandIds.current.has(cmd.id);
+    const channel = supabase.channel(`shell:${agentId}`, {
+      config: {
+        broadcast: { self: false },
+      },
+    });
 
-          // Streaming partial output — status="running"
-          if (cmd.status === "running") {
-            if (!agentReady) setAgentReady(true);
-            if (cmd.cwd) setCurrentCwd(cmd.cwd);
-
-            // Rehydrate pending state for running commands (e.g. after reconnect)
-            setPendingCommandIds((prev) => {
-              if (prev.has(cmd.id)) return prev;
-              return new Set(prev).add(cmd.id);
-            });
-
-            // Suppress probe output from terminal
-            if (isProbe) return;
-
-            // Replace all previous streaming lines for this command with full accumulated output
-            setLines((prev) => {
-              const filtered = prev.filter(
-                (l) => !(l.commandId === cmd.id && (l.type === "output" || l.type === "error") && streamedCommandIds.current.has(cmd.id))
-              );
-              streamedCommandIds.current.add(cmd.id);
-
-              const newLines = [...filtered];
-              if (cmd.stdout) {
-                cmd.stdout.split("\n").forEach((line) => {
-                  newLines.push({ type: "output", text: line, commandId: cmd.id });
-                });
-              }
-              if (cmd.stderr) {
-                cmd.stderr.split("\n").forEach((line) => {
-                  newLines.push({ type: "error", text: line, commandId: cmd.id });
-                });
-              }
-              return newLines;
-            });
-            return;
-          }
-
-          if (cmd.status === "completed" || cmd.status === "failed" || cmd.status === "timeout") {
-            if (!agentReady) setAgentReady(true);
-            if (cmd.cwd) setCurrentCwd(cmd.cwd);
-
-            // Handle probe result: show welcome, suppress output
-            if (isProbe) {
-              probeCommandIds.current.delete(cmd.id);
-              if (cmd.stdout) {
-                const cwd = cmd.stdout.trim();
-                if (cwd) setCurrentCwd(cwd);
-              }
-              setLines((prev) => [
-                ...prev,
-                { type: "system", text: "Sessão remota iniciada. Digite comandos abaixo." },
-                { type: "system", text: 'Digite "clear" para limpar ou "exit" para desconectar.' },
-                { type: "system", text: "" },
-              ]);
-              setPendingCommandIds((prev) => {
-                const next = new Set(prev);
-                next.delete(cmd.id);
-                return next;
-              });
-              setTimeout(() => inputRef.current?.focus(), 100);
-              return;
-            }
-
-            // Replace streaming lines with final output
-            setLines((prev) => {
-              const filtered = prev.filter(
-                (l) => !(l.commandId === cmd.id && (l.type === "output" || l.type === "error") && streamedCommandIds.current.has(cmd.id))
-              );
-              streamedCommandIds.current.delete(cmd.id);
-
-              const newLines = [...filtered];
-              if (cmd.stdout) {
-                cmd.stdout.split("\n").forEach((line) => {
-                  newLines.push({ type: "output", text: line, commandId: cmd.id });
-                });
-              }
-              if (cmd.stderr) {
-                cmd.stderr.split("\n").forEach((line) => {
-                  newLines.push({ type: "error", text: line, commandId: cmd.id });
-                });
-              }
-              if (cmd.status === "timeout") {
-                newLines.push({ type: "error", text: "Erro: comando excedeu o tempo limite.", commandId: cmd.id });
-              }
-              return newLines;
-            });
-            setPendingCommandIds((prev) => {
-              const next = new Set(prev);
-              next.delete(cmd.id);
-              return next;
-            });
-          }
-        }
-      )
-      .subscribe((status: string) => {
-        const isSubscribed = status === "SUBSCRIBED";
-        setRealtimeConnected(isSubscribed);
-        if (isSubscribed) {
-          setConnecting(false);
-          setLines((prev) => [
-            ...prev,
-            { type: "system", text: "Canal de comunicação estabelecido." },
-            { type: "system", text: "Aguardando agente responder..." },
-          ]);
-          // Send silent probe to detect agent readiness + get cwd
-          sendProbeCommand();
-        }
+    // Listen for output events
+    channel.on("broadcast", { event: "output" }, ({ payload }) => {
+      if (!payload?.data) return;
+      setLines((prev) => {
+        const newLines = [...prev];
+        payload.data.split("\n").forEach((line: string) => {
+          newLines.push({ type: "output", text: line, commandId: payload.id });
+        });
+        return newLines;
       });
+    });
+
+    // Listen for error events
+    channel.on("broadcast", { event: "error" }, ({ payload }) => {
+      if (!payload?.data) return;
+      setLines((prev) => {
+        const newLines = [...prev];
+        payload.data.split("\n").forEach((line: string) => {
+          newLines.push({ type: "error", text: line, commandId: payload.id });
+        });
+        return newLines;
+      });
+    });
+
+    // Listen for done events
+    channel.on("broadcast", { event: "done" }, ({ payload }) => {
+      if (payload?.cwd) setCurrentCwd(payload.cwd);
+      setPendingCommands((prev) => {
+        const next = new Set(prev);
+        next.delete(payload?.id);
+        return next;
+      });
+    });
+
+    // Listen for ready event (agent confirms it joined the channel)
+    channel.on("broadcast", { event: "ready" }, () => {
+      setLines((prev) => [
+        ...prev,
+        { type: "system", text: "Agente conectado. Sessão remota pronta." },
+        { type: "system", text: 'Digite "clear" para limpar ou "exit" para desconectar.' },
+        { type: "system", text: "" },
+      ]);
+      setTimeout(() => inputRef.current?.focus(), 100);
+    });
+
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        setChannelReady(true);
+        setConnecting(false);
+        setLines((prev) => [
+          ...prev,
+          { type: "system", text: "Canal WebSocket estabelecido." },
+          { type: "system", text: "Aguardando agente conectar..." },
+        ]);
+      }
+    });
 
     channelRef.current = channel;
 
     return () => {
       supabase.removeChannel(channel);
       channelRef.current = null;
-      setRealtimeConnected(false);
+      setChannelReady(false);
     };
   }, [connected, agentId, isSuperAdminUser]);
 
-  // Send command mutation
-  const sendCommand = useMutation({
-    mutationFn: async (cmd: string) => {
-      const { data, error } = await (supabase
-        .from("agent_commands" as any)
-        .insert({
-          agent_id: agentId,
-          command: cmd,
-          created_by: user?.id,
-          status: "pending",
-          timeout_seconds: 60,
-        })
-        .select()
-        .single() as any);
-
-      if (error) throw error;
-
-      return data as AgentCommand;
-    },
-    onSuccess: (data) => {
-      setPendingCommandIds((prev) => new Set(prev).add(data.id));
-      queryClient.invalidateQueries({ queryKey: ["agent-commands", agentId] });
-    },
-    onError: (error: any) => {
-      setLines((prev) => [...prev, { type: "error", text: `Erro ao enviar comando: ${error.message}` }]);
-    },
-  });
-
   const handleConnect = async () => {
     setConnecting(true);
-    setAgentReady(false);
     setLines([
       { type: "system", text: `Conectando ao agent "${agentName}"...` },
-      { type: "system", text: "Aguardando canal de comunicação..." },
     ]);
 
     try {
@@ -294,6 +161,19 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   };
 
   const handleDisconnect = async () => {
+    // Send disconnect event to agent via broadcast
+    if (channelRef.current) {
+      try {
+        channelRef.current.send({
+          type: "broadcast",
+          event: "disconnect",
+          payload: {},
+        });
+      } catch (e) {
+        // ignore
+      }
+    }
+
     try {
       await (supabase
         .from("agents" as any)
@@ -305,27 +185,23 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
 
     setConnected(false);
     setConnecting(false);
-    setAgentReady(false);
+    setChannelReady(false);
     setLines([]);
     setCommandHistory([]);
     setHistoryIndex(-1);
-    setPendingCommandIds(new Set());
+    setPendingCommands(new Set());
     setInputValue("");
     setCurrentCwd("/");
-    streamedCommandIds.current.clear();
-    probeCommandIds.current.clear();
-    signalInFlightRef.current = false;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = inputValue.trim();
-    if (!trimmed) return;
+    if (!trimmed || !channelRef.current) return;
 
     setLines((prev) => [...prev, { type: "input", text: `${prompt} ${trimmed}` }]);
     setInputValue("");
     setHistoryIndex(-1);
-
     setCommandHistory((prev) => [...prev, trimmed]);
 
     if (trimmed === "clear") {
@@ -337,29 +213,34 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       return;
     }
 
-    sendCommand.mutate(trimmed);
+    const commandId = crypto.randomUUID();
+    setPendingCommands((prev) => new Set(prev).add(commandId));
+
+    channelRef.current.send({
+      type: "broadcast",
+      event: "command",
+      payload: { command: trimmed, id: commandId },
+    });
   };
 
   const handleTerminalKeyDown = (e: React.KeyboardEvent) => {
     if (e.ctrlKey && e.key === "c" && hasPending) {
       e.preventDefault();
-      if (signalInFlightRef.current) return; // Prevent flood
-      signalInFlightRef.current = true;
       setLines((prev) => [...prev, { type: "system", text: "^C" }]);
-      sendCommand.mutate("__signal__ SIGINT", {
-        onSettled: () => { signalInFlightRef.current = false; },
-      });
-      // Fallback: force-clear pending after 3s so prompt reappears
-      setTimeout(() => {
-        setPendingCommandIds(new Set());
-        streamedCommandIds.current.clear();
-      }, 3000);
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: "broadcast",
+          event: "signal",
+          payload: { signal: "SIGINT" },
+        });
+      }
+      // Clear pending after a short delay
+      setTimeout(() => setPendingCommands(new Set()), 3000);
       return;
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Ctrl+C is handled by handleTerminalKeyDown on the container div
     if (e.ctrlKey && e.key === "l") {
       e.preventDefault();
       setLines([]);
@@ -405,14 +286,14 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     return (
       <div className="lg:col-span-2 rounded-lg border border-border/50 bg-black/90 p-6 flex flex-col items-center justify-center gap-4 min-h-[200px]">
         <Loader2 className="w-10 h-10 text-green-500 animate-spin" />
-        <p className="text-sm text-green-400 font-mono animate-pulse">Aguardando canal de comunicação...</p>
-        <p className="text-xs text-gray-500 font-mono">Estabelecendo conexão com {agentName}</p>
+        <p className="text-sm text-green-400 font-mono animate-pulse">Estabelecendo conexão WebSocket...</p>
+        <p className="text-xs text-gray-500 font-mono">Conectando a {agentName}</p>
       </div>
     );
   }
 
-  const hasPending = pendingCommandIds.size > 0;
-  const inputReady = connected && realtimeConnected;
+  const hasPending = pendingCommands.size > 0;
+  const inputReady = connected && channelReady;
 
   return (
     <div className="lg:col-span-2 rounded-lg border border-gray-700 bg-black overflow-hidden flex flex-col" style={{ height: "500px" }}>
@@ -429,10 +310,10 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {realtimeConnected ? (
+          {channelReady ? (
             <Badge variant="secondary" className="bg-green-900/50 text-green-400 text-[10px] border-green-700/50 px-1.5 py-0.5">
               <Wifi className="w-2.5 h-2.5 mr-1" />
-              Realtime
+              WebSocket
             </Badge>
           ) : (
             <Badge variant="secondary" className="bg-gray-800 text-gray-500 text-[10px] border-gray-700 px-1.5 py-0.5">
@@ -449,16 +330,6 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           </button>
         </div>
       </div>
-
-      {/* Agent not ready banner */}
-      {!agentReady && realtimeConnected && (
-        <div className="px-4 py-2 bg-amber-950/40 border-b border-amber-800/30 flex items-center gap-2">
-          <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-          <span className="text-amber-400 text-xs font-mono">
-            Aguardando agente conectar... (comandos serão executados quando o agente responder)
-          </span>
-        </div>
-      )}
 
       {/* Terminal body */}
       <div
@@ -490,7 +361,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           </div>
         )}
 
-        {!hasPending && inputReady && agentReady && (
+        {!hasPending && inputReady && (
           <form onSubmit={handleSubmit} className="flex leading-5">
             <span className="text-green-400 shrink-0">{prompt}&nbsp;</span>
             <input
@@ -498,11 +369,10 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="flex-1 bg-transparent text-green-300 outline-none border-none caret-green-400 font-mono text-sm p-0 m-0"
+              className="flex-1 bg-transparent text-gray-200 outline-none border-none font-mono text-sm caret-green-400"
               autoFocus
               spellCheck={false}
               autoComplete="off"
-              autoCorrect="off"
               autoCapitalize="off"
             />
           </form>

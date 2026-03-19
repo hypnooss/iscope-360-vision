@@ -27,6 +27,8 @@ from supervisor.config import (
     WORKER_INSTALL_DIR,
     WORKER_HEALTH_FILE,
     WORKER_PID_FILE,
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
 )
 from supervisor.heartbeat import SupervisorHeartbeatLoop
 from supervisor.updater import SupervisorUpdater
@@ -41,6 +43,7 @@ from supervisor.logger import setup_supervisor_logger
 from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
 from agent.realtime_commands import ShellCommandPoller
+from agent.realtime_shell import RealtimeShell
 
 # Cross-update paths
 SUPERVISOR_RESTART_FLAG = Path("/var/lib/iscope-agent/supervisor_restart.flag")
@@ -99,9 +102,9 @@ def main():
     # --- Start worker on boot ---
     worker.start()
 
-    # --- Realtime: on-demand only (started via heartbeat flag) ---
-    poller = None
-    poller_active = False
+    # --- Realtime Shell: on-demand WebSocket (started via heartbeat flag) ---
+    realtime_shell = None
+    realtime_active = False
 
     # --- Check for component flag (from previous check_components request) ---
     _check_component_flag(logger)
@@ -170,30 +173,35 @@ def main():
                 except Exception as e:
                     logger.error(f"[Supervisor] Erro ao processar comandos remotos: {e}")
 
-            # Handle on-demand shell command poller
+            # Handle on-demand Realtime Shell (WebSocket)
             should_realtime = result.get("start_realtime", False)
-            if should_realtime and not poller_active:
-                logger.info("[Supervisor] Heartbeat solicitou início do Shell Poller.")
-                poller = ShellCommandPoller(
-                    command_handler=remote_cmds,
-                    logger=logger,
-                )
-                poller.start()
-                poller_active = True
-            elif not should_realtime and poller_active:
-                logger.info("[Supervisor] Heartbeat solicitou parada do Shell Poller.")
-                if poller:
-                    poller.stop()
-                    poller = None
-                poller_active = False
+            if should_realtime and not realtime_active:
+                if SUPABASE_URL and SUPABASE_ANON_KEY:
+                    logger.info("[Supervisor] Heartbeat solicitou início do Realtime Shell (WebSocket).")
+                    realtime_shell = RealtimeShell(
+                        supabase_url=SUPABASE_URL,
+                        anon_key=SUPABASE_ANON_KEY,
+                        agent_id=str(state.get("agent_id", "")),
+                        logger=logger,
+                    )
+                    realtime_shell.start()
+                    realtime_active = True
+                else:
+                    logger.warning("[Supervisor] Realtime Shell solicitado mas SUPABASE_URL/ANON_KEY não configurados.")
+            elif not should_realtime and realtime_active:
+                logger.info("[Supervisor] Heartbeat solicitou parada do Realtime Shell.")
+                if realtime_shell:
+                    realtime_shell.stop()
+                    realtime_shell = None
+                realtime_active = False
 
-            # Check if poller timed out or session was closed
-            if poller_active and poller and (poller.timed_out or poller.session_closed):
-                reason = "inatividade (120s)" if poller.timed_out else "sessão encerrada pelo GUI"
-                logger.info(f"[Supervisor] Shell Poller encerrado: {reason}.")
-                poller.stop()
-                poller = None
-                poller_active = False
+            # Check if realtime shell timed out or session was closed
+            if realtime_active and realtime_shell and (realtime_shell.timed_out or realtime_shell.session_closed):
+                reason = "inatividade (120s)" if realtime_shell.timed_out else "sessão encerrada pelo GUI"
+                logger.info(f"[Supervisor] Realtime Shell encerrado: {reason}.")
+                realtime_shell.stop()
+                realtime_shell = None
+                realtime_active = False
 
         # Monitor worker health (systemd manages restart, but we ensure it's up)
         if not worker.is_running():
