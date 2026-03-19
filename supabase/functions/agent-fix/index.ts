@@ -95,6 +95,7 @@ fi
 log "Obtendo URLs dos pacotes..."
 URL_AGENT="$(get_signed_url "iscope-agent-latest.tar.gz")"
 URL_SUP="$(get_signed_url "iscope-supervisor-latest.tar.gz")"
+URL_MONITOR="$(get_signed_url "iscope-monitor-latest.tar.gz")"
 
 if [[ -z "$URL_AGENT" ]]; then
   fail "Pacote iscope-agent-latest.tar.gz não encontrado no storage."
@@ -104,11 +105,18 @@ if [[ -z "$URL_SUP" ]]; then
   fail "Pacote iscope-supervisor-latest.tar.gz não encontrado no storage."
   exit 1
 fi
+if [[ -z "$URL_MONITOR" ]]; then
+  warn "Pacote iscope-monitor-latest.tar.gz não encontrado no storage. O Supervisor pode continuar falhando se ainda depender do módulo monitor."
+fi
 
 ok "URLs obtidas"
 
 TMP_AGENT="$(mktemp)"
 TMP_SUP="$(mktemp)"
+TMP_MONITOR=""
+if [[ -n "$URL_MONITOR" ]]; then
+  TMP_MONITOR="$(mktemp)"
+fi
 
 log "Baixando pacote do Agent..."
 if ! curl -sS "$CURL_FAIL" -L "$URL_AGENT" -o "$TMP_AGENT"; then
@@ -123,6 +131,17 @@ if ! curl -sS "$CURL_FAIL" -L "$URL_SUP" -o "$TMP_SUP"; then
   exit 1
 fi
 ok "Supervisor baixado ($(du -h "$TMP_SUP" | cut -f1))"
+
+if [[ -n "$URL_MONITOR" ]] && [[ -n "$TMP_MONITOR" ]]; then
+  log "Baixando pacote do Monitor..."
+  if ! curl -sS "$CURL_FAIL" -L "$URL_MONITOR" -o "$TMP_MONITOR"; then
+    warn "Falha ao baixar pacote do Monitor. Vou continuar sem ele."
+    rm -f "$TMP_MONITOR"
+    TMP_MONITOR=""
+  else
+    ok "Monitor baixado ($(du -h "$TMP_MONITOR" | cut -f1))"
+  fi
+fi
 
 log "Criando backup dos módulos atuais..."
 BACKUP_TS="$(date +%Y%m%d_%H%M%S)"
@@ -149,7 +168,12 @@ tar -xzf "$TMP_AGENT" -C "$INSTALL_DIR"
 log "Extraindo pacote do Supervisor..."
 tar -xzf "$TMP_SUP" -C "$INSTALL_DIR"
 
-rm -f "$TMP_AGENT" "$TMP_SUP"
+if [[ -n "$TMP_MONITOR" ]] && [[ -f "$TMP_MONITOR" ]]; then
+  log "Extraindo pacote do Monitor..."
+  tar -xzf "$TMP_MONITOR" -C "$INSTALL_DIR"
+fi
+
+rm -f "$TMP_AGENT" "$TMP_SUP" "$TMP_MONITOR"
 ok "Pacotes extraídos em $INSTALL_DIR"
 
 log "Módulos instalados:"
