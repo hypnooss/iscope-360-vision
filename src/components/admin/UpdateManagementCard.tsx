@@ -361,9 +361,10 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
     upToDate: number,
     outdated: any[],
     versionKey: string,
+    colorClass: { border: string; bg: string },
     extra?: React.ReactNode,
   ) => (
-    <div className="space-y-4 p-4 border rounded-lg">
+    <div className={`space-y-4 p-4 rounded-lg border-l-4 border ${colorClass.border} ${colorClass.bg}`}>
       <div className="flex items-center justify-between">
         <h4 className="font-medium">Status dos {label}</h4>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
