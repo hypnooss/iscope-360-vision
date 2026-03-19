@@ -81,7 +81,7 @@ function Reveal({ children, className = '', delay = 0, variant = fadeUp }: { chi
   return (
     <motion.div
       variants={variant}
-      transition={{ duration: 2.4, ease, delay }}
+      transition={{ duration: 0.8, ease, delay }}
       className={className}
     >
       {children}
