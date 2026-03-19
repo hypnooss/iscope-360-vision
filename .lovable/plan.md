@@ -1,23 +1,24 @@
 
 
-## Fix: `AgentState` não tem método `.get()`
+## Fix: Reset command timeout on new output
 
-### Problema
-O erro é direto: `state.get("agent_id", "")` falha porque `AgentState` não expõe `.get()`. Os dados ficam em `state.data` (um dict).
+### Problem
+The command timeout uses a fixed `start_time` (line 368) that never resets when output is received. For streaming commands like `tail -f`, the 120s timer always expires even though the command is actively producing output.
 
-### Correção
+### Fix
+**File**: `python-agent/supervisor/realtime_shell.py`, line ~389
 
-**Arquivo**: `python-agent/supervisor/main.py`, linha 185
+When output is read from the PTY, reset `start_time` alongside `self._last_activity`:
 
-Trocar:
 ```python
-agent_id=str(state.get("agent_id", "")),
-```
-Por:
-```python
-agent_id=str(state.data.get("agent_id", "")),
+if data:
+    self._last_activity = time.time()
+    start_time = time.time()  # ← add this line
 ```
 
-### Resultado
-O `RealtimeShell` será instanciado corretamente com o `agent_id` do estado, permitindo a conexão WebSocket prosseguir.
+This ensures the 120s timeout only triggers after 120s of **silence**, not 120s total runtime.
+
+### Result
+- `tail -f` and other long-running commands will stay alive as long as they produce output
+- Commands that hang silently will still be killed after 120s of no output
 
