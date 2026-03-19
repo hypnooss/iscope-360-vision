@@ -223,6 +223,48 @@ export default function AgentsPage() {
     );
   }, [agents, search]);
 
+  // Sorting
+  type AgentSortKey = 'name' | 'client_name' | 'agent_version' | 'status' | 'last_seen';
+  type SortDir = 'asc' | 'desc' | null;
+  const SORT_STORAGE_KEY = 'agents-sort';
+
+  const [sortKey, setSortKey] = useState<AgentSortKey | null>(() => {
+    try { const s = localStorage.getItem(SORT_STORAGE_KEY); return s ? JSON.parse(s).key : null; } catch { return null; }
+  });
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    try { const s = localStorage.getItem(SORT_STORAGE_KEY); return s ? JSON.parse(s).dir : null; } catch { return null; }
+  });
+
+  const handleSort = (key: AgentSortKey) => {
+    let newKey: AgentSortKey | null, newDir: SortDir;
+    if (sortKey !== key) { newKey = key; newDir = 'asc'; }
+    else if (sortDir === 'asc') { newKey = key; newDir = 'desc'; }
+    else { newKey = null; newDir = null; }
+    setSortKey(newKey); setSortDir(newDir);
+    if (newKey && newDir) localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify({ key: newKey, dir: newDir }));
+    else localStorage.removeItem(SORT_STORAGE_KEY);
+  };
+
+  const sortedAgents = useMemo(() => {
+    if (!sortKey || !sortDir) return filtered;
+    const mul = sortDir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      if (sortKey === 'last_seen') {
+        const da = a.last_seen ? new Date(a.last_seen).getTime() : (sortDir === 'asc' ? Infinity : -Infinity);
+        const db = b.last_seen ? new Date(b.last_seen).getTime() : (sortDir === 'asc' ? Infinity : -Infinity);
+        return (da - db) * mul;
+      }
+      if (sortKey === 'status') {
+        const sa = getAgentStatus(a).label;
+        const sb = getAgentStatus(b).label;
+        return sa.localeCompare(sb, 'pt-BR', { sensitivity: 'base' }) * mul;
+      }
+      const va = (a[sortKey] ?? '') as string;
+      const vb = (b[sortKey] ?? '') as string;
+      return va.localeCompare(vb, 'pt-BR', { sensitivity: 'base' }) * mul;
+    });
+  }, [filtered, sortKey, sortDir]);
+
   const getAgentStatus = (
     agent: Agent,
   ): { label: string; variant: "default" | "success" | "warning" | "destructive" } => {
