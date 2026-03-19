@@ -154,7 +154,7 @@ function RiskChart({ opacity }: { opacity: number }) {
   const notExploitH = rightSpan - exploitH;
   const rightNodes = [
     { label: 'Exploitable', value: totalExploitable, pct: '2.1%', y: padTop, h: exploitH, color: destColors.exploitable },
-    { label: 'Not Exploitable', value: totalNotExploitable, pct: '97.9%', y: padTop + exploitH, h: notExploitH, color: destColors.notExploitable },
+    { label: 'Not Exploitable', value: totalNotExploitable, pct: '97.9%', y: padTop + exploitH + 4, h: notExploitH - 4, color: destColors.notExploitable },
   ];
 
   // Build flow paths — flows taper: left height proportional to source, right height proportional to destination
