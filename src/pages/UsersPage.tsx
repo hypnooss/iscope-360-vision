@@ -36,11 +36,29 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Edit, Shield, Loader2, Building, Building2, Layers, Trash2, Eye, Search } from "lucide-react";
+import { Users, Edit, Shield, Loader2, Building, Building2, Layers, Trash2, Eye, Search, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { InviteUserDialog } from "@/components/InviteUserDialog";
 import { PreviewUserDialog } from "@/components/preview/PreviewUserDialog";
 import { Skeleton } from "@/components/ui/skeleton";
+
+type UserSortKey = 'full_name' | 'role' | 'moduleCount' | 'clientCount' | 'created_at';
+type SortDir = 'asc' | 'desc' | null;
+
+function SortableHead({ label, sortKey: colKey, activeSortKey, sortDir, onSort }: {
+  label: string; sortKey: UserSortKey; activeSortKey: UserSortKey | null; sortDir: SortDir; onSort: (key: UserSortKey) => void;
+}) {
+  const isActive = activeSortKey === colKey;
+  const Icon = isActive && sortDir === 'asc' ? ArrowUp : isActive && sortDir === 'desc' ? ArrowDown : ChevronsUpDown;
+  return (
+    <TableHead>
+      <button type="button" className="flex items-center gap-1 hover:text-foreground transition-colors -my-1" onClick={() => onSort(colKey)}>
+        {label}
+        <Icon className={`w-3 h-3 ${isActive ? 'text-foreground' : 'text-muted-foreground'}`} />
+      </button>
+    </TableHead>
+  );
+}
 
 type AppRole = "super_admin" | "super_suporte" | "workspace_admin" | "user";
 type ModulePermissionLevel = "none" | "view" | "edit";
@@ -421,6 +439,24 @@ export default function UsersPage() {
     noWorkspace: users.filter(u => !u.client_ids?.length).length,
   }), [users]);
 
+  // Persistent sorting
+  const SORT_STORAGE_KEY = 'users-sort';
+  const [sortKey, setSortKey] = useState<UserSortKey | null>(() => {
+    try { const s = localStorage.getItem(SORT_STORAGE_KEY); return s ? JSON.parse(s).key : null; } catch { return null; }
+  });
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    try { const s = localStorage.getItem(SORT_STORAGE_KEY); return s ? JSON.parse(s).dir : null; } catch { return null; }
+  });
+  const handleSort = (key: UserSortKey) => {
+    let nk: UserSortKey | null, nd: SortDir;
+    if (sortKey !== key) { nk = key; nd = 'asc'; }
+    else if (sortDir === 'asc') { nk = key; nd = 'desc'; }
+    else { nk = null; nd = null; }
+    setSortKey(nk); setSortDir(nd);
+    if (nk && nd) localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify({ key: nk, dir: nd }));
+    else localStorage.removeItem(SORT_STORAGE_KEY);
+  };
+
   // Search filter
   const filteredUsers = useMemo(() => {
     if (!search) return users;
@@ -431,6 +467,35 @@ export default function UsersPage() {
       getClientNames(u.client_ids).some(n => n.toLowerCase().includes(q))
     );
   }, [users, search, clients]);
+
+  const sortedUsers = useMemo(() => {
+    if (!sortKey || !sortDir) return filteredUsers;
+    const mul = sortDir === 'asc' ? 1 : -1;
+    return [...filteredUsers].sort((a, b) => {
+      if (sortKey === 'moduleCount') {
+        const ma = a.module_permissions?.filter(p => p.permission !== 'none').length ?? 0;
+        const mb = b.module_permissions?.filter(p => p.permission !== 'none').length ?? 0;
+        return (ma - mb) * mul;
+      }
+      if (sortKey === 'clientCount') {
+        const ca = a.client_ids?.length ?? 0;
+        const cb = b.client_ids?.length ?? 0;
+        return (ca - cb) * mul;
+      }
+      if (sortKey === 'created_at') {
+        return (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * mul;
+      }
+      if (sortKey === 'role') {
+        const va = a.role ?? '';
+        const vb = b.role ?? '';
+        return va.localeCompare(vb, 'pt-BR', { sensitivity: 'base' }) * mul;
+      }
+      // full_name
+      const va = (a.full_name ?? '').toLowerCase();
+      const vb = (b.full_name ?? '').toLowerCase();
+      return va.localeCompare(vb, 'pt-BR', { sensitivity: 'base' }) * mul;
+    });
+  }, [filteredUsers, sortKey, sortDir]);
 
   if (authLoading || !canAccessPage) return null;
 
@@ -550,16 +615,16 @@ export default function UsersPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Usuário</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Módulos</TableHead>
-                    <TableHead>Clientes</TableHead>
-                    <TableHead>Cadastro</TableHead>
+                   <SortableHead label="Usuário" sortKey="full_name" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                    <SortableHead label="Role" sortKey="role" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                    <SortableHead label="Módulos" sortKey="moduleCount" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                    <SortableHead label="Clientes" sortKey="clientCount" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                    <SortableHead label="Cadastro" sortKey="created_at" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredUsers.map((u) => (
+                  {sortedUsers.map((u) => (
                     <TableRow key={u.id}>
                       <TableCell>
                         <div>
