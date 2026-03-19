@@ -70,7 +70,7 @@ function CVECard({
 }) {
   return (
     <motion.div
-      className="glass-container rounded-2xl p-5 w-full"
+      className="rounded-xl w-full border border-destructive/15 bg-card/80 backdrop-blur-sm overflow-hidden"
       initial={{ opacity: 0, x: 40, scale: 0.92 }}
       animate={{
         opacity: opacity > 0.3 ? 1 : 0,
@@ -79,23 +79,28 @@ function CVECard({
       }}
       transition={{ duration: 0.6, delay, ease: EASE }}
     >
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2.5">
-          <div className="relative">
+      {/* Top row */}
+      <div className="flex items-center justify-between px-5 pt-4 pb-2">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full border border-destructive/30 bg-destructive/10 flex items-center justify-center shrink-0">
             <div className="w-2.5 h-2.5 rounded-full bg-destructive animate-pulse" />
           </div>
-          <span className="font-mono text-sm font-semibold text-foreground">{cve.id}</span>
+          <div>
+            <span className="font-mono text-base font-bold text-foreground tracking-tight">{cve.id}</span>
+            <div className="text-sm text-muted-foreground mt-0.5">{cve.product}</div>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-destructive/15 border border-destructive/25">
-          <span className="font-mono text-xs font-bold text-destructive">{cve.score.toFixed(1)}</span>
+        <div className="flex items-center justify-center w-12 h-8 rounded-lg bg-destructive/15 border border-destructive/30">
+          <span className="font-mono text-sm font-bold text-destructive">{cve.score.toFixed(1)}</span>
         </div>
       </div>
-      <div className="text-xs text-muted-foreground mb-3">{cve.product}</div>
-      <div className="flex flex-wrap gap-1.5">
+
+      {/* Tags */}
+      <div className="flex flex-wrap gap-2 px-5 pb-4 pt-1">
         {cve.tags.map((tag) => (
           <span
             key={tag}
-            className="px-2 py-0.5 rounded-md text-[10px] font-mono tracking-wide bg-destructive/8 text-destructive/70 border border-destructive/10"
+            className="px-2.5 py-1 rounded-md text-xs font-mono tracking-wide text-destructive border border-destructive/20 bg-destructive/5"
           >
             {tag}
           </span>
