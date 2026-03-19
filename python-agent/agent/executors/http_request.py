@@ -71,12 +71,22 @@ class HTTPRequestExecutor(BaseExecutor):
                 self.logger.info(
                     f"Step {step_id}: Memory returned 0 results, falling back to disk: {fallback_url}"
                 )
-                result = self._paginated_request(
+                fallback_result = self._paginated_request(
                     step_id, fallback_url, interpolated_headers, config, context,
                     verify_ssl=verify_ssl, timeout=timeout
                 )
-                if result.get('data') and isinstance(result['data'], dict):
-                    result['data']['_source'] = 'disk'
+                # Only use fallback result if it succeeded
+                if not fallback_result.get('error'):
+                    result = fallback_result
+                    if result.get('data') and isinstance(result['data'], dict):
+                        result['data']['_source'] = 'disk'
+                else:
+                    self.logger.info(
+                        f"Step {step_id}: Disk fallback failed ({fallback_result.get('error')}), "
+                        f"keeping memory result"
+                    )
+                    if result.get('data') and isinstance(result['data'], dict):
+                        result['data']['_source'] = 'memory'
             else:
                 if result.get('data') and isinstance(result['data'], dict) and '_pagination' in result['data']:
                     result['data']['_source'] = 'memory'
