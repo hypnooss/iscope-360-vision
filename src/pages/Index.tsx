@@ -352,7 +352,7 @@ const Index = () => {
               { quote: 'Pela primeira vez temos visibilidade real do nosso ambiente multi-cloud. Antes eram 6 ferramentas e nenhuma visão unificada.', name: 'Ana L.', role: 'CTO', company: 'Fintech — Série B' },
               { quote: 'A detecção automática de configurações inseguras nos evitou dois incidentes críticos em seis meses. O ROI se pagou no primeiro trimestre.', name: 'Roberto S.', role: 'Diretor de Infraestrutura', company: 'Healthcare — 50+ unidades' },
             ].map((t, i) => (
-              <Reveal key={t.name} delay={i * 0.12} variant={fadeRight} preserveBackdrop>
+              <Reveal key={t.name} delay={i * 0.12}>
                 <div className="feature-card p-8 h-full flex flex-col group hover:-translate-y-1 transition-transform duration-300">
                   <Quote className="w-8 h-8 text-primary/20 mb-4 shrink-0" />
                   <p className="text-[15px] text-foreground/80 leading-relaxed mb-8 flex-1 italic">
