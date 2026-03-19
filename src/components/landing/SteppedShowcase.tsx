@@ -320,7 +320,12 @@ function RiskChart({ opacity }: { opacity: number }) {
               animate={{ opacity: isVisible ? 1 : 0 }}
               transition={{ duration: 0.5, delay: 0.4 + i * 0.1 }}
             >
-              {n.label}
+              {n.label === 'Not Exploitable' ? (
+                <>
+                  <tspan x={rightX + nodeW + 8} dy="-0.6em">Not</tspan>
+                  <tspan x={rightX + nodeW + 8} dy="1.2em">Exploitable</tspan>
+                </>
+              ) : n.label}
             </motion.text>
             <motion.text
               x={rightX + nodeW + 8}
