@@ -979,7 +979,35 @@ ProtectSystem=false
 WantedBy=multi-user.target
 EOF
 
-  echo "Unit files criados: $sup_unit e $agent_unit"
+  # --- Monitor unit (independent service) ---
+  local monitor_unit="/etc/systemd/system/iscope-monitor.service"
+  cat > "$monitor_unit" <<EOF
+[Unit]
+Description=iScope 360 Monitor (Super Agent)
+After=network-online.target iscope-supervisor.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=\${INSTALL_DIR}
+EnvironmentFile=-\${CONFIG_DIR}/agent.env
+ExecStart=\${INSTALL_DIR}/venv/bin/python -m monitor.main
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=iscope-monitor
+NoNewPrivileges=false
+ProtectSystem=false
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  echo "Unit files criados: $sup_unit, $agent_unit e $monitor_unit"
+}
 }
 
 setup_sudoers() {
