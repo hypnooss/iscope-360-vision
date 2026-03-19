@@ -306,7 +306,7 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
     onPublish: () => void,
     colorClass: { border: string; bg: string; btn: string; switchClass: string },
   ) => (
-    <div className={`space-y-4 p-4 rounded-lg border-l-4 border ${colorClass.border} ${colorClass.bg}`}>
+    <div className={`space-y-4 p-4 rounded-lg border-t-4 border ${colorClass.border} ${colorClass.bg}`}>
       <h4 className="font-medium flex items-center gap-2">
         {icon}
         Publicar {label}
