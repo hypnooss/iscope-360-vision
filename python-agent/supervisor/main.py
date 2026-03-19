@@ -274,16 +274,17 @@ def main():
 
 
 def _handle_update(result: dict, updater: SupervisorUpdater, worker: WorkerManager,
-                   current_version: str, logger):
-    """Process an AGENT update signal."""
+                   current_version: Optional[str], logger):
+    """Process an AGENT update signal (also handles fresh install when agent/ is missing)."""
     update_info = result["update_info"]
     target_version = update_info.get("version", "?")
 
-    if current_version == target_version:
+    if current_version and current_version == target_version:
         logger.info(f"[Supervisor] Update skip | latest={target_version} current={current_version} action=skip")
         return
 
-    logger.info(f"[Supervisor] Update apply | latest={target_version} current={current_version} action=apply")
+    action = "install" if not current_version else "apply"
+    logger.info(f"[Supervisor] Update {action} | latest={target_version} current={current_version or 'ausente'}")
     success = updater.check_and_update(update_info, worker)
     if success:
         logger.info(f"[Supervisor] Worker atualizado para v{target_version} com sucesso")
