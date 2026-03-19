@@ -43,7 +43,7 @@ from supervisor.logger import setup_supervisor_logger
 from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
 from supervisor.realtime_shell import RealtimeShell
-from monitor.worker import MonitorWorker
+# monitor is imported lazily in main() to avoid boot failure if missing
 
 # Cross-update paths
 SUPERVISOR_RESTART_FLAG = Path("/var/lib/iscope-agent/supervisor_restart.flag")
@@ -95,12 +95,20 @@ def main():
     # --- Start worker on boot ---
     worker.start()
 
-    # --- Start monitor thread ---
-    monitor_thread = MonitorWorker(
-        api=api, state=state, logger=logger,
-        interval=MONITOR_INTERVAL, disk_path="/"
-    )
-    monitor_thread.start()
+    # --- Start monitor thread (lazy import — monitor may not be installed) ---
+    monitor_thread = None
+    try:
+        from monitor.worker import MonitorWorker
+        monitor_thread = MonitorWorker(
+            api=api, state=state, logger=logger,
+            interval=MONITOR_INTERVAL, disk_path="/"
+        )
+        monitor_thread.start()
+        logger.info("[Supervisor] MonitorWorker iniciado com sucesso")
+    except ImportError:
+        logger.warning("[Supervisor] Módulo 'monitor' não encontrado — monitoramento desativado")
+    except Exception as e:
+        logger.warning(f"[Supervisor] Falha ao iniciar MonitorWorker: {e}")
 
     # --- Realtime Shell ---
     realtime_shell = None
@@ -126,7 +134,8 @@ def main():
             except Exception:
                 logger.info("[Supervisor] Restart flag detectada. Encerrando para systemd reiniciar.")
             SUPERVISOR_RESTART_FLAG.unlink(missing_ok=True)
-            monitor_thread.stop()
+                if monitor_thread:
+                    monitor_thread.stop()
             worker.stop()
             sys.exit(0)
 
@@ -151,7 +160,8 @@ def main():
             consecutive_errors += 1
             if result["error"] == "AGENT_STOPPED":
                 logger.critical("Backend bloqueou o agent. Parando Worker e encerrando.")
-                monitor_thread.stop()
+                if monitor_thread:
+                    monitor_thread.stop()
                 worker.stop()
                 sys.exit(1)
 
@@ -172,7 +182,7 @@ def main():
                 _handle_supervisor_update_signal(result, logger)
 
             # Handle MONITOR update
-            if result.get("monitor_update_available") and result.get("monitor_update_info"):
+            if result.get("monitor_update_available") and result.get("monitor_update_info") and monitor_thread:
                 _handle_monitor_update(result, monitor_updater, monitor_thread, monitor_version, logger)
 
             # Handle component check
@@ -270,7 +280,7 @@ def _handle_supervisor_update_signal(result: dict, logger):
 
 
 def _handle_monitor_update(result: dict, monitor_updater: MonitorUpdater,
-                           monitor_thread: MonitorWorker, current_version: Optional[str], logger):
+                           monitor_thread, current_version: Optional[str], logger):
     """Process a MONITOR update signal."""
     update_info = result["monitor_update_info"]
     target_version = update_info.get("version", "?")
