@@ -625,16 +625,27 @@ export default function AgentsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Versão</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last Seen</TableHead>
+                    {([['Nome', 'name'], ['Cliente', 'client_name'], ['Versão', 'agent_version'], ['Status', 'status'], ['Last Seen', 'last_seen']] as [string, AgentSortKey][]).map(([label, key]) => {
+                      const isActive = sortKey === key;
+                      const SortIcon = isActive && sortDir === 'asc' ? ArrowUp : isActive && sortDir === 'desc' ? ArrowDown : ChevronsUpDown;
+                      return (
+                        <TableHead key={key}>
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 hover:text-foreground transition-colors -my-1"
+                            onClick={() => handleSort(key)}
+                          >
+                            {label}
+                            <SortIcon className={`w-3 h-3 ${isActive ? 'text-foreground' : 'text-muted-foreground'}`} />
+                          </button>
+                        </TableHead>
+                      );
+                    })}
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((agent) => {
+                  {sortedAgents.map((agent) => {
                     const status = getAgentStatus(agent);
                     const isPendingWithCode =
                       !agent.revoked && !agent.last_seen && !!agent.activation_code;
