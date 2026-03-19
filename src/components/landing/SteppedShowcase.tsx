@@ -157,36 +157,55 @@ function RiskChart({ opacity }: { opacity: number }) {
     { label: 'Not Exploitable', value: totalNotExploitable, pct: '97.9%', y: padTop + exploitH, h: notExploitH, color: destColors.notExploitable },
   ];
 
-  // Build flow paths — each flow proportional to its SOURCE node height
-  let exploitYAccum = rightNodes[0].y;
-  let notExploitYAccum = rightNodes[1].y;
+  // Build flow paths — flows taper: left height proportional to source, right height proportional to destination
+  let exploitYAccumLeft: number[] = [];
+  let notExploitYAccumLeft: number[] = [];
+  
+  // Pre-calculate left-side Y positions for each flow
+  let eLY = 0; // tracks exploit flow offset within each source
+  leftNodes.forEach((src) => {
+    const exploitFlowH = (src.exploitable / src.total) * src.h;
+    exploitYAccumLeft.push(src.y);
+    notExploitYAccumLeft.push(src.y + exploitFlowH);
+  });
+
+  // Right-side: each flow's height is proportional to its share of the destination node
+  let exploitYRight = rightNodes[0].y;
+  let notExploitYRight = rightNodes[1].y;
 
   const flows: { d: string; gradId: string; srcColor: string; dstColor: string; delay: number }[] = [];
 
   leftNodes.forEach((src, i) => {
-    const exploitFlowH = (src.exploitable / src.total) * src.h;
-    const notExploitFlowH = src.h - exploitFlowH;
+    const exploitFlowHL = (src.exploitable / src.total) * src.h; // height at left
+    const notExploitFlowHL = src.h - exploitFlowHL; // height at left
+    
+    const exploitFlowHR = (src.exploitable / totalExploitable) * rightNodes[0].h; // height at right
+    const notExploitFlowHR = ((src.total - src.exploitable) / totalNotExploitable) * rightNodes[1].h; // height at right
 
     const x1 = src.x + nodeW;
     const x2 = rightX;
     const cx = (x1 + x2) / 2;
 
-    // Exploitable flow
-    if (exploitFlowH > 0.3) {
-      const sy = src.y;
-      const ey = exploitYAccum;
-      const d = `M${x1},${sy} C${cx},${sy} ${cx},${ey} ${x2},${ey} L${x2},${ey + exploitFlowH} C${cx},${ey + exploitFlowH} ${cx},${sy + exploitFlowH} ${x1},${sy + exploitFlowH} Z`;
+    // Exploitable flow (tapered)
+    if (exploitFlowHL > 0.2) {
+      const syTop = exploitYAccumLeft[i];
+      const syBot = syTop + exploitFlowHL;
+      const eyTop = exploitYRight;
+      const eyBot = eyTop + exploitFlowHR;
+      const d = `M${x1},${syTop} C${cx},${syTop} ${cx},${eyTop} ${x2},${eyTop} L${x2},${eyBot} C${cx},${eyBot} ${cx},${syBot} ${x1},${syBot} Z`;
       flows.push({ d, gradId: `grad-e-${i}`, srcColor: src.color, dstColor: destColors.exploitable, delay: i * 0.12 });
-      exploitYAccum += exploitFlowH;
+      exploitYRight += exploitFlowHR;
     }
 
-    // Not exploitable flow
+    // Not exploitable flow (tapered)
     {
-      const sy = src.y + exploitFlowH;
-      const ey = notExploitYAccum;
-      const d = `M${x1},${sy} C${cx},${sy} ${cx},${ey} ${x2},${ey} L${x2},${ey + notExploitFlowH} C${cx},${ey + notExploitFlowH} ${cx},${sy + notExploitFlowH} ${x1},${sy + notExploitFlowH} Z`;
+      const syTop = notExploitYAccumLeft[i];
+      const syBot = syTop + notExploitFlowHL;
+      const eyTop = notExploitYRight;
+      const eyBot = eyTop + notExploitFlowHR;
+      const d = `M${x1},${syTop} C${cx},${syTop} ${cx},${eyTop} ${x2},${eyTop} L${x2},${eyBot} C${cx},${eyBot} ${cx},${syBot} ${x1},${syBot} Z`;
       flows.push({ d, gradId: `grad-n-${i}`, srcColor: src.color, dstColor: destColors.notExploitable, delay: i * 0.12 + 0.05 });
-      notExploitYAccum += notExploitFlowH;
+      notExploitYRight += notExploitFlowHR;
     }
   });
 
@@ -221,7 +240,7 @@ function RiskChart({ opacity }: { opacity: number }) {
             d={f.d}
             fill={`url(#${f.gradId})`}
             initial={{ opacity: 0 }}
-            animate={{ opacity: isVisible ? 0.3 : 0 }}
+            animate={{ opacity: isVisible ? 0.35 : 0 }}
             transition={{ duration: 0.8, delay: f.delay, ease: EASE }}
           />
         ))}
@@ -243,12 +262,12 @@ function RiskChart({ opacity }: { opacity: number }) {
             />
             <motion.text
               x={n.x - 8}
-              y={n.y + n.h / 2}
+              y={n.y + n.h / 2 - 1}
               textAnchor="end"
               dominantBaseline="central"
-              className="fill-foreground/70"
-              fontSize="10"
-              fontWeight="500"
+              className="fill-foreground/80"
+              fontSize="11"
+              fontWeight="600"
               fontFamily="var(--font-sans)"
               initial={{ opacity: 0 }}
               animate={{ opacity: isVisible ? 1 : 0 }}
@@ -293,9 +312,9 @@ function RiskChart({ opacity }: { opacity: number }) {
               y={n.y + n.h / 2}
               textAnchor="start"
               dominantBaseline="central"
-              className="fill-foreground/70"
-              fontSize="10"
-              fontWeight="500"
+              className="fill-foreground/80"
+              fontSize="11"
+              fontWeight="600"
               fontFamily="var(--font-sans)"
               initial={{ opacity: 0 }}
               animate={{ opacity: isVisible ? 1 : 0 }}
@@ -321,7 +340,7 @@ function RiskChart({ opacity }: { opacity: number }) {
         ))}
       </svg>
 
-      <div className="mt-2 pt-2 border-t border-muted/20 flex justify-between text-[10px] font-mono text-muted-foreground/40">
+      <div className="mt-2 pt-2 border-t border-muted/20 flex justify-between text-[11px] font-mono text-muted-foreground/70">
         <span>Total: {grandTotal.toLocaleString()} CVEs</span>
         <span>Exploitable: {totalExploitable.toLocaleString()} ({((totalExploitable / grandTotal) * 100).toFixed(1)}%)</span>
       </div>
