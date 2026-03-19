@@ -33,6 +33,8 @@ class RealtimeShell:
     """Bidirectional shell over Supabase Realtime Broadcast channel."""
 
     def __init__(self, supabase_url: str, anon_key: str, agent_id: str, logger):
+        if not supabase_url or not anon_key:
+            raise ValueError("SUPABASE_URL e SUPABASE_ANON_KEY são obrigatórios para RealtimeShell")
         self.supabase_url = supabase_url.rstrip("/")
         self.anon_key = anon_key
         self.agent_id = agent_id
