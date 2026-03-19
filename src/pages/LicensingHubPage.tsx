@@ -24,7 +24,71 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { Key, Shield, Globe, Cloud, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Info, Building2 } from 'lucide-react';
+import { Key, Shield, Globe, Cloud, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Info, Building2, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
+
+// ====== Sortable Head ======
+
+type SortDir = 'asc' | 'desc' | null;
+
+function SortableHead({ label, sortKey: colKey, activeSortKey, sortDir, onSort, className }: {
+  label: string;
+  sortKey: string;
+  activeSortKey: string | null;
+  sortDir: SortDir;
+  onSort: (key: string) => void;
+  className?: string;
+}) {
+  const isActive = activeSortKey === colKey;
+  const Icon = isActive && sortDir === 'asc' ? ArrowUp : isActive && sortDir === 'desc' ? ArrowDown : ChevronsUpDown;
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        className="flex items-center gap-1 hover:text-foreground transition-colors -my-1"
+        onClick={() => onSort(colKey)}
+      >
+        {label}
+        <Icon className={`w-3 h-3 ${isActive ? 'text-foreground' : 'text-muted-foreground'}`} />
+      </button>
+    </TableHead>
+  );
+}
+
+function usePersistentSort(storageKey: string) {
+  const [sortKey, setSortKey] = useState<string | null>(() => {
+    try { const s = localStorage.getItem(storageKey); return s ? JSON.parse(s).key : null; } catch { return null; }
+  });
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    try { const s = localStorage.getItem(storageKey); return s ? JSON.parse(s).dir : null; } catch { return null; }
+  });
+
+  const handleSort = (key: string) => {
+    let newKey: string | null, newDir: SortDir;
+    if (sortKey !== key) { newKey = key; newDir = 'asc'; }
+    else if (sortDir === 'asc') { newKey = key; newDir = 'desc'; }
+    else { newKey = null; newDir = null; }
+    setSortKey(newKey); setSortDir(newDir);
+    if (newKey && newDir) localStorage.setItem(storageKey, JSON.stringify({ key: newKey, dir: newDir }));
+    else localStorage.removeItem(storageKey);
+  };
+
+  return { sortKey, sortDir, handleSort };
+}
+
+function sortItems<T>(items: T[], sortKey: string | null, sortDir: SortDir, getVal: (item: T, key: string) => string | number | null): T[] {
+  if (!sortKey || !sortDir) return items;
+  const mul = sortDir === 'asc' ? 1 : -1;
+  return [...items].sort((a, b) => {
+    const va = getVal(a, sortKey);
+    const vb = getVal(b, sortKey);
+    if (typeof va === 'number' || typeof vb === 'number') {
+      const na = typeof va === 'number' ? va : (sortDir === 'asc' ? Infinity : -Infinity);
+      const nb = typeof vb === 'number' ? vb : (sortDir === 'asc' ? Infinity : -Infinity);
+      return (na - nb) * mul;
+    }
+    return String(va ?? '').localeCompare(String(vb ?? ''), 'pt-BR', { sensitivity: 'base' }) * mul;
+  });
+}
 
 // ====== Helpers ======
 
