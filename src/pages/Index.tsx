@@ -469,7 +469,7 @@ const Index = () => {
             variants={stagger}
             className="max-w-3xl mx-auto w-full text-center relative z-10"
           >
-            <Reveal>
+            <Reveal variant={fadeUpScale}>
               <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4 leading-tight">
                 Comece a proteger sua infraestrutura{' '}
                 <span className="text-primary">hoje</span>
