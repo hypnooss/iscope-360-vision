@@ -1,51 +1,36 @@
 
 
-## Adicionar seção Monitor no Gerenciamento de Atualizações
+## Melhorar espaçamento e diferenciação visual dos cards de atualização
 
-Adicionar uma terceira linha (Monitor Row) no card "Gerenciamento de Atualizações" da aba Agents em `SettingsPage.tsx`, seguindo o mesmo padrão visual das seções Agent e Supervisor.
+### Problema
+Os três blocos (Agent, Supervisor, Monitor) estão visualmente muito similares e próximos, dificultando a distinção rápida.
 
-### Estrutura
+### Solução
 
-O card já tem:
-- **Linha 1**: Agent (Publicar + Status) 
-- **Linha 2**: Supervisor (Publicar + Status)
+Aplicar cores temáticas distintas para cada seção e aumentar o espaçamento entre elas.
 
-Adicionaremos:
-- **Linha 3**: Monitor (Publicar + Status)
+**1. Espaçamento** — Aumentar `space-y-8` para `space-y-12` no `CardContent`, e adicionar um `Separator` (ou `<hr>`) entre cada row.
 
-### Implementação — `src/pages/admin/SettingsPage.tsx`
+**2. Cores temáticas por seção:**
 
-**1. Novos states** para o Monitor (mesmo padrão do Supervisor):
-- `monitorLatestVersion`, `monitorForceUpdate`, `selectedMonitorFile`, `monitorChecksum`, `calculatingMonitorChecksum`, `publishingMonitorUpdate`, `newMonitorVersion`
-- `monitorStats` com `{ total, upToDate, outdated[] }`
+| Seção | Cor accent | Aplicação |
+|---|---|---|
+| **Agent** | `blue` | Borda do card, botão, switch, badge |
+| **Supervisor** | `purple/violet` | Borda do card, botão, switch, badge |
+| **Monitor** | `emerald/teal` | Borda do card, botão, switch, badge |
 
-**2. Carregar settings do Monitor** em `loadAgentUpdateSettings`:
-- Ler `monitor_latest_version` e `monitor_force_update` de `system_settings`
+**3. Modificar `renderPublishSection`** para aceitar um parâmetro `colorClass` (ex: `'blue'`, `'violet'`, `'emerald'`) e aplicar:
+- `border-l-4 border-l-{color}-500` no container do card
+- `bg-{color}-500/5` como background sutil
+- Botão com `bg-{color}-600 hover:bg-{color}-700` (ou classe customizada)
+- Switch com cor accent correspondente via wrapper class
 
-**3. Carregar stats do Monitor** em `loadAgentStats`:
-- Comparar `monitor_version` (campo já existente em `agent_metrics`) com `monitorLatestVersion`
-- Query agents + último `agent_metrics` de cada um para pegar `monitor_version`
+**4. Modificar `renderStatusSection`** para aceitar o mesmo `colorClass` e aplicar:
+- `border-l-4 border-l-{color}-500` matching
+- `bg-{color}-500/5` background sutil
 
-**4. Handler `handleMonitorFileSelect`** — calcula SHA256 do arquivo selecionado (mesmo padrão).
+**5. Badges no header** — Colorir cada badge com a cor da respectiva seção (Agent azul, Supervisor violeta, Monitor verde).
 
-**5. Handler `handlePublishMonitorUpdate`**:
-- Upload para `agent-releases` como `iscope-monitor-{version}.tar.gz` + `iscope-monitor-latest.tar.gz`
-- Upsert em `system_settings`: `monitor_latest_version`, `monitor_update_checksum`, `monitor_force_update`
-
-**6. UI — Nova linha no card**:
-- Grid 2 colunas: "Publicar Monitor" (versão, arquivo, checksum, switch force, botão) + "Status dos Monitors" (atualizados/desatualizados)
-- Badge `Monitor: v{monitorLatestVersion}` no header do card
-
-**7. Atualizar `CardDescription`** para: "Publique novas versões do Agent, Supervisor e Monitor para atualização automática"
-
-### Ajuste no Supervisor (python-agent)
-
-**8. `python-agent/supervisor/main.py`** — Adicionar lógica de auto-update do Monitor:
-- No heartbeat, verificar `monitor_latest_version` vs versão atual do monitor
-- Se diferente, baixar `iscope-monitor-latest.tar.gz`, extrair e reiniciar o MonitorWorker
-
-**9. `python-agent/supervisor/config.py`** — Já tem `MONITOR_INTERVAL`, não precisa de mudança.
-
-### Resultado
-O card "Gerenciamento de Atualizações" terá 3 seções (Agent, Supervisor, Monitor) com publicação e status independentes. O Supervisor gerencia o update do Monitor automaticamente via heartbeat.
+### Arquivo editado
+`src/components/admin/UpdateManagementCard.tsx`
 
