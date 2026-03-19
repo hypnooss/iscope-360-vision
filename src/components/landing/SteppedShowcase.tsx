@@ -131,7 +131,7 @@ function RiskChart({ opacity }: { opacity: number }) {
   const padTop = 20;
   const usableH = H - padTop - 20;
 
-  // Left node positions
+  // Left node positions — heights proportional without gaps
   const leftX = 90;
   let leftY = padTop;
   const leftNodes = sources.map((s) => {
@@ -141,46 +141,47 @@ function RiskChart({ opacity }: { opacity: number }) {
     return node;
   });
 
-  // Right node positions — compute total used height for perfect alignment
-  const totalLeftH = leftNodes.reduce((s, n) => s + n.h, 0) + gap * (leftNodes.length - 1);
+  // Right nodes span exactly from top of first left node to bottom of last left node
+  const lastLeft = leftNodes[leftNodes.length - 1];
+  const rightSpan = lastLeft.y + lastLeft.h - padTop; // total visual span including gaps
   const rightX = W - 90;
-  const exploitH = Math.max((totalExploitable / grandTotal) * totalLeftH, 28);
-  const notExploitH = totalLeftH - exploitH;
+  const exploitH = Math.max((totalExploitable / grandTotal) * rightSpan, 28);
+  const notExploitH = rightSpan - exploitH;
   const rightNodes = [
     { label: 'Exploitable', value: totalExploitable, pct: '2.1%', y: padTop, h: exploitH, color: destColors.exploitable },
     { label: 'Not Exploitable', value: totalNotExploitable, pct: '97.9%', y: padTop + exploitH, h: notExploitH, color: destColors.notExploitable },
   ];
 
-  // Build flow paths with gradient IDs
+  // Build flow paths — each flow proportional to its SOURCE node height
   let exploitYAccum = rightNodes[0].y;
   let notExploitYAccum = rightNodes[1].y;
 
   const flows: { d: string; gradId: string; srcColor: string; dstColor: string; delay: number }[] = [];
 
   leftNodes.forEach((src, i) => {
-    const exploitH_flow = (src.exploitable / grandTotal) * totalLeftH;
-    const notExploitH_flow = ((src.total - src.exploitable) / grandTotal) * totalLeftH;
+    const exploitFlowH = (src.exploitable / src.total) * src.h;
+    const notExploitFlowH = src.h - exploitFlowH;
 
     const x1 = src.x + nodeW;
     const x2 = rightX;
     const cx = (x1 + x2) / 2;
 
     // Exploitable flow
-    if (exploitH_flow > 0.3) {
+    if (exploitFlowH > 0.3) {
       const sy = src.y;
       const ey = exploitYAccum;
-      const d = `M${x1},${sy} C${cx},${sy} ${cx},${ey} ${x2},${ey} L${x2},${ey + exploitH_flow} C${cx},${ey + exploitH_flow} ${cx},${sy + exploitH_flow} ${x1},${sy + exploitH_flow} Z`;
+      const d = `M${x1},${sy} C${cx},${sy} ${cx},${ey} ${x2},${ey} L${x2},${ey + exploitFlowH} C${cx},${ey + exploitFlowH} ${cx},${sy + exploitFlowH} ${x1},${sy + exploitFlowH} Z`;
       flows.push({ d, gradId: `grad-e-${i}`, srcColor: src.color, dstColor: destColors.exploitable, delay: i * 0.12 });
-      exploitYAccum += exploitH_flow;
+      exploitYAccum += exploitFlowH;
     }
 
     // Not exploitable flow
     {
-      const sy = src.y + exploitH_flow;
+      const sy = src.y + exploitFlowH;
       const ey = notExploitYAccum;
-      const d = `M${x1},${sy} C${cx},${sy} ${cx},${ey} ${x2},${ey} L${x2},${ey + notExploitH_flow} C${cx},${ey + notExploitH_flow} ${cx},${sy + notExploitH_flow} ${x1},${sy + notExploitH_flow} Z`;
+      const d = `M${x1},${sy} C${cx},${sy} ${cx},${ey} ${x2},${ey} L${x2},${ey + notExploitFlowH} C${cx},${ey + notExploitFlowH} ${cx},${sy + notExploitFlowH} ${x1},${sy + notExploitFlowH} Z`;
       flows.push({ d, gradId: `grad-n-${i}`, srcColor: src.color, dstColor: destColors.notExploitable, delay: i * 0.12 + 0.05 });
-      notExploitYAccum += notExploitH_flow;
+      notExploitYAccum += notExploitFlowH;
     }
   });
 
