@@ -91,14 +91,16 @@ class RealtimeShell:
 
     def _run(self):
         """Main WebSocket loop with auto-reconnect."""
+        self.logger.info("[RealtimeShell] Thread iniciada, preparando conexão...")
         while not self._stop_event.is_set():
             try:
                 self._connect_and_listen()
             except Exception as e:
                 if self._stop_event.is_set():
                     break
-                self.logger.error(f"[RealtimeShell] Erro na conexão WebSocket: {e}")
+                self.logger.error(f"[RealtimeShell] Erro na conexão WebSocket: {e}", exc_info=True)
                 self._stop_event.wait(timeout=5)
+        self.logger.info("[RealtimeShell] Thread encerrada.")
 
     def _connect_and_listen(self):
         """Connect to Supabase Realtime and listen for events."""
