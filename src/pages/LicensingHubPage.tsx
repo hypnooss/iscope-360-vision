@@ -24,7 +24,71 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { Key, Shield, Globe, Cloud, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Info, Building2 } from 'lucide-react';
+import { Key, Shield, Globe, Cloud, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff, Info, Building2, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
+
+// ====== Sortable Head ======
+
+type SortDir = 'asc' | 'desc' | null;
+
+function SortableHead({ label, sortKey: colKey, activeSortKey, sortDir, onSort, className }: {
+  label: string;
+  sortKey: string;
+  activeSortKey: string | null;
+  sortDir: SortDir;
+  onSort: (key: string) => void;
+  className?: string;
+}) {
+  const isActive = activeSortKey === colKey;
+  const Icon = isActive && sortDir === 'asc' ? ArrowUp : isActive && sortDir === 'desc' ? ArrowDown : ChevronsUpDown;
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        className="flex items-center gap-1 hover:text-foreground transition-colors -my-1"
+        onClick={() => onSort(colKey)}
+      >
+        {label}
+        <Icon className={`w-3 h-3 ${isActive ? 'text-foreground' : 'text-muted-foreground'}`} />
+      </button>
+    </TableHead>
+  );
+}
+
+function usePersistentSort(storageKey: string) {
+  const [sortKey, setSortKey] = useState<string | null>(() => {
+    try { const s = localStorage.getItem(storageKey); return s ? JSON.parse(s).key : null; } catch { return null; }
+  });
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    try { const s = localStorage.getItem(storageKey); return s ? JSON.parse(s).dir : null; } catch { return null; }
+  });
+
+  const handleSort = (key: string) => {
+    let newKey: string | null, newDir: SortDir;
+    if (sortKey !== key) { newKey = key; newDir = 'asc'; }
+    else if (sortDir === 'asc') { newKey = key; newDir = 'desc'; }
+    else { newKey = null; newDir = null; }
+    setSortKey(newKey); setSortDir(newDir);
+    if (newKey && newDir) localStorage.setItem(storageKey, JSON.stringify({ key: newKey, dir: newDir }));
+    else localStorage.removeItem(storageKey);
+  };
+
+  return { sortKey, sortDir, handleSort };
+}
+
+function sortItems<T>(items: T[], sortKey: string | null, sortDir: SortDir, getVal: (item: T, key: string) => string | number | null): T[] {
+  if (!sortKey || !sortDir) return items;
+  const mul = sortDir === 'asc' ? 1 : -1;
+  return [...items].sort((a, b) => {
+    const va = getVal(a, sortKey);
+    const vb = getVal(b, sortKey);
+    if (typeof va === 'number' || typeof vb === 'number') {
+      const na = typeof va === 'number' ? va : (sortDir === 'asc' ? Infinity : -Infinity);
+      const nb = typeof vb === 'number' ? vb : (sortDir === 'asc' ? Infinity : -Infinity);
+      return (na - nb) * mul;
+    }
+    return String(va ?? '').localeCompare(String(vb ?? ''), 'pt-BR', { sensitivity: 'base' }) * mul;
+  });
+}
 
 // ====== Helpers ======
 
@@ -187,6 +251,12 @@ export default function LicensingHubPage() {
   const [activeTab, setActiveTab] = useState('firewalls');
   const [showOldExpired, setShowOldExpired] = useState(false);
 
+  // Persistent sort per tab
+  const fwSort = usePersistentSort('licensing-sort-firewalls');
+  const tlsSort = usePersistentSort('licensing-sort-tls');
+  const domSort = usePersistentSort('licensing-sort-domains');
+  const m365Sort = usePersistentSort('licensing-sort-m365');
+
   // Tab-specific summary
   const displaySummary = useMemo(() => {
     const countStatus = (items: { daysLeft: number | null }[]) => {
@@ -250,6 +320,31 @@ export default function LicensingHubPage() {
     return domainWhois.filter(d => matchesFilter(d.daysLeft, activeFilter));
   }, [domainWhois, activeFilter]);
 
+  // Sorted data
+  const sortedFirewalls = useMemo(() => sortItems(filteredFirewalls, fwSort.sortKey, fwSort.sortDir, (fw, key) => {
+    if (key === 'firewallName') return fw.firewallName;
+    if (key === 'model') return fw.model ?? '';
+    if (key === 'workspaceName') return fw.workspaceName;
+    if (key === 'forticareDays') return fw.forticare.daysLeft;
+    return '';
+  }), [filteredFirewalls, fwSort.sortKey, fwSort.sortDir]);
+
+  const sortedTls = useMemo(() => sortItems(filteredTls, tlsSort.sortKey, tlsSort.sortDir, (cert, key) => {
+    if (key === 'ipPort') return `${cert.ip}:${cert.port}`;
+    if (key === 'subjectCn') return cert.subjectCn;
+    if (key === 'issuer') return cert.issuer;
+    if (key === 'daysLeft') return cert.daysLeft;
+    return '';
+  }), [filteredTls, tlsSort.sortKey, tlsSort.sortDir]);
+
+  const sortedDomains = useMemo(() => sortItems(filteredDomains, domSort.sortKey, domSort.sortDir, (d, key) => {
+    if (key === 'domain') return d.domain;
+    if (key === 'clientName') return d.clientName;
+    if (key === 'registrar') return d.registrar ?? '';
+    if (key === 'daysLeft') return d.daysLeft;
+    return '';
+  }), [filteredDomains, domSort.sortKey, domSort.sortDir]);
+
   const shouldHideM365 = (lic: { daysLeft: number | null; capabilityStatus: string }) =>
     lic.capabilityStatus === 'Suspended' ||
     (lic.daysLeft !== null && lic.daysLeft < -60);
@@ -259,6 +354,16 @@ export default function LicensingHubPage() {
     const hidden = filteredM365.filter(lic => shouldHideM365(lic));
     return { visibleM365: showOldExpired ? filteredM365 : visible, hiddenM365Count: hidden.length };
   }, [filteredM365, showOldExpired]);
+
+  const sortedM365 = useMemo(() => sortItems(visibleM365, m365Sort.sortKey, m365Sort.sortDir, (lic, key) => {
+    if (key === 'tenantDisplayName') return lic.tenantDisplayName;
+    if (key === 'displayName') return lic.displayName;
+    if (key === 'capabilityStatus') return lic.capabilityStatus;
+    if (key === 'totalUnits') return lic.totalUnits;
+    if (key === 'consumedUnits') return lic.consumedUnits;
+    if (key === 'daysLeft') return lic.daysLeft;
+    return '';
+  }), [visibleM365, m365Sort.sortKey, m365Sort.sortDir]);
 
   return (
     <AppLayout>
@@ -391,16 +496,16 @@ export default function LicensingHubPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Firewall</TableHead>
-                      <TableHead>Modelo</TableHead>
-                      <TableHead>Workspace</TableHead>
-                      <TableHead>FortiCare</TableHead>
+                      <SortableHead label="Firewall" sortKey="firewallName" activeSortKey={fwSort.sortKey} sortDir={fwSort.sortDir} onSort={fwSort.handleSort} />
+                      <SortableHead label="Modelo" sortKey="model" activeSortKey={fwSort.sortKey} sortDir={fwSort.sortDir} onSort={fwSort.handleSort} />
+                      <SortableHead label="Workspace" sortKey="workspaceName" activeSortKey={fwSort.sortKey} sortDir={fwSort.sortDir} onSort={fwSort.handleSort} />
+                      <SortableHead label="FortiCare" sortKey="forticareDays" activeSortKey={fwSort.sortKey} sortDir={fwSort.sortDir} onSort={fwSort.handleSort} />
                       <TableHead>Serviços FortiGuard</TableHead>
                       <TableHead>Ciclo de Vida</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredFirewalls.map(fw => (
+                    {sortedFirewalls.map(fw => (
                       <TableRow key={fw.firewallId}>
                         <TableCell className="font-medium">{fw.firewallName}</TableCell>
                         <TableCell className="text-muted-foreground text-sm">{fw.model || '—'}</TableCell>
@@ -457,15 +562,15 @@ export default function LicensingHubPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>IP / Porta</TableHead>
-                      <TableHead>Subject CN</TableHead>
-                      <TableHead>Issuer</TableHead>
-                      <TableHead>Expiração</TableHead>
+                      <SortableHead label="IP / Porta" sortKey="ipPort" activeSortKey={tlsSort.sortKey} sortDir={tlsSort.sortDir} onSort={tlsSort.handleSort} />
+                      <SortableHead label="Subject CN" sortKey="subjectCn" activeSortKey={tlsSort.sortKey} sortDir={tlsSort.sortDir} onSort={tlsSort.handleSort} />
+                      <SortableHead label="Issuer" sortKey="issuer" activeSortKey={tlsSort.sortKey} sortDir={tlsSort.sortDir} onSort={tlsSort.handleSort} />
+                      <SortableHead label="Expiração" sortKey="daysLeft" activeSortKey={tlsSort.sortKey} sortDir={tlsSort.sortDir} onSort={tlsSort.handleSort} />
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredTls.map((cert, i) => (
+                    {sortedTls.map((cert, i) => (
                       <TableRow key={`${cert.ip}-${cert.port}-${i}`}>
                         <TableCell className="font-mono text-sm">{cert.ip}:{cert.port}</TableCell>
                         <TableCell className="font-medium">{cert.subjectCn}</TableCell>
@@ -499,16 +604,16 @@ export default function LicensingHubPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Domínio</TableHead>
-                      <TableHead>Workspace</TableHead>
-                      <TableHead>Registrar</TableHead>
+                      <SortableHead label="Domínio" sortKey="domain" activeSortKey={domSort.sortKey} sortDir={domSort.sortDir} onSort={domSort.handleSort} />
+                      <SortableHead label="Workspace" sortKey="clientName" activeSortKey={domSort.sortKey} sortDir={domSort.sortDir} onSort={domSort.handleSort} />
+                      <SortableHead label="Registrar" sortKey="registrar" activeSortKey={domSort.sortKey} sortDir={domSort.sortDir} onSort={domSort.handleSort} />
                       <TableHead>Registro</TableHead>
-                      <TableHead>Expiração</TableHead>
+                      <SortableHead label="Expiração" sortKey="daysLeft" activeSortKey={domSort.sortKey} sortDir={domSort.sortDir} onSort={domSort.handleSort} />
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredDomains.map(d => (
+                    {sortedDomains.map(d => (
                       <TableRow key={d.domainId}>
                         <TableCell className="font-medium">{d.domain}</TableCell>
                         <TableCell className="text-muted-foreground">{d.clientName}</TableCell>
@@ -574,16 +679,16 @@ export default function LicensingHubPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Tenant</TableHead>
-                          <TableHead>Licença</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="text-right">Total</TableHead>
-                          <TableHead className="text-right">Em uso</TableHead>
-                          <TableHead>Vencimento</TableHead>
+                          <SortableHead label="Tenant" sortKey="tenantDisplayName" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} />
+                          <SortableHead label="Licença" sortKey="displayName" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} />
+                          <SortableHead label="Status" sortKey="capabilityStatus" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} />
+                          <SortableHead label="Total" sortKey="totalUnits" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} className="text-right" />
+                          <SortableHead label="Em uso" sortKey="consumedUnits" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} className="text-right" />
+                          <SortableHead label="Vencimento" sortKey="daysLeft" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {visibleM365.map((lic, i) => (
+                        {sortedM365.map((lic, i) => (
                           <TableRow key={`${lic.skuPartNumber}-${i}`} className={lic.daysLeft !== null && lic.daysLeft < -60 ? 'opacity-50' : ''}>
                             <TableCell className="text-muted-foreground">{lic.tenantDisplayName}</TableCell>
                             <TableCell className="font-medium">{lic.displayName}</TableCell>
