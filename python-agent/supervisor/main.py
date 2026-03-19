@@ -157,9 +157,11 @@ def main():
         # --- Resolve versions from disk ---
         agent_version = _read_version_from_disk(WORKER_INSTALL_DIR, "agent")
         if not agent_version:
-            from agent.version import get_version
-            agent_version = get_version()
-            logger.warning(f"[Supervisor] Não foi possível ler versão do agent do disco, usando fallback: {agent_version}")
+            try:
+                from agent.version import get_version
+                agent_version = get_version()
+            except Exception:
+                agent_version = None
 
         monitor_version = _read_version_from_disk(WORKER_INSTALL_DIR, "monitor")
         if not monitor_version:
