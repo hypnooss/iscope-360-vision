@@ -1,55 +1,36 @@
+## Problema: Tasks pendentes não expiram automaticamente
 
+### Causa raiz
+1. `expires_at` é apenas um timestamp — não aciona mudança de status automaticamente
+2. O cleanup no `trigger-firewall-analyzer` rodava **depois** da verificação de agent offline, então com agent offline as tasks nunca eram limpas
+3. Não existia rotina global periódica para limpar tasks expiradas
 
-## Problema
+### Correções implementadas
 
-O snapshot do analyzer fica eternamente com `status = 'pending'` porque:
-1. A `agent_task` associada expira após 1h (`expires_at`), mas o snapshot nunca é atualizado
-2. A limpeza no `trigger-firewall-analyzer` só marca tasks como `timeout`, não os snapshots
-3. O hook `useAnalyzerProgress` não valida idade do snapshot — se o último está `pending`, mostra "em andamento" para sempre
+#### 1. Reordenação do cleanup (trigger-firewall-analyzer)
+- Cleanup de tasks expiradas e snapshots órfãos agora roda **antes** da verificação de agent offline
+- Mesmo com agent offline, tentativas de trigger limpam o passivo
 
-## Correções
+#### 2. Edge Function global: `cleanup-expired-tasks`
+- Limpa **todas** as `agent_tasks` expiradas (qualquer task_type)
+- Limpa snapshots órfãos de `analyzer_snapshots` e `m365_analyzer_snapshots`
+- Pronta para ser chamada via cron a cada 5 minutos
 
-### 1. Frontend: Tratar snapshots antigos como expirados no hook `useAnalyzerProgress`
-**Arquivo:** `src/hooks/useAnalyzerData.ts`
+#### 3. UI: TaskExecutionsPage
+- `hasActiveTasks` agora ignora tasks pendentes com `expires_at` já vencido
 
-Adicionar verificação de tempo: se o snapshot está `pending`/`processing` há mais de 60 minutos (mesmo TTL da task), tratá-lo como `timeout` no frontend, evitando a exibição eterna do progress card.
-
-```typescript
-// Se snapshot pending/processing > 60min, considerar expirado
-const elapsed = Math.floor((Date.now() - new Date(snap.created_at).getTime()) / 1000);
-if (elapsed > 3600) {
-  return { status: 'timeout', elapsed: null };
-}
-```
-
-### 2. Backend: Limpar snapshots órfãos junto com as tasks no `trigger-firewall-analyzer`
-**Arquivo:** `supabase/functions/trigger-firewall-analyzer/index.ts`
-
-Após as queries de cleanup de tasks expiradas (linhas ~123-133), adicionar update nos snapshots correspondentes:
-
-```typescript
-// Também marcar snapshots órfãos como timeout
-await supabase
-  .from('analyzer_snapshots')
-  .update({ status: 'failed' })
-  .eq('firewall_id', firewall_id)
-  .in('status', ['pending', 'running'])
-  .lt('created_at', staleThreshold);
-```
-
-### 3. Correção imediata: Atualizar manualmente o snapshot preso
-O snapshot atual que está preso há 838min precisa ser marcado como `failed` no banco. Isso pode ser feito via SQL no Supabase Dashboard:
-
+#### 4. Pendente: Configurar cron job
+Executar no SQL Editor do Supabase:
 ```sql
-UPDATE analyzer_snapshots 
-SET status = 'failed' 
-WHERE firewall_id = '<id-do-firewall>' 
-  AND status IN ('pending', 'running') 
-  AND created_at < NOW() - INTERVAL '1 hour';
+SELECT cron.schedule(
+  'cleanup-expired-tasks-every-5min',
+  '*/5 * * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://akbosdbyheezghieiefz.supabase.co/functions/v1/cleanup-expired-tasks',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrYm9zZGJ5aGVlemdoaWVpZWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTEyODAsImV4cCI6MjA4NTE4NzI4MH0.9n-nUenSCwYIGztsfgVAbgis9wEakQDKX3Oe2xBiNvo"}'::jsonb,
+    body:='{"time": "now"}'::jsonb
+  ) AS request_id;
+  $$
+);
 ```
-
-### Resumo
-- **Hook frontend** ganha timeout de 60min para não ficar preso
-- **Edge Function** limpa snapshots órfãos quando nova análise é disparada
-- **Fix manual** resolve o snapshot atual imediatamente
-
