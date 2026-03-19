@@ -307,6 +307,9 @@ export function SteppedShowcase() {
     offset: ['start start', 'end end'],
   });
 
+  // Track whether the section top has reached the viewport top
+  const stickyVisible = currentProgress > 0.01;
+
   useMotionValueEvent(scrollYProgress, 'change', (v) => {
     setCurrentProgress(v);
   });
