@@ -307,6 +307,9 @@ export function SteppedShowcase() {
     offset: ['start start', 'end end'],
   });
 
+  // Track whether the section top has reached the viewport top
+  const stickyVisible = currentProgress > 0.01;
+
   useMotionValueEvent(scrollYProgress, 'change', (v) => {
     setCurrentProgress(v);
   });
@@ -375,11 +378,12 @@ export function SteppedShowcase() {
 
   return (
     <section ref={containerRef} className="relative z-0" style={{ height: '400vh' }}>
+
       {/* Invisible anchors for ScrollDownIndicator step navigation */}
       <div data-section className="absolute top-0 w-px h-px" aria-hidden="true" />
       <div data-section className="absolute w-px h-px" style={{ top: '133.33vh' }} aria-hidden="true" />
       <div data-section className="absolute w-px h-px" style={{ top: '266.66vh' }} aria-hidden="true" />
-      <div className="sticky top-[72px] h-[calc(100vh-72px)] overflow-hidden flex flex-col">
+      <div className={`sticky top-[72px] h-[calc(100vh-72px)] overflow-hidden flex flex-col transition-opacity duration-300 ${stickyVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <ProgressBar scrollProgress={currentProgress} />
 
         <div className="flex-1 flex items-center pt-6">
