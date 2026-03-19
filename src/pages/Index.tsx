@@ -282,7 +282,7 @@ const Index = () => {
                 stat: '6+', statLabel: 'ferramentas por equipe em média',
               },
             ].map((item, i) => (
-              <Reveal key={item.title} delay={i * 0.12}>
+              <Reveal key={item.title} delay={i * 0.12} variant={i === 1 ? fadeUp : i === 0 ? fadeLeft : fadeRight}>
                 <div className="glass-container p-8 h-full flex flex-col group hover:-translate-y-1 transition-transform duration-300">
                   <div className="inline-flex p-3 rounded-xl bg-destructive/10 mb-5 self-start group-hover:bg-destructive/15 transition-colors duration-300">
                     <item.icon className="w-5 h-5 text-destructive" />
