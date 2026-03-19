@@ -591,32 +591,36 @@ export function SteppedShowcase() {
                 style={{ opacity: step2.opacity, pointerEvents: step2.opacity > 0.3 ? 'auto' : 'none' }}
                 className="absolute inset-0 flex flex-col justify-center gap-3 max-w-md ml-auto"
               >
-                {/* CVE Header card */}
+                {/* CVE Header card — matches CVECard layout */}
                 <motion.div
-                  className="glass-container px-5 py-4 rounded-xl mb-1"
+                  className="rounded-xl w-full border border-destructive/15 bg-card/80 backdrop-blur-sm overflow-hidden mb-1"
                   style={{ opacity: step2.opacity }}
                   initial={{ scale: 0.95 }}
                   animate={{ scale: step2.opacity > 0.5 ? 1 : 0.95 }}
                   transition={{ duration: 0.5, ease: EASE }}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
-                      <span className="font-mono text-sm font-semibold text-foreground">CVE-2024-21762</span>
+                  <div className="flex items-center justify-between px-5 pt-4 pb-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full border border-destructive/30 bg-destructive/10 flex items-center justify-center shrink-0">
+                        <div className="w-2.5 h-2.5 rounded-full bg-destructive animate-pulse" />
+                      </div>
+                      <div>
+                        <span className="font-mono text-base font-bold text-foreground tracking-tight">CVE-2024-21762</span>
+                        <div className="text-sm text-muted-foreground mt-0.5">FortiOS SSL-VPN • Out-of-bounds Write</div>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-destructive/15 text-destructive font-bold border border-destructive/20">
-                        CVSS 9.8
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-destructive/10 text-destructive/70 border border-destructive/15">
-                        Critical
-                      </span>
+                      <div className="flex items-center justify-center px-2.5 h-8 rounded-lg bg-destructive/15 border border-destructive/30">
+                        <span className="font-mono text-sm font-bold text-destructive">9.8</span>
+                      </div>
+                      <div className="flex items-center justify-center px-2.5 h-8 rounded-lg bg-destructive/10 border border-destructive/20">
+                        <span className="font-mono text-xs font-semibold text-destructive">Critical</span>
+                      </div>
                     </div>
                   </div>
-                  <div className="text-xs text-muted-foreground mb-2">FortiOS SSL-VPN • Out-of-bounds Write</div>
-                  <div className="flex gap-1.5">
+                  <div className="flex flex-wrap gap-2 px-5 pb-4 pt-1">
                     {['Exploitable', 'In the Wild', 'CISA KEV'].map((t) => (
-                      <span key={t} className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-destructive/8 text-destructive/60 border border-destructive/10">
+                      <span key={t} className="px-2.5 py-1 rounded-md text-xs font-mono tracking-wide text-destructive border border-destructive/20 bg-destructive/5">
                         {t}
                       </span>
                     ))}
