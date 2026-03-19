@@ -376,7 +376,7 @@ export function SteppedShowcase() {
   const stepValues = [step0, step1, step2];
 
   return (
-    <section ref={containerRef} className="relative z-0" style={{ height: '500vh' }}>
+    <section ref={containerRef} className="relative z-[-1]" style={{ height: '500vh' }}>
       {/* Invisible anchors for ScrollDownIndicator step navigation */}
       <div data-section className="absolute top-[100vh] w-px h-px" aria-hidden="true" />
       <div data-section className="absolute w-px h-px" style={{ top: '233.33vh' }} aria-hidden="true" />
