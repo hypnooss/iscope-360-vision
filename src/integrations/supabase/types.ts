@@ -112,6 +112,92 @@ export type Database = {
           },
         ]
       }
+      agent_metrics: {
+        Row: {
+          agent_id: string
+          collected_at: string | null
+          cpu_count: number | null
+          cpu_percent: number | null
+          created_at: string | null
+          disk_path: string | null
+          disk_percent: number | null
+          disk_total_gb: number | null
+          disk_used_gb: number | null
+          hostname: string | null
+          id: string
+          load_avg_15m: number | null
+          load_avg_1m: number | null
+          load_avg_5m: number | null
+          monitor_version: string | null
+          net_bytes_recv: number | null
+          net_bytes_sent: number | null
+          os_info: string | null
+          process_count: number | null
+          ram_percent: number | null
+          ram_total_mb: number | null
+          ram_used_mb: number | null
+          uptime_seconds: number | null
+        }
+        Insert: {
+          agent_id: string
+          collected_at?: string | null
+          cpu_count?: number | null
+          cpu_percent?: number | null
+          created_at?: string | null
+          disk_path?: string | null
+          disk_percent?: number | null
+          disk_total_gb?: number | null
+          disk_used_gb?: number | null
+          hostname?: string | null
+          id?: string
+          load_avg_15m?: number | null
+          load_avg_1m?: number | null
+          load_avg_5m?: number | null
+          monitor_version?: string | null
+          net_bytes_recv?: number | null
+          net_bytes_sent?: number | null
+          os_info?: string | null
+          process_count?: number | null
+          ram_percent?: number | null
+          ram_total_mb?: number | null
+          ram_used_mb?: number | null
+          uptime_seconds?: number | null
+        }
+        Update: {
+          agent_id?: string
+          collected_at?: string | null
+          cpu_count?: number | null
+          cpu_percent?: number | null
+          created_at?: string | null
+          disk_path?: string | null
+          disk_percent?: number | null
+          disk_total_gb?: number | null
+          disk_used_gb?: number | null
+          hostname?: string | null
+          id?: string
+          load_avg_15m?: number | null
+          load_avg_1m?: number | null
+          load_avg_5m?: number | null
+          monitor_version?: string | null
+          net_bytes_recv?: number | null
+          net_bytes_sent?: number | null
+          os_info?: string | null
+          process_count?: number | null
+          ram_percent?: number | null
+          ram_total_mb?: number | null
+          ram_used_mb?: number | null
+          uptime_seconds?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_metrics_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_tasks: {
         Row: {
           agent_id: string
@@ -3146,6 +3232,7 @@ export type Database = {
         Args: { _admin_id: string; _target_user_id: string }
         Returns: boolean
       }
+      cleanup_old_agent_metrics: { Args: never; Returns: undefined }
       cleanup_old_step_results: { Args: never; Returns: number }
       cleanup_stuck_tasks: { Args: never; Returns: undefined }
       get_ext_domain_dashboard_summary: {
