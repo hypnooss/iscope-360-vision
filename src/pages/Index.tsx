@@ -68,7 +68,7 @@ function Section({ children, className = '', id, variant = stagger }: { children
       whileInView="visible"
       viewport={{ once: true, amount: 0.4 }}
       variants={variant}
-      className={`py-[160px] px-6 ${className}`}
+      className={`py-[160px] px-6 overflow-hidden ${className}`}
     >
       <div className="max-w-[1200px] mx-auto w-full">
         {children}
