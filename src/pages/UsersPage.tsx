@@ -36,7 +36,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Edit, Shield, Loader2, Building, Building2, Layers, Trash2, Eye, Search } from "lucide-react";
+import { Users, Edit, Shield, Loader2, Building, Building2, Layers, Trash2, Eye, Search, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { InviteUserDialog } from "@/components/InviteUserDialog";
 import { PreviewUserDialog } from "@/components/preview/PreviewUserDialog";
