@@ -604,16 +604,16 @@ export default function LicensingHubPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Domínio</TableHead>
-                      <TableHead>Workspace</TableHead>
-                      <TableHead>Registrar</TableHead>
+                      <SortableHead label="Domínio" sortKey="domain" activeSortKey={domSort.sortKey} sortDir={domSort.sortDir} onSort={domSort.handleSort} />
+                      <SortableHead label="Workspace" sortKey="clientName" activeSortKey={domSort.sortKey} sortDir={domSort.sortDir} onSort={domSort.handleSort} />
+                      <SortableHead label="Registrar" sortKey="registrar" activeSortKey={domSort.sortKey} sortDir={domSort.sortDir} onSort={domSort.handleSort} />
                       <TableHead>Registro</TableHead>
-                      <TableHead>Expiração</TableHead>
+                      <SortableHead label="Expiração" sortKey="daysLeft" activeSortKey={domSort.sortKey} sortDir={domSort.sortDir} onSort={domSort.handleSort} />
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredDomains.map(d => (
+                    {sortedDomains.map(d => (
                       <TableRow key={d.domainId}>
                         <TableCell className="font-medium">{d.domain}</TableCell>
                         <TableCell className="text-muted-foreground">{d.clientName}</TableCell>
