@@ -109,6 +109,22 @@ const Index = () => {
       </div>
 
       <main className="flex-1 relative">
+        {/* Continuous blurrable background layer — sits inside the flow so
+            backdrop-filter on cards can actually sample it, unlike the fixed
+            WebGL canvas that's isolated behind the opaque body. */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          aria-hidden="true"
+          style={{
+            background: `
+              radial-gradient(ellipse 80% 50% at 50% 20%, hsl(175 80% 45% / 0.07) 0%, transparent 70%),
+              radial-gradient(ellipse 60% 40% at 80% 60%, hsl(190 80% 40% / 0.05) 0%, transparent 60%),
+              radial-gradient(ellipse 50% 30% at 20% 80%, hsl(270 70% 60% / 0.04) 0%, transparent 60%),
+              linear-gradient(180deg, hsl(220 20% 7% / 0.0) 0%, hsl(220 20% 5% / 0.3) 50%, hsl(220 20% 7% / 0.0) 100%)
+            `,
+          }}
+        />
+
         <section id="hero" data-section className="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
           <motion.div
             initial="hidden"
