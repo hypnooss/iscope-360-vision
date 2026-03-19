@@ -304,8 +304,9 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
     fileInputId: string,
     onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void,
     onPublish: () => void,
+    colorClass: { border: string; bg: string; btn: string; switchClass: string },
   ) => (
-    <div className="space-y-4 p-4 border rounded-lg">
+    <div className={`space-y-4 p-4 rounded-lg border-l-4 border ${colorClass.border} ${colorClass.bg}`}>
       <h4 className="font-medium flex items-center gap-2">
         {icon}
         Publicar {label}
@@ -339,11 +340,13 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
       )}
 
       <div className="flex items-center space-x-2">
-        <Switch id={`${prefix}ForceUpdate`} checked={forceUpdate} onCheckedChange={setForceUpdate} />
+        <div className={colorClass.switchClass}>
+          <Switch id={`${prefix}ForceUpdate`} checked={forceUpdate} onCheckedChange={setForceUpdate} />
+        </div>
         <Label htmlFor={`${prefix}ForceUpdate`} className="cursor-pointer">Forçar atualização</Label>
       </div>
 
-      <Button onClick={onPublish} disabled={!file || !version || publishing || calculatingCs} className="w-full sm:w-auto">
+      <Button onClick={onPublish} disabled={!file || !version || publishing || calculatingCs} className={`w-full sm:w-auto ${colorClass.btn}`}>
         {publishing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
         Publicar {label}
       </Button>
