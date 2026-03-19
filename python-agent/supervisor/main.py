@@ -178,14 +178,20 @@ def main():
             if should_realtime and not realtime_active:
                 if SUPABASE_URL and SUPABASE_ANON_KEY:
                     logger.info("[Supervisor] Heartbeat solicitou início do Realtime Shell (WebSocket).")
-                    realtime_shell = RealtimeShell(
-                        supabase_url=SUPABASE_URL,
-                        anon_key=SUPABASE_ANON_KEY,
-                        agent_id=str(state.get("agent_id", "")),
-                        logger=logger,
-                    )
-                    realtime_shell.start()
-                    realtime_active = True
+                    try:
+                        realtime_shell = RealtimeShell(
+                            supabase_url=SUPABASE_URL,
+                            anon_key=SUPABASE_ANON_KEY,
+                            agent_id=str(state.get("agent_id", "")),
+                            logger=logger,
+                        )
+                        realtime_shell.start()
+                        realtime_active = True
+                        logger.info("[Supervisor] RealtimeShell thread iniciada com sucesso.")
+                    except Exception as e:
+                        logger.error(f"[Supervisor] Falha ao iniciar RealtimeShell: {e}", exc_info=True)
+                        realtime_shell = None
+                        realtime_active = False
                 else:
                     logger.warning("[Supervisor] Realtime Shell solicitado mas SUPABASE_URL/ANON_KEY não configurados.")
             elif not should_realtime and realtime_active:

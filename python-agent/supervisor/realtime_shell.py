@@ -33,6 +33,8 @@ class RealtimeShell:
     """Bidirectional shell over Supabase Realtime Broadcast channel."""
 
     def __init__(self, supabase_url: str, anon_key: str, agent_id: str, logger):
+        if not supabase_url or not anon_key:
+            raise ValueError("SUPABASE_URL e SUPABASE_ANON_KEY são obrigatórios para RealtimeShell")
         self.supabase_url = supabase_url.rstrip("/")
         self.anon_key = anon_key
         self.agent_id = agent_id
@@ -89,19 +91,21 @@ class RealtimeShell:
 
     def _run(self):
         """Main WebSocket loop with auto-reconnect."""
+        self.logger.info("[RealtimeShell] Thread iniciada, preparando conexão...")
         while not self._stop_event.is_set():
             try:
                 self._connect_and_listen()
             except Exception as e:
                 if self._stop_event.is_set():
                     break
-                self.logger.error(f"[RealtimeShell] Erro na conexão WebSocket: {e}")
+                self.logger.error(f"[RealtimeShell] Erro na conexão WebSocket: {e}", exc_info=True)
                 self._stop_event.wait(timeout=5)
+        self.logger.info("[RealtimeShell] Thread encerrada.")
 
     def _connect_and_listen(self):
         """Connect to Supabase Realtime and listen for events."""
         url = self._build_ws_url()
-        self.logger.info(f"[RealtimeShell] Conectando ao Supabase Realtime...")
+        self.logger.info(f"[RealtimeShell] Conectando: {url[:80]}...")
 
         self._ws = websocket.WebSocketApp(
             url,
