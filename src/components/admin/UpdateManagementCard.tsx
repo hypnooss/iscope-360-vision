@@ -415,6 +415,10 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
     </div>
   );
 
+  const agentColors = { border: 'border-l-blue-500 border-blue-500/30', bg: 'bg-blue-500/5', btn: 'bg-blue-600 hover:bg-blue-700', switchClass: '[&_button[data-state=checked]]:bg-blue-600' };
+  const supervisorColors = { border: 'border-l-violet-500 border-violet-500/30', bg: 'bg-violet-500/5', btn: 'bg-violet-600 hover:bg-violet-700', switchClass: '[&_button[data-state=checked]]:bg-violet-600' };
+  const monitorColors = { border: 'border-l-emerald-500 border-emerald-500/30', bg: 'bg-emerald-500/5', btn: 'bg-emerald-600 hover:bg-emerald-700', switchClass: '[&_button[data-state=checked]]:bg-emerald-600' };
+
   return (
     <Card className="border-border/50">
       <CardHeader>
@@ -424,39 +428,43 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
             <CardDescription>Publique novas versões do Agent, Supervisor e Monitor para atualização automática</CardDescription>
           </div>
           <div className="flex gap-2 flex-wrap">
-            {agentLatestVersion && <Badge variant="outline" className="text-sm">Agent: v{agentLatestVersion}</Badge>}
-            {supervisorLatestVersion && <Badge variant="outline" className="text-sm">Supervisor: v{supervisorLatestVersion}</Badge>}
-            {monitorLatestVersion && <Badge variant="outline" className="text-sm">Monitor: v{monitorLatestVersion}</Badge>}
+            {agentLatestVersion && <Badge variant="outline" className="text-sm border-blue-500/50 text-blue-600">Agent: v{agentLatestVersion}</Badge>}
+            {supervisorLatestVersion && <Badge variant="outline" className="text-sm border-violet-500/50 text-violet-600">Supervisor: v{supervisorLatestVersion}</Badge>}
+            {monitorLatestVersion && <Badge variant="outline" className="text-sm border-emerald-500/50 text-emerald-600">Monitor: v{monitorLatestVersion}</Badge>}
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-8">
+      <CardContent className="space-y-10">
         {/* Agent Row */}
         <div className="grid gap-6 lg:grid-cols-2">
           {renderPublishSection(
-            <Bot className="w-4 h-4" />, 'Agent', 'agent',
+            <Bot className="w-4 h-4 text-blue-600" />, 'Agent', 'agent',
             newVersion, setNewVersion,
             selectedFile, calculatedChecksum, calculatingChecksum,
             agentForceUpdate, setAgentForceUpdate,
             publishingUpdate, 'agentPackageFile',
             (e) => { const f = e.target.files?.[0]; if (f) handleGenericFileSelect(f, setSelectedFile, setCalculatedChecksum, setCalculatingChecksum); },
             () => handleGenericPublish('agent', newVersion, selectedFile, calculatedChecksum, agentForceUpdate, setPublishingUpdate, setAgentLatestVersion, setNewVersion, setSelectedFile, setCalculatedChecksum, 'agentPackageFile'),
+            agentColors,
           )}
-          {renderStatusSection('Agents', agentLatestVersion, 'Agent', agentStats.total, agentStats.upToDate, agentStats.outdated, 'version')}
+          {renderStatusSection('Agents', agentLatestVersion, 'Agent', agentStats.total, agentStats.upToDate, agentStats.outdated, 'version', agentColors)}
         </div>
+
+        <Separator />
 
         {/* Supervisor Row */}
         <div className="grid gap-6 lg:grid-cols-2">
           {renderPublishSection(
-            <Layers className="w-4 h-4" />, 'Supervisor', 'supervisor',
+            <Layers className="w-4 h-4 text-violet-600" />, 'Supervisor', 'supervisor',
             newSupervisorVersion, setNewSupervisorVersion,
             selectedSupervisorFile, supervisorChecksum, calculatingSupervisorChecksum,
             supervisorForceUpdate, setSupervisorForceUpdate,
             publishingSupervisorUpdate, 'supervisorPackageFile',
             (e) => { const f = e.target.files?.[0]; if (f) handleGenericFileSelect(f, setSelectedSupervisorFile, setSupervisorChecksum, setCalculatingSupervisorChecksum); },
             () => handleGenericPublish('supervisor', newSupervisorVersion, selectedSupervisorFile, supervisorChecksum, supervisorForceUpdate, setPublishingSupervisorUpdate, setSupervisorLatestVersion, setNewSupervisorVersion, setSelectedSupervisorFile, setSupervisorChecksum, 'supervisorPackageFile'),
+            supervisorColors,
           )}
-          {renderStatusSection('Supervisors', supervisorLatestVersion, 'Sup', supervisorStats.total, supervisorStats.upToDate, supervisorStats.outdated, 'supervisorVersion',
+          {renderStatusSection('Supervisors', supervisorLatestVersion, 'Sup', supervisorStats.total, supervisorStats.upToDate, supervisorStats.outdated, 'supervisorVersion', supervisorColors,
             supervisorStats.withoutSupervisor > 0 ? (
               <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border">
                 <Info className="w-5 h-5 text-muted-foreground" />
@@ -469,18 +477,21 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
           )}
         </div>
 
+        <Separator />
+
         {/* Monitor Row */}
         <div className="grid gap-6 lg:grid-cols-2">
           {renderPublishSection(
-            <Activity className="w-4 h-4" />, 'Monitor', 'monitor',
+            <Activity className="w-4 h-4 text-emerald-600" />, 'Monitor', 'monitor',
             newMonitorVersion, setNewMonitorVersion,
             selectedMonitorFile, monitorChecksum, calculatingMonitorChecksum,
             monitorForceUpdate, setMonitorForceUpdate,
             publishingMonitorUpdate, 'monitorPackageFile',
             (e) => { const f = e.target.files?.[0]; if (f) handleGenericFileSelect(f, setSelectedMonitorFile, setMonitorChecksum, setCalculatingMonitorChecksum); },
             () => handleGenericPublish('monitor', newMonitorVersion, selectedMonitorFile, monitorChecksum, monitorForceUpdate, setPublishingMonitorUpdate, setMonitorLatestVersion, setNewMonitorVersion, setSelectedMonitorFile, setMonitorChecksum, 'monitorPackageFile'),
+            monitorColors,
           )}
-          {renderStatusSection('Monitors', monitorLatestVersion, 'Mon', monitorStats.total, monitorStats.upToDate, monitorStats.outdated, 'monitorVersion',
+          {renderStatusSection('Monitors', monitorLatestVersion, 'Mon', monitorStats.total, monitorStats.upToDate, monitorStats.outdated, 'monitorVersion', monitorColors,
             monitorStats.withoutMonitor > 0 ? (
               <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border">
                 <Info className="w-5 h-5 text-muted-foreground" />
