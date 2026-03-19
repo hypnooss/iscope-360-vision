@@ -218,7 +218,7 @@ const Index = () => {
           </div>
         </Section>
 
-        <Section id="real-problem" variant={staggerWide}>
+        <Section id="real-problem">
           <Reveal>
             <div className="text-center mb-4">
               <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4 leading-tight">
