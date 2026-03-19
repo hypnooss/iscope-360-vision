@@ -251,6 +251,12 @@ export default function LicensingHubPage() {
   const [activeTab, setActiveTab] = useState('firewalls');
   const [showOldExpired, setShowOldExpired] = useState(false);
 
+  // Persistent sort per tab
+  const fwSort = usePersistentSort('licensing-sort-firewalls');
+  const tlsSort = usePersistentSort('licensing-sort-tls');
+  const domSort = usePersistentSort('licensing-sort-domains');
+  const m365Sort = usePersistentSort('licensing-sort-m365');
+
   // Tab-specific summary
   const displaySummary = useMemo(() => {
     const countStatus = (items: { daysLeft: number | null }[]) => {
