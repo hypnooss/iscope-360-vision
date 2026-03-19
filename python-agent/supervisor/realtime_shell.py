@@ -105,7 +105,7 @@ class RealtimeShell:
     def _connect_and_listen(self):
         """Connect to Supabase Realtime and listen for events."""
         url = self._build_ws_url()
-        self.logger.info(f"[RealtimeShell] Conectando ao Supabase Realtime...")
+        self.logger.info(f"[RealtimeShell] Conectando: {url[:80]}...")
 
         self._ws = websocket.WebSocketApp(
             url,
