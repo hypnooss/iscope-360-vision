@@ -197,7 +197,7 @@ const Index = () => {
               </div>
             </Reveal>
 
-            <Reveal delay={0.3} preserveBackdrop>
+            <Reveal delay={0.3}>
               <div className="feature-card p-6 text-center md:text-left h-full">
                 <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">$4.88M</div>
                 <div className="text-lg font-semibold text-foreground/90 mb-1">Custo médio de um data breach</div>
