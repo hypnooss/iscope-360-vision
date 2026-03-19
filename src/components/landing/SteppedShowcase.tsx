@@ -353,7 +353,6 @@ const workflowSteps = [
   { num: '01', label: 'Incidente criado automaticamente', icon: AlertTriangle, time: 'agora' },
   { num: '02', label: 'Regra WAF implantada no FortiGate', icon: Shield, time: 'há 2 min' },
   { num: '03', label: 'Ticket criado no ServiceNow', icon: Ticket, time: 'há 3 min' },
-  { num: '04', label: 'Notificação enviada para #segurança', icon: Bell, time: 'há 5 min' },
 ];
 
 function WorkflowStepCard({
