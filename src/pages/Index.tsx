@@ -66,7 +66,7 @@ function Section({ children, className = '', id, variant = stagger }: { children
       data-section
       initial="hidden"
       whileInView="visible"
-      viewport={{ once: true, margin: '-100px' }}
+      viewport={{ once: true, margin: '-200px' }}
       variants={variant}
       className={`py-[160px] px-6 ${className}`}
     >
