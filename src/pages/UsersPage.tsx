@@ -42,6 +42,24 @@ import { InviteUserDialog } from "@/components/InviteUserDialog";
 import { PreviewUserDialog } from "@/components/preview/PreviewUserDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 
+type UserSortKey = 'full_name' | 'role' | 'moduleCount' | 'clientCount' | 'created_at';
+type SortDir = 'asc' | 'desc' | null;
+
+function SortableHead({ label, sortKey: colKey, activeSortKey, sortDir, onSort }: {
+  label: string; sortKey: UserSortKey; activeSortKey: UserSortKey | null; sortDir: SortDir; onSort: (key: UserSortKey) => void;
+}) {
+  const isActive = activeSortKey === colKey;
+  const Icon = isActive && sortDir === 'asc' ? ArrowUp : isActive && sortDir === 'desc' ? ArrowDown : ChevronsUpDown;
+  return (
+    <TableHead>
+      <button type="button" className="flex items-center gap-1 hover:text-foreground transition-colors -my-1" onClick={() => onSort(colKey)}>
+        {label}
+        <Icon className={`w-3 h-3 ${isActive ? 'text-foreground' : 'text-muted-foreground'}`} />
+      </button>
+    </TableHead>
+  );
+}
+
 type AppRole = "super_admin" | "super_suporte" | "workspace_admin" | "user";
 type ModulePermissionLevel = "none" | "view" | "edit";
 
