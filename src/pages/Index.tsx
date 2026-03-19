@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MiniChart } from '@/components/landing/MiniChart';
 import { SteppedShowcase } from '@/components/landing/SteppedShowcase';
 import { useNavigate } from 'react-router-dom';
