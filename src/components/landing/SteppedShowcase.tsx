@@ -375,7 +375,7 @@ export function SteppedShowcase() {
 
   return (
     <section ref={containerRef} data-section className="relative" style={{ height: '400vh' }}>
-      <div className="sticky top-0 h-screen overflow-hidden flex flex-col">
+      <div className="sticky top-[72px] h-[calc(100vh-72px)] overflow-hidden flex flex-col">
         <ProgressBar scrollProgress={currentProgress} />
 
         <div className="flex-1 flex items-center pt-6">
