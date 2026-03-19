@@ -415,9 +415,9 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
     </div>
   );
 
-  const agentColors = { border: 'border-l-blue-500 border-blue-500/30', bg: 'bg-blue-500/5', btn: 'bg-blue-600 hover:bg-blue-700', switchClass: '[&_button[data-state=checked]]:bg-blue-600' };
-  const supervisorColors = { border: 'border-l-violet-500 border-violet-500/30', bg: 'bg-violet-500/5', btn: 'bg-violet-600 hover:bg-violet-700', switchClass: '[&_button[data-state=checked]]:bg-violet-600' };
-  const monitorColors = { border: 'border-l-emerald-500 border-emerald-500/30', bg: 'bg-emerald-500/5', btn: 'bg-emerald-600 hover:bg-emerald-700', switchClass: '[&_button[data-state=checked]]:bg-emerald-600' };
+  const agentColors = { border: 'border-t-blue-500 border-blue-500/30', bg: 'bg-blue-500/5', btn: 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/25', switchClass: '[&_button[data-state=checked]]:bg-blue-600' };
+  const supervisorColors = { border: 'border-t-violet-500 border-violet-500/30', bg: 'bg-violet-500/5', btn: 'bg-violet-600 hover:bg-violet-700 shadow-lg shadow-violet-600/25', switchClass: '[&_button[data-state=checked]]:bg-violet-600' };
+  const monitorColors = { border: 'border-t-emerald-500 border-emerald-500/30', bg: 'bg-emerald-500/5', btn: 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-600/25', switchClass: '[&_button[data-state=checked]]:bg-emerald-600' };
 
   return (
     <Card className="border-border/50">
