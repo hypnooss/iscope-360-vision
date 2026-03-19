@@ -979,7 +979,35 @@ ProtectSystem=false
 WantedBy=multi-user.target
 EOF
 
-  echo "Unit files criados: $sup_unit e $agent_unit"
+  # --- Monitor unit (independent service) ---
+  local monitor_unit="/etc/systemd/system/iscope-monitor.service"
+  cat > "$monitor_unit" <<EOF
+[Unit]
+Description=iScope 360 Monitor (Super Agent)
+After=network-online.target iscope-supervisor.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=\${INSTALL_DIR}
+EnvironmentFile=-\${CONFIG_DIR}/agent.env
+ExecStart=\${INSTALL_DIR}/venv/bin/python -m monitor.main
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=iscope-monitor
+NoNewPrivileges=false
+ProtectSystem=false
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  echo "Unit files criados: $sup_unit, $agent_unit e $monitor_unit"
+}
 }
 
 setup_sudoers() {
@@ -990,6 +1018,9 @@ $SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $SERVICE_NAME
 $SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart $LEGACY_SERVICE_NAME
 $SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl start $LEGACY_SERVICE_NAME
 $SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl stop $LEGACY_SERVICE_NAME
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart iscope-monitor
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl start iscope-monitor
+$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl stop iscope-monitor
 $SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/nmap
 SUDOERS
   chmod 440 "$sudoers_file"
@@ -999,16 +1030,18 @@ SUDOERS
 start_service() {
   systemctl daemon-reload
 
-  # Stop both services first to ensure clean state (kills old in-memory code)
+  # Stop all services first to ensure clean state
   systemctl stop "$SERVICE_NAME" 2>/dev/null || true
   systemctl stop "$LEGACY_SERVICE_NAME" 2>/dev/null || true
+  systemctl stop "iscope-monitor" 2>/dev/null || true
 
-  # Enable and start both services
-  systemctl enable "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"
+  # Enable and start all services
+  systemctl enable "$SERVICE_NAME" "$LEGACY_SERVICE_NAME" "iscope-monitor"
   systemctl start "$LEGACY_SERVICE_NAME"
   systemctl start "$SERVICE_NAME"
+  systemctl start "iscope-monitor"
 
-  echo "Serviços iniciados: $SERVICE_NAME e $LEGACY_SERVICE_NAME"
+  echo "Serviços iniciados: $SERVICE_NAME, $LEGACY_SERVICE_NAME e iscope-monitor"
 }
 
 main() {
