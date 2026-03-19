@@ -233,7 +233,7 @@ const Index = () => {
             </div>
           </Reveal>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-10">
             {[
               {
                 icon: BellOff, title: 'Alertas sem contexto',

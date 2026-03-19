@@ -378,7 +378,7 @@ export function SteppedShowcase() {
       <div className="sticky top-0 h-screen overflow-hidden flex flex-col">
         <ProgressBar scrollProgress={currentProgress} />
 
-        <div className="flex-1 flex items-center">
+        <div className="flex-1 flex items-center pt-6">
           <div className="max-w-[1200px] mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center w-full">
             {/* Left: Text */}
             <div className="relative min-h-[320px]">
