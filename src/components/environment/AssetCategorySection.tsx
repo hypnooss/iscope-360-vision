@@ -1,9 +1,10 @@
+import { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ExternalLink, Monitor } from 'lucide-react';
+import { ExternalLink, Monitor, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export interface AssetItem {
@@ -64,8 +65,57 @@ const getScoreColor = (score: number | null) => {
   return 'bg-destructive/20 text-destructive border-destructive/30';
 };
 
+type SortKey = 'name' | 'agentName' | 'workspaceName' | 'scheduleFrequency' | 'score' | 'status';
+type SortDir = 'asc' | 'desc' | null;
+
+function SortableHead({ label, sortKey: colKey, activeSortKey, sortDir, onSort }: {
+  label: string;
+  sortKey: SortKey;
+  activeSortKey: SortKey | null;
+  sortDir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  const isActive = activeSortKey === colKey;
+  const Icon = isActive && sortDir === 'asc' ? ArrowUp : isActive && sortDir === 'desc' ? ArrowDown : ChevronsUpDown;
+  return (
+    <TableHead>
+      <button
+        type="button"
+        className="flex items-center gap-1 hover:text-foreground transition-colors -my-1"
+        onClick={() => onSort(colKey)}
+      >
+        {label}
+        <Icon className={`w-3 h-3 ${isActive ? 'text-foreground' : 'text-muted-foreground'}`} />
+      </button>
+    </TableHead>
+  );
+}
+
 export function AssetCategorySection({ title, icon: Icon, iconColor, items, totalCount, isLoading, renderActions }: AssetCategorySectionProps) {
   const navigate = useNavigate();
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>(null);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir('asc'); }
+    else if (sortDir === 'asc') setSortDir('desc');
+    else { setSortKey(null); setSortDir(null); }
+  };
+
+  const sortedItems = useMemo(() => {
+    if (!sortKey || !sortDir) return items;
+    const mul = sortDir === 'asc' ? 1 : -1;
+    return [...items].sort((a, b) => {
+      if (sortKey === 'score') {
+        const sa = a.score ?? (sortDir === 'asc' ? Infinity : -Infinity);
+        const sb = b.score ?? (sortDir === 'asc' ? Infinity : -Infinity);
+        return (sa - sb) * mul;
+      }
+      const va = (a[sortKey] ?? '') as string;
+      const vb = (b[sortKey] ?? '') as string;
+      return va.localeCompare(vb, 'pt-BR', { sensitivity: 'base' }) * mul;
+    });
+  }, [items, sortKey, sortDir]);
 
   if (!isLoading && totalCount === 0) return null;
 
@@ -92,27 +142,27 @@ export function AssetCategorySection({ title, icon: Icon, iconColor, items, tota
           ) : (
             <Table className="table-fixed w-full">
               <colgroup>
-                <col />                                    {/* Nome — fluido */}
-                <col style={{ width: '180px' }} />         {/* Agent */}
-                <col style={{ width: '240px' }} />         {/* Workspace */}
-                <col style={{ width: '240px' }} />         {/* Frequência */}
-                <col style={{ width: '100px' }} />         {/* Score */}
-                <col style={{ width: '140px' }} />         {/* Status */}
-                <col style={{ width: '120px' }} />         {/* Ações */}
+                <col />
+                <col style={{ width: '180px' }} />
+                <col style={{ width: '240px' }} />
+                <col style={{ width: '240px' }} />
+                <col style={{ width: '100px' }} />
+                <col style={{ width: '140px' }} />
+                <col style={{ width: '120px' }} />
               </colgroup>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Agent</TableHead>
-                  <TableHead>Workspace</TableHead>
-                  <TableHead>Frequência</TableHead>
-                  <TableHead>Score</TableHead>
-                  <TableHead>Status</TableHead>
+                  <SortableHead label="Nome" sortKey="name" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                  <SortableHead label="Agent" sortKey="agentName" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                  <SortableHead label="Workspace" sortKey="workspaceName" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                  <SortableHead label="Frequência" sortKey="scheduleFrequency" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                  <SortableHead label="Score" sortKey="score" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                  <SortableHead label="Status" sortKey="status" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map(asset => {
+                {sortedItems.map(asset => {
                   const freq = asset.scheduleFrequency || null;
                   return (
                     <TableRow key={asset.id}>
