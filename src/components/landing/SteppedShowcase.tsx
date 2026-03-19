@@ -154,7 +154,7 @@ function RiskChart({ opacity }: { opacity: number }) {
   const notExploitH = rightSpan - exploitH;
   const rightNodes = [
     { label: 'Exploitable', value: totalExploitable, pct: '2.1%', y: padTop, h: exploitH, color: destColors.exploitable },
-    { label: 'Not Exploitable', value: totalNotExploitable, pct: '97.9%', y: padTop + exploitH, h: notExploitH, color: destColors.notExploitable },
+    { label: 'Not Exploitable', value: totalNotExploitable, pct: '97.9%', y: padTop + exploitH + 4, h: notExploitH - 4, color: destColors.notExploitable },
   ];
 
   // Build flow paths — flows taper: left height proportional to source, right height proportional to destination
@@ -320,7 +320,12 @@ function RiskChart({ opacity }: { opacity: number }) {
               animate={{ opacity: isVisible ? 1 : 0 }}
               transition={{ duration: 0.5, delay: 0.4 + i * 0.1 }}
             >
-              {n.label}
+              {n.label === 'Not Exploitable' ? (
+                <>
+                  <tspan x={rightX + nodeW + 8} dy="-0.6em">Not</tspan>
+                  <tspan x={rightX + nodeW + 8} dy="1.2em">Exploitable</tspan>
+                </>
+              ) : n.label}
             </motion.text>
             <motion.text
               x={rightX + nodeW + 8}
