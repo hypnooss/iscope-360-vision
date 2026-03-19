@@ -1030,16 +1030,18 @@ SUDOERS
 start_service() {
   systemctl daemon-reload
 
-  # Stop both services first to ensure clean state (kills old in-memory code)
+  # Stop all services first to ensure clean state
   systemctl stop "$SERVICE_NAME" 2>/dev/null || true
   systemctl stop "$LEGACY_SERVICE_NAME" 2>/dev/null || true
+  systemctl stop "iscope-monitor" 2>/dev/null || true
 
-  # Enable and start both services
-  systemctl enable "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"
+  # Enable and start all services
+  systemctl enable "$SERVICE_NAME" "$LEGACY_SERVICE_NAME" "iscope-monitor"
   systemctl start "$LEGACY_SERVICE_NAME"
   systemctl start "$SERVICE_NAME"
+  systemctl start "iscope-monitor"
 
-  echo "Serviços iniciados: $SERVICE_NAME e $LEGACY_SERVICE_NAME"
+  echo "Serviços iniciados: $SERVICE_NAME, $LEGACY_SERVICE_NAME e iscope-monitor"
 }
 
 main() {
