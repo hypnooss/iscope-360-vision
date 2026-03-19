@@ -364,7 +364,6 @@ export default function LicensingHubPage() {
     if (key === 'daysLeft') return lic.daysLeft;
     return '';
   }), [visibleM365, m365Sort.sortKey, m365Sort.sortDir]);
-  }, [filteredM365, showOldExpired]);
 
   return (
     <AppLayout>
