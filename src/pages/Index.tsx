@@ -16,7 +16,7 @@ import {
   Cloud, Server, Globe, Cpu,
 } from 'lucide-react';
 
-/* ── Animation Variants ── */
+/* ── Animation Variants (hero / CTA only) ── */
 const ease = [0.22, 1, 0.36, 1] as const;
 
 const fadeUp = {
@@ -24,73 +24,56 @@ const fadeUp = {
   visible: { opacity: 1, y: 0 },
 };
 
-const fadeLeft = {
-  hidden: { opacity: 0, x: -60 },
-  visible: { opacity: 1, x: 0 },
-};
-
-const fadeRight = {
-  hidden: { opacity: 0, x: 60 },
-  visible: { opacity: 1, x: 0 },
-};
-
-const scaleIn = {
-  hidden: { opacity: 0, scale: 0.85 },
-  visible: { opacity: 1, scale: 1 },
-};
-
-const fadeBlur = {
-  hidden: { opacity: 0, y: 40, filter: 'blur(8px)' },
-  visible: { opacity: 1, y: 0, filter: 'blur(0px)' },
-};
-
 const fadeUpScale = {
   hidden: { opacity: 0, y: 80, scale: 0.92 },
   visible: { opacity: 1, y: 0, scale: 1 },
-};
-
-const fadeOnly = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1 },
 };
 
 const stagger = {
   visible: { transition: { staggerChildren: 0.1 } },
 };
 
-const staggerWide = {
-  visible: { transition: { staggerChildren: 0.15 } },
-};
-
-type AnimationVariant = typeof fadeUp | typeof fadeLeft | typeof fadeRight | typeof scaleIn | typeof fadeBlur | typeof fadeUpScale;
-
-function Section({ children, className = '', id, variant = stagger }: { children: React.ReactNode; className?: string; id?: string; variant?: typeof stagger | typeof staggerWide }) {
+/* ── Section — plain <section>, no stacking-context isolation ── */
+function Section({ children, className = '', id }: { children: React.ReactNode; className?: string; id?: string }) {
   return (
-    <motion.section
+    <section
       id={id}
       data-section
-      initial="hidden"
-      whileInView="visible"
-      viewport={{ once: true, amount: 0.4 }}
-      variants={variant}
       className={`py-[160px] px-6 overflow-hidden relative ${className}`}
     >
       <div className="max-w-[1200px] mx-auto w-full">
         {children}
       </div>
-    </motion.section>
+    </section>
   );
 }
 
-function Reveal({ children, className = '', delay = 0, variant = fadeUp, preserveBackdrop = false }: { children: React.ReactNode; className?: string; delay?: number; variant?: AnimationVariant; preserveBackdrop?: boolean }) {
+/* ── Reveal — CSS transition that cleans up transform after animation
+     so backdrop-filter on children can reach the fixed WebGL canvas ── */
+function Reveal({ children, className = '', delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const isInView = useInView(ref, { once: true, amount: 0.15 });
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (isInView && !done) {
+      const t = setTimeout(() => setDone(true), 900 + delay * 1000);
+      return () => clearTimeout(t);
+    }
+  }, [isInView, done, delay]);
+
   return (
-    <motion.div
-      variants={preserveBackdrop ? fadeOnly : variant}
-      transition={{ duration: preserveBackdrop ? 0.6 : 0.8, ease, delay }}
+    <div
+      ref={ref}
       className={className}
+      style={{
+        opacity: isInView ? 1 : 0,
+        transform: done ? undefined : isInView ? 'translateY(0px)' : 'translateY(40px)',
+        transition: `opacity 0.8s cubic-bezier(0.22,1,0.36,1) ${delay}s, transform 0.8s cubic-bezier(0.22,1,0.36,1) ${delay}s`,
+      }}
     >
       {children}
-    </motion.div>
+    </div>
   );
 }
 
