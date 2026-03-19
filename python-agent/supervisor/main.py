@@ -102,9 +102,9 @@ def main():
     # --- Start worker on boot ---
     worker.start()
 
-    # --- Realtime: on-demand only (started via heartbeat flag) ---
-    poller = None
-    poller_active = False
+    # --- Realtime Shell: on-demand WebSocket (started via heartbeat flag) ---
+    realtime_shell = None
+    realtime_active = False
 
     # --- Check for component flag (from previous check_components request) ---
     _check_component_flag(logger)
