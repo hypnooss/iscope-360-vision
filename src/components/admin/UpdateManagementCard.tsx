@@ -346,7 +346,7 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
         <Label htmlFor={`${prefix}ForceUpdate`} className="cursor-pointer">Forçar atualização</Label>
       </div>
 
-      <Button onClick={onPublish} disabled={!file || !version || publishing || calculatingCs} className={`w-full sm:w-auto ${colorClass.btn}`}>
+      <Button onClick={onPublish} disabled={!file || !version || publishing || calculatingCs} className={`w-full sm:w-auto text-white ${colorClass.btn}`}>
         {publishing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
         Publicar {label}
       </Button>
