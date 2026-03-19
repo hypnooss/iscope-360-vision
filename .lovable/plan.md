@@ -1,36 +1,69 @@
-## Problema: Tasks pendentes não expiram automaticamente
 
-### Causa raiz
-1. `expires_at` é apenas um timestamp — não aciona mudança de status automaticamente
-2. O cleanup no `trigger-firewall-analyzer` rodava **depois** da verificação de agent offline, então com agent offline as tasks nunca eram limpas
-3. Não existia rotina global periódica para limpar tasks expiradas
 
-### Correções implementadas
+## Problema
 
-#### 1. Reordenação do cleanup (trigger-firewall-analyzer)
-- Cleanup de tasks expiradas e snapshots órfãos agora roda **antes** da verificação de agent offline
-- Mesmo com agent offline, tentativas de trigger limpam o passivo
+O `useAnalyzerProgress` verifica apenas o `analyzer_snapshots.status`. Quando as `agent_tasks` são marcadas como `timeout`, os snapshots correspondentes permanecem `pending` — e a barra de progresso continua visível.
 
-#### 2. Edge Function global: `cleanup-expired-tasks`
-- Limpa **todas** as `agent_tasks` expiradas (qualquer task_type)
-- Limpa snapshots órfãos de `analyzer_snapshots` e `m365_analyzer_snapshots`
-- Pronta para ser chamada via cron a cada 5 minutos
+O timeout de 60 minutos adicionado anteriormente não ajuda aqui porque o snapshot tem apenas ~29 minutos (ainda dentro do limite).
 
-#### 3. UI: TaskExecutionsPage
-- `hasActiveTasks` agora ignora tasks pendentes com `expires_at` já vencido
+## Correções
 
-#### 4. Pendente: Configurar cron job
-Executar no SQL Editor do Supabase:
-```sql
-SELECT cron.schedule(
-  'cleanup-expired-tasks-every-5min',
-  '*/5 * * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://akbosdbyheezghieiefz.supabase.co/functions/v1/cleanup-expired-tasks',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrYm9zZGJ5aGVlemdoaWVpZWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTEyODAsImV4cCI6MjA4NTE4NzI4MH0.9n-nUenSCwYIGztsfgVAbgis9wEakQDKX3Oe2xBiNvo"}'::jsonb,
-    body:='{"time": "now"}'::jsonb
-  ) AS request_id;
-  $$
-);
+### 1. Hook `useAnalyzerProgress` — cross-check com agent_task
+**Arquivo:** `src/hooks/useAnalyzerData.ts` (linhas 289-317)
+
+Após buscar o snapshot `pending`/`processing`, verificar o status da `agent_task` associada. Se a task já está `timeout`/`failed`/`completed`, tratar o snapshot como encerrado:
+
+```typescript
+// Após obter o snapshot pendente/processing, verificar a task associada
+if (snap.agent_task_id) {
+  const { data: task } = await supabase
+    .from('agent_tasks')
+    .select('status')
+    .eq('id', snap.agent_task_id)
+    .maybeSingle();
+  
+  if (task && ['timeout', 'failed', 'completed'].includes(task.status)) {
+    // Atualizar o snapshot para refletir a task (fire-and-forget)
+    supabase.from('analyzer_snapshots').update({ status: 'failed' })
+      .eq('id', snap.id).then(() => {});
+    return { status: 'timeout', elapsed: null };
+  }
+}
 ```
+
+### 2. Edge Function cleanup — sincronizar snapshots com tasks encerradas
+**Arquivo:** `supabase/functions/cleanup-expired-tasks/index.ts`
+
+Após marcar tasks como `timeout`, adicionar um passo que atualiza os `analyzer_snapshots` cujo `agent_task_id` corresponda a uma task encerrada:
+
+```typescript
+// 5. Sync snapshots whose agent_task is already done
+await supabase.rpc('raw_sql', { query: `
+  UPDATE analyzer_snapshots s
+  SET status = 'failed'
+  FROM agent_tasks t
+  WHERE s.agent_task_id = t.id
+    AND s.status IN ('pending', 'processing')
+    AND t.status IN ('timeout', 'failed')
+` });
+```
+
+Nota: se `rpc raw_sql` não existe, usar queries diretas buscando os IDs das tasks afetadas.
+
+### 3. Correção imediata no banco
+SQL para executar agora no Supabase Dashboard:
+
+```sql
+UPDATE analyzer_snapshots s
+SET status = 'failed'
+FROM agent_tasks t
+WHERE s.agent_task_id = t.id
+  AND s.status IN ('pending', 'processing')
+  AND t.status IN ('timeout', 'failed');
+```
+
+### Resumo
+- Hook faz cross-check: se a task já encerrou, o snapshot é tratado como expirado
+- Cleanup periódico sincroniza snapshots órfãos
+- SQL manual resolve o passivo atual
+
