@@ -27,6 +27,7 @@ from supervisor.config import (
     WORKER_INSTALL_DIR,
     WORKER_HEALTH_FILE,
     WORKER_PID_FILE,
+    MONITOR_INTERVAL,
     SUPABASE_URL,
     SUPABASE_ANON_KEY,
 )
