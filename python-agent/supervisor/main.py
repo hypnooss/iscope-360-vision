@@ -95,12 +95,20 @@ def main():
     # --- Start worker on boot ---
     worker.start()
 
-    # --- Start monitor thread ---
-    monitor_thread = MonitorWorker(
-        api=api, state=state, logger=logger,
-        interval=MONITOR_INTERVAL, disk_path="/"
-    )
-    monitor_thread.start()
+    # --- Start monitor thread (lazy import — monitor may not be installed) ---
+    monitor_thread = None
+    try:
+        from monitor.worker import MonitorWorker
+        monitor_thread = MonitorWorker(
+            api=api, state=state, logger=logger,
+            interval=MONITOR_INTERVAL, disk_path="/"
+        )
+        monitor_thread.start()
+        logger.info("[Supervisor] MonitorWorker iniciado com sucesso")
+    except ImportError:
+        logger.warning("[Supervisor] Módulo 'monitor' não encontrado — monitoramento desativado")
+    except Exception as e:
+        logger.warning(f"[Supervisor] Falha ao iniciar MonitorWorker: {e}")
 
     # --- Realtime Shell ---
     realtime_shell = None
