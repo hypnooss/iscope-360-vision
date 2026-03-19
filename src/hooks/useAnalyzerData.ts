@@ -301,10 +301,14 @@ export function useAnalyzerProgress(firewallId?: string) {
 
       if (!data) return null;
       const snap = data as any;
-      if (snap.status === 'completed' || snap.status === 'failed' || snap.status === 'cancelled') {
+      if (snap.status === 'completed' || snap.status === 'failed' || snap.status === 'cancelled' || snap.status === 'timeout') {
         return { status: snap.status as string, elapsed: null as number | null };
       }
       const elapsed = Math.floor((Date.now() - new Date(snap.created_at).getTime()) / 1000);
+      // Treat snapshots stuck for more than 60 minutes as timed out
+      if (elapsed > 3600) {
+        return { status: 'timeout' as string, elapsed: null as number | null };
+      }
       return { status: snap.status as string, elapsed, snapshotId: snap.id as string };
     },
     enabled: !!firewallId,
