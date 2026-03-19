@@ -227,7 +227,7 @@ const Index = () => {
 
             {/* Custo médio de breach */}
             <Reveal delay={0.3}>
-              <div className="feature-card relative z-0 p-6 text-center md:text-left h-full">
+              <div className="feature-card p-6 text-center md:text-left h-full">
                 <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
                   $4.88M
                 </div>
