@@ -93,13 +93,23 @@ function SortableHead({ label, sortKey: colKey, activeSortKey, sortDir, onSort }
 
 export function AssetCategorySection({ title, icon: Icon, iconColor, items, totalCount, isLoading, renderActions }: AssetCategorySectionProps) {
   const navigate = useNavigate();
-  const [sortKey, setSortKey] = useState<SortKey | null>(null);
-  const [sortDir, setSortDir] = useState<SortDir>(null);
+  const storageKey = `env-sort-${title}`;
+
+  const [sortKey, setSortKey] = useState<SortKey | null>(() => {
+    try { const s = localStorage.getItem(storageKey); return s ? JSON.parse(s).key : null; } catch { return null; }
+  });
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    try { const s = localStorage.getItem(storageKey); return s ? JSON.parse(s).dir : null; } catch { return null; }
+  });
 
   const handleSort = (key: SortKey) => {
-    if (sortKey !== key) { setSortKey(key); setSortDir('asc'); }
-    else if (sortDir === 'asc') setSortDir('desc');
-    else { setSortKey(null); setSortDir(null); }
+    let newKey: SortKey | null, newDir: SortDir;
+    if (sortKey !== key) { newKey = key; newDir = 'asc'; }
+    else if (sortDir === 'asc') { newKey = key; newDir = 'desc'; }
+    else { newKey = null; newDir = null; }
+    setSortKey(newKey); setSortDir(newDir);
+    if (newKey && newDir) localStorage.setItem(storageKey, JSON.stringify({ key: newKey, dir: newDir }));
+    else localStorage.removeItem(storageKey);
   };
 
   const sortedItems = useMemo(() => {
