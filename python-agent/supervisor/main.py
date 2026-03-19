@@ -5,7 +5,7 @@ Lightweight process that:
 1. Sends heartbeats to the backend
 2. Manages the Worker process lifecycle (start/stop/restart)
 3. Handles Worker updates (download, validate, replace, restart)
-4. Handles Monitor updates (download, validate, replace, restart)
+4. Handles Monitor updates (download, validate, replace, restart service)
 5. Installs system components when requested
 6. Detects supervisor_restart.flag and exits for systemd restart (cross-update)
 """
@@ -25,7 +25,6 @@ from supervisor.config import (
     WORKER_INSTALL_DIR,
     WORKER_HEALTH_FILE,
     WORKER_PID_FILE,
-    MONITOR_INTERVAL,
     SUPABASE_URL,
     SUPABASE_ANON_KEY,
 )
@@ -43,7 +42,6 @@ from supervisor.logger import setup_supervisor_logger
 from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
 from supervisor.realtime_shell import RealtimeShell
-# monitor is imported lazily in main() to avoid boot failure if missing
 
 # Cross-update paths
 SUPERVISOR_RESTART_FLAG = Path("/var/lib/iscope-agent/supervisor_restart.flag")
@@ -51,6 +49,8 @@ PENDING_SUPERVISOR_UPDATE = Path("/var/lib/iscope-agent/pending_supervisor_updat
 
 # Regex to extract __version__ from version.py on disk
 _VERSION_RE = re.compile(r'__version__\s*=\s*["\']([^"\']+)["\']')
+
+MONITOR_SERVICE_NAME = "iscope-monitor"
 
 
 def _read_version_from_disk(module_dir: Path, module_name: str) -> Optional[str]:
@@ -64,6 +64,19 @@ def _read_version_from_disk(module_dir: Path, module_name: str) -> Optional[str]
     except Exception:
         pass
     return None
+
+
+def _restart_monitor_service(logger):
+    """Restart the iscope-monitor systemd service after an update."""
+    import subprocess
+    try:
+        subprocess.run(
+            ["systemctl", "restart", MONITOR_SERVICE_NAME],
+            capture_output=True, timeout=30
+        )
+        logger.info(f"[Supervisor] Serviço {MONITOR_SERVICE_NAME} reiniciado")
+    except Exception as e:
+        logger.warning(f"[Supervisor] Falha ao reiniciar {MONITOR_SERVICE_NAME}: {e}")
 
 
 def main():
@@ -109,22 +122,6 @@ def main():
     else:
         logger.warning("[Supervisor] Worker não iniciado — agent/ ausente")
 
-    # --- Start monitor thread (lazy import — monitor may not be installed) ---
-    monitor_thread = None
-    if not monitor_missing:
-        try:
-            from monitor.worker import MonitorWorker
-            monitor_thread = MonitorWorker(
-                api=api, state=state, logger=logger,
-                interval=MONITOR_INTERVAL, disk_path="/"
-            )
-            monitor_thread.start()
-            logger.info("[Supervisor] MonitorWorker iniciado com sucesso")
-        except ImportError:
-            logger.warning("[Supervisor] Módulo 'monitor' importação falhou — monitoramento desativado")
-        except Exception as e:
-            logger.warning(f"[Supervisor] Falha ao iniciar MonitorWorker: {e}")
-
     # --- Realtime Shell ---
     realtime_shell = None
     realtime_active = False
@@ -149,8 +146,6 @@ def main():
             except Exception:
                 logger.info("[Supervisor] Restart flag detectada. Encerrando para systemd reiniciar.")
             SUPERVISOR_RESTART_FLAG.unlink(missing_ok=True)
-            if monitor_thread:
-                monitor_thread.stop()
             worker.stop()
             sys.exit(0)
 
@@ -177,8 +172,6 @@ def main():
             consecutive_errors += 1
             if result["error"] == "AGENT_STOPPED":
                 logger.critical("Backend bloqueou o agent. Parando Worker e encerrando.")
-                if monitor_thread:
-                    monitor_thread.stop()
                 worker.stop()
                 sys.exit(1)
 
@@ -205,20 +198,12 @@ def main():
 
             # Handle MONITOR update (also serves as fresh install if monitor/ is missing)
             if result.get("monitor_update_available") and result.get("monitor_update_info"):
-                _handle_monitor_update(result, monitor_updater, monitor_thread, monitor_version, logger)
-                # If monitor was missing and got installed, start monitor thread
+                _handle_monitor_update(result, monitor_updater, monitor_version, logger)
+                # If monitor was missing and got installed, start monitor service
                 if monitor_missing and (monitor_dir / "__init__.py").exists():
-                    logger.info("[Supervisor] Monitor instalado com sucesso — iniciando MonitorWorker")
-                    try:
-                        from monitor.worker import MonitorWorker
-                        monitor_thread = MonitorWorker(
-                            api=api, state=state, logger=logger,
-                            interval=MONITOR_INTERVAL, disk_path="/"
-                        )
-                        monitor_thread.start()
-                        monitor_missing = False
-                    except Exception as e:
-                        logger.warning(f"[Supervisor] Monitor instalado mas falha ao iniciar: {e}")
+                    logger.info("[Supervisor] Monitor instalado com sucesso — iniciando serviço iscope-monitor")
+                    _restart_monitor_service(logger)
+                    monitor_missing = False
 
             # Handle component check
             if result.get("check_components"):
@@ -316,8 +301,8 @@ def _handle_supervisor_update_signal(result: dict, logger):
 
 
 def _handle_monitor_update(result: dict, monitor_updater: MonitorUpdater,
-                           monitor_thread, current_version: Optional[str], logger):
-    """Process a MONITOR update signal (also handles fresh install when monitor/ is missing)."""
+                           current_version: Optional[str], logger):
+    """Process a MONITOR update signal. After update, restart the monitor systemd service."""
     update_info = result["monitor_update_info"]
     target_version = update_info.get("version", "?")
 
@@ -327,9 +312,12 @@ def _handle_monitor_update(result: dict, monitor_updater: MonitorUpdater,
 
     action = "install" if not current_version else "apply"
     logger.info(f"[Supervisor] Monitor update {action} | latest={target_version} current={current_version or 'ausente'}")
-    success = monitor_updater.check_and_update(update_info, monitor_thread)
+    # Pass None for monitor_worker since it's now an independent service
+    success = monitor_updater.check_and_update(update_info, monitor_worker=None)
     if success:
-        logger.info(f"[Supervisor] Monitor {'instalado' if not current_version else 'atualizado'} para v{target_version} com sucesso")
+        logger.info(f"[Supervisor] Monitor {'instalado' if not current_version else 'atualizado'} para v{target_version}")
+        # Restart the independent monitor service
+        _restart_monitor_service(logger)
     else:
         logger.error(f"[Supervisor] Falha ao {'instalar' if not current_version else 'atualizar'} Monitor para v{target_version}")
 
