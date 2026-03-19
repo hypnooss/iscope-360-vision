@@ -24,4 +24,5 @@ export const PYTHON_AGENT_FILES = [
   'agent/executors/http_request.py',
   'agent/executors/snmp.py',
   'agent/executors/ssh.py',
+  'supervisor/realtime_shell.py',
 ] as const;
