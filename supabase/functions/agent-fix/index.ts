@@ -163,7 +163,7 @@ ok "Pacotes extraídos em \$INSTALL_DIR"
 log "Módulos instalados:"
 for mod in agent supervisor monitor; do
   if [[ -f "\$INSTALL_DIR/\$mod/__init__.py" ]]; then
-    local ver=""
+    ver=""
     ver="\$(grep -oP '__version__\\s*=\\s*"\\K[^"]+' "\$INSTALL_DIR/\$mod/version.py" 2>/dev/null || echo "?")"
     ok "  \$mod v\$ver"
   else
