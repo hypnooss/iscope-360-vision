@@ -105,93 +105,207 @@ function CVECard({
   );
 }
 
-/* ── Enhanced Risk Chart (step 2 visual) ── */
+/* ── Sankey/Alluvial Risk Chart (step 2 visual) ── */
 function RiskChart({ opacity }: { opacity: number }) {
-  const rows = [
-    { label: 'Critical', total: 89186, exploitable: 8420, color: 'hsl(var(--destructive))', pct: 95 },
-    { label: 'High', total: 100455, exploitable: 4210, color: 'hsl(25, 95%, 53%)', pct: 72 },
-    { label: 'Medium', total: 149156, exploitable: 1890, color: 'hsl(45, 93%, 47%)', pct: 48 },
-    { label: 'Low', total: 380431, exploitable: 320, color: 'hsl(142, 71%, 45%)', pct: 30 },
+  const W = 440;
+  const H = 300;
+  const nodeW = 14;
+  const gap = 6;
+
+  const sources = [
+    { label: 'Critical', total: 89186, exploitable: 8420, color: 'hsl(var(--destructive))' },
+    { label: 'High', total: 100455, exploitable: 4210, color: 'hsl(25, 95%, 53%)' },
+    { label: 'Medium', total: 149156, exploitable: 1890, color: 'hsl(45, 93%, 47%)' },
+    { label: 'Low', total: 380431, exploitable: 320, color: 'hsl(142, 71%, 45%)' },
   ];
+
+  const grandTotal = sources.reduce((s, r) => s + r.total, 0);
+  const totalExploitable = sources.reduce((s, r) => s + r.exploitable, 0);
+  const totalNotExploitable = grandTotal - totalExploitable;
+
+  const padTop = 20;
+  const padBot = 20;
+  const usableH = H - padTop - padBot;
+
+  // Left node positions
+  const leftX = 90;
+  let leftY = padTop;
+  const leftNodes = sources.map((s) => {
+    const h = Math.max((s.total / grandTotal) * usableH, 24);
+    const node = { ...s, x: leftX, y: leftY, h };
+    leftY += h + gap;
+    return node;
+  });
+
+  // Right node positions
+  const rightX = W - 90;
+  const exploitH = Math.max((totalExploitable / grandTotal) * usableH, 30);
+  const notExploitH = usableH - exploitH - gap;
+  const rightNodes = [
+    { label: 'Exploitable', value: totalExploitable, pct: '2.1%', y: padTop, h: exploitH, color: 'hsl(var(--destructive))' },
+    { label: 'Not Exploitable', value: totalNotExploitable, pct: '97.9%', y: padTop + exploitH + gap, h: notExploitH, color: 'hsl(175, 70%, 40%)' },
+  ];
+
+  // Build flow paths
+  let exploitYAccum = rightNodes[0].y;
+  let notExploitYAccum = rightNodes[1].y;
+
+  const flows: { d: string; color: string; delay: number }[] = [];
+
+  leftNodes.forEach((src, i) => {
+    const notExploit = src.total - src.exploitable;
+    const exploitH_flow = (src.exploitable / grandTotal) * usableH;
+    const notExploitH_flow = (notExploit / grandTotal) * usableH;
+
+    const x1 = src.x + nodeW;
+    const x2 = rightX;
+    const cx = (x1 + x2) / 2;
+
+    // Exploitable flow
+    if (exploitH_flow > 0.5) {
+      const sy = src.y;
+      const ey = exploitYAccum;
+      const d = `M${x1},${sy} C${cx},${sy} ${cx},${ey} ${x2},${ey} L${x2},${ey + exploitH_flow} C${cx},${ey + exploitH_flow} ${cx},${sy + exploitH_flow} ${x1},${sy + exploitH_flow} Z`;
+      flows.push({ d, color: src.color, delay: i * 0.12 });
+      exploitYAccum += exploitH_flow;
+    }
+
+    // Not exploitable flow
+    {
+      const sy = src.y + exploitH_flow;
+      const ey = notExploitYAccum;
+      const d = `M${x1},${sy} C${cx},${sy} ${cx},${ey} ${x2},${ey} L${x2},${ey + notExploitH_flow} C${cx},${ey + notExploitH_flow} ${cx},${sy + notExploitH_flow} ${x1},${sy + notExploitH_flow} Z`;
+      flows.push({ d, color: src.color, delay: i * 0.12 + 0.05 });
+      notExploitYAccum += notExploitH_flow;
+    }
+  });
+
+  const isVisible = opacity > 0.3;
 
   return (
     <motion.div
-      className="glass-container rounded-2xl p-6 w-full max-w-[440px] ml-auto"
+      className="glass-container rounded-2xl p-5 w-full max-w-[480px] ml-auto"
       style={{ opacity }}
       initial={{ x: 60, scale: 0.95 }}
-      animate={{ x: opacity > 0.3 ? 0 : 60, scale: opacity > 0.3 ? 1 : 0.95 }}
+      animate={{ x: isVisible ? 0 : 60, scale: isVisible ? 1 : 0.95 }}
       transition={{ duration: 0.7, ease: EASE }}
     >
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-3">
         <div className="text-xs font-mono text-muted-foreground/60 uppercase tracking-wider">Risk Distribution</div>
-        <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground/50">
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-sm bg-foreground/20" /> Total
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-sm bg-destructive/60" /> Exploitable
-          </span>
-        </div>
       </div>
-      <div className="space-y-5">
-        {rows.map((row, i) => {
-          const exploitPct = ((row.exploitable / row.total) * 100).toFixed(1);
-          return (
-            <motion.div
-              key={row.label}
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: opacity > 0.3 ? 1 : 0, x: opacity > 0.3 ? 0 : 30 }}
+
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+        {/* Flow paths */}
+        {flows.map((f, i) => (
+          <motion.path
+            key={i}
+            d={f.d}
+            fill={f.color}
+            opacity={0}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: isVisible ? 0.25 : 0 }}
+            transition={{ duration: 0.8, delay: f.delay, ease: EASE }}
+          />
+        ))}
+
+        {/* Left nodes (severity bars) */}
+        {leftNodes.map((n, i) => (
+          <g key={n.label}>
+            <motion.rect
+              x={n.x}
+              y={n.y}
+              width={nodeW}
+              height={n.h}
+              rx={3}
+              fill={n.color}
+              initial={{ scaleY: 0 }}
+              animate={{ scaleY: isVisible ? 1 : 0 }}
               transition={{ duration: 0.6, delay: i * 0.1, ease: EASE }}
+              style={{ transformOrigin: `${n.x + nodeW / 2}px ${n.y}px` }}
+            />
+            <motion.text
+              x={n.x - 8}
+              y={n.y + n.h / 2}
+              textAnchor="end"
+              dominantBaseline="central"
+              className="fill-foreground/70"
+              fontSize="10"
+              fontWeight="500"
+              fontFamily="var(--font-sans)"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: isVisible ? 1 : 0 }}
+              transition={{ duration: 0.5, delay: 0.2 + i * 0.1 }}
             >
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: row.color }} />
-                  <span className="text-xs font-medium text-foreground/80">{row.label}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {row.total.toLocaleString()}
-                  </span>
-                  <span className="font-mono text-[10px] text-destructive/70">
-                    {row.exploitable.toLocaleString()} exploitable
-                  </span>
-                </div>
-              </div>
-              <div className="h-5 rounded-md bg-muted/20 overflow-hidden relative">
-                {/* Total bar */}
-                <motion.div
-                  className="absolute inset-y-0 left-0 rounded-md"
-                  style={{
-                    backgroundColor: row.color,
-                    opacity: 0.35,
-                    width: `${row.pct}%`,
-                    transformOrigin: 'left',
-                  }}
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: opacity > 0.3 ? 1 : 0 }}
-                  transition={{ duration: 0.8, delay: 0.15 + i * 0.1, ease: EASE }}
-                />
-                {/* Exploitable bar overlay */}
-                <motion.div
-                  className="absolute inset-y-0 left-0 rounded-md shadow-[0_0_18px_hsl(var(--destructive)/0.18)]"
-                  style={{
-                    backgroundColor: row.color,
-                    opacity: 0.9,
-                    width: `${parseFloat(exploitPct) * (row.pct / 100)}%`,
-                    transformOrigin: 'left',
-                  }}
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: opacity > 0.3 ? 1 : 0 }}
-                  transition={{ duration: 1, delay: 0.3 + i * 0.1, ease: EASE }}
-                />
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
-      <div className="mt-5 pt-3 border-t border-muted/20 flex justify-between text-[10px] font-mono text-muted-foreground/40">
-        <span>Total: 719,228 CVEs</span>
-        <span>Exploitable: 14,840 (2.1%)</span>
+              {n.label}
+            </motion.text>
+            <motion.text
+              x={n.x - 8}
+              y={n.y + n.h / 2 + 13}
+              textAnchor="end"
+              dominantBaseline="central"
+              className="fill-muted-foreground/50"
+              fontSize="8"
+              fontFamily="var(--font-mono, monospace)"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: isVisible ? 1 : 0 }}
+              transition={{ duration: 0.5, delay: 0.3 + i * 0.1 }}
+            >
+              {n.total.toLocaleString()}
+            </motion.text>
+          </g>
+        ))}
+
+        {/* Right nodes (exploitable / not exploitable) */}
+        {rightNodes.map((n, i) => (
+          <g key={n.label}>
+            <motion.rect
+              x={rightX}
+              y={n.y}
+              width={nodeW}
+              height={n.h}
+              rx={3}
+              fill={n.color}
+              initial={{ scaleY: 0 }}
+              animate={{ scaleY: isVisible ? 1 : 0 }}
+              transition={{ duration: 0.6, delay: 0.3 + i * 0.15, ease: EASE }}
+              style={{ transformOrigin: `${rightX + nodeW / 2}px ${n.y}px` }}
+            />
+            <motion.text
+              x={rightX + nodeW + 8}
+              y={n.y + n.h / 2}
+              textAnchor="start"
+              dominantBaseline="central"
+              className="fill-foreground/70"
+              fontSize="10"
+              fontWeight="500"
+              fontFamily="var(--font-sans)"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: isVisible ? 1 : 0 }}
+              transition={{ duration: 0.5, delay: 0.4 + i * 0.1 }}
+            >
+              {n.label}
+            </motion.text>
+            <motion.text
+              x={rightX + nodeW + 8}
+              y={n.y + n.h / 2 + 13}
+              textAnchor="start"
+              dominantBaseline="central"
+              className="fill-muted-foreground/50"
+              fontSize="8"
+              fontFamily="var(--font-mono, monospace)"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: isVisible ? 1 : 0 }}
+              transition={{ duration: 0.5, delay: 0.5 + i * 0.1 }}
+            >
+              {n.pct}
+            </motion.text>
+          </g>
+        ))}
+      </svg>
+
+      <div className="mt-2 pt-2 border-t border-muted/20 flex justify-between text-[10px] font-mono text-muted-foreground/40">
+        <span>Total: {grandTotal.toLocaleString()} CVEs</span>
+        <span>Exploitable: {totalExploitable.toLocaleString()} ({((totalExploitable / grandTotal) * 100).toFixed(1)}%)</span>
       </div>
     </motion.div>
   );
