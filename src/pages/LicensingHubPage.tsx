@@ -496,16 +496,16 @@ export default function LicensingHubPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Firewall</TableHead>
-                      <TableHead>Modelo</TableHead>
-                      <TableHead>Workspace</TableHead>
-                      <TableHead>FortiCare</TableHead>
+                      <SortableHead label="Firewall" sortKey="firewallName" activeSortKey={fwSort.sortKey} sortDir={fwSort.sortDir} onSort={fwSort.handleSort} />
+                      <SortableHead label="Modelo" sortKey="model" activeSortKey={fwSort.sortKey} sortDir={fwSort.sortDir} onSort={fwSort.handleSort} />
+                      <SortableHead label="Workspace" sortKey="workspaceName" activeSortKey={fwSort.sortKey} sortDir={fwSort.sortDir} onSort={fwSort.handleSort} />
+                      <SortableHead label="FortiCare" sortKey="forticareDays" activeSortKey={fwSort.sortKey} sortDir={fwSort.sortDir} onSort={fwSort.handleSort} />
                       <TableHead>Serviços FortiGuard</TableHead>
                       <TableHead>Ciclo de Vida</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredFirewalls.map(fw => (
+                    {sortedFirewalls.map(fw => (
                       <TableRow key={fw.firewallId}>
                         <TableCell className="font-medium">{fw.firewallName}</TableCell>
                         <TableCell className="text-muted-foreground text-sm">{fw.model || '—'}</TableCell>
