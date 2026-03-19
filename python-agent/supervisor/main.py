@@ -27,6 +27,8 @@ from supervisor.config import (
     WORKER_INSTALL_DIR,
     WORKER_HEALTH_FILE,
     WORKER_PID_FILE,
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
 )
 from supervisor.heartbeat import SupervisorHeartbeatLoop
 from supervisor.updater import SupervisorUpdater
