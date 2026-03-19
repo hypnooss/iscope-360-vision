@@ -251,7 +251,7 @@ const Index = () => {
         </Section>
 
         {/* ═══ THE REAL PROBLEM ═══ */}
-        <Section id="real-problem">
+        <Section id="real-problem" variant={staggerWide}>
           <Reveal>
             <div className="text-center mb-4">
               <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4 leading-tight">
