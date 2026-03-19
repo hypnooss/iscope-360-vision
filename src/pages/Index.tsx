@@ -20,32 +20,32 @@ import {
 const ease = [0.22, 1, 0.36, 1] as const;
 
 const fadeUp = {
-  hidden: { opacity: 0, y: 160 },
+  hidden: { opacity: 0, y: 60 },
   visible: { opacity: 1, y: 0 },
 };
 
 const fadeLeft = {
-  hidden: { opacity: 0, x: -160 },
+  hidden: { opacity: 0, x: -60 },
   visible: { opacity: 1, x: 0 },
 };
 
 const fadeRight = {
-  hidden: { opacity: 0, x: 160 },
+  hidden: { opacity: 0, x: 60 },
   visible: { opacity: 1, x: 0 },
 };
 
 const scaleIn = {
-  hidden: { opacity: 0, scale: 0.65 },
+  hidden: { opacity: 0, scale: 0.85 },
   visible: { opacity: 1, scale: 1 },
 };
 
 const fadeBlur = {
-  hidden: { opacity: 0, y: 80, filter: 'blur(18px)' },
+  hidden: { opacity: 0, y: 40, filter: 'blur(8px)' },
   visible: { opacity: 1, y: 0, filter: 'blur(0px)' },
 };
 
 const fadeUpScale = {
-  hidden: { opacity: 0, y: 140, scale: 0.82 },
+  hidden: { opacity: 0, y: 80, scale: 0.92 },
   visible: { opacity: 1, y: 0, scale: 1 },
 };
 
@@ -66,7 +66,7 @@ function Section({ children, className = '', id, variant = stagger }: { children
       data-section
       initial="hidden"
       whileInView="visible"
-      viewport={{ once: true, margin: '500px' }}
+      viewport={{ once: true, amount: 0.2 }}
       variants={variant}
       className={`py-[160px] px-6 ${className}`}
     >
@@ -81,7 +81,7 @@ function Reveal({ children, className = '', delay = 0, variant = fadeUp }: { chi
   return (
     <motion.div
       variants={variant}
-      transition={{ duration: 2.4, ease, delay }}
+      transition={{ duration: 0.8, ease, delay }}
       className={className}
     >
       {children}
@@ -465,7 +465,7 @@ const Index = () => {
           <motion.div
             initial="hidden"
             whileInView="visible"
-            viewport={{ once: true, margin: '500px' }}
+            viewport={{ once: true, amount: 0.2 }}
             variants={stagger}
             className="max-w-3xl mx-auto w-full text-center relative z-10"
           >
