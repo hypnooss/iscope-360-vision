@@ -160,7 +160,8 @@ def main():
             consecutive_errors += 1
             if result["error"] == "AGENT_STOPPED":
                 logger.critical("Backend bloqueou o agent. Parando Worker e encerrando.")
-                monitor_thread.stop()
+                if monitor_thread:
+                    monitor_thread.stop()
                 worker.stop()
                 sys.exit(1)
 
