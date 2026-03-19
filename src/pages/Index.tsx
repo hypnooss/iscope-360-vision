@@ -49,6 +49,11 @@ const fadeUpScale = {
   visible: { opacity: 1, y: 0, scale: 1 },
 };
 
+const fadeOnly = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1 },
+};
+
 const stagger = {
   visible: { transition: { staggerChildren: 0.1 } },
 };
@@ -77,11 +82,11 @@ function Section({ children, className = '', id, variant = stagger }: { children
   );
 }
 
-function Reveal({ children, className = '', delay = 0, variant = fadeUp }: { children: React.ReactNode; className?: string; delay?: number; variant?: AnimationVariant }) {
+function Reveal({ children, className = '', delay = 0, variant = fadeUp, preserveBackdrop = false }: { children: React.ReactNode; className?: string; delay?: number; variant?: AnimationVariant; preserveBackdrop?: boolean }) {
   return (
     <motion.div
-      variants={variant}
-      transition={{ duration: 0.8, ease, delay }}
+      variants={preserveBackdrop ? fadeOnly : variant}
+      transition={{ duration: preserveBackdrop ? 0.6 : 0.8, ease, delay }}
       className={className}
     >
       {children}
@@ -93,8 +98,6 @@ function Reveal({ children, className = '', delay = 0, variant = fadeUp }: { chi
 const Index = () => {
   const { user, loading, mfaRequired, mfaEnrolled } = useAuth();
   const navigate = useNavigate();
-
-
 
   useEffect(() => {
     if (!loading && user) {
@@ -118,17 +121,12 @@ const Index = () => {
     <div className="min-h-screen text-foreground flex flex-col relative">
       <Header />
 
-      {/* ═══ GLOBE BACKGROUND — Fixed full-screen layer like MazeHQ .s-gfx ═══ */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <NetworkAnimation className="w-full h-full" />
       </div>
 
       <main className="flex-1 relative">
-
-        {/* ═══ HERO ═══ */}
         <section id="hero" data-section className="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
-
-          {/* Copy — centered overlay on top of globe */}
           <motion.div
             initial="hidden"
             animate="visible"
@@ -158,11 +156,8 @@ const Index = () => {
               </div>
             </Reveal>
           </motion.div>
-
         </section>
 
-
-        {/* ═══ PROBLEM — Impact Numbers ═══ */}
         <Section id="problem" variant={staggerWide}>
           <Reveal>
             <div className="text-center mb-20">
@@ -178,12 +173,9 @@ const Index = () => {
 
           <div id="problem-cards-start" aria-hidden="true" className="h-0" />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
-            {/* CVEs por ano */}
-            <Reveal delay={0}>
+            <Reveal delay={0} preserveBackdrop>
               <div className="feature-card p-6 text-center md:text-left h-full">
-                <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
-                  21,500+
-                </div>
+                <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">21,500+</div>
                 <div className="text-lg font-semibold text-foreground/90 mb-1">CVEs no 1º semestre de 2025</div>
                 <div className="text-sm text-muted-foreground">Projeção de 45.000+ no ano — recorde absoluto</div>
                 <MiniChart
@@ -203,12 +195,9 @@ const Index = () => {
               </div>
             </Reveal>
 
-            {/* Tempo de exploração */}
-            <Reveal delay={0.15}>
+            <Reveal delay={0.15} preserveBackdrop>
               <div className="feature-card p-6 text-center md:text-left h-full">
-                <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
-                  5 dias
-                </div>
+                <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">5 dias</div>
                 <div className="text-lg font-semibold text-foreground/90 mb-1">Tempo médio para exploração</div>
                 <div className="text-sm text-muted-foreground">Colapsou de 63 dias em 2019 para 5 em 2023</div>
                 <MiniChart
@@ -225,12 +214,9 @@ const Index = () => {
               </div>
             </Reveal>
 
-            {/* Custo médio de breach */}
-            <Reveal delay={0.3}>
+            <Reveal delay={0.3} preserveBackdrop>
               <div className="feature-card p-6 text-center md:text-left h-full">
-                <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
-                  $4.88M
-                </div>
+                <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">$4.88M</div>
                 <div className="text-lg font-semibold text-foreground/90 mb-1">Custo médio de um data breach</div>
                 <div className="text-sm text-muted-foreground">IBM Cost of a Data Breach Report 2024</div>
                 <MiniChart
@@ -247,10 +233,8 @@ const Index = () => {
               </div>
             </Reveal>
           </div>
-          
         </Section>
 
-        {/* ═══ THE REAL PROBLEM ═══ */}
         <Section id="real-problem" variant={staggerWide}>
           <Reveal>
             <div className="text-center mb-4">
@@ -282,7 +266,7 @@ const Index = () => {
                 stat: '6+', statLabel: 'ferramentas por equipe em média',
               },
             ].map((item, i) => (
-              <Reveal key={item.title} delay={i * 0.12} variant={i === 1 ? fadeUp : i === 0 ? fadeLeft : fadeRight}>
+              <Reveal key={item.title} delay={i * 0.12} variant={i === 1 ? fadeUp : i === 0 ? fadeLeft : fadeRight} preserveBackdrop>
                 <div className="feature-card p-8 h-full flex flex-col group hover:-translate-y-1 transition-transform duration-300">
                   <div className="inline-flex p-3 rounded-xl bg-destructive/10 mb-5 self-start group-hover:bg-destructive/15 transition-colors duration-300">
                     <item.icon className="w-5 h-5 text-destructive" />
@@ -297,10 +281,8 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          
         </Section>
 
-        {/* ═══ HOW IT WORKS ═══ */}
         <Section id="how-it-works">
           <Reveal>
             <div className="text-center mb-20">
@@ -321,7 +303,7 @@ const Index = () => {
               { num: '03', icon: BarChart3, title: 'Visualize', desc: 'Dashboards interativos com visão 360° do seu ambiente.' },
               { num: '04', icon: ShieldCheck, title: 'Corrija', desc: 'Recomendações acionáveis para melhorar sua postura de segurança.' },
             ].map((step, i) => (
-              <Reveal key={step.num} delay={i * 0.12} variant={scaleIn}>
+              <Reveal key={step.num} delay={i * 0.12} variant={scaleIn} preserveBackdrop>
                 <div className="text-center feature-card p-6">
                   <div className="inline-flex items-center justify-center w-[4.5rem] h-[4.5rem] rounded-2xl bg-card/60 backdrop-blur-xl border border-border/30 mb-6 relative z-10 shadow-lg shadow-background/50">
                     <step.icon className="w-6 h-6 text-primary" />
@@ -333,10 +315,8 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          
         </Section>
 
-        {/* ═══ FEATURES ═══ */}
         <Section id="features">
           <Reveal>
             <div className="text-center mb-16">
@@ -355,7 +335,7 @@ const Index = () => {
               { icon: Shield, title: 'Detecção de Riscos', description: 'Identifica vulnerabilidades e configurações inseguras automaticamente em toda a sua infraestrutura.', highlight: 'Tempo real' },
               { icon: Eye, title: 'Visibilidade Total', description: 'Dashboards unificados com visão 360° do ambiente — firewalls, cloud, endpoints e serviços.', highlight: 'Visão 360°' },
             ].map((f, i) => (
-              <Reveal key={f.title} delay={i * 0.1} variant={fadeBlur}>
+              <Reveal key={f.title} delay={i * 0.1} variant={fadeBlur} preserveBackdrop>
                 <div className="feature-card group h-full flex flex-col">
                   <div className="inline-flex p-3.5 rounded-xl bg-primary/10 mb-5 group-hover:bg-primary/15 transition-colors duration-300 self-start">
                     <f.icon className="w-6 h-6 text-primary" />
@@ -367,14 +347,10 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          
         </Section>
 
-        {/* ═══ STEPPED SHOWCASE (MazeHQ-style) ═══ */}
         <SteppedShowcase />
-        {/* Integrations and Compliance sections removed */}
 
-        {/* ═══ TESTIMONIALS ═══ */}
         <Section id="testimonials">
           <Reveal>
             <div className="text-center mb-16">
@@ -393,7 +369,7 @@ const Index = () => {
               { quote: 'Pela primeira vez temos visibilidade real do nosso ambiente multi-cloud. Antes eram 6 ferramentas e nenhuma visão unificada.', name: 'Ana L.', role: 'CTO', company: 'Fintech — Série B' },
               { quote: 'A detecção automática de configurações inseguras nos evitou dois incidentes críticos em seis meses. O ROI se pagou no primeiro trimestre.', name: 'Roberto S.', role: 'Diretor de Infraestrutura', company: 'Healthcare — 50+ unidades' },
             ].map((t, i) => (
-              <Reveal key={t.name} delay={i * 0.12} variant={fadeRight}>
+              <Reveal key={t.name} delay={i * 0.12} variant={fadeRight} preserveBackdrop>
                 <div className="feature-card p-8 h-full flex flex-col group hover:-translate-y-1 transition-transform duration-300">
                   <Quote className="w-8 h-8 text-primary/20 mb-4 shrink-0" />
                   <p className="text-[15px] text-foreground/80 leading-relaxed mb-8 flex-1 italic">
@@ -408,10 +384,8 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          
         </Section>
 
-        {/* ═══ BLOG / INSIGHTS ═══ */}
         <Section id="blog">
           <Reveal>
             <div className="text-center mb-16">
@@ -430,7 +404,7 @@ const Index = () => {
               { category: 'Product', date: 'Fev 2025', title: 'Por que CVSS sozinho não é suficiente para priorizar vulnerabilidades', excerpt: 'Contexto de negócio, exposição e controles compensatórios: os fatores que o CVSS ignora na priorização de riscos.' },
               { category: 'Compliance', date: 'Jan 2025', title: 'Compliance não é segurança: por que checklist não funciona', excerpt: 'A diferença entre estar em conformidade no papel e ter uma postura de segurança efetiva contra ameaças reais.' },
             ].map((post, i) => (
-              <Reveal key={post.title} delay={i * 0.12}>
+              <Reveal key={post.title} delay={i * 0.12} preserveBackdrop>
                 <div className="feature-card p-8 h-full flex flex-col group cursor-pointer hover:border-primary/30 hover:-translate-y-1 transition-all duration-300">
                   <div className="flex items-center gap-3 mb-5">
                     <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] font-mono text-primary/70">
@@ -455,13 +429,9 @@ const Index = () => {
               </Reveal>
             ))}
           </div>
-          
         </Section>
 
-        {/* ═══ CTA FINAL ═══ */}
         <section id="cta" data-section className="py-[160px] px-6 relative overflow-hidden bg-transparent">
-          
-
           <motion.div
             initial="hidden"
             whileInView="visible"
@@ -496,7 +466,6 @@ const Index = () => {
 
       <ScrollDownIndicator />
 
-      {/* ═══ FOOTER ═══ */}
       <footer className="relative z-10 border-t border-border/20 bg-background/40 backdrop-blur-xl">
         <div className="max-w-[1200px] mx-auto px-6 py-10 flex flex-col md:flex-row items-center justify-between gap-6">
           <p className="text-sm text-muted-foreground/60">
