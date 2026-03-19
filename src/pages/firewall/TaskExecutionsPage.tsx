@@ -221,8 +221,15 @@ export default function TaskExecutionsPage() {
     },
   });
 
-  // Detectar se há tarefas ativas para indicador visual
-  const hasActiveTasks = tasks.some(t => t.status === 'running' || t.status === 'pending');
+  // Detectar se há tarefas ativas para indicador visual (ignore expired pending tasks)
+  const hasActiveTasks = tasks.some(t => {
+    if (t.status === 'running') return true;
+    if (t.status === 'pending') {
+      const expiresAt = t.expires_at ? new Date(t.expires_at).getTime() : Infinity;
+      return expiresAt > Date.now();
+    }
+    return false;
+  });
 
   // Fetch agents for name lookup
   const { data: agents = [] } = useQuery({

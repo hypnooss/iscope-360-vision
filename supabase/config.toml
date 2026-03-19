@@ -168,5 +168,8 @@ verify_jwt = false
 [functions.domain-whois-lookup]
 verify_jwt = false
 
+[functions.cleanup-expired-tasks]
+verify_jwt = false
+
 [functions.trigger-external-domain-analysis]
 verify_jwt = false
