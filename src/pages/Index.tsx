@@ -7,7 +7,7 @@ import { Header } from '@/components/Header';
 import { NetworkAnimation } from '@/components/NetworkAnimation';
 import { ScrollDownIndicator } from '@/components/landing/ScrollDownIndicator';
 import { Button } from '@/components/ui/button';
-import { motion } from 'framer-motion';
+import { motion, useInView } from 'framer-motion';
 import {
   ArrowRight, Shield, Network, Eye, Zap,
   Quote, Scan, BarChart3, FileSearch, ShieldCheck,
