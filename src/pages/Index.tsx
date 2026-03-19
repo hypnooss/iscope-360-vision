@@ -20,32 +20,32 @@ import {
 const ease = [0.22, 1, 0.36, 1] as const;
 
 const fadeUp = {
-  hidden: { opacity: 0, y: 60 },
+  hidden: { opacity: 0, y: 160 },
   visible: { opacity: 1, y: 0 },
 };
 
 const fadeLeft = {
-  hidden: { opacity: 0, x: -60 },
+  hidden: { opacity: 0, x: -160 },
   visible: { opacity: 1, x: 0 },
 };
 
 const fadeRight = {
-  hidden: { opacity: 0, x: 60 },
+  hidden: { opacity: 0, x: 160 },
   visible: { opacity: 1, x: 0 },
 };
 
 const scaleIn = {
-  hidden: { opacity: 0, scale: 0.8 },
+  hidden: { opacity: 0, scale: 0.65 },
   visible: { opacity: 1, scale: 1 },
 };
 
 const fadeBlur = {
-  hidden: { opacity: 0, y: 30, filter: 'blur(8px)' },
+  hidden: { opacity: 0, y: 80, filter: 'blur(18px)' },
   visible: { opacity: 1, y: 0, filter: 'blur(0px)' },
 };
 
 const fadeUpScale = {
-  hidden: { opacity: 0, y: 40, scale: 0.95 },
+  hidden: { opacity: 0, y: 140, scale: 0.82 },
   visible: { opacity: 1, y: 0, scale: 1 },
 };
 
@@ -81,7 +81,7 @@ function Reveal({ children, className = '', delay = 0, variant = fadeUp }: { chi
   return (
     <motion.div
       variants={variant}
-      transition={{ duration: 0.6, ease, delay }}
+      transition={{ duration: 1.2, ease, delay }}
       className={className}
     >
       {children}
