@@ -465,7 +465,7 @@ const Index = () => {
           <motion.div
             initial="hidden"
             whileInView="visible"
-            viewport={{ once: true, amount: 0.2 }}
+            viewport={{ once: true, amount: 0.4 }}
             variants={stagger}
             className="max-w-3xl mx-auto w-full text-center relative z-10"
           >
