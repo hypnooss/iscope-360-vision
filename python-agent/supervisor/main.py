@@ -182,7 +182,7 @@ def main():
                 _handle_supervisor_update_signal(result, logger)
 
             # Handle MONITOR update
-            if result.get("monitor_update_available") and result.get("monitor_update_info"):
+            if result.get("monitor_update_available") and result.get("monitor_update_info") and monitor_thread:
                 _handle_monitor_update(result, monitor_updater, monitor_thread, monitor_version, logger)
 
             # Handle component check
