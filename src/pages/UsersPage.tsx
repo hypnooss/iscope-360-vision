@@ -439,6 +439,24 @@ export default function UsersPage() {
     noWorkspace: users.filter(u => !u.client_ids?.length).length,
   }), [users]);
 
+  // Persistent sorting
+  const SORT_STORAGE_KEY = 'users-sort';
+  const [sortKey, setSortKey] = useState<UserSortKey | null>(() => {
+    try { const s = localStorage.getItem(SORT_STORAGE_KEY); return s ? JSON.parse(s).key : null; } catch { return null; }
+  });
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    try { const s = localStorage.getItem(SORT_STORAGE_KEY); return s ? JSON.parse(s).dir : null; } catch { return null; }
+  });
+  const handleSort = (key: UserSortKey) => {
+    let nk: UserSortKey | null, nd: SortDir;
+    if (sortKey !== key) { nk = key; nd = 'asc'; }
+    else if (sortDir === 'asc') { nk = key; nd = 'desc'; }
+    else { nk = null; nd = null; }
+    setSortKey(nk); setSortDir(nd);
+    if (nk && nd) localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify({ key: nk, dir: nd }));
+    else localStorage.removeItem(SORT_STORAGE_KEY);
+  };
+
   // Search filter
   const filteredUsers = useMemo(() => {
     if (!search) return users;
@@ -450,7 +468,34 @@ export default function UsersPage() {
     );
   }, [users, search, clients]);
 
-  if (authLoading || !canAccessPage) return null;
+  const sortedUsers = useMemo(() => {
+    if (!sortKey || !sortDir) return filteredUsers;
+    const mul = sortDir === 'asc' ? 1 : -1;
+    return [...filteredUsers].sort((a, b) => {
+      if (sortKey === 'moduleCount') {
+        const ma = a.module_permissions?.filter(p => p.permission !== 'none').length ?? 0;
+        const mb = b.module_permissions?.filter(p => p.permission !== 'none').length ?? 0;
+        return (ma - mb) * mul;
+      }
+      if (sortKey === 'clientCount') {
+        const ca = a.client_ids?.length ?? 0;
+        const cb = b.client_ids?.length ?? 0;
+        return (ca - cb) * mul;
+      }
+      if (sortKey === 'created_at') {
+        return (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * mul;
+      }
+      if (sortKey === 'role') {
+        const va = a.role ?? '';
+        const vb = b.role ?? '';
+        return va.localeCompare(vb, 'pt-BR', { sensitivity: 'base' }) * mul;
+      }
+      // full_name
+      const va = (a.full_name ?? '').toLowerCase();
+      const vb = (b.full_name ?? '').toLowerCase();
+      return va.localeCompare(vb, 'pt-BR', { sensitivity: 'base' }) * mul;
+    });
+  }, [filteredUsers, sortKey, sortDir]);
 
   return (
     <AppLayout>
