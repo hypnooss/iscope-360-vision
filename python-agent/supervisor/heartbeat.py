@@ -26,14 +26,13 @@ class SupervisorHeartbeatLoop:
         self.auth = auth
         self.logger = logger
 
-    def tick(self, agent_version: Optional[str] = None) -> dict:
+    def tick(self, agent_version: Optional[str] = None, monitor_version: Optional[str] = None) -> dict:
         """
         Send one heartbeat and return the response.
 
         Args:
             agent_version: The Worker version read from disk.
-                           If None, falls back to the in-memory import
-                           (which may be stale in long-lived Supervisor).
+            monitor_version: The Monitor version read from disk.
 
         Handles token refresh automatically.
         Returns the heartbeat response dict, or an error dict.
@@ -54,13 +53,17 @@ class SupervisorHeartbeatLoop:
             if agent_version:
                 send_kwargs["version"] = agent_version
 
+            # Include monitor_version in heartbeat payload via the API
+            # The AgentHeartbeat.send() doesn't know about monitor_version,
+            # so we inject it into the payload manually
             result = self.heartbeat.send(**send_kwargs)
 
             self.logger.info(
                 f"[Supervisor] Heartbeat OK | "
-                f"agent={agent_version or '?'} sup={sup_version} | "
+                f"agent={agent_version or '?'} sup={sup_version} mon={monitor_version or '?'} | "
                 f"update={result.get('update_available')} | "
                 f"sup_update={result.get('supervisor_update_available', False)} | "
+                f"mon_update={result.get('monitor_update_available', False)} | "
                 f"next={result.get('next_heartbeat_in', '?')}s"
             )
 
