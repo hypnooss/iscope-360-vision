@@ -109,23 +109,27 @@ function CVECard({
 function RiskChart({ opacity }: { opacity: number }) {
   const W = 440;
   const H = 300;
-  const nodeW = 14;
-  const gap = 6;
+  const nodeW = 8;
+  const gap = 4;
 
   const sources = [
-    { label: 'Critical', total: 89186, exploitable: 8420, color: 'hsl(var(--destructive))' },
+    { label: 'Critical', total: 89186, exploitable: 8420, color: 'hsl(0, 85%, 55%)' },
     { label: 'High', total: 100455, exploitable: 4210, color: 'hsl(25, 95%, 53%)' },
     { label: 'Medium', total: 149156, exploitable: 1890, color: 'hsl(45, 93%, 47%)' },
-    { label: 'Low', total: 380431, exploitable: 320, color: 'hsl(142, 71%, 45%)' },
+    { label: 'Low', total: 380431, exploitable: 320, color: 'hsl(210, 80%, 55%)' },
   ];
+
+  const destColors = {
+    exploitable: 'hsl(0, 85%, 55%)',
+    notExploitable: 'hsl(142, 71%, 45%)',
+  };
 
   const grandTotal = sources.reduce((s, r) => s + r.total, 0);
   const totalExploitable = sources.reduce((s, r) => s + r.exploitable, 0);
   const totalNotExploitable = grandTotal - totalExploitable;
 
   const padTop = 20;
-  const padBot = 20;
-  const usableH = H - padTop - padBot;
+  const usableH = H - padTop - 20;
 
   // Left node positions
   const leftX = 90;
@@ -137,36 +141,36 @@ function RiskChart({ opacity }: { opacity: number }) {
     return node;
   });
 
-  // Right node positions
+  // Right node positions — compute total used height for perfect alignment
+  const totalLeftH = leftNodes.reduce((s, n) => s + n.h, 0) + gap * (leftNodes.length - 1);
   const rightX = W - 90;
-  const exploitH = Math.max((totalExploitable / grandTotal) * usableH, 30);
-  const notExploitH = usableH - exploitH - gap;
+  const exploitH = Math.max((totalExploitable / grandTotal) * totalLeftH, 28);
+  const notExploitH = totalLeftH - exploitH;
   const rightNodes = [
-    { label: 'Exploitable', value: totalExploitable, pct: '2.1%', y: padTop, h: exploitH, color: 'hsl(var(--destructive))' },
-    { label: 'Not Exploitable', value: totalNotExploitable, pct: '97.9%', y: padTop + exploitH + gap, h: notExploitH, color: 'hsl(175, 70%, 40%)' },
+    { label: 'Exploitable', value: totalExploitable, pct: '2.1%', y: padTop, h: exploitH, color: destColors.exploitable },
+    { label: 'Not Exploitable', value: totalNotExploitable, pct: '97.9%', y: padTop + exploitH, h: notExploitH, color: destColors.notExploitable },
   ];
 
-  // Build flow paths
+  // Build flow paths with gradient IDs
   let exploitYAccum = rightNodes[0].y;
   let notExploitYAccum = rightNodes[1].y;
 
-  const flows: { d: string; color: string; delay: number }[] = [];
+  const flows: { d: string; gradId: string; srcColor: string; dstColor: string; delay: number }[] = [];
 
   leftNodes.forEach((src, i) => {
-    const notExploit = src.total - src.exploitable;
-    const exploitH_flow = (src.exploitable / grandTotal) * usableH;
-    const notExploitH_flow = (notExploit / grandTotal) * usableH;
+    const exploitH_flow = (src.exploitable / grandTotal) * totalLeftH;
+    const notExploitH_flow = ((src.total - src.exploitable) / grandTotal) * totalLeftH;
 
     const x1 = src.x + nodeW;
     const x2 = rightX;
     const cx = (x1 + x2) / 2;
 
     // Exploitable flow
-    if (exploitH_flow > 0.5) {
+    if (exploitH_flow > 0.3) {
       const sy = src.y;
       const ey = exploitYAccum;
       const d = `M${x1},${sy} C${cx},${sy} ${cx},${ey} ${x2},${ey} L${x2},${ey + exploitH_flow} C${cx},${ey + exploitH_flow} ${cx},${sy + exploitH_flow} ${x1},${sy + exploitH_flow} Z`;
-      flows.push({ d, color: src.color, delay: i * 0.12 });
+      flows.push({ d, gradId: `grad-e-${i}`, srcColor: src.color, dstColor: destColors.exploitable, delay: i * 0.12 });
       exploitYAccum += exploitH_flow;
     }
 
@@ -175,7 +179,7 @@ function RiskChart({ opacity }: { opacity: number }) {
       const sy = src.y + exploitH_flow;
       const ey = notExploitYAccum;
       const d = `M${x1},${sy} C${cx},${sy} ${cx},${ey} ${x2},${ey} L${x2},${ey + notExploitH_flow} C${cx},${ey + notExploitH_flow} ${cx},${sy + notExploitH_flow} ${x1},${sy + notExploitH_flow} Z`;
-      flows.push({ d, color: src.color, delay: i * 0.12 + 0.05 });
+      flows.push({ d, gradId: `grad-n-${i}`, srcColor: src.color, dstColor: destColors.notExploitable, delay: i * 0.12 + 0.05 });
       notExploitYAccum += notExploitH_flow;
     }
   });
@@ -195,15 +199,23 @@ function RiskChart({ opacity }: { opacity: number }) {
       </div>
 
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
-        {/* Flow paths */}
+        <defs>
+          {flows.map((f) => (
+            <linearGradient key={f.gradId} id={f.gradId} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor={f.srcColor} />
+              <stop offset="100%" stopColor={f.dstColor} />
+            </linearGradient>
+          ))}
+        </defs>
+
+        {/* Flow paths with gradients */}
         {flows.map((f, i) => (
           <motion.path
             key={i}
             d={f.d}
-            fill={f.color}
-            opacity={0}
+            fill={`url(#${f.gradId})`}
             initial={{ opacity: 0 }}
-            animate={{ opacity: isVisible ? 0.25 : 0 }}
+            animate={{ opacity: isVisible ? 0.3 : 0 }}
             transition={{ duration: 0.8, delay: f.delay, ease: EASE }}
           />
         ))}
@@ -216,7 +228,7 @@ function RiskChart({ opacity }: { opacity: number }) {
               y={n.y}
               width={nodeW}
               height={n.h}
-              rx={3}
+              rx={2}
               fill={n.color}
               initial={{ scaleY: 0 }}
               animate={{ scaleY: isVisible ? 1 : 0 }}
@@ -263,7 +275,7 @@ function RiskChart({ opacity }: { opacity: number }) {
               y={n.y}
               width={nodeW}
               height={n.h}
-              rx={3}
+              rx={2}
               fill={n.color}
               initial={{ scaleY: 0 }}
               animate={{ scaleY: isVisible ? 1 : 0 }}
