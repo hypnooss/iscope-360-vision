@@ -315,20 +315,21 @@ def _handle_supervisor_update_signal(result: dict, logger):
 
 def _handle_monitor_update(result: dict, monitor_updater: MonitorUpdater,
                            monitor_thread, current_version: Optional[str], logger):
-    """Process a MONITOR update signal."""
+    """Process a MONITOR update signal (also handles fresh install when monitor/ is missing)."""
     update_info = result["monitor_update_info"]
     target_version = update_info.get("version", "?")
 
-    if current_version == target_version:
+    if current_version and current_version == target_version:
         logger.info(f"[Supervisor] Monitor update skip | latest={target_version} current={current_version}")
         return
 
-    logger.info(f"[Supervisor] Monitor update apply | latest={target_version} current={current_version or '?'}")
+    action = "install" if not current_version else "apply"
+    logger.info(f"[Supervisor] Monitor update {action} | latest={target_version} current={current_version or 'ausente'}")
     success = monitor_updater.check_and_update(update_info, monitor_thread)
     if success:
-        logger.info(f"[Supervisor] Monitor atualizado para v{target_version} com sucesso")
+        logger.info(f"[Supervisor] Monitor {'instalado' if not current_version else 'atualizado'} para v{target_version} com sucesso")
     else:
-        logger.error(f"[Supervisor] Falha ao atualizar Monitor para v{target_version}")
+        logger.error(f"[Supervisor] Falha ao {'instalar' if not current_version else 'atualizar'} Monitor para v{target_version}")
 
 
 def _handle_check_components(logger, worker: WorkerManager):
