@@ -135,6 +135,7 @@ def main():
             except Exception:
                 logger.info("[Supervisor] Restart flag detectada. Encerrando para systemd reiniciar.")
             SUPERVISOR_RESTART_FLAG.unlink(missing_ok=True)
+            monitor_thread.stop()
             worker.stop()
             sys.exit(0)
 
