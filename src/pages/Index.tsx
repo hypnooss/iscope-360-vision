@@ -431,7 +431,7 @@ const Index = () => {
               { category: 'Compliance', date: 'Jan 2025', title: 'Compliance não é segurança: por que checklist não funciona', excerpt: 'A diferença entre estar em conformidade no papel e ter uma postura de segurança efetiva contra ameaças reais.' },
             ].map((post, i) => (
               <Reveal key={post.title} delay={i * 0.12}>
-                <div className="glass-container p-8 h-full flex flex-col group cursor-pointer hover:border-primary/30 hover:-translate-y-1 transition-all duration-300">
+                <div className="feature-card p-8 h-full flex flex-col group cursor-pointer hover:border-primary/30 hover:-translate-y-1 transition-all duration-300">
                   <div className="flex items-center gap-3 mb-5">
                     <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] font-mono text-primary/70">
                       <Tag className="w-3 h-3" />
