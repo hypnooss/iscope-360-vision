@@ -180,7 +180,7 @@ const Index = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
             {/* CVEs por ano */}
             <Reveal delay={0}>
-              <div className="feature-card relative z-0 p-6 text-center md:text-left h-full">
+              <div className="feature-card p-6 text-center md:text-left h-full">
                 <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
                   21,500+
                 </div>
