@@ -23,13 +23,13 @@ class MonitorUpdater:
         self.monitor_dir = install_dir / "monitor"
         self.backup_dir = Path("/var/lib/iscope-agent/backup_monitor")
 
-    def check_and_update(self, update_info: Dict[str, Any], monitor_worker) -> bool:
+    def check_and_update(self, update_info: Dict[str, Any], monitor_worker=None) -> bool:
         """
         Download, validate, and apply a monitor update.
 
         Args:
             update_info: Dict with version, download_url, checksum
-            monitor_worker: MonitorWorker instance to stop/start
+            monitor_worker: MonitorWorker instance to stop/start (None for fresh install)
 
         Returns:
             True if update succeeded
@@ -42,7 +42,7 @@ class MonitorUpdater:
             self.logger.warning("[MonitorUpdater] Info de update incompleta, ignorando")
             return False
 
-        self.logger.info(f"[MonitorUpdater] Iniciando atualização do Monitor para v{version}")
+        self.logger.info(f"[MonitorUpdater] Iniciando {'instalação' if not monitor_worker else 'atualização'} do Monitor para v{version}")
 
         try:
             # 1. Download
@@ -69,9 +69,10 @@ class MonitorUpdater:
                 shutil.rmtree(extract_dir)
                 return False
 
-            # 5. Stop monitor
-            self.logger.info("[MonitorUpdater] Parando MonitorWorker...")
-            monitor_worker.stop()
+            # 5. Stop monitor (if running)
+            if monitor_worker:
+                self.logger.info("[MonitorUpdater] Parando MonitorWorker...")
+                monitor_worker.stop()
 
             # 6. Backup current monitor/
             self._backup_current()
@@ -80,20 +81,22 @@ class MonitorUpdater:
             self._replace_monitor(root)
             shutil.rmtree(extract_dir)
 
-            self.logger.info(f"[MonitorUpdater] Monitor atualizado para v{version}")
+            self.logger.info(f"[MonitorUpdater] Monitor {'instalado' if not monitor_worker else 'atualizado'} para v{version}")
 
-            # 8. Restart monitor
-            monitor_worker.start()
+            # 8. Restart monitor (if was running)
+            if monitor_worker:
+                monitor_worker.start()
 
             return True
 
         except Exception as e:
             self.logger.error(f"[MonitorUpdater] Erro durante update: {e}")
             self._restore_backup()
-            try:
-                monitor_worker.start()
-            except Exception:
-                pass
+            if monitor_worker:
+                try:
+                    monitor_worker.start()
+                except Exception:
+                    pass
             return False
 
     def _download_package(self, url: str) -> Optional[str]:
