@@ -92,23 +92,38 @@ def main():
     worker = WorkerManager(logger, WORKER_INSTALL_DIR, WORKER_HEALTH_FILE, WORKER_PID_FILE)
     remote_cmds = RemoteCommandHandler(api, logger)
 
-    # --- Start worker on boot ---
-    worker.start()
+    # --- Detect missing modules ---
+    agent_dir = WORKER_INSTALL_DIR / "agent"
+    monitor_dir = WORKER_INSTALL_DIR / "monitor"
+    agent_missing = not (agent_dir / "__init__.py").exists()
+    monitor_missing = not (monitor_dir / "__init__.py").exists()
+
+    if agent_missing:
+        logger.warning("[Supervisor] Módulo 'agent' não encontrado em disco — aguardando instalação via heartbeat")
+    if monitor_missing:
+        logger.warning("[Supervisor] Módulo 'monitor' não encontrado em disco — aguardando instalação via heartbeat")
+
+    # --- Start worker on boot (only if agent exists) ---
+    if not agent_missing:
+        worker.start()
+    else:
+        logger.warning("[Supervisor] Worker não iniciado — agent/ ausente")
 
     # --- Start monitor thread (lazy import — monitor may not be installed) ---
     monitor_thread = None
-    try:
-        from monitor.worker import MonitorWorker
-        monitor_thread = MonitorWorker(
-            api=api, state=state, logger=logger,
-            interval=MONITOR_INTERVAL, disk_path="/"
-        )
-        monitor_thread.start()
-        logger.info("[Supervisor] MonitorWorker iniciado com sucesso")
-    except ImportError:
-        logger.warning("[Supervisor] Módulo 'monitor' não encontrado — monitoramento desativado")
-    except Exception as e:
-        logger.warning(f"[Supervisor] Falha ao iniciar MonitorWorker: {e}")
+    if not monitor_missing:
+        try:
+            from monitor.worker import MonitorWorker
+            monitor_thread = MonitorWorker(
+                api=api, state=state, logger=logger,
+                interval=MONITOR_INTERVAL, disk_path="/"
+            )
+            monitor_thread.start()
+            logger.info("[Supervisor] MonitorWorker iniciado com sucesso")
+        except ImportError:
+            logger.warning("[Supervisor] Módulo 'monitor' importação falhou — monitoramento desativado")
+        except Exception as e:
+            logger.warning(f"[Supervisor] Falha ao iniciar MonitorWorker: {e}")
 
     # --- Realtime Shell ---
     realtime_shell = None
@@ -134,17 +149,19 @@ def main():
             except Exception:
                 logger.info("[Supervisor] Restart flag detectada. Encerrando para systemd reiniciar.")
             SUPERVISOR_RESTART_FLAG.unlink(missing_ok=True)
-                if monitor_thread:
-                    monitor_thread.stop()
+            if monitor_thread:
+                monitor_thread.stop()
             worker.stop()
             sys.exit(0)
 
         # --- Resolve versions from disk ---
         agent_version = _read_version_from_disk(WORKER_INSTALL_DIR, "agent")
         if not agent_version:
-            from agent.version import get_version
-            agent_version = get_version()
-            logger.warning(f"[Supervisor] Não foi possível ler versão do agent do disco, usando fallback: {agent_version}")
+            try:
+                from agent.version import get_version
+                agent_version = get_version()
+            except Exception:
+                agent_version = None
 
         monitor_version = _read_version_from_disk(WORKER_INSTALL_DIR, "monitor")
         if not monitor_version:
@@ -173,17 +190,35 @@ def main():
             consecutive_errors = 0
             interval = result.get("next_heartbeat_in", HEARTBEAT_INTERVAL)
 
-            # Handle AGENT update
+            # Handle AGENT update (also serves as fresh install if agent/ is missing)
             if result.get("update_available") and result.get("update_info"):
                 _handle_update(result, updater, worker, agent_version, logger)
+                # If agent was missing and got installed, start the worker
+                if agent_missing and (agent_dir / "__init__.py").exists():
+                    logger.info("[Supervisor] Agent instalado com sucesso — iniciando Worker")
+                    worker.start()
+                    agent_missing = False
 
             # Handle SUPERVISOR update signal
             if result.get("supervisor_update_available") and result.get("supervisor_update_info"):
                 _handle_supervisor_update_signal(result, logger)
 
-            # Handle MONITOR update
-            if result.get("monitor_update_available") and result.get("monitor_update_info") and monitor_thread:
+            # Handle MONITOR update (also serves as fresh install if monitor/ is missing)
+            if result.get("monitor_update_available") and result.get("monitor_update_info"):
                 _handle_monitor_update(result, monitor_updater, monitor_thread, monitor_version, logger)
+                # If monitor was missing and got installed, start monitor thread
+                if monitor_missing and (monitor_dir / "__init__.py").exists():
+                    logger.info("[Supervisor] Monitor instalado com sucesso — iniciando MonitorWorker")
+                    try:
+                        from monitor.worker import MonitorWorker
+                        monitor_thread = MonitorWorker(
+                            api=api, state=state, logger=logger,
+                            interval=MONITOR_INTERVAL, disk_path="/"
+                        )
+                        monitor_thread.start()
+                        monitor_missing = False
+                    except Exception as e:
+                        logger.warning(f"[Supervisor] Monitor instalado mas falha ao iniciar: {e}")
 
             # Handle component check
             if result.get("check_components"):
@@ -232,8 +267,8 @@ def main():
                 realtime_shell = None
                 realtime_active = False
 
-        # Monitor worker health
-        if not worker.is_running():
+        # Monitor worker health (only if agent is installed)
+        if not agent_missing and not worker.is_running():
             logger.warning("[Supervisor] Worker service inativo! Iniciando via systemctl...")
             worker.start()
 
@@ -241,16 +276,17 @@ def main():
 
 
 def _handle_update(result: dict, updater: SupervisorUpdater, worker: WorkerManager,
-                   current_version: str, logger):
-    """Process an AGENT update signal."""
+                   current_version: Optional[str], logger):
+    """Process an AGENT update signal (also handles fresh install when agent/ is missing)."""
     update_info = result["update_info"]
     target_version = update_info.get("version", "?")
 
-    if current_version == target_version:
+    if current_version and current_version == target_version:
         logger.info(f"[Supervisor] Update skip | latest={target_version} current={current_version} action=skip")
         return
 
-    logger.info(f"[Supervisor] Update apply | latest={target_version} current={current_version} action=apply")
+    action = "install" if not current_version else "apply"
+    logger.info(f"[Supervisor] Update {action} | latest={target_version} current={current_version or 'ausente'}")
     success = updater.check_and_update(update_info, worker)
     if success:
         logger.info(f"[Supervisor] Worker atualizado para v{target_version} com sucesso")
@@ -281,20 +317,21 @@ def _handle_supervisor_update_signal(result: dict, logger):
 
 def _handle_monitor_update(result: dict, monitor_updater: MonitorUpdater,
                            monitor_thread, current_version: Optional[str], logger):
-    """Process a MONITOR update signal."""
+    """Process a MONITOR update signal (also handles fresh install when monitor/ is missing)."""
     update_info = result["monitor_update_info"]
     target_version = update_info.get("version", "?")
 
-    if current_version == target_version:
+    if current_version and current_version == target_version:
         logger.info(f"[Supervisor] Monitor update skip | latest={target_version} current={current_version}")
         return
 
-    logger.info(f"[Supervisor] Monitor update apply | latest={target_version} current={current_version or '?'}")
+    action = "install" if not current_version else "apply"
+    logger.info(f"[Supervisor] Monitor update {action} | latest={target_version} current={current_version or 'ausente'}")
     success = monitor_updater.check_and_update(update_info, monitor_thread)
     if success:
-        logger.info(f"[Supervisor] Monitor atualizado para v{target_version} com sucesso")
+        logger.info(f"[Supervisor] Monitor {'instalado' if not current_version else 'atualizado'} para v{target_version} com sucesso")
     else:
-        logger.error(f"[Supervisor] Falha ao atualizar Monitor para v{target_version}")
+        logger.error(f"[Supervisor] Falha ao {'instalar' if not current_version else 'atualizar'} Monitor para v{target_version}")
 
 
 def _handle_check_components(logger, worker: WorkerManager):
