@@ -5,14 +5,16 @@ Architecture:
 - Connects to Supabase Realtime via WebSocket
 - Joins broadcast channel `shell:{agent_id}`
 - Receives "command" events from the UI
-- Executes via Popen with streaming stdout/stderr
+- Executes via Popen with PTY for real terminal emulation
 - Sends "output", "error", "done" events back to the UI
 - Auto-disconnects after 120s of inactivity
 - Supervisor manages lifecycle based on heartbeat response
 """
 
+import fcntl
 import json
 import os
+import pty
 import signal
 import subprocess
 import select
@@ -23,7 +25,8 @@ import uuid
 import websocket
 
 INACTIVITY_TIMEOUT = 120  # seconds
-STREAM_INTERVAL = 0.3  # seconds between partial output broadcasts
+STREAM_INTERVAL = 0.1  # seconds between partial output broadcasts
+READ_CHUNK = 4096  # bytes per PTY read
 
 
 class RealtimeShell:
@@ -81,7 +84,6 @@ class RealtimeShell:
 
     def _build_ws_url(self) -> str:
         """Build Supabase Realtime WebSocket URL."""
-        # Convert https://xxx.supabase.co to wss://xxx.supabase.co/realtime/v1/websocket
         base = self.supabase_url.replace("https://", "wss://").replace("http://", "ws://")
         return f"{base}/realtime/v1/websocket?apikey={self.anon_key}&vsn=1.0.0"
 
@@ -94,7 +96,6 @@ class RealtimeShell:
                 if self._stop_event.is_set():
                     break
                 self.logger.error(f"[RealtimeShell] Erro na conexão WebSocket: {e}")
-                # Wait before reconnecting
                 self._stop_event.wait(timeout=5)
 
     def _connect_and_listen(self):
@@ -110,13 +111,11 @@ class RealtimeShell:
             on_close=self._on_close,
         )
 
-        # Start heartbeat thread for Phoenix protocol
         heartbeat_thread = threading.Thread(
             target=self._phoenix_heartbeat, daemon=True, name="phoenix-hb"
         )
         heartbeat_thread.start()
 
-        # Run WebSocket (blocks until closed)
         self._ws.run_forever(ping_interval=30, ping_timeout=10)
 
     def _on_open(self, ws):
@@ -154,7 +153,6 @@ class RealtimeShell:
         topic = msg.get("topic", "")
         payload = msg.get("payload", {})
 
-        # Handle join reply
         if event == "phx_reply" and msg.get("ref") == "join-ref":
             status = payload.get("status")
             if status == "ok":
@@ -165,7 +163,6 @@ class RealtimeShell:
                 self.logger.error(f"[RealtimeShell] Falha no join: {payload}")
             return
 
-        # Handle broadcast events
         if event == "broadcast" and topic == f"realtime:{self._channel_topic}":
             inner_event = payload.get("event")
             inner_payload = payload.get("payload", {})
@@ -197,7 +194,6 @@ class RealtimeShell:
             if self._stop_event.is_set():
                 break
 
-            # Check inactivity timeout
             if time.time() - self._last_activity > INACTIVITY_TIMEOUT:
                 self.logger.info(
                     f"[RealtimeShell] Nenhuma atividade em {INACTIVITY_TIMEOUT}s. "
@@ -253,7 +249,6 @@ class RealtimeShell:
 
         self.logger.info(f"[RealtimeShell] Comando recebido: {command_text[:80]}...")
 
-        # Execute in a separate thread to avoid blocking the WebSocket
         t = threading.Thread(
             target=self._execute_command,
             args=(command_id, command_text),
@@ -292,7 +287,9 @@ class RealtimeShell:
                     pass
 
     def _execute_command(self, command_id: str, command_text: str):
-        """Execute a command with streaming output via broadcast."""
+        """Execute a command with PTY-based streaming output via broadcast."""
+        master_fd = None
+        slave_fd = None
         try:
             stripped = command_text.strip()
 
@@ -334,20 +331,32 @@ class RealtimeShell:
                     })
                 return
 
-            # Regular command — Popen with streaming
+            # --- PTY-based execution ---
+            master_fd, slave_fd = pty.openpty()
+
+            # Set master to non-blocking
+            fl = fcntl.fcntl(master_fd, fcntl.F_GETFL)
+            fcntl.fcntl(master_fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
             proc = subprocess.Popen(
                 stripped,
                 shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
                 cwd=self._cwd,
                 preexec_fn=os.setsid,
+                close_fds=True,
             )
+
+            # Close slave in parent — only the child uses it
+            os.close(slave_fd)
+            slave_fd = None
+
             self._running_proc = proc
             self._running_cmd_id = command_id
 
-            # Stream output
+            # Stream output from PTY master
             timeout = 120  # max command runtime
             start_time = time.time()
 
@@ -369,36 +378,23 @@ class RealtimeShell:
                     })
                     return
 
-                stdout_data = self._read_available(proc.stdout)
-                stderr_data = self._read_available(proc.stderr)
-
-                if stdout_data:
+                data = self._read_pty(master_fd)
+                if data:
                     self._last_activity = time.time()
                     self._broadcast("output", {
                         "id": command_id,
-                        "data": stdout_data,
-                    })
-                if stderr_data:
-                    self._last_activity = time.time()
-                    self._broadcast("error", {
-                        "id": command_id,
-                        "data": stderr_data,
+                        "data": data,
                     })
 
                 time.sleep(STREAM_INTERVAL)
 
-            # Read remaining output
-            remaining_stdout = proc.stdout.read() or ""
-            remaining_stderr = proc.stderr.read() or ""
-            if remaining_stdout:
+            # Read remaining output after process exits
+            time.sleep(0.1)
+            remaining = self._read_pty(master_fd)
+            if remaining:
                 self._broadcast("output", {
                     "id": command_id,
-                    "data": remaining_stdout,
-                })
-            if remaining_stderr:
-                self._broadcast("error", {
-                    "id": command_id,
-                    "data": remaining_stderr,
+                    "data": remaining,
                 })
 
             self._broadcast("done", {
@@ -426,20 +422,34 @@ class RealtimeShell:
             if self._running_cmd_id == command_id:
                 self._running_proc = None
                 self._running_cmd_id = None
+            # Clean up PTY file descriptors
+            if master_fd is not None:
+                try:
+                    os.close(master_fd)
+                except OSError:
+                    pass
+            if slave_fd is not None:
+                try:
+                    os.close(slave_fd)
+                except OSError:
+                    pass
 
     @staticmethod
-    def _read_available(pipe) -> str:
-        """Read available data from a pipe without blocking."""
-        output = ""
+    def _read_pty(master_fd: int) -> str:
+        """Read all available data from PTY master fd without blocking."""
+        output = b""
         try:
             while True:
-                ready, _, _ = select.select([pipe], [], [], 0.05)
+                ready, _, _ = select.select([master_fd], [], [], 0.05)
                 if not ready:
                     break
-                line = pipe.readline()
-                if not line:
+                try:
+                    chunk = os.read(master_fd, READ_CHUNK)
+                    if not chunk:
+                        break
+                    output += chunk
+                except OSError:
                     break
-                output += line
         except Exception:
             pass
-        return output
+        return output.decode("utf-8", errors="replace") if output else ""
