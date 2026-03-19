@@ -222,12 +222,8 @@ const Index = () => {
         {/* ═══ THE REAL PROBLEM ═══ */}
         <Section id="real-problem">
           <Reveal>
-            <div className="text-center mb-6">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-destructive/20 bg-destructive/5 text-destructive text-xs font-mono uppercase tracking-wider mb-8">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                O problema real
-              </div>
-              <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-6 leading-tight">
+            <div className="text-center mb-4">
+              <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4 leading-tight">
                 <span className="text-primary">90%</span> dos alertas são falsos positivos
               </h2>
               <p className="text-muted-foreground max-w-2xl mx-auto text-lg leading-relaxed">
@@ -237,7 +233,7 @@ const Index = () => {
             </div>
           </Reveal>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-10">
             {[
               {
                 icon: BellOff, title: 'Alertas sem contexto',
