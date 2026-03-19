@@ -562,15 +562,15 @@ export default function LicensingHubPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>IP / Porta</TableHead>
-                      <TableHead>Subject CN</TableHead>
-                      <TableHead>Issuer</TableHead>
-                      <TableHead>Expiração</TableHead>
+                      <SortableHead label="IP / Porta" sortKey="ipPort" activeSortKey={tlsSort.sortKey} sortDir={tlsSort.sortDir} onSort={tlsSort.handleSort} />
+                      <SortableHead label="Subject CN" sortKey="subjectCn" activeSortKey={tlsSort.sortKey} sortDir={tlsSort.sortDir} onSort={tlsSort.handleSort} />
+                      <SortableHead label="Issuer" sortKey="issuer" activeSortKey={tlsSort.sortKey} sortDir={tlsSort.sortDir} onSort={tlsSort.handleSort} />
+                      <SortableHead label="Expiração" sortKey="daysLeft" activeSortKey={tlsSort.sortKey} sortDir={tlsSort.sortDir} onSort={tlsSort.handleSort} />
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredTls.map((cert, i) => (
+                    {sortedTls.map((cert, i) => (
                       <TableRow key={`${cert.ip}-${cert.port}-${i}`}>
                         <TableCell className="font-mono text-sm">{cert.ip}:{cert.port}</TableCell>
                         <TableCell className="font-medium">{cert.subjectCn}</TableCell>
