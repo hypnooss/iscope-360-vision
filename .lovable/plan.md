@@ -1,65 +1,27 @@
 
 
-## Terminal Remoto v2 — Conexão Instantânea via Supabase Realtime Broadcast
+## Ajuste de Versão e Mover `realtime_shell.py` para `supervisor/`
 
-### Problema Atual
-O terminal usa **HTTP polling a cada 2s** (ShellCommandPoller → GET/POST /agent-commands), gerando:
-- Latência de 2-4s entre digitar e ver resultado
-- Logs poluídos com GET/POST /agent-commands (como no print)
-- Dependência desnecessária da tabela `agent_commands` para shell interativo
-
-### Nova Arquitetura
-
-```text
-┌─────────────┐    Broadcast Channel     ┌─────────────┐
-│   Browser    │ ◄══════════════════════► │ Python Agent │
-│  (React UI)  │   shell:{agent_id}       │ (Supervisor) │
-│              │                          │              │
-│ send: cmd ──►│ ── event: "command" ──► │──► Popen     │
-│              │                          │              │
-│ ◄── output   │ ◄── event: "output" ──  │◄── stdout    │
-│ ◄── error    │ ◄── event: "error"  ──  │◄── stderr    │
-│ ◄── done     │ ◄── event: "done"   ──  │◄── exit_code │
-└─────────────┘                          └─────────────┘
-```
-
-Comunicação **bidirecional instantânea** via WebSocket — zero polling, zero DB.
+### Problema
+O `realtime_shell.py` está em `agent/` mas é usado exclusivamente pelo Supervisor. Isso cria uma dependência cruzada que obriga a atualizar o Agent antes do Supervisor.
 
 ### Alterações
 
-#### 1. Python Agent — Novo `realtime_shell.py`
-- Conecta ao Supabase Realtime via WebSocket (usando `websockets` ou raw WS)
-- Subscreve ao canal Broadcast `shell:{agent_id}`
-- Ao receber evento `command`: executa via Popen com streaming
-- Envia resultados parciais como eventos `output` (stdout) e `error` (stderr)
-- Ao finalizar, envia evento `done` com exit_code e cwd
-- Suporte a `__signal__`, `__probe__`, `cd`, `clear`
-- Auto-desconecta após 120s de inatividade
+#### 1. Mover `realtime_shell.py` de `agent/` para `supervisor/`
+- Criar `python-agent/supervisor/realtime_shell.py` (cópia exata do conteúdo atual)
+- Esvaziar `python-agent/agent/realtime_shell.py` (manter arquivo vazio ou deletar)
 
-#### 2. Python Agent — Atualizar `supervisor/main.py`
-- Substituir `ShellCommandPoller` por `RealtimeShell`
-- Quando heartbeat retorna `start_realtime=true`: conectar WebSocket
-- Quando `start_realtime=false`: desconectar WebSocket
+#### 2. Atualizar import em `supervisor/main.py`
+- Trocar `from agent.realtime_shell import RealtimeShell` → `from supervisor.realtime_shell import RealtimeShell`
 
-#### 3. Frontend — Reescrever `RemoteTerminal.tsx`
-- Usar `supabase.channel('shell:{agentId}')` com Broadcast
-- Enviar comandos via `channel.send({ type: 'broadcast', event: 'command', payload: { command, id } })`
-- Receber resultados via listeners nos eventos `output`, `error`, `done`
-- Remover dependência de `agent_commands` table e mutations
-- Conexão instantânea — sem probe, sem polling
-- Manter: histórico de comandos, Ctrl+C (via evento `signal`), Ctrl+L, auto-scroll
+#### 3. Bump de versão
+- **Supervisor**: `1.0.0` → `1.1.0` (nova funcionalidade: Realtime Shell)
+- **Agent**: `1.3.11` → `1.3.12` (remoção do `realtime_shell.py` que não pertencia ao Agent)
 
-#### 4. Dependência Python
-- Adicionar `websockets` ao `requirements.txt` (lib leve, sem dependências)
+#### 4. Atualizar `_index.ts`
+- Remover referência a `agent/realtime_shell.py` se existir
+- Adicionar `supervisor/realtime_shell.py` à lista
 
-### Resultado
-- **Latência**: de ~2-4s → ~50-100ms
-- **Logs limpos**: sem GET/POST /agent-commands poluindo journalctl
-- **Conexão instantânea**: WebSocket bidirecional, sem probe command
-
-### Notas Técnicas
-- O Supabase Realtime Broadcast não persiste dados — é fire-and-forget, ideal para shell interativo
-- O canal é autenticado via ANON_KEY (já configurado no agent)
-- Fallback: se WebSocket falhar, o terminal pode avisar e sugerir reconexão
-- A tabela `agent_commands` continua existindo para comandos não-interativos (heartbeat-triggered)
+### Ordem de Deploy
+Com esta mudança, **a ordem de deploy não importa mais** — cada pacote é independente.
 
