@@ -88,9 +88,10 @@ class MonitorWorker(threading.Thread):
         """POST metrics to the agent-monitor edge function."""
         try:
             resp = self._api.post("/agent-monitor", json=metrics)
-            if resp and resp.status_code and resp.status_code >= 400:
+            # api.post() returns a parsed dict, not a Response object
+            if isinstance(resp, dict) and not resp.get("success", True):
                 self._logger.warning(
-                    f"[Monitor] Backend retornou {resp.status_code}"
+                    f"[Monitor] Backend retornou erro: {resp.get('error', 'unknown')}"
                 )
         except Exception as e:
             self._logger.warning(f"[Monitor] Falha ao enviar métricas: {e}")
