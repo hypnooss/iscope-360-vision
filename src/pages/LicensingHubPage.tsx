@@ -679,16 +679,16 @@ export default function LicensingHubPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Tenant</TableHead>
-                          <TableHead>Licença</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="text-right">Total</TableHead>
-                          <TableHead className="text-right">Em uso</TableHead>
-                          <TableHead>Vencimento</TableHead>
+                          <SortableHead label="Tenant" sortKey="tenantDisplayName" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} />
+                          <SortableHead label="Licença" sortKey="displayName" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} />
+                          <SortableHead label="Status" sortKey="capabilityStatus" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} />
+                          <SortableHead label="Total" sortKey="totalUnits" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} className="text-right" />
+                          <SortableHead label="Em uso" sortKey="consumedUnits" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} className="text-right" />
+                          <SortableHead label="Vencimento" sortKey="daysLeft" activeSortKey={m365Sort.sortKey} sortDir={m365Sort.sortDir} onSort={m365Sort.handleSort} />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {visibleM365.map((lic, i) => (
+                        {sortedM365.map((lic, i) => (
                           <TableRow key={`${lic.skuPartNumber}-${i}`} className={lic.daysLeft !== null && lic.daysLeft < -60 ? 'opacity-50' : ''}>
                             <TableCell className="text-muted-foreground">{lic.tenantDisplayName}</TableCell>
                             <TableCell className="font-medium">{lic.displayName}</TableCell>
