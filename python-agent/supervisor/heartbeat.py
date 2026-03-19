@@ -52,10 +52,9 @@ class SupervisorHeartbeatLoop:
             }
             if agent_version:
                 send_kwargs["version"] = agent_version
+            if monitor_version:
+                send_kwargs["monitor_version"] = monitor_version
 
-            # Include monitor_version in heartbeat payload via the API
-            # The AgentHeartbeat.send() doesn't know about monitor_version,
-            # so we inject it into the payload manually
             result = self.heartbeat.send(**send_kwargs)
 
             self.logger.info(
