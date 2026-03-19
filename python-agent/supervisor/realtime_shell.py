@@ -158,9 +158,12 @@ class RealtimeShell:
             if status == "ok":
                 self._joined = True
                 self._last_activity = time.time()
-                self.logger.info("[RealtimeShell] Canal joined com sucesso!")
+                self.logger.info("[RealtimeShell] ✅ Canal joined com sucesso! Enviando ready...")
+                # Emit ready event so the UI knows the agent is connected
+                self._broadcast("ready", {"agent_id": self.agent_id})
+                self.logger.info("[RealtimeShell] ✅ Evento 'ready' enviado ao canal.")
             else:
-                self.logger.error(f"[RealtimeShell] Falha no join: {payload}")
+                self.logger.error(f"[RealtimeShell] ❌ Falha no join: {payload}")
             return
 
         if event == "broadcast" and topic == f"realtime:{self._channel_topic}":
@@ -247,7 +250,7 @@ class RealtimeShell:
         if not command_text:
             return
 
-        self.logger.info(f"[RealtimeShell] Comando recebido: {command_text[:80]}...")
+        self.logger.info(f"[RealtimeShell] 📥 Comando recebido (id={command_id[:8]}): {command_text[:80]}")
 
         t = threading.Thread(
             target=self._execute_command,
@@ -381,6 +384,7 @@ class RealtimeShell:
                 data = self._read_pty(master_fd)
                 if data:
                     self._last_activity = time.time()
+                    self.logger.debug(f"[RealtimeShell] 📤 Output ({len(data)} chars) cmd={command_id[:8]}")
                     self._broadcast("output", {
                         "id": command_id,
                         "data": data,

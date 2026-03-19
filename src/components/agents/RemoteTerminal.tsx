@@ -3,13 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Terminal, Power, PowerOff, Wifi, WifiOff, Loader2 } from "lucide-react";
-
-interface TerminalLine {
-  type: "input" | "output" | "error" | "system";
-  text: string;
-  commandId?: string;
-}
+import { Terminal as TerminalIcon, Power, PowerOff, Wifi, WifiOff, Loader2 } from "lucide-react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import "@xterm/xterm/css/xterm.css";
 
 interface RemoteTerminalProps {
   agentId: string;
@@ -23,33 +20,28 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [channelReady, setChannelReady] = useState(false);
-  const [lines, setLines] = useState<TerminalLine[]>([]);
-  const [inputValue, setInputValue] = useState("");
-  const [commandHistory, setCommandHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [agentReady, setAgentReady] = useState(false);
   const [pendingCommands, setPendingCommands] = useState<Set<string>>(new Set());
-  const [currentCwd, setCurrentCwd] = useState("/");
 
-  const inputRef = useRef<HTMLInputElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const xtermRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const inputBufferRef = useRef("");
+  const commandHistoryRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
+  const cwdRef = useRef("/");
+  const currentLineRef = useRef("");
 
-  const prompt = `root@${agentName}:${currentCwd === "/" ? "/" : currentCwd}#`;
-
-  // Auto-scroll
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [lines]);
-
-  const focusInput = useCallback(() => {
-    if (connected && channelReady) inputRef.current?.focus();
-  }, [connected, channelReady]);
+  const getPrompt = useCallback(() => {
+    const cwd = cwdRef.current === "/" ? "/" : cwdRef.current;
+    return `\x1b[32mroot@${agentName}:${cwd}#\x1b[0m `;
+  }, [agentName]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (channelRef.current) {
-        // Send disconnect event to agent
         channelRef.current.send({
           type: "broadcast",
           event: "disconnect",
@@ -58,13 +50,202 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
-      // Reset shell_session_active
       (supabase
         .from("agents" as any)
         .update({ shell_session_active: false })
         .eq("id", agentId) as any).then(() => {});
+      xtermRef.current?.dispose();
     };
   }, [agentId]);
+
+  // Initialize xterm when connected
+  useEffect(() => {
+    if (!connected || !terminalRef.current) return;
+
+    const term = new Terminal({
+      theme: {
+        background: "#000000",
+        foreground: "#d4d4d4",
+        cursor: "#22c55e",
+        cursorAccent: "#000000",
+        selectionBackground: "#264f78",
+        green: "#22c55e",
+        red: "#f87171",
+        yellow: "#ca8a04",
+      },
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      fontSize: 13,
+      cursorBlink: true,
+      cursorStyle: "block",
+      scrollback: 5000,
+      convertEol: true,
+    });
+
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(terminalRef.current);
+
+    // Small delay for DOM to settle
+    setTimeout(() => {
+      try { fitAddon.fit(); } catch {}
+    }, 50);
+
+    term.writeln("\x1b[33m⏳ Canal WebSocket estabelecido.\x1b[0m");
+    term.writeln("\x1b[33m⏳ Aguardando agente conectar...\x1b[0m");
+
+    xtermRef.current = term;
+    fitAddonRef.current = fitAddon;
+
+    // Handle resize
+    const resizeObserver = new ResizeObserver(() => {
+      try { fitAddon.fit(); } catch {}
+    });
+    resizeObserver.observe(terminalRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+      term.dispose();
+      xtermRef.current = null;
+      fitAddonRef.current = null;
+    };
+  }, [connected]);
+
+  // Setup xterm input handling when agentReady changes
+  useEffect(() => {
+    const term = xtermRef.current;
+    if (!term || !agentReady) return;
+
+    term.writeln("");
+    term.writeln("\x1b[33m✅ Agente conectado. Sessão remota pronta.\x1b[0m");
+    term.writeln('\x1b[33mDigite "clear" para limpar ou "exit" para desconectar.\x1b[0m');
+    term.writeln("");
+    term.write(getPrompt());
+    term.focus();
+
+    const disposable = term.onData((data) => {
+      if (!channelRef.current) return;
+
+      const hasPending = pendingCommands.size > 0;
+
+      // Ctrl+C
+      if (data === "\x03") {
+        if (hasPending && channelRef.current) {
+          term.write("^C\r\n");
+          channelRef.current.send({
+            type: "broadcast",
+            event: "signal",
+            payload: { signal: "SIGINT" },
+          });
+          setTimeout(() => {
+            setPendingCommands(new Set());
+            term.write(getPrompt());
+          }, 1500);
+        }
+        return;
+      }
+
+      // Ctrl+L — clear
+      if (data === "\x0c") {
+        term.clear();
+        term.write(getPrompt());
+        inputBufferRef.current = "";
+        return;
+      }
+
+      // Don't accept input while command is pending
+      if (hasPending) return;
+
+      // Enter
+      if (data === "\r") {
+        const trimmed = inputBufferRef.current.trim();
+        term.write("\r\n");
+        inputBufferRef.current = "";
+        historyIndexRef.current = -1;
+        currentLineRef.current = "";
+
+        if (!trimmed) {
+          term.write(getPrompt());
+          return;
+        }
+
+        commandHistoryRef.current.push(trimmed);
+
+        if (trimmed === "clear") {
+          term.clear();
+          term.write(getPrompt());
+          return;
+        }
+        if (trimmed === "exit") {
+          handleDisconnect();
+          return;
+        }
+
+        const commandId = crypto.randomUUID();
+        setPendingCommands((prev) => new Set(prev).add(commandId));
+
+        channelRef.current.send({
+          type: "broadcast",
+          event: "command",
+          payload: { command: trimmed, id: commandId },
+        });
+        return;
+      }
+
+      // Backspace
+      if (data === "\x7f") {
+        if (inputBufferRef.current.length > 0) {
+          inputBufferRef.current = inputBufferRef.current.slice(0, -1);
+          term.write("\b \b");
+        }
+        return;
+      }
+
+      // Arrow up
+      if (data === "\x1b[A") {
+        const history = commandHistoryRef.current;
+        if (history.length === 0) return;
+        if (historyIndexRef.current === -1) {
+          currentLineRef.current = inputBufferRef.current;
+          historyIndexRef.current = history.length - 1;
+        } else if (historyIndexRef.current > 0) {
+          historyIndexRef.current--;
+        }
+        clearLine(term);
+        inputBufferRef.current = history[historyIndexRef.current];
+        term.write(inputBufferRef.current);
+        return;
+      }
+
+      // Arrow down
+      if (data === "\x1b[B") {
+        if (historyIndexRef.current === -1) return;
+        historyIndexRef.current++;
+        clearLine(term);
+        if (historyIndexRef.current >= commandHistoryRef.current.length) {
+          historyIndexRef.current = -1;
+          inputBufferRef.current = currentLineRef.current;
+        } else {
+          inputBufferRef.current = commandHistoryRef.current[historyIndexRef.current];
+        }
+        term.write(inputBufferRef.current);
+        return;
+      }
+
+      // Regular character
+      if (data >= " " || data === "\t") {
+        inputBufferRef.current += data;
+        term.write(data);
+      }
+    });
+
+    return () => disposable.dispose();
+  }, [agentReady, getPrompt]);
+
+  // Helper to clear current input line in xterm
+  function clearLine(term: Terminal) {
+    const len = inputBufferRef.current.length;
+    term.write("\b".repeat(len) + " ".repeat(len) + "\b".repeat(len));
+  }
 
   // Setup broadcast channel when connected
   useEffect(() => {
@@ -76,60 +257,37 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       },
     });
 
-    // Listen for output events
     channel.on("broadcast", { event: "output" }, ({ payload }) => {
-      if (!payload?.data) return;
-      setLines((prev) => {
-        const newLines = [...prev];
-        payload.data.split("\n").forEach((line: string) => {
-          newLines.push({ type: "output", text: line, commandId: payload.id });
-        });
-        return newLines;
-      });
+      if (!payload?.data || !xtermRef.current) return;
+      xtermRef.current.write(payload.data);
     });
 
-    // Listen for error events
     channel.on("broadcast", { event: "error" }, ({ payload }) => {
-      if (!payload?.data) return;
-      setLines((prev) => {
-        const newLines = [...prev];
-        payload.data.split("\n").forEach((line: string) => {
-          newLines.push({ type: "error", text: line, commandId: payload.id });
-        });
-        return newLines;
-      });
+      if (!payload?.data || !xtermRef.current) return;
+      xtermRef.current.write(`\x1b[31m${payload.data}\x1b[0m`);
     });
 
-    // Listen for done events
     channel.on("broadcast", { event: "done" }, ({ payload }) => {
-      if (payload?.cwd) setCurrentCwd(payload.cwd);
+      if (payload?.cwd) cwdRef.current = payload.cwd;
       setPendingCommands((prev) => {
         const next = new Set(prev);
         next.delete(payload?.id);
         return next;
       });
+      // Write new prompt
+      if (xtermRef.current) {
+        xtermRef.current.write("\r\n" + getPrompt());
+      }
     });
 
-    // Listen for ready event (agent confirms it joined the channel)
     channel.on("broadcast", { event: "ready" }, () => {
-      setLines((prev) => [
-        ...prev,
-        { type: "system", text: "Agente conectado. Sessão remota pronta." },
-        { type: "system", text: 'Digite "clear" para limpar ou "exit" para desconectar.' },
-        { type: "system", text: "" },
-      ]);
-      setTimeout(() => inputRef.current?.focus(), 100);
+      setAgentReady(true);
     });
 
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
         setChannelReady(true);
         setConnecting(false);
-        setLines((prev) => [
-          ...prev,
-          { type: "system", text: "Canal WebSocket estabelecido." },
-          { type: "system", text: "Aguardando agente conectar..." },
-        ]);
       }
     });
 
@@ -139,15 +297,12 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       supabase.removeChannel(channel);
       channelRef.current = null;
       setChannelReady(false);
+      setAgentReady(false);
     };
-  }, [connected, agentId, isSuperAdminUser]);
+  }, [connected, agentId, isSuperAdminUser, getPrompt]);
 
   const handleConnect = async () => {
     setConnecting(true);
-    setLines([
-      { type: "system", text: `Conectando ao agent "${agentName}"...` },
-    ]);
-
     try {
       await (supabase
         .from("agents" as any)
@@ -156,12 +311,10 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     } catch (e) {
       console.error("Failed to set shell_session_active:", e);
     }
-
     setConnected(true);
   };
 
   const handleDisconnect = async () => {
-    // Send disconnect event to agent via broadcast
     if (channelRef.current) {
       try {
         channelRef.current.send({
@@ -169,9 +322,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           event: "disconnect",
           payload: {},
         });
-      } catch (e) {
-        // ignore
-      }
+      } catch {}
     }
 
     try {
@@ -186,85 +337,12 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     setConnected(false);
     setConnecting(false);
     setChannelReady(false);
-    setLines([]);
-    setCommandHistory([]);
-    setHistoryIndex(-1);
+    setAgentReady(false);
     setPendingCommands(new Set());
-    setInputValue("");
-    setCurrentCwd("/");
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = inputValue.trim();
-    if (!trimmed || !channelRef.current) return;
-
-    setLines((prev) => [...prev, { type: "input", text: `${prompt} ${trimmed}` }]);
-    setInputValue("");
-    setHistoryIndex(-1);
-    setCommandHistory((prev) => [...prev, trimmed]);
-
-    if (trimmed === "clear") {
-      setLines([]);
-      return;
-    }
-    if (trimmed === "exit") {
-      handleDisconnect();
-      return;
-    }
-
-    const commandId = crypto.randomUUID();
-    setPendingCommands((prev) => new Set(prev).add(commandId));
-
-    channelRef.current.send({
-      type: "broadcast",
-      event: "command",
-      payload: { command: trimmed, id: commandId },
-    });
-  };
-
-  const handleTerminalKeyDown = (e: React.KeyboardEvent) => {
-    if (e.ctrlKey && e.key === "c" && hasPending) {
-      e.preventDefault();
-      setLines((prev) => [...prev, { type: "system", text: "^C" }]);
-      if (channelRef.current) {
-        channelRef.current.send({
-          type: "broadcast",
-          event: "signal",
-          payload: { signal: "SIGINT" },
-        });
-      }
-      // Clear pending after a short delay
-      setTimeout(() => setPendingCommands(new Set()), 3000);
-      return;
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.ctrlKey && e.key === "l") {
-      e.preventDefault();
-      setLines([]);
-      return;
-    }
-
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (commandHistory.length === 0) return;
-      const newIndex = historyIndex === -1 ? commandHistory.length - 1 : Math.max(0, historyIndex - 1);
-      setHistoryIndex(newIndex);
-      setInputValue(commandHistory[newIndex]);
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (historyIndex === -1) return;
-      const newIndex = historyIndex + 1;
-      if (newIndex >= commandHistory.length) {
-        setHistoryIndex(-1);
-        setInputValue("");
-      } else {
-        setHistoryIndex(newIndex);
-        setInputValue(commandHistory[newIndex]);
-      }
-    }
+    inputBufferRef.current = "";
+    commandHistoryRef.current = [];
+    historyIndexRef.current = -1;
+    cwdRef.current = "/";
   };
 
   if (!isSuperAdminUser) return null;
@@ -272,7 +350,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
   if (!connected && !connecting) {
     return (
       <div className="lg:col-span-2 rounded-lg border border-border/50 bg-black/90 p-6 flex flex-col items-center justify-center gap-4 min-h-[200px]">
-        <Terminal className="w-10 h-10 text-green-500 opacity-60" />
+        <TerminalIcon className="w-10 h-10 text-green-500 opacity-60" />
         <p className="text-sm text-gray-400 font-mono">Terminal Remoto — {agentName}</p>
         <Button onClick={handleConnect} variant="outline" className="border-green-600 text-green-500 hover:bg-green-950 hover:text-green-400">
           <Power className="w-4 h-4 mr-2" />
@@ -282,7 +360,7 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
     );
   }
 
-  if (connecting) {
+  if (connecting && !connected) {
     return (
       <div className="lg:col-span-2 rounded-lg border border-border/50 bg-black/90 p-6 flex flex-col items-center justify-center gap-4 min-h-[200px]">
         <Loader2 className="w-10 h-10 text-green-500 animate-spin" />
@@ -291,9 +369,6 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       </div>
     );
   }
-
-  const hasPending = pendingCommands.size > 0;
-  const inputReady = connected && channelReady;
 
   return (
     <div className="lg:col-span-2 rounded-lg border border-gray-700 bg-black overflow-hidden flex flex-col" style={{ height: "500px" }}>
@@ -310,10 +385,15 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {channelReady ? (
+          {agentReady ? (
             <Badge variant="secondary" className="bg-green-900/50 text-green-400 text-[10px] border-green-700/50 px-1.5 py-0.5">
               <Wifi className="w-2.5 h-2.5 mr-1" />
-              WebSocket
+              Conectado
+            </Badge>
+          ) : channelReady ? (
+            <Badge variant="secondary" className="bg-yellow-900/50 text-yellow-400 text-[10px] border-yellow-700/50 px-1.5 py-0.5">
+              <Loader2 className="w-2.5 h-2.5 mr-1 animate-spin" />
+              Aguardando agente...
             </Badge>
           ) : (
             <Badge variant="secondary" className="bg-gray-800 text-gray-500 text-[10px] border-gray-700 px-1.5 py-0.5">
@@ -331,55 +411,12 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
         </div>
       </div>
 
-      {/* Terminal body */}
+      {/* Terminal body — xterm.js container */}
       <div
-        className="flex-1 overflow-y-auto p-3 font-mono text-sm cursor-text outline-none"
-        onClick={focusInput}
-        onKeyDown={handleTerminalKeyDown}
-        tabIndex={0}
-      >
-        {lines.map((line, i) => (
-          <div key={i} className="leading-5 whitespace-pre-wrap break-all">
-            {line.type === "input" && (
-              <span className="text-green-400">{line.text}</span>
-            )}
-            {line.type === "output" && (
-              <span className="text-gray-300">{line.text}</span>
-            )}
-            {line.type === "error" && (
-              <span className="text-red-400">{line.text}</span>
-            )}
-            {line.type === "system" && (
-              <span className="text-yellow-600 italic">{line.text}</span>
-            )}
-          </div>
-        ))}
-
-        {hasPending && (
-          <div className="leading-5 text-gray-500">
-            <span className="animate-pulse">▌</span>
-          </div>
-        )}
-
-        {!hasPending && inputReady && (
-          <form onSubmit={handleSubmit} className="flex leading-5">
-            <span className="text-green-400 shrink-0">{prompt}&nbsp;</span>
-            <input
-              ref={inputRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="flex-1 bg-transparent text-gray-200 outline-none border-none font-mono text-sm caret-green-400"
-              autoFocus
-              spellCheck={false}
-              autoComplete="off"
-              autoCapitalize="off"
-            />
-          </form>
-        )}
-
-        <div ref={bottomRef} />
-      </div>
+        ref={terminalRef}
+        className="flex-1 overflow-hidden"
+        style={{ padding: "4px" }}
+      />
     </div>
   );
 }
