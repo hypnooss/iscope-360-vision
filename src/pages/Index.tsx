@@ -70,9 +70,7 @@ function Section({ children, className = '', id, variant = stagger }: { children
       variants={variant}
       className={`py-[160px] px-6 overflow-hidden relative z-10 ${className}`}
     >
-      {/* Particle grid background for glass-through effect */}
-      <div className="absolute inset-0 animated-grid-dots grid-radial-mask pointer-events-none" aria-hidden="true" />
-      <div className="max-w-[1200px] mx-auto w-full relative">
+      <div className="max-w-[1200px] mx-auto w-full">
         {children}
       </div>
     </motion.section>
