@@ -322,7 +322,7 @@ const Index = () => {
               { num: '04', icon: ShieldCheck, title: 'Corrija', desc: 'Recomendações acionáveis para melhorar sua postura de segurança.' },
             ].map((step, i) => (
               <Reveal key={step.num} delay={i * 0.12} variant={scaleIn}>
-                <div className="text-center relative z-0 feature-card p-6">
+                <div className="text-center feature-card p-6">
                   <div className="inline-flex items-center justify-center w-[4.5rem] h-[4.5rem] rounded-2xl bg-card/60 backdrop-blur-xl border border-border/30 mb-6 relative z-10 shadow-lg shadow-background/50">
                     <step.icon className="w-6 h-6 text-primary" />
                   </div>
