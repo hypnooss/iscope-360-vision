@@ -265,8 +265,8 @@ def main():
                 realtime_shell = None
                 realtime_active = False
 
-        # Monitor worker health
-        if not worker.is_running():
+        # Monitor worker health (only if agent is installed)
+        if not agent_missing and not worker.is_running():
             logger.warning("[Supervisor] Worker service inativo! Iniciando via systemctl...")
             worker.start()
 
