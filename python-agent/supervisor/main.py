@@ -45,6 +45,7 @@ from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
 from agent.realtime_commands import ShellCommandPoller
 from supervisor.realtime_shell import RealtimeShell
+from monitor.worker import MonitorWorker
 
 # Cross-update paths
 SUPERVISOR_RESTART_FLAG = Path("/var/lib/iscope-agent/supervisor_restart.flag")
