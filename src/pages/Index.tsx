@@ -20,15 +20,46 @@ import {
 const ease = [0.22, 1, 0.36, 1] as const;
 
 const fadeUp = {
-  hidden: { opacity: 0, y: 40 },
+  hidden: { opacity: 0, y: 60 },
   visible: { opacity: 1, y: 0 },
+};
+
+const fadeLeft = {
+  hidden: { opacity: 0, x: -60 },
+  visible: { opacity: 1, x: 0 },
+};
+
+const fadeRight = {
+  hidden: { opacity: 0, x: 60 },
+  visible: { opacity: 1, x: 0 },
+};
+
+const scaleIn = {
+  hidden: { opacity: 0, scale: 0.8 },
+  visible: { opacity: 1, scale: 1 },
+};
+
+const fadeBlur = {
+  hidden: { opacity: 0, y: 30, filter: 'blur(8px)' },
+  visible: { opacity: 1, y: 0, filter: 'blur(0px)' },
+};
+
+const fadeUpScale = {
+  hidden: { opacity: 0, y: 40, scale: 0.95 },
+  visible: { opacity: 1, y: 0, scale: 1 },
 };
 
 const stagger = {
   visible: { transition: { staggerChildren: 0.1 } },
 };
 
-function Section({ children, className = '', id }: { children: React.ReactNode; className?: string; id?: string }) {
+const staggerWide = {
+  visible: { transition: { staggerChildren: 0.15 } },
+};
+
+type AnimationVariant = typeof fadeUp | typeof fadeLeft | typeof fadeRight | typeof scaleIn | typeof fadeBlur | typeof fadeUpScale;
+
+function Section({ children, className = '', id, variant = stagger }: { children: React.ReactNode; className?: string; id?: string; variant?: typeof stagger | typeof staggerWide }) {
   return (
     <motion.section
       id={id}
@@ -36,7 +67,7 @@ function Section({ children, className = '', id }: { children: React.ReactNode; 
       initial="hidden"
       whileInView="visible"
       viewport={{ once: true, margin: '-100px' }}
-      variants={stagger}
+      variants={variant}
       className={`py-[160px] px-6 ${className}`}
     >
       <div className="max-w-[1200px] mx-auto w-full">
@@ -46,10 +77,10 @@ function Section({ children, className = '', id }: { children: React.ReactNode; 
   );
 }
 
-function Reveal({ children, className = '', delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
+function Reveal({ children, className = '', delay = 0, variant = fadeUp }: { children: React.ReactNode; className?: string; delay?: number; variant?: AnimationVariant }) {
   return (
     <motion.div
-      variants={fadeUp}
+      variants={variant}
       transition={{ duration: 0.6, ease, delay }}
       className={className}
     >
