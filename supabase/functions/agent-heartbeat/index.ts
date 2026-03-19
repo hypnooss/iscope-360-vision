@@ -747,6 +747,29 @@ serve(async (req: Request) => {
       };
     }
 
+    // Include MONITOR update info if available
+    if (monitorUpdateAvailable) {
+      const monitorFilePath = `iscope-monitor-${monitorLatestVersion}.tar.gz`;
+      let monitorDownloadUrl = `${supabaseUrl}/storage/v1/object/public/agent-releases/${monitorFilePath}`;
+      try {
+        const { data: signedData } = await supabase.storage
+          .from('agent-releases')
+          .createSignedUrl(monitorFilePath, 3600);
+        if (signedData?.signedUrl) {
+          monitorDownloadUrl = signedData.signedUrl;
+        }
+      } catch (signErr) {
+        console.error('Failed to create signed URL for monitor release:', signErr);
+      }
+      response.monitor_update_available = true;
+      response.monitor_update_info = {
+        version: monitorLatestVersion,
+        download_url: monitorDownloadUrl,
+        checksum: monitorUpdateChecksum,
+        force: monitorForceUpdate,
+      };
+    }
+
     return new Response(
       JSON.stringify(response),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
