@@ -1,6 +1,6 @@
 """Supervisor version — independent from Worker version."""
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 def get_version() -> str:
