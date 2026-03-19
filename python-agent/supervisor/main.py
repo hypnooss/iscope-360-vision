@@ -92,23 +92,38 @@ def main():
     worker = WorkerManager(logger, WORKER_INSTALL_DIR, WORKER_HEALTH_FILE, WORKER_PID_FILE)
     remote_cmds = RemoteCommandHandler(api, logger)
 
-    # --- Start worker on boot ---
-    worker.start()
+    # --- Detect missing modules ---
+    agent_dir = WORKER_INSTALL_DIR / "agent"
+    monitor_dir = WORKER_INSTALL_DIR / "monitor"
+    agent_missing = not (agent_dir / "__init__.py").exists()
+    monitor_missing = not (monitor_dir / "__init__.py").exists()
+
+    if agent_missing:
+        logger.warning("[Supervisor] Módulo 'agent' não encontrado em disco — aguardando instalação via heartbeat")
+    if monitor_missing:
+        logger.warning("[Supervisor] Módulo 'monitor' não encontrado em disco — aguardando instalação via heartbeat")
+
+    # --- Start worker on boot (only if agent exists) ---
+    if not agent_missing:
+        worker.start()
+    else:
+        logger.warning("[Supervisor] Worker não iniciado — agent/ ausente")
 
     # --- Start monitor thread (lazy import — monitor may not be installed) ---
     monitor_thread = None
-    try:
-        from monitor.worker import MonitorWorker
-        monitor_thread = MonitorWorker(
-            api=api, state=state, logger=logger,
-            interval=MONITOR_INTERVAL, disk_path="/"
-        )
-        monitor_thread.start()
-        logger.info("[Supervisor] MonitorWorker iniciado com sucesso")
-    except ImportError:
-        logger.warning("[Supervisor] Módulo 'monitor' não encontrado — monitoramento desativado")
-    except Exception as e:
-        logger.warning(f"[Supervisor] Falha ao iniciar MonitorWorker: {e}")
+    if not monitor_missing:
+        try:
+            from monitor.worker import MonitorWorker
+            monitor_thread = MonitorWorker(
+                api=api, state=state, logger=logger,
+                interval=MONITOR_INTERVAL, disk_path="/"
+            )
+            monitor_thread.start()
+            logger.info("[Supervisor] MonitorWorker iniciado com sucesso")
+        except ImportError:
+            logger.warning("[Supervisor] Módulo 'monitor' importação falhou — monitoramento desativado")
+        except Exception as e:
+            logger.warning(f"[Supervisor] Falha ao iniciar MonitorWorker: {e}")
 
     # --- Realtime Shell ---
     realtime_shell = None
