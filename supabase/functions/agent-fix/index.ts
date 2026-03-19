@@ -227,8 +227,50 @@ if id iscope >/dev/null 2>&1; then
   chown -R iscope:iscope "$STATE_DIR" 2>/dev/null || true
 fi
 
+# ---- Create/update monitor systemd unit if missing ----
+MONITOR_SERVICE="iscope-monitor"
+MONITOR_UNIT="/etc/systemd/system/\${MONITOR_SERVICE}.service"
+if [[ ! -f "$MONITOR_UNIT" ]]; then
+  log "Criando unit file do Monitor..."
+  CONFIG_DIR=""
+  if [[ -f "/etc/iscope/agent.env" ]]; then
+    CONFIG_DIR="/etc/iscope"
+  elif [[ -f "/etc/iscope-agent/agent.env" ]]; then
+    CONFIG_DIR="/etc/iscope-agent"
+  else
+    CONFIG_DIR="/etc/iscope"
+  fi
+  cat > "$MONITOR_UNIT" <<MONEOF
+[Unit]
+Description=iScope 360 Monitor
+After=network-online.target iscope-supervisor.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=$INSTALL_DIR
+EnvironmentFile=-\${CONFIG_DIR}/agent.env
+ExecStart=$INSTALL_DIR/venv/bin/python -m monitor.main
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=iscope-monitor
+NoNewPrivileges=false
+ProtectSystem=false
+
+[Install]
+WantedBy=multi-user.target
+MONEOF
+  systemctl enable "$MONITOR_SERVICE" 2>/dev/null || true
+  ok "Unit file do Monitor criado"
+fi
+
 systemctl daemon-reload 2>/dev/null || true
 log "Iniciando serviços..."
+
 systemctl start "$SERVICE_NAME" 2>/dev/null || true
 sleep 2
 
@@ -246,6 +288,15 @@ else
   warn "Worker não iniciou (pode ser normal — Supervisor gerencia o Worker)"
 fi
 
+# Start monitor service
+systemctl start "$MONITOR_SERVICE" 2>/dev/null || true
+sleep 1
+if systemctl is-active --quiet "$MONITOR_SERVICE"; then
+  ok "Monitor rodando!"
+else
+  warn "Monitor não iniciou. Verificar: journalctl -u $MONITOR_SERVICE --no-pager -n 10"
+fi
+
 echo ""
 echo -e "\${GREEN}========================================\${NC}"
 echo -e "\${GREEN}  Fix concluído!\${NC}"
@@ -253,6 +304,7 @@ echo -e "\${GREEN}========================================\${NC}"
 echo ""
 echo "Verificar status:"
 echo "  systemctl status $SERVICE_NAME --no-pager"
+echo "  systemctl status $MONITOR_SERVICE --no-pager"
 echo "  journalctl -u $SERVICE_NAME -f --no-pager"
 echo ""
 echo "Backup dos módulos antigos em: $BACKUP_PATH"
