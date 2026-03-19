@@ -68,7 +68,7 @@ function Section({ children, className = '', id, variant = stagger }: { children
       whileInView="visible"
       viewport={{ once: true, amount: 0.4 }}
       variants={variant}
-      className={`py-[160px] px-6 overflow-hidden relative z-0 ${className}`}
+      className={`py-[160px] px-6 overflow-hidden relative ${className}`}
     >
       <div className="max-w-[1200px] mx-auto w-full">
         {children}
@@ -115,7 +115,7 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col relative">
+    <div className="min-h-screen text-foreground flex flex-col relative">
       <Header />
 
       {/* ═══ GLOBE BACKGROUND — Fixed full-screen layer like MazeHQ .s-gfx ═══ */}
