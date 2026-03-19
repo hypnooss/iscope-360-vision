@@ -43,7 +43,7 @@ from supervisor.logger import setup_supervisor_logger
 from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
 from supervisor.realtime_shell import RealtimeShell
-from monitor.worker import MonitorWorker
+# monitor is imported lazily in main() to avoid boot failure if missing
 
 # Cross-update paths
 SUPERVISOR_RESTART_FLAG = Path("/var/lib/iscope-agent/supervisor_restart.flag")
