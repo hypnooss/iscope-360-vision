@@ -8,6 +8,7 @@ interface HeartbeatRequest {
   status: string;
   agent_version: string;
   supervisor_version?: string;
+  monitor_version?: string;
   certificate_thumbprint?: string;
   certificate_public_key?: string;
   capabilities?: string[];
@@ -31,6 +32,8 @@ interface HeartbeatSuccessResponse {
   update_info?: UpdateInfo;
   supervisor_update_available?: boolean;
   supervisor_update_info?: UpdateInfo;
+  monitor_update_available?: boolean;
+  monitor_update_info?: UpdateInfo;
   azure_certificate_key_id?: string;
   check_components?: boolean;
   request_certificate?: boolean;
@@ -620,6 +623,7 @@ serve(async (req: Request) => {
       .in('key', [
         'agent_latest_version', 'agent_update_checksum', 'agent_force_update',
         'supervisor_latest_version', 'supervisor_update_checksum', 'supervisor_force_update',
+        'monitor_latest_version', 'monitor_update_checksum', 'monitor_force_update',
       ]);
 
     // Agent update check
@@ -640,7 +644,18 @@ serve(async (req: Request) => {
       ? compareVersions(supervisorVersion, supervisorLatestVersion) < 0
       : false;
 
-    console.log(`Heartbeat OK: agent=${agentId}, version=${agentVersion}, supervisor=${supervisorVersion || 'n/a'}, latest=${latestVersion}, sup_latest=${supervisorLatestVersion}, update=${updateAvailable}, sup_update=${supervisorUpdateAvailable}, config_flag=${result.config_flag}, pending=${result.has_pending_tasks}, cert=${azureCertificateKeyId ? 'registered' : 'none'}`);
+    // Monitor update check
+    const monitorLatestVersion = (updateSettings?.find(s => s.key === 'monitor_latest_version')?.value as string || '1.0.0').replace(/"/g, '');
+    const monitorUpdateChecksum = (updateSettings?.find(s => s.key === 'monitor_update_checksum')?.value as string || '').replace(/"/g, '');
+    const monitorForceUpdate = updateSettings?.find(s => s.key === 'monitor_force_update')?.value === true ||
+                               updateSettings?.find(s => s.key === 'monitor_force_update')?.value === 'true';
+
+    const monitorVersion = body.monitor_version || '';
+    const monitorUpdateAvailable = monitorVersion
+      ? compareVersions(monitorVersion, monitorLatestVersion) < 0
+      : false;
+
+    console.log(`Heartbeat OK: agent=${agentId}, version=${agentVersion}, supervisor=${supervisorVersion || 'n/a'}, monitor=${monitorVersion || 'n/a'}, latest=${latestVersion}, sup_latest=${supervisorLatestVersion}, mon_latest=${monitorLatestVersion}, update=${updateAvailable}, sup_update=${supervisorUpdateAvailable}, mon_update=${monitorUpdateAvailable}, config_flag=${result.config_flag}, pending=${result.has_pending_tasks}, cert=${azureCertificateKeyId ? 'registered' : 'none'}`);
 
     // Check for pending remote commands
     let hasPendingCommands = false;
@@ -729,6 +744,29 @@ serve(async (req: Request) => {
         download_url: supervisorDownloadUrl,
         checksum: supervisorUpdateChecksum,
         force: supervisorForceUpdate,
+      };
+    }
+
+    // Include MONITOR update info if available
+    if (monitorUpdateAvailable) {
+      const monitorFilePath = `iscope-monitor-${monitorLatestVersion}.tar.gz`;
+      let monitorDownloadUrl = `${supabaseUrl}/storage/v1/object/public/agent-releases/${monitorFilePath}`;
+      try {
+        const { data: signedData } = await supabase.storage
+          .from('agent-releases')
+          .createSignedUrl(monitorFilePath, 3600);
+        if (signedData?.signedUrl) {
+          monitorDownloadUrl = signedData.signedUrl;
+        }
+      } catch (signErr) {
+        console.error('Failed to create signed URL for monitor release:', signErr);
+      }
+      response.monitor_update_available = true;
+      response.monitor_update_info = {
+        version: monitorLatestVersion,
+        download_url: monitorDownloadUrl,
+        checksum: monitorUpdateChecksum,
+        force: monitorForceUpdate,
       };
     }
 
