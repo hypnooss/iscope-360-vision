@@ -205,7 +205,7 @@ const Index = () => {
 
             {/* Tempo de exploração */}
             <Reveal delay={0.15}>
-              <div className="glass-container p-6 text-center md:text-left h-full">
+              <div className="feature-card p-6 text-center md:text-left h-full">
                 <div className="text-5xl lg:text-6xl font-heading font-extrabold text-foreground mb-3 tracking-tight">
                   5 dias
                 </div>
