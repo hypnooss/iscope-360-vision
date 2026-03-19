@@ -241,7 +241,7 @@ function ProgressBar({ scrollProgress }: { scrollProgress: number }) {
   const totalProgress = Math.min(scrollProgress * 1.1, 1);
 
   return (
-    <div className="sticky top-0 z-30 pt-14 pb-4 bg-gradient-to-b from-background via-background/95 to-transparent">
+    <div className="sticky top-[72px] z-30 pt-8 pb-4 bg-gradient-to-b from-background via-background/95 to-transparent">
       <div className="flex items-start justify-center w-full max-w-[900px] mx-auto px-6">
         {steps.map((s, i) => {
           const stepStart = i / 3;
@@ -375,7 +375,7 @@ export function SteppedShowcase() {
 
   return (
     <section ref={containerRef} data-section className="relative" style={{ height: '400vh' }}>
-      <div className="sticky top-0 h-screen overflow-hidden flex flex-col">
+      <div className="sticky top-[72px] h-[calc(100vh-72px)] overflow-hidden flex flex-col">
         <ProgressBar scrollProgress={currentProgress} />
 
         <div className="flex-1 flex items-center pt-6">
