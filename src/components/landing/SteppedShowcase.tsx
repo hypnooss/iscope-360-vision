@@ -377,9 +377,8 @@ export function SteppedShowcase() {
   const stepValues = [step0, step1, step2];
 
   return (
-    <section ref={containerRef} className="relative z-0" style={{ height: 'calc(400vh + 100vh)' }}>
-      {/* Spacer so sticky content only activates after scrolling past previous section */}
-      <div className="h-screen" aria-hidden="true" />
+    <section ref={containerRef} className="relative z-0" style={{ height: '400vh' }}>
+
       {/* Invisible anchors for ScrollDownIndicator step navigation */}
       <div data-section className="absolute top-0 w-px h-px" aria-hidden="true" />
       <div data-section className="absolute w-px h-px" style={{ top: '133.33vh' }} aria-hidden="true" />
