@@ -73,6 +73,34 @@ Deno.serve(async (req) => {
       .lt('created_at', staleThreshold)
       .select('id');
 
+    // 5. Sync analyzer_snapshots whose agent_task already finished
+    const { data: taskIds } = await supabase
+      .from('agent_tasks')
+      .select('id')
+      .in('status', ['timeout', 'failed']);
+    
+    let syncedSnapshots = 0;
+    let syncedM365Snapshots = 0;
+    if (taskIds && taskIds.length > 0) {
+      const finishedIds = taskIds.map((t: any) => t.id);
+      
+      const { data: s1 } = await supabase
+        .from('analyzer_snapshots')
+        .update({ status: 'failed' })
+        .in('status', ['pending', 'processing'])
+        .in('agent_task_id', finishedIds)
+        .select('id');
+      syncedSnapshots = s1?.length ?? 0;
+
+      const { data: s2 } = await supabase
+        .from('m365_analyzer_snapshots')
+        .update({ status: 'failed' })
+        .in('status', ['pending', 'processing'])
+        .in('agent_task_id', finishedIds)
+        .select('id');
+      syncedM365Snapshots = s2?.length ?? 0;
+    }
+
     const summary = {
       expired_tasks: expiredTasks?.length ?? 0,
       stale_tasks: staleTasks?.length ?? 0,
