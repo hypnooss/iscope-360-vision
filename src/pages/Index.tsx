@@ -20,15 +20,46 @@ import {
 const ease = [0.22, 1, 0.36, 1] as const;
 
 const fadeUp = {
-  hidden: { opacity: 0, y: 40 },
+  hidden: { opacity: 0, y: 60 },
   visible: { opacity: 1, y: 0 },
+};
+
+const fadeLeft = {
+  hidden: { opacity: 0, x: -60 },
+  visible: { opacity: 1, x: 0 },
+};
+
+const fadeRight = {
+  hidden: { opacity: 0, x: 60 },
+  visible: { opacity: 1, x: 0 },
+};
+
+const scaleIn = {
+  hidden: { opacity: 0, scale: 0.8 },
+  visible: { opacity: 1, scale: 1 },
+};
+
+const fadeBlur = {
+  hidden: { opacity: 0, y: 30, filter: 'blur(8px)' },
+  visible: { opacity: 1, y: 0, filter: 'blur(0px)' },
+};
+
+const fadeUpScale = {
+  hidden: { opacity: 0, y: 40, scale: 0.95 },
+  visible: { opacity: 1, y: 0, scale: 1 },
 };
 
 const stagger = {
   visible: { transition: { staggerChildren: 0.1 } },
 };
 
-function Section({ children, className = '', id }: { children: React.ReactNode; className?: string; id?: string }) {
+const staggerWide = {
+  visible: { transition: { staggerChildren: 0.15 } },
+};
+
+type AnimationVariant = typeof fadeUp | typeof fadeLeft | typeof fadeRight | typeof scaleIn | typeof fadeBlur | typeof fadeUpScale;
+
+function Section({ children, className = '', id, variant = stagger }: { children: React.ReactNode; className?: string; id?: string; variant?: typeof stagger | typeof staggerWide }) {
   return (
     <motion.section
       id={id}
@@ -36,7 +67,7 @@ function Section({ children, className = '', id }: { children: React.ReactNode; 
       initial="hidden"
       whileInView="visible"
       viewport={{ once: true, margin: '-100px' }}
-      variants={stagger}
+      variants={variant}
       className={`py-[160px] px-6 ${className}`}
     >
       <div className="max-w-[1200px] mx-auto w-full">
@@ -46,10 +77,10 @@ function Section({ children, className = '', id }: { children: React.ReactNode; 
   );
 }
 
-function Reveal({ children, className = '', delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
+function Reveal({ children, className = '', delay = 0, variant = fadeUp }: { children: React.ReactNode; className?: string; delay?: number; variant?: AnimationVariant }) {
   return (
     <motion.div
-      variants={fadeUp}
+      variants={variant}
       transition={{ duration: 0.6, ease, delay }}
       className={className}
     >
@@ -104,7 +135,7 @@ const Index = () => {
             variants={stagger}
             className="relative z-10 text-center max-w-[960px] mx-auto"
           >
-            <Reveal delay={0.1}>
+            <Reveal delay={0.1} variant={fadeUpScale}>
               <h1 className="font-heading text-[2.8rem] sm:text-[3.8rem] lg:text-[5.2rem] font-extrabold leading-[0.95] tracking-[-0.035em] mb-6 text-foreground">
                 Visibilidade inteligente{' '}
                 <span className="block text-primary">para sua infraestrutura</span>
@@ -132,7 +163,7 @@ const Index = () => {
 
 
         {/* ═══ PROBLEM — Impact Numbers ═══ */}
-        <Section id="problem">
+        <Section id="problem" variant={staggerWide}>
           <Reveal>
             <div className="text-center mb-20">
               <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-6 leading-tight">
@@ -220,7 +251,7 @@ const Index = () => {
         </Section>
 
         {/* ═══ THE REAL PROBLEM ═══ */}
-        <Section id="real-problem">
+        <Section id="real-problem" variant={staggerWide}>
           <Reveal>
             <div className="text-center mb-4">
               <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4 leading-tight">
@@ -251,7 +282,7 @@ const Index = () => {
                 stat: '6+', statLabel: 'ferramentas por equipe em média',
               },
             ].map((item, i) => (
-              <Reveal key={item.title} delay={i * 0.12}>
+              <Reveal key={item.title} delay={i * 0.12} variant={i === 1 ? fadeUp : i === 0 ? fadeLeft : fadeRight}>
                 <div className="glass-container p-8 h-full flex flex-col group hover:-translate-y-1 transition-transform duration-300">
                   <div className="inline-flex p-3 rounded-xl bg-destructive/10 mb-5 self-start group-hover:bg-destructive/15 transition-colors duration-300">
                     <item.icon className="w-5 h-5 text-destructive" />
@@ -290,7 +321,7 @@ const Index = () => {
               { num: '03', icon: BarChart3, title: 'Visualize', desc: 'Dashboards interativos com visão 360° do seu ambiente.' },
               { num: '04', icon: ShieldCheck, title: 'Corrija', desc: 'Recomendações acionáveis para melhorar sua postura de segurança.' },
             ].map((step, i) => (
-              <Reveal key={step.num} delay={i * 0.12}>
+              <Reveal key={step.num} delay={i * 0.12} variant={scaleIn}>
                 <div className="text-center relative glass-container p-6">
                   <div className="inline-flex items-center justify-center w-[4.5rem] h-[4.5rem] rounded-2xl bg-card/60 backdrop-blur-xl border border-border/30 mb-6 relative z-10 shadow-lg shadow-background/50">
                     <step.icon className="w-6 h-6 text-primary" />
@@ -324,7 +355,7 @@ const Index = () => {
               { icon: Shield, title: 'Detecção de Riscos', description: 'Identifica vulnerabilidades e configurações inseguras automaticamente em toda a sua infraestrutura.', highlight: 'Tempo real' },
               { icon: Eye, title: 'Visibilidade Total', description: 'Dashboards unificados com visão 360° do ambiente — firewalls, cloud, endpoints e serviços.', highlight: 'Visão 360°' },
             ].map((f, i) => (
-              <Reveal key={f.title} delay={i * 0.1}>
+              <Reveal key={f.title} delay={i * 0.1} variant={fadeBlur}>
                 <div className="feature-card group h-full flex flex-col">
                   <div className="inline-flex p-3.5 rounded-xl bg-primary/10 mb-5 group-hover:bg-primary/15 transition-colors duration-300 self-start">
                     <f.icon className="w-6 h-6 text-primary" />
@@ -362,7 +393,7 @@ const Index = () => {
               { quote: 'Pela primeira vez temos visibilidade real do nosso ambiente multi-cloud. Antes eram 6 ferramentas e nenhuma visão unificada.', name: 'Ana L.', role: 'CTO', company: 'Fintech — Série B' },
               { quote: 'A detecção automática de configurações inseguras nos evitou dois incidentes críticos em seis meses. O ROI se pagou no primeiro trimestre.', name: 'Roberto S.', role: 'Diretor de Infraestrutura', company: 'Healthcare — 50+ unidades' },
             ].map((t, i) => (
-              <Reveal key={t.name} delay={i * 0.12}>
+              <Reveal key={t.name} delay={i * 0.12} variant={fadeRight}>
                 <div className="glass-container p-8 h-full flex flex-col group hover:-translate-y-1 transition-transform duration-300">
                   <Quote className="w-8 h-8 text-primary/20 mb-4 shrink-0" />
                   <p className="text-[15px] text-foreground/80 leading-relaxed mb-8 flex-1 italic">
@@ -438,7 +469,7 @@ const Index = () => {
             variants={stagger}
             className="max-w-3xl mx-auto w-full text-center relative z-10"
           >
-            <Reveal>
+            <Reveal variant={fadeUpScale}>
               <h2 className="font-heading text-3xl lg:text-[2.5rem] font-bold mb-4 leading-tight">
                 Comece a proteger sua infraestrutura{' '}
                 <span className="text-primary">hoje</span>
