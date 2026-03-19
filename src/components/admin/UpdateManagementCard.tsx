@@ -355,7 +355,7 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
     versionPrefix: string,
     total: number,
     upToDate: number,
-    outdated: { name: string; client: string; [key: string]: string }[],
+    outdated: Record<string, string>[],
     versionKey: string,
     extra?: React.ReactNode,
   ) => (
