@@ -388,6 +388,7 @@ class RealtimeShell:
                 data = self._read_pty(master_fd)
                 if data:
                     self._last_activity = time.time()
+                    start_time = time.time()
                     self.logger.debug(f"[RealtimeShell] 📤 Output ({len(data)} chars) cmd={command_id[:8]}")
                     self._broadcast("output", {
                         "id": command_id,
