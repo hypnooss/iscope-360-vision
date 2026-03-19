@@ -5,11 +5,9 @@ Lightweight process that:
 1. Sends heartbeats to the backend
 2. Manages the Worker process lifecycle (start/stop/restart)
 3. Handles Worker updates (download, validate, replace, restart)
-4. Installs system components when requested
-5. Detects supervisor_restart.flag and exits for systemd restart (cross-update)
-
-This process is intentionally small and stable so it rarely needs
-a manual update itself.
+4. Handles Monitor updates (download, validate, replace, restart)
+5. Installs system components when requested
+6. Detects supervisor_restart.flag and exits for systemd restart (cross-update)
 """
 
 import json
@@ -33,9 +31,10 @@ from supervisor.config import (
 )
 from supervisor.heartbeat import SupervisorHeartbeatLoop
 from supervisor.updater import SupervisorUpdater
+from supervisor.monitor_updater import MonitorUpdater
 from supervisor.worker_manager import WorkerManager
 
-# Reuse agent infrastructure (API client, state, auth, heartbeat, logger)
+# Reuse agent infrastructure
 from agent.state import AgentState
 from agent.api_client import APIClient
 from agent.auth import AuthManager
@@ -43,7 +42,6 @@ from agent.heartbeat import AgentHeartbeat
 from supervisor.logger import setup_supervisor_logger
 from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
-from agent.realtime_commands import ShellCommandPoller
 from supervisor.realtime_shell import RealtimeShell
 from monitor.worker import MonitorWorker
 
@@ -51,20 +49,13 @@ from monitor.worker import MonitorWorker
 SUPERVISOR_RESTART_FLAG = Path("/var/lib/iscope-agent/supervisor_restart.flag")
 PENDING_SUPERVISOR_UPDATE = Path("/var/lib/iscope-agent/pending_supervisor_update.json")
 
-# Regex to extract __version__ from agent/version.py on disk
+# Regex to extract __version__ from version.py on disk
 _VERSION_RE = re.compile(r'__version__\s*=\s*["\']([^"\']+)["\']')
 
 
-def _read_worker_version_from_disk() -> Optional[str]:
-    """
-    Read the Worker's __version__ directly from disk, bypassing
-    Python's import cache. This is critical because the Supervisor
-    is a long-lived process that updates Worker files in-place
-    without restarting itself.
-
-    Returns the version string, or None on failure.
-    """
-    version_file = WORKER_INSTALL_DIR / "agent" / "version.py"
+def _read_version_from_disk(module_dir: Path, module_name: str) -> Optional[str]:
+    """Read a module's __version__ directly from disk, bypassing import cache."""
+    version_file = module_dir / module_name / "version.py"
     try:
         content = version_file.read_text(encoding="utf-8")
         m = _VERSION_RE.search(content)
@@ -83,7 +74,7 @@ def main():
         logger.critical("AGENT_API_BASE_URL não configurada. Abortando.")
         sys.exit(1)
 
-    # --- Shared state & auth (same files as the worker) ---
+    # --- Shared state & auth ---
     state = AgentState(STATE_FILE)
     state.load()
 
@@ -91,13 +82,13 @@ def main():
     auth = AuthManager(state, api, logger)
     api.set_auth_manager(auth)
 
-    # Ensure registered
     auth.ensure_authenticated()
 
     # --- Components ---
     heartbeat = AgentHeartbeat(api, state, logger)
     hb_loop = SupervisorHeartbeatLoop(heartbeat, auth, logger)
     updater = SupervisorUpdater(logger, WORKER_INSTALL_DIR)
+    monitor_updater = MonitorUpdater(logger, WORKER_INSTALL_DIR)
     worker = WorkerManager(logger, WORKER_INSTALL_DIR, WORKER_HEALTH_FILE, WORKER_PID_FILE)
     remote_cmds = RemoteCommandHandler(api, logger)
 
@@ -111,11 +102,11 @@ def main():
     )
     monitor_thread.start()
 
-    # --- Realtime Shell: on-demand WebSocket (started via heartbeat flag) ---
+    # --- Realtime Shell ---
     realtime_shell = None
     realtime_active = False
 
-    # --- Check for component flag (from previous check_components request) ---
+    # --- Check component flag ---
     _check_component_flag(logger)
 
     # --- Main loop ---
@@ -139,15 +130,22 @@ def main():
             worker.stop()
             sys.exit(0)
 
-        # --- Resolve Worker version from disk (not import cache) ---
-        agent_version = _read_worker_version_from_disk()
+        # --- Resolve versions from disk ---
+        agent_version = _read_version_from_disk(WORKER_INSTALL_DIR, "agent")
         if not agent_version:
-            # Fallback: use the (possibly stale) in-memory import
             from agent.version import get_version
             agent_version = get_version()
-            logger.warning(f"[Supervisor] Não foi possível ler versão do disco, usando fallback: {agent_version}")
+            logger.warning(f"[Supervisor] Não foi possível ler versão do agent do disco, usando fallback: {agent_version}")
 
-        result = hb_loop.tick(agent_version=agent_version)
+        monitor_version = _read_version_from_disk(WORKER_INSTALL_DIR, "monitor")
+        if not monitor_version:
+            try:
+                from monitor.version import get_version as get_mon_version
+                monitor_version = get_mon_version()
+            except Exception:
+                monitor_version = None
+
+        result = hb_loop.tick(agent_version=agent_version, monitor_version=monitor_version)
 
         if "error" in result:
             consecutive_errors += 1
@@ -165,13 +163,17 @@ def main():
             consecutive_errors = 0
             interval = result.get("next_heartbeat_in", HEARTBEAT_INTERVAL)
 
-            # Handle AGENT update (Supervisor updates the Worker)
+            # Handle AGENT update
             if result.get("update_available") and result.get("update_info"):
                 _handle_update(result, updater, worker, agent_version, logger)
 
-            # Handle SUPERVISOR update signal (write pending file for Worker to apply)
+            # Handle SUPERVISOR update signal
             if result.get("supervisor_update_available") and result.get("supervisor_update_info"):
                 _handle_supervisor_update_signal(result, logger)
+
+            # Handle MONITOR update
+            if result.get("monitor_update_available") and result.get("monitor_update_info"):
+                _handle_monitor_update(result, monitor_updater, monitor_thread, monitor_version, logger)
 
             # Handle component check
             if result.get("check_components"):
@@ -184,7 +186,7 @@ def main():
                 except Exception as e:
                     logger.error(f"[Supervisor] Erro ao processar comandos remotos: {e}")
 
-            # Handle on-demand Realtime Shell (WebSocket)
+            # Handle on-demand Realtime Shell
             should_realtime = result.get("start_realtime", False)
             if should_realtime and not realtime_active:
                 if SUPABASE_URL and SUPABASE_ANON_KEY:
@@ -212,7 +214,7 @@ def main():
                     realtime_shell = None
                 realtime_active = False
 
-            # Check if realtime shell timed out or session was closed
+            # Check if realtime shell timed out
             if realtime_active and realtime_shell and (realtime_shell.timed_out or realtime_shell.session_closed):
                 reason = "inatividade (120s)" if realtime_shell.timed_out else "sessão encerrada pelo GUI"
                 logger.info(f"[Supervisor] Realtime Shell encerrado: {reason}.")
@@ -220,7 +222,7 @@ def main():
                 realtime_shell = None
                 realtime_active = False
 
-        # Monitor worker health (systemd manages restart, but we ensure it's up)
+        # Monitor worker health
         if not worker.is_running():
             logger.warning("[Supervisor] Worker service inativo! Iniciando via systemctl...")
             worker.start()
@@ -230,23 +232,15 @@ def main():
 
 def _handle_update(result: dict, updater: SupervisorUpdater, worker: WorkerManager,
                    current_version: str, logger):
-    """Process an AGENT update signal from the heartbeat (Supervisor updates Worker)."""
+    """Process an AGENT update signal."""
     update_info = result["update_info"]
     target_version = update_info.get("version", "?")
 
-    # Guard: skip if Worker on disk is already at the target version
     if current_version == target_version:
-        logger.info(
-            f"[Supervisor] Update skip | latest={target_version} "
-            f"current={current_version} action=skip (already on disk)"
-        )
+        logger.info(f"[Supervisor] Update skip | latest={target_version} current={current_version} action=skip")
         return
 
-    logger.info(
-        f"[Supervisor] Update apply | latest={target_version} "
-        f"current={current_version} action=apply"
-    )
-
+    logger.info(f"[Supervisor] Update apply | latest={target_version} current={current_version} action=apply")
     success = updater.check_and_update(update_info, worker)
     if success:
         logger.info(f"[Supervisor] Worker atualizado para v{target_version} com sucesso")
@@ -255,25 +249,42 @@ def _handle_update(result: dict, updater: SupervisorUpdater, worker: WorkerManag
 
 
 def _handle_supervisor_update_signal(result: dict, logger):
-    """Write pending_supervisor_update.json for the Worker to pick up and apply."""
+    """Write pending_supervisor_update.json for the Worker to pick up."""
     sup_info = result["supervisor_update_info"]
     version = sup_info.get("version", "?")
 
-    # Don't overwrite if already pending
     if PENDING_SUPERVISOR_UPDATE.exists():
         try:
             existing = json.loads(PENDING_SUPERVISOR_UPDATE.read_text())
             if existing.get("version") == version:
-                return  # Already pending same version
+                return
         except Exception:
             pass
 
-    logger.info(f"[Supervisor] Supervisor update v{version} disponível — escrevendo pending file para Worker aplicar")
+    logger.info(f"[Supervisor] Supervisor update v{version} disponível — escrevendo pending file")
     try:
         PENDING_SUPERVISOR_UPDATE.parent.mkdir(parents=True, exist_ok=True)
         PENDING_SUPERVISOR_UPDATE.write_text(json.dumps(sup_info))
     except Exception as e:
         logger.error(f"[Supervisor] Erro ao escrever pending supervisor update: {e}")
+
+
+def _handle_monitor_update(result: dict, monitor_updater: MonitorUpdater,
+                           monitor_thread: MonitorWorker, current_version: Optional[str], logger):
+    """Process a MONITOR update signal."""
+    update_info = result["monitor_update_info"]
+    target_version = update_info.get("version", "?")
+
+    if current_version == target_version:
+        logger.info(f"[Supervisor] Monitor update skip | latest={target_version} current={current_version}")
+        return
+
+    logger.info(f"[Supervisor] Monitor update apply | latest={target_version} current={current_version or '?'}")
+    success = monitor_updater.check_and_update(update_info, monitor_thread)
+    if success:
+        logger.info(f"[Supervisor] Monitor atualizado para v{target_version} com sucesso")
+    else:
+        logger.error(f"[Supervisor] Falha ao atualizar Monitor para v{target_version}")
 
 
 def _handle_check_components(logger, worker: WorkerManager):
