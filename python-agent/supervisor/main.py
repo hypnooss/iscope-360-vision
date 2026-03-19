@@ -280,7 +280,7 @@ def _handle_supervisor_update_signal(result: dict, logger):
 
 
 def _handle_monitor_update(result: dict, monitor_updater: MonitorUpdater,
-                           monitor_thread: MonitorWorker, current_version: Optional[str], logger):
+                           monitor_thread, current_version: Optional[str], logger):
     """Process a MONITOR update signal."""
     update_info = result["monitor_update_info"]
     target_version = update_info.get("version", "?")
