@@ -19,12 +19,15 @@ set -euo pipefail
 
 INSTALL_DIR="/opt/iscope-agent"
 STATE_DIR="/var/lib/iscope-agent"
+LEGACY_ENV_PATH="/etc/iscope-agent/.env"
+SYSTEM_ENV_PATH="/etc/iscope/agent.env"
 API_BASE_URL="${API_BASE_URL}"
 SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}"
 
 SERVICE_NAME="iscope-supervisor"
 LEGACY_SERVICE_NAME="iscope-agent"
 PYTHON_BIN=""
+ENV_FILE=""
 
 RED='\\033[0;31m'
 GREEN='\\033[0;32m'
@@ -49,11 +52,19 @@ if [[ ! -d "\$INSTALL_DIR" ]]; then
   exit 1
 fi
 
-if [[ ! -f "\$INSTALL_DIR/.env" ]] && [[ ! -f "/etc/iscope-agent/.env" ]]; then
-  fail "Arquivo .env não encontrado. Este agent nunca foi instalado corretamente."
+if [[ -f "\$INSTALL_DIR/.env" ]]; then
+  ENV_FILE="\$INSTALL_DIR/.env"
+elif [[ -f "\$SYSTEM_ENV_PATH" ]]; then
+  ENV_FILE="\$SYSTEM_ENV_PATH"
+elif [[ -f "\$LEGACY_ENV_PATH" ]]; then
+  ENV_FILE="\$LEGACY_ENV_PATH"
+else
+  fail "Arquivo de ambiente não encontrado. Procurei em \$INSTALL_DIR/.env, \$SYSTEM_ENV_PATH e \$LEGACY_ENV_PATH."
   echo "Use o instalador completo com --activation-code."
   exit 1
 fi
+
+ok "Arquivo de ambiente detectado em \$ENV_FILE"
 
 # ---- Detect Python ----
 choose_python() {
