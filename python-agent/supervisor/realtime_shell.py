@@ -250,7 +250,7 @@ class RealtimeShell:
         if not command_text:
             return
 
-        self.logger.info(f"[RealtimeShell] Comando recebido: {command_text[:80]}...")
+        self.logger.info(f"[RealtimeShell] 📥 Comando recebido (id={command_id[:8]}): {command_text[:80]}")
 
         t = threading.Thread(
             target=self._execute_command,
