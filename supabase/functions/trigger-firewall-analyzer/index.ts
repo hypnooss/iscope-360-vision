@@ -144,6 +144,14 @@ Deno.serve(async (req) => {
       .eq('status', 'pending')
       .lt('created_at', staleThreshold);
 
+    // Also mark orphaned snapshots as failed (stale > 30min)
+    await supabase
+      .from('analyzer_snapshots')
+      .update({ status: 'failed' })
+      .eq('firewall_id', firewall_id)
+      .in('status', ['pending', 'processing'])
+      .lt('created_at', staleThreshold);
+
     // Check for existing active task
     const { data: existing } = await supabase
       .from('agent_tasks')
