@@ -182,7 +182,7 @@ def main():
                         realtime_shell = RealtimeShell(
                             supabase_url=SUPABASE_URL,
                             anon_key=SUPABASE_ANON_KEY,
-                            agent_id=str(state.get("agent_id", "")),
+                            agent_id=str(state.data.get("agent_id", "")),
                             logger=logger,
                         )
                         realtime_shell.start()
