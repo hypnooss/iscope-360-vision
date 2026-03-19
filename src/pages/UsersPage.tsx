@@ -497,6 +497,8 @@ export default function UsersPage() {
     });
   }, [filteredUsers, sortKey, sortDir]);
 
+  if (authLoading || !canAccessPage) return null;
+
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
