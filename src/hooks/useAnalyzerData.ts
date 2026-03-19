@@ -304,6 +304,24 @@ export function useAnalyzerProgress(firewallId?: string) {
       if (snap.status === 'completed' || snap.status === 'failed' || snap.status === 'cancelled' || snap.status === 'timeout') {
         return { status: snap.status as string, elapsed: null as number | null };
       }
+
+      // Cross-check: if the associated agent_task is already done, treat snapshot as expired
+      if (snap.agent_task_id) {
+        const { data: task } = await supabase
+          .from('agent_tasks')
+          .select('status')
+          .eq('id', snap.agent_task_id)
+          .maybeSingle();
+        if (task && ['timeout', 'failed', 'completed'].includes(task.status)) {
+          // Fire-and-forget: sync snapshot status
+          supabase.from('analyzer_snapshots' as any)
+            .update({ status: 'failed' })
+            .eq('id', snap.id)
+            .then(() => {});
+          return { status: 'timeout' as string, elapsed: null as number | null };
+        }
+      }
+
       const elapsed = Math.floor((Date.now() - new Date(snap.created_at).getTime()) / 1000);
       // Treat snapshots stuck for more than 60 minutes as timed out
       if (elapsed > 3600) {
