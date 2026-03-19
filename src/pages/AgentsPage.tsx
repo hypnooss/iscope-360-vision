@@ -48,6 +48,9 @@ import {
   Trash2,
   Search,
   Shield,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUpDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -219,6 +222,48 @@ export default function AgentsPage() {
       a.client_name?.toLowerCase().includes(q)
     );
   }, [agents, search]);
+
+  // Sorting
+  type AgentSortKey = 'name' | 'client_name' | 'agent_version' | 'status' | 'last_seen';
+  type SortDir = 'asc' | 'desc' | null;
+  const SORT_STORAGE_KEY = 'agents-sort';
+
+  const [sortKey, setSortKey] = useState<AgentSortKey | null>(() => {
+    try { const s = localStorage.getItem(SORT_STORAGE_KEY); return s ? JSON.parse(s).key : null; } catch { return null; }
+  });
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    try { const s = localStorage.getItem(SORT_STORAGE_KEY); return s ? JSON.parse(s).dir : null; } catch { return null; }
+  });
+
+  const handleSort = (key: AgentSortKey) => {
+    let newKey: AgentSortKey | null, newDir: SortDir;
+    if (sortKey !== key) { newKey = key; newDir = 'asc'; }
+    else if (sortDir === 'asc') { newKey = key; newDir = 'desc'; }
+    else { newKey = null; newDir = null; }
+    setSortKey(newKey); setSortDir(newDir);
+    if (newKey && newDir) localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify({ key: newKey, dir: newDir }));
+    else localStorage.removeItem(SORT_STORAGE_KEY);
+  };
+
+  const sortedAgents = useMemo(() => {
+    if (!sortKey || !sortDir) return filtered;
+    const mul = sortDir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      if (sortKey === 'last_seen') {
+        const da = a.last_seen ? new Date(a.last_seen).getTime() : (sortDir === 'asc' ? Infinity : -Infinity);
+        const db = b.last_seen ? new Date(b.last_seen).getTime() : (sortDir === 'asc' ? Infinity : -Infinity);
+        return (da - db) * mul;
+      }
+      if (sortKey === 'status') {
+        const sa = getAgentStatus(a).label;
+        const sb = getAgentStatus(b).label;
+        return sa.localeCompare(sb, 'pt-BR', { sensitivity: 'base' }) * mul;
+      }
+      const va = (a[sortKey] ?? '') as string;
+      const vb = (b[sortKey] ?? '') as string;
+      return va.localeCompare(vb, 'pt-BR', { sensitivity: 'base' }) * mul;
+    });
+  }, [filtered, sortKey, sortDir]);
 
   const getAgentStatus = (
     agent: Agent,
@@ -580,16 +625,27 @@ export default function AgentsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Versão</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last Seen</TableHead>
+                    {([['Nome', 'name'], ['Cliente', 'client_name'], ['Versão', 'agent_version'], ['Status', 'status'], ['Last Seen', 'last_seen']] as [string, AgentSortKey][]).map(([label, key]) => {
+                      const isActive = sortKey === key;
+                      const SortIcon = isActive && sortDir === 'asc' ? ArrowUp : isActive && sortDir === 'desc' ? ArrowDown : ChevronsUpDown;
+                      return (
+                        <TableHead key={key}>
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 hover:text-foreground transition-colors -my-1"
+                            onClick={() => handleSort(key)}
+                          >
+                            {label}
+                            <SortIcon className={`w-3 h-3 ${isActive ? 'text-foreground' : 'text-muted-foreground'}`} />
+                          </button>
+                        </TableHead>
+                      );
+                    })}
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((agent) => {
+                  {sortedAgents.map((agent) => {
                     const status = getAgentStatus(agent);
                     const isPendingWithCode =
                       !agent.revoked && !agent.last_seen && !!agent.activation_code;
