@@ -306,7 +306,7 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
     onPublish: () => void,
     colorClass: { border: string; bg: string; btn: string; switchClass: string },
   ) => (
-    <div className={`space-y-4 p-4 rounded-lg border-l-4 border ${colorClass.border} ${colorClass.bg}`}>
+    <div className={`space-y-4 p-4 rounded-lg border-t-4 border ${colorClass.border} ${colorClass.bg}`}>
       <h4 className="font-medium flex items-center gap-2">
         {icon}
         Publicar {label}
@@ -346,7 +346,7 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
         <Label htmlFor={`${prefix}ForceUpdate`} className="cursor-pointer">Forçar atualização</Label>
       </div>
 
-      <Button onClick={onPublish} disabled={!file || !version || publishing || calculatingCs} className={`w-full sm:w-auto ${colorClass.btn}`}>
+      <Button onClick={onPublish} disabled={!file || !version || publishing || calculatingCs} className={`w-full sm:w-auto text-white ${colorClass.btn}`}>
         {publishing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
         Publicar {label}
       </Button>
@@ -364,7 +364,7 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
     colorClass: { border: string; bg: string },
     extra?: React.ReactNode,
   ) => (
-    <div className={`space-y-4 p-4 rounded-lg border-l-4 border ${colorClass.border} ${colorClass.bg}`}>
+    <div className={`space-y-4 p-4 rounded-lg border-t-4 border ${colorClass.border} ${colorClass.bg}`}>
       <div className="flex items-center justify-between">
         <h4 className="font-medium">Status dos {label}</h4>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -415,9 +415,9 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
     </div>
   );
 
-  const agentColors = { border: 'border-l-blue-500 border-blue-500/30', bg: 'bg-blue-500/5', btn: 'bg-blue-600 hover:bg-blue-700', switchClass: '[&_button[data-state=checked]]:bg-blue-600' };
-  const supervisorColors = { border: 'border-l-violet-500 border-violet-500/30', bg: 'bg-violet-500/5', btn: 'bg-violet-600 hover:bg-violet-700', switchClass: '[&_button[data-state=checked]]:bg-violet-600' };
-  const monitorColors = { border: 'border-l-emerald-500 border-emerald-500/30', bg: 'bg-emerald-500/5', btn: 'bg-emerald-600 hover:bg-emerald-700', switchClass: '[&_button[data-state=checked]]:bg-emerald-600' };
+  const agentColors = { border: 'border-t-blue-500 border-blue-500/30', bg: 'bg-blue-500/5', btn: 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/25', switchClass: '[&_button[data-state=checked]]:bg-blue-600' };
+  const supervisorColors = { border: 'border-t-violet-500 border-violet-500/30', bg: 'bg-violet-500/5', btn: 'bg-violet-600 hover:bg-violet-700 shadow-lg shadow-violet-600/25', switchClass: '[&_button[data-state=checked]]:bg-violet-600' };
+  const monitorColors = { border: 'border-t-emerald-500 border-emerald-500/30', bg: 'bg-emerald-500/5', btn: 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-600/25', switchClass: '[&_button[data-state=checked]]:bg-emerald-600' };
 
   return (
     <Card className="border-border/50">
