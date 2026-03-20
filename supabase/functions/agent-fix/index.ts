@@ -178,6 +178,21 @@ fi
 rm -f "$TMP_AGENT" "$TMP_SUP" "$TMP_MONITOR"
 ok "Pacotes extraídos em $INSTALL_DIR"
 
+# Fallback: download requirements.txt from storage if missing
+if [[ ! -f "$INSTALL_DIR/requirements.txt" ]]; then
+  log "requirements.txt não encontrado após extração — baixando do storage..."
+  URL_REQ="$(get_signed_url "requirements.txt")"
+  if [[ -n "$URL_REQ" ]]; then
+    if curl -sS "$CURL_FAIL" -L "$URL_REQ" -o "$INSTALL_DIR/requirements.txt"; then
+      ok "requirements.txt baixado do storage"
+    else
+      warn "Falha ao baixar requirements.txt do storage"
+    fi
+  else
+    warn "requirements.txt não encontrado no storage"
+  fi
+fi
+
 log "Módulos instalados:"
 for mod in agent supervisor monitor; do
   if [[ -f "$INSTALL_DIR/$mod/__init__.py" ]]; then

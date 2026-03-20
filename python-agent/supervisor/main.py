@@ -80,6 +80,26 @@ def _restart_monitor_service(logger):
         logger.warning(f"[Supervisor] Falha ao reiniciar {MONITOR_SERVICE_NAME}: {e}")
 
 
+def _ensure_dependencies(logger, install_dir: Path):
+    """Silently install missing dependencies from requirements.txt at boot."""
+    import subprocess
+    req_file = install_dir / "requirements.txt"
+    venv_pip = install_dir / "venv" / "bin" / "pip"
+    if req_file.exists() and venv_pip.exists():
+        logger.info("[Supervisor] Verificando dependências (requirements.txt)...")
+        try:
+            result = subprocess.run(
+                [str(venv_pip), "install", "-q", "--no-cache-dir", "-r", str(req_file)],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0:
+                logger.info("[Supervisor] Dependências verificadas/atualizadas.")
+            else:
+                logger.warning(f"[Supervisor] pip install retornou {result.returncode}: {result.stderr[:300]}")
+        except Exception as e:
+            logger.warning(f"[Supervisor] Erro ao verificar dependências: {e}")
+
+
 def main():
     logger = setup_supervisor_logger()
     logger.info(f"=== iScope Supervisor v{get_supervisor_version()} ===")
@@ -87,6 +107,9 @@ def main():
     if not API_BASE_URL:
         logger.critical("AGENT_API_BASE_URL não configurada. Abortando.")
         sys.exit(1)
+
+    # --- Boot-time dependency check ---
+    _ensure_dependencies(logger, WORKER_INSTALL_DIR)
 
     # --- Shared state & auth ---
     state = AgentState(STATE_FILE)
