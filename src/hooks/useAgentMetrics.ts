@@ -46,6 +46,7 @@ export interface AgentMetricRow {
   os_info: string | null;
   process_count: number | null;
   monitor_version: string | null;
+  ip_addresses: string[] | null;
 }
 
 export function useAgentMetrics(agentId: string | undefined, timeRange: TimeRange = "1h") {

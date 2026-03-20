@@ -111,6 +111,14 @@ function ChartLegendTable({ series }: { series: LegendSeries[] }) {
   );
 }
 
+/** Strip kernel version from os_info — e.g. "Oracle Linux Server 9.6 6.12.0-xxx" → "Oracle Linux Server 9.6" */
+function formatOsInfo(raw: string): string {
+  const tokens = raw.split(' ');
+  const idx = tokens.findIndex(t => /^\d+\.\d+\.\d+-/.test(t));
+  if (idx > 0) return tokens.slice(0, idx).join(' ');
+  return raw;
+}
+
 function formatMB(v: number): string {
   if (v >= 1024) return `${(v / 1024).toFixed(2)} GB`;
   return `${v.toFixed(1)} MB`;
@@ -384,7 +392,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
       </CardHeader>
       <CardContent className="space-y-8">
         {/* System info cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           <MetricIndicator
             icon={Monitor}
             label="Hostname"
@@ -393,7 +401,12 @@ export function AgentMonitorPanel({ agentId }: Props) {
           <MetricIndicator
             icon={Cpu}
             label="Sistema Operacional"
-            value={findLastNonNull(metrics, 'os_info') ?? null}
+            value={(() => { const v = findLastNonNull(metrics, 'os_info'); return v != null ? formatOsInfo(String(v)) : null; })()}
+          />
+          <MetricIndicator
+            icon={Network}
+            label="Endereço IP"
+            value={(() => { const v = findLastNonNull(metrics, 'ip_addresses'); return v != null && Array.isArray(v) && v.length > 0 ? v.join(', ') : null; })()}
           />
           <MetricIndicator
             icon={Clock}

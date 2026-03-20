@@ -81,6 +81,7 @@ serve(async (req: Request) => {
       os_info: body.os_info ?? null,
       process_count: body.process_count ?? null,
       monitor_version: body.monitor_version ?? null,
+      ip_addresses: body.ip_addresses ?? null,
       collected_at: new Date().toISOString(),
     });
 
