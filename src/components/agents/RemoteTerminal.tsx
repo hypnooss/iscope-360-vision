@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Terminal as TerminalIcon, Power, PowerOff, Wifi, WifiOff, Loader2 } from "lucide-react";
+import { Terminal as TerminalIcon, Power, PowerOff, Wifi, WifiOff, Loader2, ExternalLink } from "lucide-react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -288,6 +288,12 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       if (status === "SUBSCRIBED") {
         setChannelReady(true);
         setConnecting(false);
+        // Send wake event to instantly trigger the Supervisor's RealtimeShell
+        channel.send({
+          type: "broadcast",
+          event: "wake",
+          payload: { timestamp: Date.now() },
+        });
       }
     });
 
@@ -401,6 +407,18 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
               Conectando...
             </Badge>
           )}
+          <button
+            onClick={() => {
+              const url = `/terminal/${agentId}?name=${encodeURIComponent(agentName)}`;
+              window.open(url, `terminal-${agentId}`, "width=900,height=600,menubar=no,toolbar=no");
+              // Disconnect the embedded terminal so only the pop-out owns the session
+              handleDisconnect();
+            }}
+            className="text-gray-500 hover:text-blue-400 transition-colors"
+            title="Abrir em nova janela"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={handleDisconnect}
             className="text-gray-500 hover:text-red-400 transition-colors"

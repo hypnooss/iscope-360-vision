@@ -79,6 +79,7 @@ const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPrevi
 const FirewallReportPreview = lazy(() => import("./pages/preview/FirewallReportPreview"));
 const LicensingHubPage = lazy(() => import("./pages/LicensingHubPage"));
 const AccountPage = lazy(() => import("./pages/AccountPage"));
+const TerminalPopoutPage = lazy(() => import("./pages/TerminalPopoutPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -186,6 +187,7 @@ const App = () => (
                   <Route path="/users" element={<UsersPage />} />
                   <Route path="/agents" element={<AgentsPage />} />
                   <Route path="/agents/:id" element={<AgentDetailPage />} />
+                  <Route path="/terminal/:id" element={<TerminalPopoutPage />} />
                   <Route path="/workspaces" element={<ClientsPage />} />
                   <Route path="/clients" element={<Navigate to="/workspaces" replace />} />
                   <Route path="/administrators" element={<AdministratorsPage />} />

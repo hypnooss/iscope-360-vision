@@ -42,6 +42,7 @@ from supervisor.logger import setup_supervisor_logger
 from agent.components import ensure_system_components
 from agent.remote_commands import RemoteCommandHandler
 from supervisor.realtime_shell import RealtimeShell
+from supervisor.realtime_listener import RealtimeWakeListener
 
 # Cross-update paths
 SUPERVISOR_RESTART_FLAG = Path("/var/lib/iscope-agent/supervisor_restart.flag")
@@ -125,6 +126,24 @@ def main():
     # --- Realtime Shell ---
     realtime_shell = None
     realtime_active = False
+
+    # --- Wake Listener (permanent, lightweight) ---
+    wake_listener = None
+    if SUPABASE_URL and SUPABASE_ANON_KEY:
+        try:
+            wake_listener = RealtimeWakeListener(
+                supabase_url=SUPABASE_URL,
+                anon_key=SUPABASE_ANON_KEY,
+                agent_id=str(state.data.get("agent_id", "")),
+                logger=logger,
+            )
+            wake_listener.start()
+            logger.info("[Supervisor] WakeListener iniciado — escutando eventos wake.")
+        except Exception as e:
+            logger.warning(f"[Supervisor] Falha ao iniciar WakeListener: {e}")
+            wake_listener = None
+    else:
+        logger.warning("[Supervisor] WakeListener não iniciado — SUPABASE_URL/ANON_KEY ausentes.")
 
     # --- Check component flag ---
     _check_component_flag(logger)
@@ -216,7 +235,7 @@ def main():
                 except Exception as e:
                     logger.error(f"[Supervisor] Erro ao processar comandos remotos: {e}")
 
-            # Handle on-demand Realtime Shell
+            # Handle on-demand Realtime Shell (heartbeat fallback)
             should_realtime = result.get("start_realtime", False)
             if should_realtime and not realtime_active:
                 if SUPABASE_URL and SUPABASE_ANON_KEY:
@@ -251,6 +270,26 @@ def main():
                 realtime_shell.stop()
                 realtime_shell = None
                 realtime_active = False
+
+        # --- Instant wake detection (no heartbeat wait) ---
+        if wake_listener and wake_listener.wake_event.is_set() and not realtime_active:
+            wake_listener.wake_event.clear()
+            if SUPABASE_URL and SUPABASE_ANON_KEY:
+                logger.info("[Supervisor] 🔔 Wake event recebido! Iniciando RealtimeShell instantaneamente.")
+                try:
+                    realtime_shell = RealtimeShell(
+                        supabase_url=SUPABASE_URL,
+                        anon_key=SUPABASE_ANON_KEY,
+                        agent_id=str(state.data.get("agent_id", "")),
+                        logger=logger,
+                    )
+                    realtime_shell.start()
+                    realtime_active = True
+                    logger.info("[Supervisor] RealtimeShell iniciado via wake (instantâneo).")
+                except Exception as e:
+                    logger.error(f"[Supervisor] Falha ao iniciar RealtimeShell via wake: {e}", exc_info=True)
+                    realtime_shell = None
+                    realtime_active = False
 
         # Monitor worker health (only if agent is installed)
         if not agent_missing and not worker.is_running():
