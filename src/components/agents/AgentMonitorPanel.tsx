@@ -536,8 +536,8 @@ export function AgentMonitorPanel({ agentId }: Props) {
                 const totalVals = metrics.map((m) => m.disk_total_gb).filter((v): v is number => v != null);
                 const usedVals = metrics.map((m) => m.disk_used_gb).filter((v): v is number => v != null);
                 return [
-                  { color: "hsl(25, 95%, 53%)", label: "Total", stats: computeSeriesStats(totalVals), formatValue: formatGB },
-                  { color: "hsl(25, 75%, 40%)", label: "Usado", stats: computeSeriesStats(usedVals), formatValue: formatGB },
+                  { color: "hsl(0, 84%, 60%)", label: "Total", stats: computeSeriesStats(totalVals), formatValue: formatGB },
+                  { color: "hsl(25, 95%, 53%)", label: "Usado", stats: computeSeriesStats(usedVals), formatValue: formatGB },
                 ];
               })()} />
             </div>
