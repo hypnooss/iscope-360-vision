@@ -34,3 +34,30 @@
 - Edge Function `agent-monitor` — mesmo payload (sem mudanças)
 - Frontend — sem mudanças
 - Agents antigos continuam funcionando normalmente
+
+---
+
+## Plano: Intervalo de coleta por step — ✅ IMPLEMENTADO (v1.1.4)
+
+### Resumo
+
+Cada step do blueprint agora possui `interval_seconds`, permitindo frequências
+de coleta diferentes por métrica. O monitor calcula o `base_interval` como o
+menor intervalo entre todos os steps e só executa cada step quando seu timer
+individual vence.
+
+### Blueprint atualizado
+
+| Step | Intervalo |
+|------|-----------|
+| cpu  | 60s       |
+| mem  | 60s       |
+| disk | 120s      |
+| net  | 30s       |
+| sys  | 3600s     |
+
+### Mudanças técnicas
+
+- `monitor/main.py`: dict `last_collected_at` por step_id, `_compute_base_interval()`, envio parcial, snapshot incremental
+- `monitor/version.py`: 1.1.3 → 1.1.4
+- Migration: UPDATE do blueprint com `interval_seconds` por step
