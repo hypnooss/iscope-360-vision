@@ -1,22 +1,30 @@
 
 
-## Plano: Remover degradê e usar Total como limite do eixo Y
+## Plano: Restaurar degradê no "Usado" e manter só linha no "Total"
 
 ### Mudanças em `AgentMonitorPanel.tsx`
 
-**RAM (linhas 471-472):**
-- Total: `fillOpacity={0.1}` → `fillOpacity={0}` (só linha, sem preenchimento)
-- Usado: `fillOpacity={0.25}` → `fillOpacity={0}` (só linha, sem preenchimento)
-- YAxis domain: já usa `ramTotal * 1.05` → mudar para exatamente `ramTotal` (sem margem)
+**RAM (linha 472):**
+- Usado: `fill="none" fillOpacity={0}` → `fill="hsl(217, 71%, 45%)" fillOpacity={0.15}` (restaurar degradê)
+- Total (linha 471): manter como está (sem fill)
 
-**Disco — partições (linhas 506-507) e legado (linhas 530-531):**
-- Total: `fillOpacity={0.1}` → `fillOpacity={0}`
-- Usado: `fillOpacity={0.25}` → `fillOpacity={0}`
-- YAxis domain: `totalGb * 1.05` → `totalGb` (sem margem)
+**Disco — partições (linha 507):**
+- Usado: `fill="none" fillOpacity={0}` → `fill="hsl(25, 95%, 53%)" fillOpacity={0.15}`
+- Total (linha 506): manter como está
 
-Resultado: gráficos mostram apenas linhas sólidas (sem degradê/fill), e a linha Total toca exatamente o topo do eixo Y.
+**Disco — legado (linha 531):**
+- Usado: `fill="none" fillOpacity={0}` → `fill="hsl(25, 95%, 53%)" fillOpacity={0.15}`
+- Total (linha 530): manter como está
+
+**YAxis Disco — partições (linha 504):**
+- `Math.ceil(totalGb)` → `totalGb` (valor exato do Total, sem arredondamento pra cima)
+
+**YAxis Disco — legado (linha 528):**
+- `Math.ceil(Number(latest.disk_total_gb))` → `Number(latest.disk_total_gb)`
+
+Resultado: "Usado" volta a ter preenchimento degradê; "Total" fica só linha sólida; eixo Y do disco bate exatamente no valor Total.
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/agents/AgentMonitorPanel.tsx` | 6 Areas: fillOpacity→0; 3 YAxis: remover *1.05 |
+| `src/components/agents/AgentMonitorPanel.tsx` | 3 Areas Usado: restaurar fill; 2 YAxis disco: remover ceil |
 
