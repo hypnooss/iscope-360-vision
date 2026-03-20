@@ -433,7 +433,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
         {/* Charts grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* CPU Chart */}
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-xl border border-border/40 bg-card/50 p-4">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
               <Cpu className="w-3 h-3" /> CPU (%)
             </p>
@@ -452,7 +452,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
           </div>
 
           {/* RAM Chart */}
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-xl border border-border/40 bg-card/50 p-4">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
               <MemoryStick className="w-3 h-3" /> RAM ({(ramTotal ?? 0) >= 1024 ? "GB" : "MB"})
             </p>
@@ -489,7 +489,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                 { color: "hsl(25, 95%, 53%)", label: `Usado (${path})`, stats: computeSeriesStats(usedVals), formatValue: formatGB },
               ];
               return (
-                <div key={path} className="space-y-2">
+                <div key={path} className="space-y-2 rounded-xl border border-border/40 bg-card/50 p-4">
                   <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                     <HardDrive className="w-3 h-3" /> Disco — {path}
                     {latestPart?.total_gb != null && (
@@ -513,7 +513,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
               );
             })
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 rounded-xl border border-border/40 bg-card/50 p-4">
               <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                 <HardDrive className="w-3 h-3" /> Disco
                 {latest?.disk_total_gb != null && (
@@ -555,7 +555,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                 { color: "hsl(173, 80%, 40%)", label: "↓ Recebido", stats: computeSeriesStats(recvVals), formatValue: formatBytes },
               ];
               return (
-                <div key={ifaceName} className="space-y-2">
+                <div key={ifaceName} className="space-y-2 rounded-xl border border-border/40 bg-card/50 p-4">
                   <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                     <Network className="w-3 h-3" /> Rede — {ifaceName}
                     {linkSpeed != null && (
@@ -586,7 +586,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
               );
             })
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 rounded-xl border border-border/40 bg-card/50 p-4">
               <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                 <Network className="w-3 h-3" /> Rede
               </p>
