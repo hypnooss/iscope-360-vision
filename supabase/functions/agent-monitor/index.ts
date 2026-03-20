@@ -75,6 +75,7 @@ serve(async (req: Request) => {
       disk_partitions: body.disk_partitions ?? null,
       net_bytes_sent: body.net_bytes_sent ?? null,
       net_bytes_recv: body.net_bytes_recv ?? null,
+      net_interfaces: body.net_interfaces ?? null,
       uptime_seconds: body.uptime_seconds ?? null,
       hostname: body.hostname ?? null,
       os_info: body.os_info ?? null,

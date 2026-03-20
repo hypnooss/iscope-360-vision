@@ -17,6 +17,12 @@ export interface DiskPartition {
   percent: number;
 }
 
+export interface NetInterface {
+  iface: string;
+  bytes_sent: number;
+  bytes_recv: number;
+}
+
 export interface AgentMetricRow {
   id: string;
   agent_id: string;
@@ -33,18 +39,12 @@ export interface AgentMetricRow {
   disk_partitions: DiskPartition[] | null;
   net_bytes_sent: number | null;
   net_bytes_recv: number | null;
+  net_interfaces: NetInterface[] | null;
   uptime_seconds: number | null;
   hostname: string | null;
   os_info: string | null;
   process_count: number | null;
   monitor_version: string | null;
-}
-
-export interface NetworkPoint {
-  time: string;
-  timestamp: number;
-  sentRate: number; // bytes/s
-  recvRate: number; // bytes/s
 }
 
 export function useAgentMetrics(agentId: string | undefined, timeRange: TimeRange = "1h") {
@@ -71,34 +71,43 @@ export function useAgentMetrics(agentId: string | undefined, timeRange: TimeRang
   });
 }
 
-export function computeNetworkRates(metrics: AgentMetricRow[]): NetworkPoint[] {
-  const points: NetworkPoint[] = [];
-  for (let i = 1; i < metrics.length; i++) {
-    const prev = metrics[i - 1];
-    const curr = metrics[i];
-    if (
-      prev.net_bytes_sent == null || curr.net_bytes_sent == null ||
-      prev.net_bytes_recv == null || curr.net_bytes_recv == null ||
-      !prev.collected_at || !curr.collected_at
-    ) continue;
-
-    const dtSec = (new Date(curr.collected_at).getTime() - new Date(prev.collected_at).getTime()) / 1000;
-    if (dtSec <= 0) continue;
-
-    const sentDelta = curr.net_bytes_sent - prev.net_bytes_sent;
-    const recvDelta = curr.net_bytes_recv - prev.net_bytes_recv;
-
-    // Skip negative deltas (counter reset)
-    if (sentDelta < 0 || recvDelta < 0) continue;
-
-    points.push({
-      time: curr.collected_at,
-      timestamp: new Date(curr.collected_at).getTime(),
-      sentRate: sentDelta / dtSec,
-      recvRate: recvDelta / dtSec,
-    });
+/** Extract unique interface names from metrics */
+export function getInterfaceNames(metrics: AgentMetricRow[]): string[] {
+  const names = new Set<string>();
+  for (const m of metrics) {
+    if (m.net_interfaces && Array.isArray(m.net_interfaces)) {
+      for (const ni of m.net_interfaces) {
+        names.add(ni.iface);
+      }
+    }
   }
-  return points;
+  return Array.from(names).sort();
+}
+
+/** Build chart data for a specific interface — values are already bytes/s */
+export function buildInterfaceData(metrics: AgentMetricRow[], ifaceName: string) {
+  return metrics
+    .map((m) => {
+      const ni = m.net_interfaces?.find((n) => n.iface === ifaceName);
+      if (!ni) return null;
+      return {
+        time: m.collected_at,
+        sentRate: ni.bytes_sent,
+        recvRate: ni.bytes_recv,
+      };
+    })
+    .filter(Boolean) as { time: string; sentRate: number; recvRate: number }[];
+}
+
+/** Build legacy chart data — values are already bytes/s, use directly */
+export function buildLegacyNetworkData(metrics: AgentMetricRow[]) {
+  return metrics
+    .filter((m) => m.net_bytes_sent != null && m.net_bytes_recv != null)
+    .map((m) => ({
+      time: m.collected_at,
+      sentRate: m.net_bytes_sent!,
+      recvRate: m.net_bytes_recv!,
+    }));
 }
 
 export function formatBytes(bytes: number): string {
