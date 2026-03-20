@@ -62,8 +62,8 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
 
   // Stats
   const [agentStats, setAgentStats] = useState<{ total: number; upToDate: number; outdated: OutdatedAgent[] }>({ total: 0, upToDate: 0, outdated: [] });
-  const [supervisorStats, setSupervisorStats] = useState<{ total: number; upToDate: number; outdated: OutdatedSupervisor[]; withoutSupervisor: number }>({ total: 0, upToDate: 0, outdated: [], withoutSupervisor: 0 });
-  const [monitorStats, setMonitorStats] = useState<{ total: number; upToDate: number; outdated: OutdatedMonitor[]; withoutMonitor: number }>({ total: 0, upToDate: 0, outdated: [], withoutMonitor: 0 });
+  const [supervisorStats, setSupervisorStats] = useState<{ total: number; upToDate: number; outdated: OutdatedSupervisor[]; withoutSupervisor: number; withoutSupervisorList: AgentBasicInfo[] }>({ total: 0, upToDate: 0, outdated: [], withoutSupervisor: 0, withoutSupervisorList: [] });
+  const [monitorStats, setMonitorStats] = useState<{ total: number; upToDate: number; outdated: OutdatedMonitor[]; withoutMonitor: number; withoutMonitorList: AgentBasicInfo[] }>({ total: 0, upToDate: 0, outdated: [], withoutMonitor: 0, withoutMonitorList: [] });
 
   const initialLoadDone = useRef(false);
 
