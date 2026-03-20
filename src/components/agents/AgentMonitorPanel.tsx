@@ -292,7 +292,14 @@ interface Props {
 }
 
 export function AgentMonitorPanel({ agentId }: Props) {
-  const [timeRange, setTimeRange] = useState<TimeRange>("1h");
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => {
+    const saved = localStorage.getItem('agent-monitor-timerange');
+    return (saved === '1h' || saved === '6h' || saved === '24h' || saved === '7d') ? saved : '1h';
+  });
+  const handleTimeRangeChange = (value: TimeRange) => {
+    setTimeRange(value);
+    localStorage.setItem('agent-monitor-timerange', value);
+  };
   const { data: metrics = [], isLoading } = useAgentMetrics(agentId, timeRange);
 
   const latest = metrics.length > 0 ? metrics[metrics.length - 1] : null;
@@ -391,7 +398,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
               variant={timeRange === opt.value ? "default" : "ghost"}
               size="sm"
               className="h-7 px-2 text-xs"
-              onClick={() => setTimeRange(opt.value)}
+              onClick={() => handleTimeRangeChange(opt.value)}
             >
               {opt.label}
             </Button>
