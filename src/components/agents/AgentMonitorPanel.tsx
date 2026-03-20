@@ -398,7 +398,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
               variant={timeRange === opt.value ? "default" : "ghost"}
               size="sm"
               className="h-7 px-2 text-xs"
-              onClick={() => setTimeRange(opt.value)}
+              onClick={() => handleTimeRangeChange(opt.value)}
             >
               {opt.label}
             </Button>
