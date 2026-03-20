@@ -3336,7 +3336,7 @@ export type Database = {
         | "geo_query"
         | "m365_analyzer"
       app_role: "super_admin" | "workspace_admin" | "user" | "super_suporte"
-      blueprint_executor_type: "agent" | "edge_function" | "hybrid"
+      blueprint_executor_type: "agent" | "edge_function" | "hybrid" | "monitor"
       device_category:
         | "firewall"
         | "switch"
@@ -3517,7 +3517,7 @@ export const Constants = {
         "m365_analyzer",
       ],
       app_role: ["super_admin", "workspace_admin", "user", "super_suporte"],
-      blueprint_executor_type: ["agent", "edge_function", "hybrid"],
+      blueprint_executor_type: ["agent", "edge_function", "hybrid", "monitor"],
       device_category: [
         "firewall",
         "switch",

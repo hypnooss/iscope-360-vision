@@ -1,18 +1,21 @@
 """
-iScope 360 Monitor — Standalone entrypoint.
+iScope 360 Monitor — Standalone entrypoint (template-driven).
 
 Runs as an independent systemd service (iscope-monitor.service).
-Collects system metrics and sends them to the backend via the shared
-API infrastructure (agent.api_client / agent.auth).
+Fetches a blueprint from the backend and executes collection steps
+using internal executors. Falls back to legacy collector if blueprint
+is unavailable.
 """
 
 import json
 import sys
 import time
 from pathlib import Path
+from typing import Dict, Any, List, Optional
 
 from monitor.collector import MetricsCollector
 from monitor.version import get_version
+from monitor.executors import get_executor
 
 # Reuse agent infrastructure for API communication
 from agent.config import API_BASE_URL, STATE_FILE
@@ -22,7 +25,8 @@ from agent.auth import AuthManager
 
 
 MONITOR_SNAPSHOT_FILE = Path("/var/lib/iscope-agent/monitor.json")
-MONITOR_INTERVAL = 60  # seconds
+BLUEPRINT_CACHE_FILE = Path("/var/lib/iscope-agent/monitor_blueprint.json")
+BLUEPRINT_REFRESH_INTERVAL = 1800  # 30 minutes
 
 
 def _load_interval() -> int:
@@ -60,7 +64,7 @@ def main():
     except Exception:
         pass
 
-    logger.info(f"=== iScope Monitor v{get_version()} (standalone) ===")
+    logger.info(f"=== iScope Monitor v{get_version()} (template-driven) ===")
 
     if not API_BASE_URL:
         logger.critical("AGENT_API_BASE_URL não configurada. Abortando.")
@@ -78,12 +82,32 @@ def main():
     _wait_for_auth(state, logger)
 
     interval = _load_interval()
-    collector = MetricsCollector(disk_path="/")
 
-    logger.info(f"Monitor iniciado (intervalo={interval}s)")
+    # Legacy fallback collector
+    legacy_collector = MetricsCollector(disk_path="/")
+
+    # Blueprint-driven executor instances (stateful, persist across collections)
+    executor_instances: Dict[str, Any] = {}
+
+    # Try to load blueprint
+    blueprint = _load_blueprint(api, logger)
+    blueprint_loaded_at = time.monotonic()
+
+    if blueprint:
+        logger.info(
+            f"Blueprint carregado: {blueprint.get('name')} v{blueprint.get('version')} "
+            f"({len(blueprint.get('steps', []))} steps)"
+        )
+        # Pre-instantiate executors
+        executor_instances = _init_executors(blueprint, logger)
+    else:
+        logger.warning("Blueprint indisponível, usando coletor legado (fallback)")
 
     # First collection warms up CPU/net deltas
-    collector.collect()
+    if blueprint and executor_instances:
+        _collect_from_blueprint(blueprint, executor_instances, logger)
+    else:
+        legacy_collector.collect()
     time.sleep(min(interval, 5))
 
     consecutive_errors = 0
@@ -98,7 +122,25 @@ def main():
             except Exception as e:
                 logger.warning(f"[Monitor] Erro ao renovar token: {e}")
 
-            metrics = collector.collect()
+            # Periodically refresh blueprint
+            if time.monotonic() - blueprint_loaded_at > BLUEPRINT_REFRESH_INTERVAL:
+                new_bp = _load_blueprint(api, logger)
+                if new_bp:
+                    if new_bp.get("version") != (blueprint or {}).get("version"):
+                        logger.info(
+                            f"Blueprint atualizado: v{new_bp.get('version')} "
+                            f"(anterior: v{(blueprint or {}).get('version', 'N/A')})"
+                        )
+                        executor_instances = _init_executors(new_bp, logger)
+                    blueprint = new_bp
+                blueprint_loaded_at = time.monotonic()
+
+            # Collect metrics
+            if blueprint and executor_instances:
+                metrics = _collect_from_blueprint(blueprint, executor_instances, logger)
+            else:
+                metrics = legacy_collector.collect()
+
             metrics["monitor_version"] = get_version()
             metrics["agent_id"] = str(state.data.get("agent_id", ""))
 
@@ -120,6 +162,76 @@ def main():
                 continue
 
         time.sleep(interval)
+
+
+def _load_blueprint(api, logger) -> Optional[Dict[str, Any]]:
+    """Fetch blueprint from backend, with local cache fallback."""
+    try:
+        resp = api.get("/agent-monitor-blueprint?device_type=linux_server")
+        if isinstance(resp, dict) and resp.get("success") and resp.get("blueprint"):
+            bp = resp["blueprint"]
+            # Cache locally
+            try:
+                BLUEPRINT_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+                BLUEPRINT_CACHE_FILE.write_text(
+                    json.dumps(bp, default=str), encoding="utf-8"
+                )
+            except Exception:
+                pass
+            return bp
+    except Exception as e:
+        logger.warning(f"[Monitor] Falha ao buscar blueprint do backend: {e}")
+
+    # Try local cache
+    try:
+        if BLUEPRINT_CACHE_FILE.exists():
+            bp = json.loads(BLUEPRINT_CACHE_FILE.read_text(encoding="utf-8"))
+            logger.info("[Monitor] Blueprint carregado do cache local")
+            return bp
+    except Exception:
+        pass
+
+    return None
+
+
+def _init_executors(blueprint: Dict[str, Any], logger) -> Dict[str, Any]:
+    """Pre-instantiate executor objects for each unique step type."""
+    instances: Dict[str, Any] = {}
+    for step in blueprint.get("steps", []):
+        step_type = step.get("type")
+        if step_type and step_type not in instances:
+            executor_cls = get_executor(step_type)
+            if executor_cls:
+                instances[step_type] = executor_cls()
+                logger.info(f"[Monitor] Executor inicializado: {step_type}")
+            else:
+                logger.warning(f"[Monitor] Executor desconhecido: {step_type}")
+    return instances
+
+
+def _collect_from_blueprint(
+    blueprint: Dict[str, Any],
+    executor_instances: Dict[str, Any],
+    logger,
+) -> Dict[str, Any]:
+    """Iterate blueprint steps and aggregate results."""
+    metrics: Dict[str, Any] = {}
+    for step in blueprint.get("steps", []):
+        step_id = step.get("id", "?")
+        step_type = step.get("type")
+        params = step.get("params", {})
+
+        executor = executor_instances.get(step_type)
+        if not executor:
+            continue
+
+        try:
+            result = executor.execute(params)
+            metrics.update(result)
+        except Exception as e:
+            logger.warning(f"[Monitor] Erro no step '{step_id}' ({step_type}): {e}")
+
+    return metrics
 
 
 def _wait_for_auth(state: "AgentState", logger):
