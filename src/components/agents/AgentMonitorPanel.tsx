@@ -462,14 +462,14 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                   <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                   <YAxis
-                    domain={[0, ramTotal ? Math.ceil(ramTotal * 1.05) : "auto"]}
+                    domain={[0, ramTotal ? Math.ceil(ramTotal) : "auto"]}
                     tick={{ fontSize: 10 }}
                     className="fill-muted-foreground"
                     tickFormatter={(v) => v >= 1024 ? `${(v / 1024).toFixed(1)}G` : `${v}`}
                   />
                   <Tooltip content={<AbsoluteTooltip usedKey="ram_used_mb" totalKey="ram_total_mb" unit="MB" percentKey="ram_percent" />} labelFormatter={(v) => v} />
-                  <Area type="monotone" dataKey="ram_total_mb" stroke="hsl(217, 91%, 60%)" fill="hsl(217, 91%, 60%)" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
-                  <Area type="monotone" dataKey="ram_used_mb" stroke="hsl(217, 71%, 45%)" fill="hsl(217, 71%, 45%)" fillOpacity={0.25} strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="ram_total_mb" stroke="hsl(217, 91%, 60%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="ram_used_mb" stroke="hsl(217, 71%, 45%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -501,10 +501,10 @@ export function AgentMonitorPanel({ agentId }: Props) {
                       <AreaChart data={partData}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                         <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                        <YAxis domain={[0, totalGb ? Math.ceil(totalGb * 1.05) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                        <YAxis domain={[0, totalGb ? Math.ceil(totalGb) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                         <Tooltip content={<AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />} labelFormatter={(v) => v} />
-                        <Area type="monotone" dataKey="disk_total_gb" stroke="hsl(0, 84%, 60%)" fill="hsl(0, 84%, 60%)" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
-                        <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.25} strokeWidth={1.5} dot={false} />
+                        <Area type="monotone" dataKey="disk_total_gb" stroke="hsl(0, 84%, 60%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
+                        <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -525,10 +525,10 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   <AreaChart data={diskLegacyChartData}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                     <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                    <YAxis domain={[0, latest?.disk_total_gb ? Math.ceil(Number(latest.disk_total_gb) * 1.05) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                    <YAxis domain={[0, latest?.disk_total_gb ? Math.ceil(Number(latest.disk_total_gb)) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                     <Tooltip content={<AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />} labelFormatter={(v) => v} />
-                    <Area type="monotone" dataKey="disk_total_gb" stroke="hsl(0, 84%, 60%)" fill="hsl(0, 84%, 60%)" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
-                    <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.25} strokeWidth={1.5} dot={false} />
+                    <Area type="monotone" dataKey="disk_total_gb" stroke="hsl(0, 84%, 60%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
+                    <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
