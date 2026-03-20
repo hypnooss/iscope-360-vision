@@ -473,12 +473,27 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
           )}
           {renderStatusSection('Supervisors', supervisorLatestVersion, 'Sup', supervisorStats.total, supervisorStats.upToDate, supervisorStats.outdated, 'supervisorVersion', supervisorColors,
             supervisorStats.withoutSupervisor > 0 ? (
-              <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border">
-                <Info className="w-5 h-5 text-muted-foreground" />
-                <div>
-                  <p className="font-medium text-muted-foreground">{supervisorStats.withoutSupervisor} sem Supervisor</p>
-                  <p className="text-xs text-muted-foreground">Agentes legados (modelo antigo)</p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border">
+                  <Info className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium text-muted-foreground">{supervisorStats.withoutSupervisor} sem Supervisor</p>
+                    <p className="text-xs text-muted-foreground">Agentes legados (modelo antigo)</p>
+                  </div>
                 </div>
+                {supervisorStats.withoutSupervisorList.length > 0 && (
+                  <ScrollArea className="h-[150px]">
+                    <ul className="space-y-1 pr-4">
+                      {supervisorStats.withoutSupervisorList.map((agent, i) => (
+                        <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
+                          <span className="w-2 h-2 rounded-full bg-muted-foreground/50" />
+                          <span>{agent.name}</span>
+                          <span className="text-muted-foreground">- {agent.client}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </ScrollArea>
+                )}
               </div>
             ) : undefined,
           )}
