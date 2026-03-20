@@ -404,12 +404,14 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   <Area
                     type="monotone"
                     dataKey="ram_used_mb"
+                    name="Usado"
                     stroke="hsl(217, 91%, 60%)"
                     fill="hsl(217, 91%, 60%)"
                     fillOpacity={0.15}
                     strokeWidth={1.5}
                     dot={false}
                   />
+                  <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
