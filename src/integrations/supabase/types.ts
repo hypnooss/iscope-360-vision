@@ -132,6 +132,7 @@ export type Database = {
           monitor_version: string | null
           net_bytes_recv: number | null
           net_bytes_sent: number | null
+          net_interfaces: Json | null
           os_info: string | null
           process_count: number | null
           ram_percent: number | null
@@ -158,6 +159,7 @@ export type Database = {
           monitor_version?: string | null
           net_bytes_recv?: number | null
           net_bytes_sent?: number | null
+          net_interfaces?: Json | null
           os_info?: string | null
           process_count?: number | null
           ram_percent?: number | null
@@ -184,6 +186,7 @@ export type Database = {
           monitor_version?: string | null
           net_bytes_recv?: number | null
           net_bytes_sent?: number | null
+          net_interfaces?: Json | null
           os_info?: string | null
           process_count?: number | null
           ram_percent?: number | null

@@ -9,7 +9,7 @@ import platform
 import socket
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 
 class MetricsCollector:
@@ -18,7 +18,7 @@ class MetricsCollector:
     def __init__(self, disk_path: str = "/"):
         self._disk_path = disk_path
         self._prev_cpu: Optional[Tuple[float, float]] = None  # (idle, total)
-        self._prev_net: Optional[Tuple[int, int, float]] = None  # (rx, tx, timestamp)
+        self._prev_net: Optional[Dict[str, Tuple[int, int, float]]] = None  # {iface: (rx, tx, ts)}
 
     # ------------------------------------------------------------------
     # Public
@@ -212,29 +212,61 @@ class MetricsCollector:
         return partitions
 
     # ------------------------------------------------------------------
-    # Network (delta bytes/s)
+    # Network (per-interface delta bytes/s)
     # ------------------------------------------------------------------
 
     def _network(self) -> Dict[str, Any]:
-        rx, tx = self._read_net_bytes()
+        iface_counters = self._read_net_bytes_per_iface()
         now = time.monotonic()
         data: Dict[str, Any] = {}
 
-        if self._prev_net is not None:
-            prev_rx, prev_tx, prev_t = self._prev_net
-            elapsed = now - prev_t
-            if elapsed > 0:
-                data["net_bytes_recv"] = int((rx - prev_rx) / elapsed)
-                data["net_bytes_sent"] = int((tx - prev_tx) / elapsed)
+        net_interfaces: List[Dict[str, Any]] = []
+        total_sent = 0
+        total_recv = 0
 
-        self._prev_net = (rx, tx, now)
+        if self._prev_net is not None:
+            for iface, (rx, tx) in iface_counters.items():
+                prev = self._prev_net.get(iface)
+                if prev is None:
+                    continue
+                prev_rx, prev_tx, prev_t = prev
+                elapsed = now - prev_t
+                if elapsed <= 0:
+                    continue
+
+                rx_delta = rx - prev_rx
+                tx_delta = tx - prev_tx
+                # Skip negative deltas (counter reset)
+                if rx_delta < 0 or tx_delta < 0:
+                    continue
+
+                bytes_recv = int(rx_delta / elapsed)
+                bytes_sent = int(tx_delta / elapsed)
+
+                net_interfaces.append({
+                    "iface": iface,
+                    "bytes_sent": bytes_sent,
+                    "bytes_recv": bytes_recv,
+                })
+                total_sent += bytes_sent
+                total_recv += bytes_recv
+
+        # Store current counters for next delta
+        self._prev_net = {
+            iface: (rx, tx, now) for iface, (rx, tx) in iface_counters.items()
+        }
+
+        if net_interfaces:
+            data["net_interfaces"] = net_interfaces
+            data["net_bytes_sent"] = total_sent
+            data["net_bytes_recv"] = total_recv
+
         return data
 
     @staticmethod
-    def _read_net_bytes() -> Tuple[int, int]:
-        """Sum rx/tx bytes from /proc/net/dev (skip loopback)."""
-        total_rx = 0
-        total_tx = 0
+    def _read_net_bytes_per_iface() -> Dict[str, Tuple[int, int]]:
+        """Read rx/tx bytes per interface from /proc/net/dev (skip loopback)."""
+        result: Dict[str, Tuple[int, int]] = {}
         with open("/proc/net/dev", "r") as f:
             for line in f:
                 if ":" not in line:
@@ -244,9 +276,8 @@ class MetricsCollector:
                 if iface == "lo":
                     continue
                 cols = rest.split()
-                total_rx += int(cols[0])
-                total_tx += int(cols[8])
-        return total_rx, total_tx
+                result[iface] = (int(cols[0]), int(cols[8]))
+        return result
 
     # ------------------------------------------------------------------
     # System

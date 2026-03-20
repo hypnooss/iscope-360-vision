@@ -16,9 +16,11 @@ import {
 } from "recharts";
 import {
   useAgentMetrics,
-  computeNetworkRates,
   formatBytes,
   formatUptime,
+  getInterfaceNames,
+  buildInterfaceData,
+  buildLegacyNetworkData,
   type TimeRange,
   type AgentMetricRow,
   type DiskPartition,
@@ -192,7 +194,9 @@ export function AgentMonitorPanel({ agentId }: Props) {
   const { data: metrics = [], isLoading } = useAgentMetrics(agentId, timeRange);
 
   const latest = metrics.length > 0 ? metrics[metrics.length - 1] : null;
-  const networkData = useMemo(() => computeNetworkRates(metrics), [metrics]);
+  const interfaceNames = useMemo(() => getInterfaceNames(metrics), [metrics]);
+  const hasMultiInterfaces = interfaceNames.length > 0;
+  const legacyNetworkData = useMemo(() => !hasMultiInterfaces ? buildLegacyNetworkData(metrics) : [], [metrics, hasMultiInterfaces]);
   const timeFmt = formatTime(timeRange);
 
   const partitionPaths = useMemo(() => getPartitionPaths(metrics), [metrics]);
@@ -510,53 +514,61 @@ export function AgentMonitorPanel({ agentId }: Props) {
             </div>
           )}
 
-          {/* Network Chart */}
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <Network className="w-3 h-3" /> Rede
-            </p>
-            <div className="h-48 w-full">
-              {networkData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={networkData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
-                    <XAxis
-                      dataKey="time"
-                      tickFormatter={timeFmt}
-                      tick={{ fontSize: 10 }}
-                      className="fill-muted-foreground"
-                    />
-                    <YAxis
-                      tickFormatter={(v) => formatBytes(v).replace("/s", "")}
-                      tick={{ fontSize: 10 }}
-                      className="fill-muted-foreground"
-                    />
-                    <Tooltip content={<NetworkTooltip />} labelFormatter={(v) => v} />
-                    <Line
-                      type="monotone"
-                      dataKey="sentRate"
-                      stroke="hsl(262, 83%, 58%)"
-                      strokeWidth={1.5}
-                      dot={false}
-                      name="Enviado"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="recvRate"
-                      stroke="hsl(173, 80%, 40%)"
-                      strokeWidth={1.5}
-                      dot={false}
-                      name="Recebido"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
-                  Dados insuficientes para calcular taxa de transferência
+          {/* Network Charts — one per interface or single legacy */}
+          {hasMultiInterfaces ? (
+            interfaceNames.map((ifaceName) => {
+              const ifaceData = buildInterfaceData(metrics, ifaceName);
+              return (
+                <div key={ifaceName} className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                    <Network className="w-3 h-3" /> Rede — {ifaceName}
+                  </p>
+                  <div className="h-48 w-full">
+                    {ifaceData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={ifaceData}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
+                          <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                          <YAxis tickFormatter={(v) => formatBytes(v).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                          <Tooltip content={<NetworkTooltip />} labelFormatter={(v) => v} />
+                          <Line type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" strokeWidth={1.5} dot={false} name="Enviado" />
+                          <Line type="monotone" dataKey="recvRate" stroke="hsl(173, 80%, 40%)" strokeWidth={1.5} dot={false} name="Recebido" />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
+                        Dados insuficientes para {ifaceName}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
+              );
+            })
+          ) : (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <Network className="w-3 h-3" /> Rede
+              </p>
+              <div className="h-48 w-full">
+                {legacyNetworkData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={legacyNetworkData}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
+                      <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                      <YAxis tickFormatter={(v) => formatBytes(v).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                      <Tooltip content={<NetworkTooltip />} labelFormatter={(v) => v} />
+                      <Line type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" strokeWidth={1.5} dot={false} name="Enviado" />
+                      <Line type="monotone" dataKey="recvRate" stroke="hsl(173, 80%, 40%)" strokeWidth={1.5} dot={false} name="Recebido" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
+                    Dados insuficientes para calcular taxa de transferência
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Footer info */}
