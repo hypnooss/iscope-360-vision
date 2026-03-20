@@ -399,9 +399,8 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
       </div>
 
       {outdated.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">{label} desatualizados:</p>
-          <ScrollArea className="h-[200px]">
+        <div className="space-y-1">
+          <ScrollArea className="max-h-[200px]">
             <ul className="space-y-1 pr-4">
               {outdated.map((agent, i) => (
                 <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
