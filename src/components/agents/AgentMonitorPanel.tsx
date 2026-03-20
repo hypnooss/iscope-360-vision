@@ -11,6 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
+  Legend,
 } from "recharts";
 import {
   useAgentMetrics,
@@ -351,12 +352,14 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   <Area
                     type="monotone"
                     dataKey="cpu_percent"
+                    name="CPU %"
                     stroke="hsl(142, 76%, 36%)"
                     fill="hsl(142, 76%, 36%)"
                     fillOpacity={0.15}
                     strokeWidth={1.5}
                     dot={false}
                   />
+                  <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -401,12 +404,14 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   <Area
                     type="monotone"
                     dataKey="ram_used_mb"
+                    name="Usado"
                     stroke="hsl(217, 91%, 60%)"
                     fill="hsl(217, 91%, 60%)"
                     fillOpacity={0.15}
                     strokeWidth={1.5}
                     dot={false}
                   />
+                  <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -459,12 +464,14 @@ export function AgentMonitorPanel({ agentId }: Props) {
                         <Area
                           type="monotone"
                           dataKey="disk_used_gb"
+                          name="Usado"
                           stroke="hsl(25, 95%, 53%)"
                           fill="hsl(25, 95%, 53%)"
                           fillOpacity={0.15}
                           strokeWidth={1.5}
                           dot={false}
                         />
+                        <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -512,12 +519,14 @@ export function AgentMonitorPanel({ agentId }: Props) {
                     <Area
                       type="monotone"
                       dataKey="disk_used_gb"
+                      name="Usado"
                       stroke="hsl(25, 95%, 53%)"
                       fill="hsl(25, 95%, 53%)"
                       fillOpacity={0.15}
                       strokeWidth={1.5}
                       dot={false}
                     />
+                    <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -546,8 +555,9 @@ export function AgentMonitorPanel({ agentId }: Props) {
                           <YAxis tickFormatter={(v: number) => formatBytes(Math.abs(v)).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                           <Tooltip content={<NetworkTooltip />} labelFormatter={(v) => v} />
                           <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} />
-                          <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Enviado" />
-                          <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Recebido" />
+                          <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="↑ Enviado" />
+                          <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="↓ Recebido" />
+                          <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
                         </AreaChart>
                       </ResponsiveContainer>
                     ) : (
@@ -573,8 +583,9 @@ export function AgentMonitorPanel({ agentId }: Props) {
                       <YAxis tickFormatter={(v: number) => formatBytes(Math.abs(v)).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                       <Tooltip content={<NetworkTooltip />} labelFormatter={(v) => v} />
                       <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} />
-                      <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Enviado" />
-                      <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Recebido" />
+                      <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="↑ Enviado" />
+                      <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="↓ Recebido" />
+                      <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
