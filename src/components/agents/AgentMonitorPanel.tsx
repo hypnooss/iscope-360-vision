@@ -569,6 +569,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
               </div>
             </div>
           )}
+        </div>
 
         {/* Footer info */}
         {latest && (
