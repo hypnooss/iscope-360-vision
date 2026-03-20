@@ -454,7 +454,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
           {/* RAM Chart */}
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <MemoryStick className="w-3 h-3" /> RAM (MB)
+              <MemoryStick className="w-3 h-3" /> RAM ({(ramTotal ?? 0) >= 1024 ? "GB" : "MB"})
             </p>
             <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -465,7 +465,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                     domain={[0, ramTotal ? Math.ceil(ramTotal) : "auto"]}
                     tick={{ fontSize: 10 }}
                     className="fill-muted-foreground"
-                    tickFormatter={(v) => v >= 1024 ? `${(v / 1024).toFixed(1)}G` : `${v}`}
+                    tickFormatter={(v) => (ramTotal ?? 0) >= 1024 ? `${(v / 1024).toFixed(1)} GB` : `${Math.round(v)} MB`}
                   />
                   <Tooltip content={<AbsoluteTooltip usedKey="ram_used_mb" totalKey="ram_total_mb" unit="MB" percentKey="ram_percent" />} labelFormatter={(v) => v} />
                   <Area type="monotone" dataKey="ram_total_mb" stroke="hsl(217, 91%, 60%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
@@ -501,7 +501,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                       <AreaChart data={partData}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                         <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                        <YAxis domain={[0, totalGb ? totalGb : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" tickFormatter={(v) => `${v} GB`} />
+                        <YAxis domain={[0, totalGb ? totalGb : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" tickFormatter={(v) => totalGb != null && totalGb < 1 ? `${(v * 1024).toFixed(0)} MB` : `${v} GB`} />
                         <Tooltip content={<AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />} labelFormatter={(v) => v} />
                         <Area type="monotone" dataKey="disk_total_gb" stroke="hsl(0, 84%, 60%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
                         <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
@@ -525,7 +525,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   <AreaChart data={diskLegacyChartData}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                     <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                    <YAxis domain={[0, (() => { const vals = metrics.map((m) => m.disk_total_gb).filter((v): v is number => v != null); return vals.length > 0 ? Math.max(...vals) : "auto"; })()]} tick={{ fontSize: 10 }} className="fill-muted-foreground" tickFormatter={(v) => `${v} GB`} />
+                    <YAxis domain={[0, (() => { const vals = metrics.map((m) => m.disk_total_gb).filter((v): v is number => v != null); return vals.length > 0 ? Math.max(...vals) : "auto"; })()]} tick={{ fontSize: 10 }} className="fill-muted-foreground" tickFormatter={(v) => { const vals = metrics.map((m) => m.disk_total_gb).filter((vv): vv is number => vv != null); const maxGb = vals.length > 0 ? Math.max(...vals) : null; return maxGb != null && maxGb < 1 ? `${(v * 1024).toFixed(0)} MB` : `${v} GB`; }} />
                     <Tooltip content={<AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />} labelFormatter={(v) => v} />
                     <Area type="monotone" dataKey="disk_total_gb" stroke="hsl(0, 84%, 60%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
                     <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
