@@ -1,24 +1,74 @@
+## Plano: Estratégia de Deploy dos 3 Módulos
+
+### Situação Atual
+
+As correções foram aplicadas no código mas os version.py não foram incrementados. Como as versões no código = versões no system_settings, o heartbeat nunca sinaliza update disponível.
+
+### Novas Versões Propostas
 
 
-## Plano: Incluir requirements.txt no agent-fix
+| Módulo     | Atual  | Nova       | Mudanças                                                     |
+| ---------- | ------ | ---------- | ------------------------------------------------------------ |
+| Supervisor | 1.2.0  | **1.2.1**  | Graceful shutdown (SIGTERM), boot-time deps, tempfile seguro |
+| Monitor    | 1.1.0  | **1.1.1**  | Log rotation com RotatingFileHandler                         |
+| Agent      | 1.3.13 | **1.3.14** | Tempfile seguro, thumbprint.txt alinhado                     |
 
-### Problema
-O `agent-fix` deleta o `requirements.txt` na limpeza e nenhum tarball o inclui. Sem ele, o venv não é reconstruído.
 
-### Correções
+### Sequência de Deploy (conforme arquitetura documentada)
 
-**1. `supabase/functions/agent-fix/index.ts`**
-Adicionar `! -name 'requirements.txt'` ao comando `find ... -exec rm` para preservar o arquivo durante a limpeza. Além disso, adicionar um fallback que baixa o `requirements.txt` do storage caso ele não exista após a extração dos pacotes.
+**Etapa 1 — Bump de versões**
 
-**2. Incluir `requirements.txt` no tarball do Agent**
-O `requirements.txt` deve ser incluído no pacote `iscope-agent-latest.tar.gz` na raiz, para que ao extrair em `/opt/iscope-agent/` ele fique disponível. Isso requer regerar o pacote do agent.
+- Atualizar `supervisor/version.py` → 1.2.1
+- Atualizar `monitor/version.py` → 1.1.1
+- Atualizar `agent/version.py` → 1.3.14
 
-**3. (Opcional) Boot-time dependency check no Supervisor**
-Adicionar ao `supervisor/main.py` uma verificação no início: se `requirements.txt` existir e o venv existir, rodar `pip install -r requirements.txt` silenciosamente antes de iniciar o loop. Isso garante que novas dependências (como `websocket-client`) sejam instaladas automaticamente mesmo sem um update formal.
+**Etapa 2 — Gerar tarballs e calcular checksums**
+Criar script que:
+
+1. Empacota cada módulo no formato esperado (`iscope-supervisor-1.2.1.tar.gz`, etc.)
+2. Calcula SHA256 de cada tarball
+3. Inclui `requirements.txt` no pacote do agent
+
+**Etapa 3 — Upload para Storage**
+Upload dos 3 tarballs para o bucket `agent-releases` (privado, signed URLs)
+
+**Etapa 4 — Atualizar system_settings**
+Atualizar no banco:
+
+- `supervisor_latest_version` → 1.2.1
+- `supervisor_update_checksum` → (sha256 do tarball)
+- `monitor_latest_version` → 1.1.1
+- `monitor_update_checksum` → (sha256 do tarball)
+- `agent_latest_version` → 1.3.14
+- `agent_update_checksum` → (sha256 do tarball)
+
+**Etapa 5 — Verificação**
+Após o próximo heartbeat (~120s), os agents devem:
+
+1. Receber `supervisor_update_available: true` → Worker baixa e aplica, Supervisor reinicia
+2. Receber `monitor_update_available: true` → Supervisor baixa e reinicia serviço
+3. Receber `update_available: true` → Supervisor baixa e reinicia Worker
+
+### Ordem de execução no servidor (automática)
+
+O Supervisor processa as 3 atualizações na ordem em que aparecem no heartbeat response. O fluxo real é:
+
+1. **Agent update** — Supervisor para Worker, aplica, reinicia Worker
+2. **Supervisor update** — Worker detecta sinal, baixa pacote, aplica, seta restart flag → Supervisor reinicia via systemd
+3. **Monitor update** — Supervisor baixa, substitui monitor/, reinicia serviço iscope-monitor
 
 ### Arquivos a alterar
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/agent-fix/index.ts` | Preservar `requirements.txt` na limpeza + fallback download |
-| `python-agent/supervisor/main.py` | Verificação de dependências no boot |
 
+
+| Arquivo                              | Mudança         |
+| ------------------------------------ | --------------- |
+| `python-agent/supervisor/version.py` | 1.2.0 → 1.2.1   |
+| `python-agent/monitor/version.py`    | 1.1.0 → 1.1.1   |
+| `python-agent/agent/version.py`      | 1.3.13 → 1.3.14 |
+
+
+### Ações pós-código (script)
+
+- Gerar tarballs dos 3 módulos
+- Upload para bucket `agent-releases`
+- Atualizar `system_settings` com versões e checksums
