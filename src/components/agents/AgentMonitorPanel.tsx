@@ -372,6 +372,11 @@ export function AgentMonitorPanel({ agentId }: Props) {
     time: m.collected_at,
   }));
 
+  // Filtered data per chart — template-driven collection produces separate rows per metric
+  const cpuChartData = chartData.filter((m) => m.cpu_percent != null);
+  const ramChartData = chartData.filter((m) => m.ram_used_mb != null);
+  const diskLegacyChartData = chartData.filter((m) => m.disk_used_gb != null);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6">
