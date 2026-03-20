@@ -127,6 +127,24 @@ def main():
     realtime_shell = None
     realtime_active = False
 
+    # --- Wake Listener (permanent, lightweight) ---
+    wake_listener = None
+    if SUPABASE_URL and SUPABASE_ANON_KEY:
+        try:
+            wake_listener = RealtimeWakeListener(
+                supabase_url=SUPABASE_URL,
+                anon_key=SUPABASE_ANON_KEY,
+                agent_id=str(state.data.get("agent_id", "")),
+                logger=logger,
+            )
+            wake_listener.start()
+            logger.info("[Supervisor] WakeListener iniciado — escutando eventos wake.")
+        except Exception as e:
+            logger.warning(f"[Supervisor] Falha ao iniciar WakeListener: {e}")
+            wake_listener = None
+    else:
+        logger.warning("[Supervisor] WakeListener não iniciado — SUPABASE_URL/ANON_KEY ausentes.")
+
     # --- Check component flag ---
     _check_component_flag(logger)
 
