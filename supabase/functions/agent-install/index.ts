@@ -797,12 +797,13 @@ download_release() {
     exit 1
   fi
 
-  # --- Limpar e extrair (preservando venv, .env, logs) ---
+  # --- Limpar e extrair (preservando venv, .env, logs, requirements.txt) ---
   find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 \\
     ! -name 'venv' \\
     ! -name '.env' \\
     ! -name 'storage' \\
     ! -name 'logs' \\
+    ! -name 'requirements.txt' \\
     -exec rm -rf {} + 2>/dev/null || true
 
   echo "Extraindo pacote do Agent..."
