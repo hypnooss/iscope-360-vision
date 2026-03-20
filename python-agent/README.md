@@ -1,17 +1,20 @@
 # iScope 360 — Python Agent
 
-**Versão atual: 1.2.10**
+**Versões atuais: Agent 1.3.14 · Supervisor 1.2.1 · Monitor 1.1.1**
 
-Agent Python para comunicação com o backend do iScope 360. Executa em servidores Linux, envia heartbeats periódicos, processa tarefas de coleta (firewalls, domínios externos, M365 PowerShell, attack surface scanning) e suporta atualização automática.
+Agent Python para comunicação com o backend do iScope 360. Executa em servidores Linux como um sistema de 3 processos independentes (Worker + Supervisor + Monitor), envia heartbeats periódicos, processa tarefas de coleta (firewalls, domínios externos, M365 PowerShell, attack surface scanning), coleta métricas do servidor e suporta atualização automática com rollback.
 
 ## Índice
 
+- [Arquitetura](#arquitetura)
 - [Pré-requisitos](#pré-requisitos)
 - [Instalação Automática (Produção)](#instalação-automática-produção)
 - [Opções do Script de Instalação](#opções-do-script-de-instalação)
 - [Instalação Manual (Desenvolvimento)](#instalação-manual-desenvolvimento)
 - [Configuração](#configuração)
-- [Execução](#execução)
+- [Execução / systemd](#execução--systemd)
+- [Supervisor](#supervisor)
+- [Monitor](#monitor)
 - [Fluxo de Autenticação](#fluxo-de-autenticação)
 - [Endpoints Utilizados](#endpoints-utilizados)
 - [Sistema de Tarefas](#sistema-de-tarefas)
@@ -20,10 +23,67 @@ Agent Python para comunicação com o backend do iScope 360. Executa em servidor
 - [Gerenciamento de Componentes](#gerenciamento-de-componentes)
 - [Sistema de Auto-Update](#sistema-de-auto-update)
 - [Scheduler com Exponential Backoff](#scheduler-com-exponential-backoff)
+- [Recuperação (agent-fix)](#recuperação-agent-fix)
 - [Compatibilidade de Sistemas](#compatibilidade-de-sistemas)
 - [Estrutura de Arquivos](#estrutura-de-arquivos)
 - [Tratamento de Erros](#tratamento-de-erros)
 - [Troubleshooting](#troubleshooting)
+- [Dependências Python](#dependências-python)
+
+---
+
+## Arquitetura
+
+O iScope Agent opera como **3 processos independentes**, cada um gerenciado por um serviço systemd:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  ARQUITETURA iScope Agent (3 processos)                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌──────────────────────────────────┐                                   │
+│  │  iscope-supervisor (systemd)     │                                   │
+│  │  supervisor/main.py              │                                   │
+│  │                                  │                                   │
+│  │  • Heartbeats com o backend      │                                   │
+│  │  • Gerencia ciclo de vida Worker │──── start/stop/restart ────┐      │
+│  │  • Aplica updates Agent+Monitor  │                            │      │
+│  │  • Realtime Shell (WebSocket)    │                            │      │
+│  │  • Wake Listener (Supabase RT)   │                            │      │
+│  │  • Graceful shutdown (SIGTERM)   │                            │      │
+│  │  • Boot-time dependency check    │                            │      │
+│  └──────────────────────────────────┘                            │      │
+│                                                                  ▼      │
+│  ┌──────────────────────────────────┐                                   │
+│  │  iscope-agent (systemd)          │                                   │
+│  │  main.py → agent/scheduler.py    │                                   │
+│  │                                  │                                   │
+│  │  • Processa tarefas de coleta    │                                   │
+│  │  • Executa blueprints/executores │                                   │
+│  │  • Cross-update do Supervisor    │                                   │
+│  │  • Exponential backoff           │                                   │
+│  └──────────────────────────────────┘                                   │
+│                                                                         │
+│  ┌──────────────────────────────────┐                                   │
+│  │  iscope-monitor (systemd)        │                                   │
+│  │  monitor/main.py                 │                                   │
+│  │                                  │                                   │
+│  │  • Coleta métricas do servidor   │                                   │
+│  │  • CPU, RAM, disco, rede, load   │                                   │
+│  │  • Envia para /agent-metrics     │                                   │
+│  │  • Log rotation (RotatingFile)   │                                   │
+│  └──────────────────────────────────┘                                   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Responsabilidades por Processo
+
+| Processo | Serviço systemd | Entry Point | Responsabilidade |
+|----------|----------------|-------------|------------------|
+| **Supervisor** | `iscope-supervisor` | `supervisor/main.py` | Heartbeats, lifecycle do Worker, updates (Agent + Monitor), Realtime Shell, wake listener |
+| **Worker** | `iscope-agent` | `main.py` | Execução de tarefas, blueprints, cross-update do Supervisor |
+| **Monitor** | `iscope-monitor` | `monitor/main.py` | Coleta e envio de métricas do servidor |
 
 ---
 
@@ -62,8 +122,8 @@ O script automaticamente:
 - Instala dependências do sistema (Python 3.9+, pip, venv, Amass)
 - Cria usuário `iscope` dedicado
 - Configura diretórios com permissões corretas
-- Instala o agent e dependências Python
-- Configura e inicia o serviço systemd
+- Instala o agent, supervisor e monitor com dependências Python
+- Configura e inicia os 3 serviços systemd
 - Instala componentes M365 (PowerShell, módulos, certificado) quando solicitado
 
 ---
@@ -136,15 +196,19 @@ echo '{"agent_id": null, "access_token": null, "refresh_token": null}' > storage
 | Variável | Descrição | Exemplo |
 |----------|-----------|---------|
 | `AGENT_API_BASE_URL` | URL base das Edge Functions | `https://xxx.supabase.co/functions/v1` |
-| `AGENT_POLL_INTERVAL` | Intervalo de heartbeat (segundos) | `60` |
+| `AGENT_POLL_INTERVAL` | Intervalo de heartbeat do Worker (segundos) | `60` |
 | `AGENT_STATE_FILE` | Caminho do arquivo de estado | `/var/lib/iscope-agent/state.json` |
 | `AGENT_ACTIVATION_CODE` | Código de ativação único | `XXXX-XXXX-XXXX-XXXX` |
+| `SUPABASE_URL` | URL do projeto Supabase (para Realtime) | `https://xxx.supabase.co` |
+| `SUPABASE_ANON_KEY` | Chave anon do Supabase (para Realtime) | `eyJ...` |
+| `SUPERVISOR_HEARTBEAT_INTERVAL` | Intervalo de heartbeat do Supervisor (segundos) | `120` |
+| `MONITOR_INTERVAL` | Intervalo de coleta do Monitor (segundos) | `300` |
 
 ### Diretórios Padrão (Produção)
 
 | Diretório | Propósito |
 |-----------|-----------|
-| `/opt/iscope-agent` | Código-fonte do agent |
+| `/opt/iscope-agent` | Código-fonte (agent/, supervisor/, monitor/) |
 | `/etc/iscope-agent` | Configuração (`agent.env`) |
 | `/var/lib/iscope-agent` | Estado persistente (`state.json`) |
 | `/var/lib/iscope-agent/certs` | Certificados M365 (CRT, KEY, PFX, thumbprint) |
@@ -152,31 +216,143 @@ echo '{"agent_id": null, "access_token": null, "refresh_token": null}' > storage
 
 ---
 
-## Execução
+## Execução / systemd
+
+O sistema opera com **3 serviços systemd independentes**:
+
+### Comandos por Serviço
 
 ```bash
-# Executar normalmente
-python main.py
+# ── Supervisor (processo principal, gerencia Worker) ──
+sudo systemctl status iscope-supervisor
+sudo systemctl restart iscope-supervisor
+sudo journalctl -u iscope-supervisor -f
 
-# Resetar estado do agent (para re-registro)
-python main.py --reset-default
-```
-
-### Comandos systemd (Produção)
-
-```bash
-# Status do serviço
+# ── Worker (execução de tarefas) ──
 sudo systemctl status iscope-agent
-
-# Reiniciar serviço
 sudo systemctl restart iscope-agent
-
-# Ver logs em tempo real
 sudo journalctl -u iscope-agent -f
 
-# Logs das últimas 100 linhas
-sudo journalctl -u iscope-agent -n 100
+# ── Monitor (métricas do servidor) ──
+sudo systemctl status iscope-monitor
+sudo systemctl restart iscope-monitor
+sudo journalctl -u iscope-monitor -f
+
+# ── Todos os serviços ──
+sudo systemctl status iscope-supervisor iscope-agent iscope-monitor
+sudo journalctl -u iscope-supervisor -u iscope-agent -u iscope-monitor -f
 ```
+
+### Execução Manual (Desenvolvimento)
+
+```bash
+# Worker
+python main.py
+
+# Worker com reset de estado
+python main.py --reset-default
+
+# Supervisor (requer agent/ instalado)
+python -m supervisor.main
+
+# Monitor
+python -m monitor.main
+```
+
+---
+
+## Supervisor
+
+O Supervisor (`supervisor/main.py`) é o processo central que orquestra todo o sistema.
+
+### Funcionalidades
+
+#### 1. Heartbeats com o Backend
+- Envia heartbeats periódicos para `/agent-heartbeat`
+- Reporta versões atuais dos 3 módulos (agent, supervisor, monitor)
+- Recebe sinais de update, comandos remotos e flags de componentes
+
+#### 2. Gerenciamento do Worker
+- Inicia o Worker via `systemctl start iscope-agent` no boot
+- Monitora se o Worker está rodando (`is_running()`)
+- Reinicia automaticamente se o Worker parar inesperadamente
+- Para o Worker antes de aplicar updates (`stop → update → start`)
+
+#### 3. Aplicação de Updates (Agent + Monitor)
+- Recebe sinal `update_available` / `monitor_update_available` no heartbeat
+- Download do tarball via signed URL do bucket `agent-releases`
+- Validação de checksum SHA256
+- Backup do módulo atual → extração do novo → restart do serviço
+- Rollback automático em caso de falha
+
+#### 4. Realtime Shell (WebSocket)
+- Sessão interativa de shell remoto via Supabase Realtime (WebSocket)
+- Ativação sob demanda via heartbeat (`start_realtime: true`) ou wake event
+- Timeout por inatividade (120s) ou encerramento via GUI
+- O shell é criado/destruído conforme necessidade (não permanente)
+
+#### 5. Wake Listener (Supabase Realtime)
+- Listener permanente e leve que escuta eventos `wake` via Supabase Realtime
+- Quando recebe um wake event, instancia o RealtimeShell instantaneamente
+- Evita esperar pelo próximo heartbeat para iniciar sessão shell
+
+#### 6. Cross-Update do Supervisor
+- O Supervisor não atualiza a si mesmo (deadlock)
+- Fluxo: Backend sinaliza → Supervisor escreve `pending_supervisor_update.json` → Worker detecta, baixa, aplica e cria `supervisor_restart.flag` → Supervisor detecta a flag e faz `sys.exit(0)` → systemd reinicia com a nova versão
+
+#### 7. Graceful Shutdown (SIGTERM)
+- Captura SIGTERM e SIGINT via `signal.signal()`
+- Seta `shutdown_requested` event → loop principal encerra
+- Para Wake Listener e Realtime Shell antes de sair
+
+#### 8. Boot-time Dependency Check
+- Na inicialização, verifica `requirements.txt` e instala dependências faltantes via `pip install -q`
+- Garante que o Worker terá todas as dependências ao iniciar
+
+### Bootstrap com Rollback
+
+O `supervisor_bootstrap.sh` é executado como `ExecStartPre` no serviço systemd:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  SUPERVISOR BOOTSTRAP (ExecStartPre)                         │
+├─────────────────────────────────────────────────────────────┤
+│  1. Verifica se supervisor/main.py existe                    │
+│  2. Verifica se venv/bin/python funciona                     │
+│  3. Testa import do módulo supervisor                        │
+│  4. Se falha → Busca backup e restaura automaticamente       │
+│  5. Se rollback falha → Tenta baixar versão latest           │
+│  6. Se tudo falha → Loga erro e desiste                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Monitor
+
+O Monitor (`monitor/main.py`) é um serviço independente que coleta métricas do servidor.
+
+### Métricas Coletadas
+
+| Métrica | Descrição |
+|---------|-----------|
+| `cpu_percent` | Uso de CPU (%) |
+| `cpu_count` | Número de cores |
+| `ram_total_mb` / `ram_used_mb` / `ram_percent` | Uso de memória RAM |
+| `disk_total_gb` / `disk_used_gb` / `disk_percent` | Uso de disco |
+| `disk_partitions` | Lista de partições montadas |
+| `net_bytes_sent` / `net_bytes_recv` | Tráfego de rede |
+| `load_avg_1m` / `load_avg_5m` / `load_avg_15m` | Load average |
+| `uptime_seconds` | Tempo de atividade do servidor |
+| `process_count` | Número de processos |
+| `hostname` / `os_info` | Identificação do servidor |
+
+### Características
+
+- **Intervalo configurável**: Padrão 300s via `MONITOR_INTERVAL`
+- **Log rotation**: Usa `RotatingFileHandler` para evitar crescimento indefinido de logs
+- **Serviço independente**: Não depende do Worker ou Supervisor para operar
+- **Envio via API**: POST para `/agent-metrics` com autenticação JWT
 
 ---
 
@@ -197,15 +373,20 @@ sudo journalctl -u iscope-agent -n 100
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│                    LOOP PRINCIPAL                           │
+│                    LOOP PRINCIPAL (Supervisor)               │
 ├─────────────────────────────────────────────────────────────┤
-│  1. Envia heartbeat para /agent-heartbeat                   │
+│  1. Envia heartbeat para /agent-heartbeat                    │
 │  2. Verifica resposta:                                      │
-│     ├─ check_components → Solicita verificação de deps      │
-│     ├─ update_available → Executa auto-update               │
-│     ├─ has_pending_tasks → Busca e processa tarefas         │
-│     └─ next_heartbeat_in → Aguarda intervalo                │
-│  3. Repete                                                  │
+│     ├─ update_available → Aplica update do Agent             │
+│     ├─ supervisor_update_available → Sinaliza para Worker    │
+│     ├─ monitor_update_available → Aplica update do Monitor   │
+│     ├─ check_components → Verifica componentes do sistema    │
+│     ├─ has_pending_commands → Executa comandos remotos       │
+│     ├─ start_realtime → Inicia/para Realtime Shell           │
+│     └─ next_heartbeat_in → Aguarda intervalo                 │
+│  3. Verifica wake events (instantâneo)                       │
+│  4. Monitora saúde do Worker                                 │
+│  5. Repete                                                  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -216,17 +397,18 @@ sudo journalctl -u iscope-agent -n 100
 | Endpoint | Método | Descrição |
 |----------|--------|-----------|
 | `/register-agent` | POST | Registro inicial com activation code |
-| `/agent-heartbeat` | POST | Heartbeat periódico com status |
+| `/agent-heartbeat` | POST | Heartbeat periódico com status e versões |
 | `/agent-refresh` | POST | Renovação de access token |
 | `/agent-tasks` | GET | Buscar tarefas pendentes |
 | `/agent-step-result` | POST | Upload progressivo de cada step |
 | `/agent-task-result` | POST | Reportar conclusão final de tarefa |
+| `/agent-metrics` | POST | Envio de métricas do servidor (Monitor) |
 
 ---
 
 ## Sistema de Tarefas
 
-O agent processa tarefas atribuídas pela plataforma em um modelo de execução por steps:
+O Worker processa tarefas atribuídas pela plataforma em um modelo de execução por steps:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -258,7 +440,7 @@ O agent processa tarefas atribuídas pela plataforma em um modelo de execução 
 
 ## Módulos/Executores
 
-O agent possui 12 executores implementados para diferentes tipos de coleta:
+O agent possui **13 executores** implementados para diferentes tipos de coleta:
 
 | Executor | Descrição | Dependência |
 |----------|-----------|-------------|
@@ -267,6 +449,7 @@ O agent possui 12 executores implementados para diferentes tipos de coleta:
 | `ssh` | Execução de comandos via SSH | paramiko |
 | `snmp` | Queries SNMP (GET, WALK, BULK) | pysnmp |
 | `dns_query` | Queries DNS (NS, MX, SOA, SPF, DMARC, DKIM, DNSSEC) | dnspython |
+| `domain_whois` | Consulta WHOIS de domínios (registrar, expiração, status) | stdlib (socket) |
 | `amass` | Enumeração de subdomínios via OWASP Amass | amass (CLI) |
 | `powershell` | Comandos M365 via PowerShell Core (Exchange Online, Microsoft Graph) | pwsh + módulos |
 | `masscan` | Descoberta rápida de portas TCP (alternativa ao nmap discovery) | masscan (CLI) |
@@ -302,6 +485,12 @@ O agent possui 12 executores implementados para diferentes tipos de coleta:
 - Records: A, AAAA, NS, MX, TXT, SOA, CNAME
 - Verificações: SPF, DMARC, DKIM
 - Validação DNSSEC
+
+#### Domain WHOIS
+- Consulta WHOIS via socket TCP (porta 43)
+- Extrai: registrar, data de criação, data de expiração, status do domínio
+- Detecção automática do servidor WHOIS por TLD
+- Sem dependências externas (usa stdlib)
 
 #### Amass
 - Enumeração passiva de subdomínios
@@ -479,11 +668,10 @@ O agent possui um sistema de gerenciamento automático de componentes do sistema
 │  VERIFICAÇÃO DE COMPONENTES                                  │
 ├─────────────────────────────────────────────────────────────┤
 │  1. Backend envia check_components=true no heartbeat         │
-│  2. Agent cria flag em /var/lib/iscope-agent/                │
-│  3. Agent solicita restart do serviço via systemd            │
-│  4. ExecStartPre executa check-deps.sh (como root)          │
-│  5. Script instala componentes ausentes                     │
-│  6. Agent reinicia normalmente                              │
+│  2. Supervisor executa ensure_system_components()            │
+│  3. Script instala componentes ausentes                     │
+│  4. Supervisor reinicia Worker                               │
+│  5. Flag check_components.flag é verificada no boot          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -496,30 +684,60 @@ O certificado é gerado automaticamente e armazenado em `/var/lib/iscope-agent/c
 | `m365.crt` | Certificado público (PEM) | 644 |
 | `m365.key` | Chave privada (PEM) | 600 |
 | `m365.pfx` | Bundle PKCS#12 (para PowerShell) | 600 |
-| `thumbprint.txt` | SHA1 fingerprint (formato Azure) | 644 |
+| `thumbprint.txt` | SHA1 fingerprint (formato Azure, sem dois-pontos) | 644 |
 
 ---
 
 ## Sistema de Auto-Update
 
-O agent possui sistema de atualização automática controlado pelo backend:
+O sistema de auto-update opera em 3 fluxos independentes, todos coordenados via heartbeat:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  FLUXO DE AUTO-UPDATE                                       │
-├─────────────────────────────────────────────────────────────┤
-│  1. Heartbeat retorna update_available=true                 │
-│  2. Verifica se há tarefas pendentes                        │
-│     ├─ SIM e não é forçado → Adia update                    │
-│     └─ NÃO ou forçado → Continua                            │
-│  3. Download do pacote de atualização                       │
-│  4. Verifica checksum SHA256                                │
-│  5. Cria backup em /var/lib/iscope-agent/backup             │
-│  6. Extrai novos arquivos (preserva venv, logs, .env)       │
-│  7. Reinicia serviço via systemd                            │
-│  8. Em caso de falha → Rollback automático                  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│  FLUXO DE AUTO-UPDATE (3 módulos)                                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─ AGENT UPDATE (Supervisor aplica) ─────────────────────────────┐     │
+│  │  1. Heartbeat retorna update_available=true + update_info       │     │
+│  │  2. Supervisor para o Worker (systemctl stop iscope-agent)      │     │
+│  │  3. Download tarball → Verifica SHA256 → Backup → Extrai        │     │
+│  │  4. Preserva: venv, logs, .env, storage                        │     │
+│  │  5. Reinicia Worker (systemctl start iscope-agent)              │     │
+│  │  6. Se falha → Rollback automático do backup                    │     │
+│  └─────────────────────────────────────────────────────────────────┘     │
+│                                                                         │
+│  ┌─ SUPERVISOR UPDATE (cross-update via Worker) ──────────────────┐     │
+│  │  1. Heartbeat retorna supervisor_update_available=true          │     │
+│  │  2. Supervisor escreve pending_supervisor_update.json           │     │
+│  │  3. Worker detecta o arquivo, baixa tarball, valida, aplica     │     │
+│  │  4. Worker cria supervisor_restart.flag                         │     │
+│  │  5. Supervisor detecta flag → sys.exit(0)                       │     │
+│  │  6. systemd reinicia Supervisor com a nova versão               │     │
+│  └─────────────────────────────────────────────────────────────────┘     │
+│                                                                         │
+│  ┌─ MONITOR UPDATE (Supervisor aplica) ───────────────────────────┐     │
+│  │  1. Heartbeat retorna monitor_update_available=true             │     │
+│  │  2. Supervisor baixa tarball → SHA256 → Substitui monitor/      │     │
+│  │  3. Reinicia serviço (systemctl restart iscope-monitor)         │     │
+│  └─────────────────────────────────────────────────────────────────┘     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Versões e Controle
+
+O backend armazena as versões alvo em `system_settings`:
+
+| Setting | Descrição |
+|---------|-----------|
+| `agent_latest_version` | Versão alvo do Agent (Worker) |
+| `agent_update_checksum` | SHA256 do tarball do Agent |
+| `supervisor_latest_version` | Versão alvo do Supervisor |
+| `supervisor_update_checksum` | SHA256 do tarball do Supervisor |
+| `monitor_latest_version` | Versão alvo do Monitor |
+| `monitor_update_checksum` | SHA256 do tarball do Monitor |
+
+O heartbeat compara as versões reportadas pelo agent com as versões em `system_settings` e sinaliza updates quando há diferença.
 
 ### Características
 
@@ -527,13 +745,14 @@ O agent possui sistema de atualização automática controlado pelo backend:
 - **Preservação de dados**: venv, storage, logs, .env não são sobrescritos
 - **Backup automático**: Criado antes de cada atualização
 - **Rollback**: Restauração automática em caso de falha
-- **Restart gerenciado**: Via systemd para garantir continuidade
+- **Instalação fresh**: Se o módulo não existe em disco (ex: agent/ ausente), o update funciona como instalação inicial
+- **Tempfile seguro**: Downloads usam `tempfile.mkdtemp()` em vez de paths fixos para evitar conflitos
 
 ---
 
 ## Scheduler com Exponential Backoff
 
-O loop principal do agent (`scheduler.py`) implementa um scheduler com backoff exponencial para resiliência:
+O loop principal do Worker (`scheduler.py`) implementa um scheduler com backoff exponencial para resiliência:
 
 - **Intervalo base**: configurável (padrão: 60s via `AGENT_POLL_INTERVAL`)
 - **Backoff exponencial**: em caso de erro, o intervalo dobra a cada falha consecutiva (`base × 2^erros`)
@@ -549,6 +768,33 @@ Erro #2:  300s (capped)
 Erro #3:  300s (capped)
 Sucesso:  120s (reset)
 ```
+
+---
+
+## Recuperação (agent-fix)
+
+Para agents que não conseguem se atualizar automaticamente, estão em crash loop, ou possuem dependências corrompidas, existe a Edge Function `agent-fix`:
+
+```bash
+curl -sS https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-fix | sudo bash
+```
+
+### O que o agent-fix faz
+
+1. **Preserva configuração**: Detecta e preserva `.env` de múltiplos caminhos (`/opt/iscope-agent/.env`, `/etc/iscope-agent/agent.env`)
+2. **Baixa módulos latest**: Download dos tarballs mais recentes (Agent, Supervisor, Monitor) via signed URLs
+3. **Reconstrói venv**: Deleta e recria o ambiente virtual, instala `requirements.txt`
+4. **Limpa flags**: Remove `supervisor_restart.flag`, `rollback.flag`, `pending_supervisor_update.json`
+5. **Recria systemd units**: Se ausentes, recria os 3 arquivos `.service`
+6. **Reinicia serviços**: Restart dos 3 serviços (Supervisor, Worker, Monitor)
+
+### Quando usar
+
+- Agent offline e sem resposta ao heartbeat
+- Crash loop do Supervisor ou Worker
+- Dependências Python corrompidas ou faltantes (ex: `websocket-client`)
+- Versão muito antiga que não suporta o protocolo de auto-update atual
+- Módulos ausentes em disco (agent/, supervisor/, monitor/)
 
 ---
 
@@ -588,39 +834,71 @@ dnf install -y python39 python39-pip
 
 ```
 python-agent/
-├── main.py                   # Entry point
-├── requirements.txt          # Dependências Python
-├── check-deps.sh             # Script de verificação de componentes (ExecStartPre)
-├── .env.example              # Template de configuração
-├── README.md                 # Esta documentação
-└── agent/
-    ├── __init__.py            # Package marker
-    ├── config.py              # Carregamento de configurações
-    ├── state.py               # Gerenciamento de estado persistente
-    ├── api_client.py          # Cliente HTTP para backend
-    ├── auth.py                # Autenticação e renovação de tokens
-    ├── heartbeat.py           # Lógica de heartbeat
-    ├── tasks.py               # Orquestrador de tarefas
-    ├── scheduler.py           # Loop principal com exponential backoff
-    ├── logger.py              # Sistema de logging com rotação
-    ├── updater.py             # Auto-update com rollback
-    ├── version.py             # Versão centralizada (1.2.10)
-    ├── components.py          # Gerenciamento de componentes do sistema
-    └── executors/
-        ├── __init__.py        # Exporta executores
-        ├── base.py            # Classe base abstrata
-        ├── http_request.py    # HTTP genérico
-        ├── http_session.py    # HTTP com sessão
-        ├── ssh.py             # SSH (paramiko)
-        ├── snmp.py            # SNMP (pysnmp)
-        ├── dns_query.py       # DNS queries
-        ├── amass.py           # Subdomain enumeration
-        ├── powershell.py      # M365 PowerShell (Exchange Online, Microsoft Graph)
-        ├── asn_classifier.py  # Classificação ASN/CDN via WHOIS + RDAP
-        ├── nmap_discovery.py  # Descoberta de portas TCP (2 fases)
-        ├── nmap.py            # Fingerprinting de serviços (2 fases + NSE)
-        ├── masscan.py         # Descoberta rápida de portas (alternativa)
-        └── httpx_executor.py  # Fingerprinting web (tecnologias, TLS)
+├── main.py                        # Entry point do Worker
+├── requirements.txt               # Dependências Python
+├── check-deps.sh                  # Verificação de componentes (ExecStartPre)
+├── supervisor_bootstrap.sh        # Bootstrap do Supervisor com rollback (ExecStartPre)
+├── .env.example                   # Template de configuração
+├── README.md                      # Esta documentação
+│
+├── agent/                         # Módulo Worker (v1.3.14)
+│   ├── __init__.py                # Package marker
+│   ├── config.py                  # Carregamento de configurações
+│   ├── state.py                   # Gerenciamento de estado persistente
+│   ├── api_client.py              # Cliente HTTP para backend
+│   ├── auth.py                    # Autenticação e renovação de tokens
+│   ├── heartbeat.py               # Lógica de heartbeat (shared com Supervisor)
+│   ├── heartbeat_worker.py        # Heartbeat específico do Worker
+│   ├── tasks.py                   # Orquestrador de tarefas
+│   ├── scheduler.py               # Loop principal com exponential backoff
+│   ├── logger.py                  # Sistema de logging com rotação
+│   ├── updater.py                 # Auto-update com rollback
+│   ├── supervisor_updater.py      # Cross-update do Supervisor (chamado pelo Worker)
+│   ├── remote_commands.py         # Processamento de comandos remotos
+│   ├── realtime_commands.py       # Comandos via Supabase Realtime
+│   ├── version.py                 # Versão centralizada (1.3.14)
+│   ├── components.py              # Gerenciamento de componentes do sistema
+│   └── executors/
+│       ├── __init__.py            # Exporta executores
+│       ├── base.py                # Classe base abstrata
+│       ├── http_request.py        # HTTP genérico
+│       ├── http_session.py        # HTTP com sessão
+│       ├── ssh.py                 # SSH (paramiko)
+│       ├── snmp.py                # SNMP (pysnmp)
+│       ├── dns_query.py           # DNS queries
+│       ├── domain_whois.py        # WHOIS de domínios
+│       ├── amass.py               # Subdomain enumeration
+│       ├── powershell.py          # M365 PowerShell (Exchange Online, Microsoft Graph)
+│       ├── asn_classifier.py      # Classificação ASN/CDN via WHOIS + RDAP
+│       ├── nmap_discovery.py      # Descoberta de portas TCP (2 fases)
+│       ├── nmap.py                # Fingerprinting de serviços (2 fases + NSE)
+│       ├── masscan.py             # Descoberta rápida de portas (alternativa)
+│       └── httpx_executor.py      # Fingerprinting web (tecnologias, TLS)
+│
+├── supervisor/                    # Módulo Supervisor (v1.2.1)
+│   ├── __init__.py
+│   ├── main.py                    # Entry point do Supervisor
+│   ├── config.py                  # Configurações do Supervisor
+│   ├── heartbeat.py               # Loop de heartbeat do Supervisor
+│   ├── worker_manager.py          # Gerenciamento do Worker (start/stop/restart)
+│   ├── updater.py                 # Aplicação de updates do Agent
+│   ├── monitor_updater.py         # Aplicação de updates do Monitor
+│   ├── realtime_shell.py          # Shell interativo via WebSocket
+│   ├── realtime_listener.py       # Wake listener (Supabase Realtime)
+│   ├── logger.py                  # Logger do Supervisor
+│   └── version.py                 # Versão centralizada (1.2.1)
+│
+├── monitor/                       # Módulo Monitor (v1.1.1)
+│   ├── __init__.py
+│   ├── main.py                    # Entry point do Monitor
+│   ├── collector.py               # Coleta de métricas do sistema
+│   ├── worker.py                  # Loop de envio de métricas
+│   └── version.py                 # Versão centralizada (1.1.1)
+│
+└── systemd/                       # Templates de serviços systemd
+    ├── iscope-agent.service        # Serviço do Worker
+    ├── iscope-supervisor.service   # Serviço do Supervisor
+    └── iscope-monitor.service      # Serviço do Monitor
 ```
 
 ---
@@ -633,10 +911,34 @@ python-agent/
 | `INVALID_SIGNATURE` | Limpa estado local, para execução |
 | `INVALID_TOKEN` | Limpa estado local, para execução |
 | `BLOCKED` / `REVOKED` | Para execução com erro crítico |
+| `AGENT_STOPPED` | Supervisor para Worker e encerra (exit 1) |
+
+### Resiliência do Supervisor
+
+- **Erros consecutivos**: Após 10 erros consecutivos de heartbeat, reinicia o Worker por precaução
+- **Worker inativo**: Se o Worker para inesperadamente, o Supervisor o reinicia automaticamente
+- **Bootstrap rollback**: Se o Supervisor falha ao iniciar, `supervisor_bootstrap.sh` restaura backup ou baixa versão latest
 
 ---
 
 ## Troubleshooting
+
+### Verificar status dos 3 serviços
+```bash
+sudo systemctl status iscope-supervisor iscope-agent iscope-monitor
+```
+
+### Ver logs combinados
+```bash
+sudo journalctl -u iscope-supervisor -u iscope-agent -u iscope-monitor -f --since "10 min ago"
+```
+
+### Verificar versões instaladas
+```bash
+grep "__version__" /opt/iscope-agent/agent/version.py
+grep "__version__" /opt/iscope-agent/supervisor/version.py
+grep "__version__" /opt/iscope-agent/monitor/version.py
+```
 
 ### Agent não registra
 ```bash
@@ -646,8 +948,8 @@ cat /etc/iscope-agent/agent.env | grep ACTIVATION_CODE
 # Verificar conectividade
 curl -I https://akbosdbyheezghieiefz.supabase.co/functions/v1/register-agent
 
-# Ver logs detalhados
-sudo journalctl -u iscope-agent -n 50
+# Ver logs do Supervisor (responsável pelo heartbeat)
+sudo journalctl -u iscope-supervisor -n 50
 ```
 
 ### Token inválido após reinício
@@ -669,8 +971,48 @@ cat /var/lib/iscope-agent/state.json | python3 -m json.tool
 ls -la /var/lib/iscope-agent/
 ls -la /opt/iscope-agent/
 
-# Testar conectividade SSH (se aplicável)
-ssh -o ConnectTimeout=5 user@target-host
+# Verificar logs do Worker
+sudo journalctl -u iscope-agent -n 100
+```
+
+### Supervisor em crash loop
+```bash
+# Verificar bootstrap
+sudo journalctl -u iscope-supervisor | grep "bootstrap"
+
+# Verificar se supervisor/main.py existe
+ls -la /opt/iscope-agent/supervisor/main.py
+
+# Verificar venv
+/opt/iscope-agent/venv/bin/python -c "import supervisor"
+
+# Se falhar → agent-fix
+curl -sS https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-fix | sudo bash
+```
+
+### Monitor não envia métricas
+```bash
+# Verificar serviço
+sudo systemctl status iscope-monitor
+sudo journalctl -u iscope-monitor -n 50
+
+# Verificar módulo
+/opt/iscope-agent/venv/bin/python -c "import monitor; print('OK')"
+
+# Reiniciar
+sudo systemctl restart iscope-monitor
+```
+
+### Dependências Python faltando
+```bash
+# Verificar manualmente
+/opt/iscope-agent/venv/bin/pip list
+
+# Instalar manualmente
+/opt/iscope-agent/venv/bin/pip install -r /opt/iscope-agent/requirements.txt
+
+# Ou usar agent-fix para reconstruir venv
+curl -sS https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-fix | sudo bash
 ```
 
 ### Amass não encontrado
@@ -715,19 +1057,18 @@ openssl x509 -in /var/lib/iscope-agent/certs/m365.crt -noout -dates
 
 # Forçar reinstalação de componentes
 sudo touch /var/lib/iscope-agent/check_components.flag
-sudo systemctl restart iscope-agent
+sudo systemctl restart iscope-supervisor
 
 # Ver logs de componentes
 cat /var/log/iscope-agent/components.log
 ```
 
-### Verificar versão instalada
+### Recuperação completa (agent-fix)
 ```bash
-# Via código Python
-grep "__version__" /opt/iscope-agent/agent/version.py
+# Para agents offline, corrompidos ou com dependências faltando:
+curl -sS https://akbosdbyheezghieiefz.supabase.co/functions/v1/agent-fix | sudo bash
 
-# Via logs
-sudo journalctl -u iscope-agent | grep "Agent v"
+# O script preserva .env e estado, reconstrói tudo e reinicia os 3 serviços.
 ```
 
 ---
@@ -735,15 +1076,16 @@ sudo journalctl -u iscope-agent | grep "Agent v"
 ## Dependências Python
 
 ```
-requests>=2.31.0      # HTTP client
-certifi>=2024.2.2     # Certificados SSL
-pyjwt>=2.8.0          # JWT handling
-python-dotenv>=1.0.1  # Environment variables
-schedule>=1.2.1       # Task scheduling
-paramiko>=3.4.0       # SSH client
-pysnmp>=6.0.0         # SNMP client
-urllib3>=2.0.0        # HTTP utilities
-dnspython>=2.7.0      # DNS queries
+requests>=2.31.0         # HTTP client
+certifi>=2024.2.2        # Certificados SSL
+pyjwt>=2.8.0             # JWT handling
+python-dotenv>=1.0.1     # Environment variables
+schedule>=1.2.1          # Task scheduling
+paramiko>=3.4.0          # SSH client
+pysnmp>=6.0.0            # SNMP client
+urllib3>=1.26.0,<2.0.0   # HTTP utilities (pinned <2.0 para compatibilidade)
+dnspython>=2.7.0         # DNS queries
+websocket-client>=1.7.0  # WebSocket (Supabase Realtime)
 ```
 
 ---
