@@ -462,7 +462,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                   <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                   <YAxis
-                    domain={[0, ramTotal ? Math.ceil(ramTotal * 1.05) : "auto"]}
+                    domain={[0, ramTotal ? Math.ceil(ramTotal) : "auto"]}
                     tick={{ fontSize: 10 }}
                     className="fill-muted-foreground"
                     tickFormatter={(v) => v >= 1024 ? `${(v / 1024).toFixed(1)}G` : `${v}`}
