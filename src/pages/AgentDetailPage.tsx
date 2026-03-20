@@ -131,6 +131,24 @@ export default function AgentDetailPage() {
     refetchInterval: 15000, // Poll every 15 seconds
   });
 
+  // Fetch latest monitor version from agent_metrics
+  const { data: monitorVersion } = useQuery({
+    queryKey: ['agent-monitor-version', id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('agent_metrics')
+        .select('monitor_version')
+        .eq('agent_id', id!)
+        .not('monitor_version', 'is', null)
+        .order('collected_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data?.monitor_version ?? null;
+    },
+    enabled: !!id && !!user && canAccessPage,
+    refetchInterval: 15000,
+  });
+
   useEffect(() => {
     if (!authLoading && !user) {
       navigate("/auth");
@@ -493,6 +511,14 @@ export default function AgentDetailPage() {
                     <span className="text-muted-foreground">Versão Supervisor</span>
                     {(agent as any).supervisor_version ? (
                       <code className="text-sm bg-muted px-2 py-0.5 rounded">v{(agent as any).supervisor_version}</code>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Versão Monitor</span>
+                    {monitorVersion ? (
+                      <code className="text-sm bg-muted px-2 py-0.5 rounded">v{monitorVersion}</code>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
