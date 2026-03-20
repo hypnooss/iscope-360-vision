@@ -15,22 +15,21 @@ interface UpdateManagementCardProps {
   userId?: string;
 }
 
-interface OutdatedAgent {
+interface AgentBasicInfo {
   name: string;
+  client: string;
+}
+
+interface OutdatedAgent extends AgentBasicInfo {
   version: string;
-  client: string;
 }
 
-interface OutdatedSupervisor {
-  name: string;
+interface OutdatedSupervisor extends AgentBasicInfo {
   supervisorVersion: string;
-  client: string;
 }
 
-interface OutdatedMonitor {
-  name: string;
+interface OutdatedMonitor extends AgentBasicInfo {
   monitorVersion: string;
-  client: string;
 }
 
 export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
