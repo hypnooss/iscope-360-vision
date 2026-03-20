@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Cpu, HardDrive, MemoryStick, Network, Clock, Activity } from "lucide-react";
+import { Cpu, HardDrive, MemoryStick, Network, Clock, Activity, Monitor } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -349,30 +349,12 @@ export function AgentMonitorPanel({ agentId }: Props) {
     time: m.collected_at,
   }));
 
-  // Format indicator values
-  const cpuIndicator = latest?.cpu_percent != null
-    ? `${Number(latest.cpu_percent).toFixed(1)}%${latest.cpu_count ? ` (${latest.cpu_count} cores)` : ""}`
-    : null;
-
-  const ramIndicator = latest?.ram_used_mb != null && latest?.ram_total_mb != null
-    ? `${Number(latest.ram_used_mb).toLocaleString()} / ${Number(latest.ram_total_mb).toLocaleString()} MB (${Number(latest.ram_percent).toFixed(1)}%)`
-    : null;
-
-  const diskIndicator = latest?.disk_used_gb != null && latest?.disk_total_gb != null
-    ? `${Number(latest.disk_used_gb).toFixed(1)} / ${Number(latest.disk_total_gb).toFixed(1)} GB (${Number(latest.disk_percent).toFixed(1)}%)`
-    : null;
-
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6">
         <CardTitle className="flex items-center gap-2 text-lg">
           <Activity className="w-5 h-5" />
           Monitoramento
-          {latest?.hostname && (
-            <span className="text-xs font-normal text-muted-foreground ml-1">
-              ({latest.hostname})
-            </span>
-          )}
         </CardTitle>
         <div className="flex gap-1">
           {TIME_OPTIONS.map((opt) => (
@@ -389,25 +371,17 @@ export function AgentMonitorPanel({ agentId }: Props) {
         </div>
       </CardHeader>
       <CardContent className="space-y-8">
-        {/* Current indicators */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+        {/* System info cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <MetricIndicator
+            icon={Monitor}
+            label="Hostname"
+            value={latest?.hostname ?? null}
+          />
           <MetricIndicator
             icon={Cpu}
-            label="CPU"
-            value={cpuIndicator}
-            color={getColor(latest?.cpu_percent != null ? Number(latest.cpu_percent) : null)}
-          />
-          <MetricIndicator
-            icon={MemoryStick}
-            label="RAM"
-            value={ramIndicator}
-            color={getColor(latest?.ram_percent != null ? Number(latest.ram_percent) : null)}
-          />
-          <MetricIndicator
-            icon={HardDrive}
-            label="Disco"
-            value={diskIndicator}
-            color={getColor(latest?.disk_percent != null ? Number(latest.disk_percent) : null)}
+            label="Sistema Operacional"
+            value={latest?.os_info ?? null}
           />
           <MetricIndicator
             icon={Clock}
