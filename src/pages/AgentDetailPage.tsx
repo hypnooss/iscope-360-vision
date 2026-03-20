@@ -516,6 +516,14 @@ export default function AgentDetailPage() {
                     )}
                   </div>
                   <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Versão Monitor</span>
+                    {monitorVersion ? (
+                      <code className="text-sm bg-muted px-2 py-0.5 rounded">v{monitorVersion}</code>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Último heartbeat</span>
                     <span className="text-sm">
                       {agent.last_seen
