@@ -398,8 +398,6 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
         </div>
       </div>
 
-      {extra}
-
       {outdated.length > 0 && (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">{label} desatualizados:</p>
@@ -417,6 +415,8 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
           </ScrollArea>
         </div>
       )}
+
+      {extra}
 
       {total === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum registrado</p>}
     </div>
