@@ -1,37 +1,24 @@
 
 
-## Diagnóstico: Por que `ip_addresses` retorna `null`
+## Plano: Listar agents "sem módulo" nos cards de Status
 
-### Causa raiz
+### Problema
 
-O problema **não** é o coletor legado. Todos os agentes estão com Monitor v1.1.4 e usando o coletor template-driven (`proc_read.py`), que **tem** o código de `_read_ip_addresses()`.
-
-O problema está na **lógica de envio parcial** do `monitor/main.py`:
-
-1. O blueprint define `interval_seconds` por step. O step `system_info` (que contém `ip_addresses`, `hostname`, `os_info`, `uptime`) provavelmente roda a cada **3600s** (1h), enquanto CPU/RAM/Disco/Rede rodam a cada 30-60s.
-
-2. Na linha 167, o monitor envia `metrics` (payload parcial do ciclo atual), **não** o `cumulative_snapshot`. Isso significa que nos ciclos em que o step `system_info` não roda, o payload enviado **não contém** `ip_addresses`.
-
-3. A edge function grava `body.ip_addresses ?? null` — ou seja, nos 59 de cada 60 registros, `ip_addresses` é `null`.
-
-4. O frontend busca métricas do último período (1h por padrão) e usa `findLastNonNull`. Mas se o step `system_info` rodou há mais de 1h, **nenhum** registro no range terá o campo preenchido.
+Os cards de Status (Supervisors e Monitors) mostram a contagem de agents "sem Supervisor" e "sem Monitor", mas não listam **quais** são esses agents — diferente do comportamento dos desatualizados, que são listados individualmente.
 
 ### Solução
 
-Alterar o monitor para enviar o **cumulative_snapshot** (que já é mantido e mergeado) em vez do payload parcial. Isso garante que todo envio inclua os dados mais recentes de **todos** os steps, incluindo `ip_addresses`.
+1. **Armazenar a lista de agents sem módulo** (não apenas a contagem) nos states `supervisorStats` e `monitorStats`.
+2. **Renderizar a lista** dentro do bloco `extra` passado ao `renderStatusSection`, no mesmo estilo visual da lista de desatualizados (com scroll area e badges).
 
-### Implementação
+### Implementação em `UpdateManagementCard.tsx`
 
-| Arquivo | Mudança |
+| Mudança | Detalhe |
 |---------|---------|
-| `python-agent/monitor/main.py` (linha 167) | Trocar `_send(api, metrics, logger)` por `_send(api, cumulative_snapshot, logger)` |
-| `python-agent/monitor/version.py` | Bump para `1.1.5` |
+| Expandir interfaces de stats | Adicionar `withoutSupervisorList` e `withoutMonitorList` (arrays com `name` e `client`) |
+| `loadStats()` | Coletar os agents sem supervisor/monitor em arrays nomeados |
+| Bloco `extra` do Supervisor (linhas 468-476) | Adicionar lista expansível dos agents sem Supervisor abaixo do card de contagem |
+| Bloco `extra` do Monitor (linhas 495-503) | Adicionar lista expansível dos agents sem Monitor abaixo do card de contagem |
 
-A mudança é de **uma linha**. O `cumulative_snapshot` já é construído corretamente com `cumulative_snapshot.update(metrics)` na linha 163, acumulando todos os campos de todos os steps. Só falta enviá-lo.
-
-### Impacto
-
-- Todos os campos de intervalo longo (`ip_addresses`, `hostname`, `os_info`, `uptime_seconds`) passarão a estar presentes em **todo** registro de métricas
-- O tamanho do payload aumenta marginalmente (poucos campos extras)
-- Nenhuma mudança no backend ou frontend necessária
+A lista usará o mesmo padrão visual dos desatualizados: `ScrollArea` com bullet points, nome do agent e nome do cliente.
 
