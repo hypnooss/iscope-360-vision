@@ -364,7 +364,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <CardTitle className="flex items-center gap-2 text-lg">
           <Activity className="w-5 h-5" />
           Monitoramento
@@ -388,9 +388,9 @@ export function AgentMonitorPanel({ agentId }: Props) {
           ))}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
         {/* Current indicators */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <MetricIndicator
             icon={Cpu}
             label="CPU"
