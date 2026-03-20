@@ -4,14 +4,15 @@ iScope 360 Monitor — Standalone entrypoint (template-driven).
 Runs as an independent systemd service (iscope-monitor.service).
 Fetches a blueprint from the backend and executes collection steps
 using internal executors. Falls back to legacy collector if blueprint
-is unavailable.
+is unavailable. Supports per-step interval_seconds for granular
+collection frequency.
 """
 
 import json
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 from monitor.collector import MetricsCollector
 from monitor.version import get_version
@@ -27,12 +28,23 @@ from agent.auth import AuthManager
 MONITOR_SNAPSHOT_FILE = Path("/var/lib/iscope-agent/monitor.json")
 BLUEPRINT_CACHE_FILE = Path("/var/lib/iscope-agent/monitor_blueprint.json")
 BLUEPRINT_REFRESH_INTERVAL = 1800  # 30 minutes
+DEFAULT_STEP_INTERVAL = 60  # seconds
+MIN_BASE_INTERVAL = 10  # seconds
 
 
 def _load_interval() -> int:
     """Read MONITOR_INTERVAL from env (set via EnvironmentFile)."""
     import os
-    return max(int(os.getenv("MONITOR_INTERVAL", "60")), 10)
+    return max(int(os.getenv("MONITOR_INTERVAL", "60")), MIN_BASE_INTERVAL)
+
+
+def _compute_base_interval(blueprint: Dict[str, Any]) -> int:
+    """Derive the loop sleep from the smallest step interval_seconds."""
+    intervals = [
+        step.get("interval_seconds", DEFAULT_STEP_INTERVAL)
+        for step in blueprint.get("steps", [])
+    ]
+    return max(min(intervals) if intervals else DEFAULT_STEP_INTERVAL, MIN_BASE_INTERVAL)
 
 
 def main():
@@ -45,20 +57,14 @@ def main():
 
     formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
-    # Console handler
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    # File handler with rotation (1 MB, 1 backup)
     log_file = Path("/var/log/iscope-agent/monitor.log")
     log_file.parent.mkdir(parents=True, exist_ok=True)
     try:
-        fh = RotatingFileHandler(
-            str(log_file),
-            maxBytes=1 * 1024 * 1024,
-            backupCount=1,
-        )
+        fh = RotatingFileHandler(str(log_file), maxBytes=1 * 1024 * 1024, backupCount=1)
         fh.setFormatter(formatter)
         logger.addHandler(fh)
     except Exception:
@@ -70,7 +76,6 @@ def main():
         logger.critical("AGENT_API_BASE_URL não configurada. Abortando.")
         sys.exit(1)
 
-    # Shared state & auth (reuses agent's state.json)
     state = AgentState(STATE_FILE)
     state.load()
 
@@ -78,18 +83,16 @@ def main():
     auth = AuthManager(state, api, logger)
     api.set_auth_manager(auth)
 
-    # Wait for agent to be authenticated (state.json must have tokens)
     _wait_for_auth(state, logger)
 
-    interval = _load_interval()
-
-    # Legacy fallback collector
     legacy_collector = MetricsCollector(disk_path="/")
-
-    # Blueprint-driven executor instances (stateful, persist across collections)
     executor_instances: Dict[str, Any] = {}
 
-    # Try to load blueprint
+    # Per-step timing
+    last_collected_at: Dict[str, float] = {}
+    # Cumulative snapshot (merge incremental)
+    cumulative_snapshot: Dict[str, Any] = {}
+
     blueprint = _load_blueprint(api, logger)
     blueprint_loaded_at = time.monotonic()
 
@@ -98,23 +101,30 @@ def main():
             f"Blueprint carregado: {blueprint.get('name')} v{blueprint.get('version')} "
             f"({len(blueprint.get('steps', []))} steps)"
         )
-        # Pre-instantiate executors
         executor_instances = _init_executors(blueprint, logger)
+        base_interval = _compute_base_interval(blueprint)
+        logger.info(f"Base interval: {base_interval}s (menor interval_seconds dos steps)")
+
+        # Log per-step intervals
+        for step in blueprint.get("steps", []):
+            iv = step.get("interval_seconds", DEFAULT_STEP_INTERVAL)
+            logger.info(f"  Step '{step.get('id')}': cada {iv}s")
     else:
         logger.warning("Blueprint indisponível, usando coletor legado (fallback)")
+        base_interval = _load_interval()
 
-    # First collection warms up CPU/net deltas
+    # Warm-up collection (CPU/net deltas)
     if blueprint and executor_instances:
-        _collect_from_blueprint(blueprint, executor_instances, logger)
+        _collect_from_blueprint(blueprint, executor_instances, last_collected_at, logger, force_all=True)
     else:
         legacy_collector.collect()
-    time.sleep(min(interval, 5))
+    time.sleep(min(base_interval, 5))
 
     consecutive_errors = 0
 
     while True:
         try:
-            # Refresh tokens if needed
+            # Refresh tokens
             try:
                 if not auth.is_access_token_valid():
                     logger.info("[Monitor] Token próximo de expirar, renovando...")
@@ -132,23 +142,30 @@ def main():
                             f"(anterior: v{(blueprint or {}).get('version', 'N/A')})"
                         )
                         executor_instances = _init_executors(new_bp, logger)
+                        last_collected_at.clear()
                     blueprint = new_bp
+                    base_interval = _compute_base_interval(blueprint)
                 blueprint_loaded_at = time.monotonic()
 
             # Collect metrics
             if blueprint and executor_instances:
-                metrics = _collect_from_blueprint(blueprint, executor_instances, logger)
+                metrics = _collect_from_blueprint(
+                    blueprint, executor_instances, last_collected_at, logger
+                )
             else:
                 metrics = legacy_collector.collect()
 
-            metrics["monitor_version"] = get_version()
-            metrics["agent_id"] = str(state.data.get("agent_id", ""))
+            if metrics:
+                metrics["monitor_version"] = get_version()
+                metrics["agent_id"] = str(state.data.get("agent_id", ""))
 
-            # Save local snapshot
-            _save_snapshot(metrics)
+                # Merge into cumulative snapshot
+                cumulative_snapshot.update(metrics)
+                _save_snapshot(cumulative_snapshot)
 
-            # Send to backend
-            _send(api, metrics, logger)
+                # Send partial payload
+                _send(api, metrics, logger)
+
             consecutive_errors = 0
 
         except Exception as e:
@@ -161,7 +178,7 @@ def main():
                 time.sleep(backoff)
                 continue
 
-        time.sleep(interval)
+        time.sleep(base_interval)
 
 
 def _load_blueprint(api, logger) -> Optional[Dict[str, Any]]:
@@ -170,19 +187,15 @@ def _load_blueprint(api, logger) -> Optional[Dict[str, Any]]:
         resp = api.get("/agent-monitor-blueprint?device_type=linux_server")
         if isinstance(resp, dict) and resp.get("success") and resp.get("blueprint"):
             bp = resp["blueprint"]
-            # Cache locally
             try:
                 BLUEPRINT_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-                BLUEPRINT_CACHE_FILE.write_text(
-                    json.dumps(bp, default=str), encoding="utf-8"
-                )
+                BLUEPRINT_CACHE_FILE.write_text(json.dumps(bp, default=str), encoding="utf-8")
             except Exception:
                 pass
             return bp
     except Exception as e:
         logger.warning(f"[Monitor] Falha ao buscar blueprint do backend: {e}")
 
-    # Try local cache
     try:
         if BLUEPRINT_CACHE_FILE.exists():
             bp = json.loads(BLUEPRINT_CACHE_FILE.read_text(encoding="utf-8"))
@@ -212,22 +225,32 @@ def _init_executors(blueprint: Dict[str, Any], logger) -> Dict[str, Any]:
 def _collect_from_blueprint(
     blueprint: Dict[str, Any],
     executor_instances: Dict[str, Any],
+    last_collected_at: Dict[str, float],
     logger,
+    force_all: bool = False,
 ) -> Dict[str, Any]:
-    """Iterate blueprint steps and aggregate results."""
+    """Iterate blueprint steps, respecting per-step interval_seconds."""
     metrics: Dict[str, Any] = {}
+    now = time.monotonic()
+
     for step in blueprint.get("steps", []):
         step_id = step.get("id", "?")
         step_type = step.get("type")
         params = step.get("params", {})
+        interval = step.get("interval_seconds", DEFAULT_STEP_INTERVAL)
 
         executor = executor_instances.get(step_type)
         if not executor:
             continue
 
+        elapsed = now - last_collected_at.get(step_id, 0)
+        if not force_all and elapsed < interval:
+            continue
+
         try:
             result = executor.execute(params)
             metrics.update(result)
+            last_collected_at[step_id] = now
         except Exception as e:
             logger.warning(f"[Monitor] Erro no step '{step_id}' ({step_type}): {e}")
 
@@ -236,7 +259,7 @@ def _collect_from_blueprint(
 
 def _wait_for_auth(state: "AgentState", logger):
     """Wait until the agent has been authenticated (tokens present in state)."""
-    max_wait = 300  # 5 minutes
+    max_wait = 300
     waited = 0
     while waited < max_wait:
         state.load()
@@ -247,7 +270,6 @@ def _wait_for_auth(state: "AgentState", logger):
             logger.info("[Monitor] Aguardando autenticação do agent (state.json sem tokens)...")
         time.sleep(10)
         waited += 10
-
     logger.warning("[Monitor] Timeout esperando tokens. Tentando continuar mesmo assim...")
 
 
@@ -265,9 +287,7 @@ def _save_snapshot(metrics: dict):
     """Persist latest metrics locally for debug / health checks."""
     try:
         MONITOR_SNAPSHOT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        MONITOR_SNAPSHOT_FILE.write_text(
-            json.dumps(metrics, default=str), encoding="utf-8"
-        )
+        MONITOR_SNAPSHOT_FILE.write_text(json.dumps(metrics, default=str), encoding="utf-8")
     except Exception:
         pass
 

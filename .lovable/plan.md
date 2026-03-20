@@ -1,72 +1,63 @@
 
 
-## Plano: Intervalo de coleta por step no blueprint
+## Plano: Monitor Template-Driven (sem módulo Endpoint) — ✅ IMPLEMENTADO
 
-### Conceito
+### Resumo do que foi feito
 
-Adicionar um campo `interval_seconds` a cada step do blueprint. O monitor rastreia o timestamp da última coleta de cada step e só executa quando o intervalo venceu. O loop principal roda no menor intervalo (ex: 30s para rede), mas steps lentos (ex: system) rodam a cada 3600s.
+1. **Executors criados em `monitor/executors/`**:
+   - `base.py` — classe base `MonitorExecutor`
+   - `proc_read.py` — parser para cpu, memory, net_interfaces, system (lógica extraída do collector.py)
+   - `statvfs.py` — coleta de disco via /proc/mounts + os.statvfs
+   - `__init__.py` — registry de executors por tipo
 
-### Exemplo de blueprint atualizado
+2. **Template "linux_server" no banco**:
+   - Enum `blueprint_executor_type` expandido com valor `monitor`
+   - `device_type` inserido: code=`linux_server`, vendor=Linux, category=server
+   - `device_blueprint` inserido com 5 steps (cpu, mem, disk, net, sys)
 
-```json
-{
-  "steps": [
-    {"id": "cpu",  "type": "proc_read", "params": {"parser": "cpu"},            "interval_seconds": 60},
-    {"id": "mem",  "type": "proc_read", "params": {"parser": "memory"},         "interval_seconds": 60},
-    {"id": "disk", "type": "statvfs",   "params": {"scan_mounts": true},        "interval_seconds": 120},
-    {"id": "net",  "type": "proc_read", "params": {"parser": "net_interfaces"}, "interval_seconds": 30},
-    {"id": "sys",  "type": "proc_read", "params": {"parser": "system"},         "interval_seconds": 3600}
-  ]
-}
-```
+3. **Monitor refatorado (`monitor/main.py`)**:
+   - Boot: busca blueprint via Edge Function `agent-monitor-blueprint`
+   - Cache local em `/var/lib/iscope-agent/monitor_blueprint.json`
+   - Refresh do blueprint a cada 30 min
+   - Itera steps do blueprint, instancia executors, agrega resultados
+   - Fallback: se blueprint indisponível, usa `collector.py` legado
 
-### Mudanças
+4. **Edge Function `agent-monitor-blueprint`**:
+   - GET com `?device_type=linux_server`
+   - Retorna blueprint ativo com steps
 
-**1. Migration SQL — Atualizar blueprint existente**
+5. **Version bumped para 1.1.3**
 
-UPDATE do `collection_steps` do blueprint `linux_server` adicionando `interval_seconds` a cada step.
+### Compatibilidade
 
-**2. `python-agent/monitor/main.py`**
+- `collector.py` mantido intacto como fallback
+- Edge Function `agent-monitor` — mesmo payload (sem mudanças)
+- Frontend — sem mudanças
+- Agents antigos continuam funcionando normalmente
 
-- Calcular `base_interval` como o menor `interval_seconds` entre todos os steps (mínimo 10s).
-- Manter um dict `last_collected_at: Dict[str, float]` (step_id → monotonic timestamp).
-- Em `_collect_from_blueprint`: verificar se `now - last_collected_at[step_id] >= step.interval_seconds` antes de executar. Se não venceu, pular. Se venceu, executar e atualizar timestamp.
-- Enviar apenas os campos que foram coletados naquele ciclo (merge parcial).
-- Manter snapshot local com dados completos (merge incremental: novos dados sobrescrevem, dados antigos permanecem).
+---
 
-**3. Edge Function `agent-monitor`**
+## Plano: Intervalo de coleta por step — ✅ IMPLEMENTADO (v1.1.4)
 
-Sem mudanças — já aceita campos parciais (todos os campos usam `?? null`).
+### Resumo
 
-**4. Frontend**
+Cada step do blueprint agora possui `interval_seconds`, permitindo frequências
+de coleta diferentes por métrica. O monitor calcula o `base_interval` como o
+menor intervalo entre todos os steps e só executa cada step quando seu timer
+individual vence.
 
-Sem mudanças — já exibe o que vier de cada linha de `agent_metrics`.
+### Blueprint atualizado
 
-### Lógica do loop
+| Step | Intervalo |
+|------|-----------|
+| cpu  | 60s       |
+| mem  | 60s       |
+| disk | 120s      |
+| net  | 30s       |
+| sys  | 3600s     |
 
-```text
-base_interval = min(step.interval_seconds for step in steps)  # ex: 30s
+### Mudanças técnicas
 
-loop:
-  now = monotonic()
-  metrics = {}
-  for step in steps:
-    if now - last_collected[step.id] >= step.interval_seconds:
-      result = executor.execute(step.params)
-      metrics.update(result)
-      last_collected[step.id] = now
-  
-  if metrics:  # só envia se coletou algo
-    send(metrics)
-  
-  sleep(base_interval)
-```
-
-### Arquivos a alterar
-
-| Arquivo | Mudança |
-|---------|---------|
-| Migration SQL | UPDATE blueprint com `interval_seconds` por step |
-| `python-agent/monitor/main.py` | Loop com intervalo por step, base_interval dinâmico |
-| `python-agent/monitor/version.py` | 1.1.3 → 1.1.4 |
-
+- `monitor/main.py`: dict `last_collected_at` por step_id, `_compute_base_interval()`, envio parcial, snapshot incremental
+- `monitor/version.py`: 1.1.3 → 1.1.4
+- Migration: UPDATE do blueprint com `interval_seconds` por step
