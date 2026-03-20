@@ -161,6 +161,7 @@ find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 \
   ! -name '.env' \
   ! -name 'storage' \
   ! -name 'logs' \
+  ! -name 'requirements.txt' \
   -exec rm -rf {} + 2>/dev/null || true
 
 log "Extraindo pacote do Agent..."
