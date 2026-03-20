@@ -364,7 +364,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6">
         <CardTitle className="flex items-center gap-2 text-lg">
           <Activity className="w-5 h-5" />
           Monitoramento
