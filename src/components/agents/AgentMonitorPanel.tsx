@@ -583,8 +583,9 @@ export function AgentMonitorPanel({ agentId }: Props) {
                       <YAxis tickFormatter={(v: number) => formatBytes(Math.abs(v)).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                       <Tooltip content={<NetworkTooltip />} labelFormatter={(v) => v} />
                       <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} />
-                      <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Enviado" />
-                      <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Recebido" />
+                      <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="↑ Enviado" />
+                      <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="↓ Recebido" />
+                      <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
