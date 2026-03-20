@@ -5,8 +5,6 @@ import { Cpu, HardDrive, MemoryStick, Network, Clock, Activity } from "lucide-re
 import {
   AreaChart,
   Area,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -18,7 +16,9 @@ import {
   useAgentMetrics,
   formatBytes,
   formatUptime,
+  formatLinkSpeed,
   getInterfaceNames,
+  getInterfaceSpeed,
   buildInterfaceData,
   buildLegacyNetworkData,
   type TimeRange,
@@ -150,11 +150,15 @@ function NetworkTooltip({
   return (
     <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-lg">
       <p className="text-muted-foreground">{label ? format(new Date(label), "dd/MM HH:mm:ss") : ""}</p>
-      {payload.map((p) => (
-        <p key={p.dataKey} style={{ color: p.color }} className="font-semibold">
-          {p.dataKey === "sentRate" ? "↑ Enviado" : "↓ Recebido"}: {formatBytes(p.value)}
-        </p>
-      ))}
+      {payload.map((p) => {
+        const isRecv = p.dataKey === "recvRateNeg";
+        const absVal = Math.abs(p.value);
+        return (
+          <p key={p.dataKey} style={{ color: p.color }} className="font-semibold">
+            {isRecv ? "↓ Recebido" : "↑ Enviado"}: {formatBytes(absVal)}
+          </p>
+        );
+      })}
     </div>
   );
 }
@@ -417,7 +421,10 @@ export function AgentMonitorPanel({ agentId }: Props) {
               return (
                 <div key={path} className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                    <HardDrive className="w-3 h-3" /> Disco — {path} (GB)
+                    <HardDrive className="w-3 h-3" /> Disco — {path}
+                    {latestPart?.total_gb != null && (
+                      <span className="text-muted-foreground/70">({Number(latestPart.total_gb).toFixed(0)} GB)</span>
+                    )}
                   </p>
                   <div className="h-48 w-full">
                     <ResponsiveContainer width="100%" height="100%">
@@ -467,7 +474,10 @@ export function AgentMonitorPanel({ agentId }: Props) {
           ) : (
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                <HardDrive className="w-3 h-3" /> Disco (GB)
+                <HardDrive className="w-3 h-3" /> Disco
+                {latest?.disk_total_gb != null && (
+                  <span className="text-muted-foreground/70">({Number(latest.disk_total_gb).toFixed(0)} GB)</span>
+                )}
               </p>
               <div className="h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -518,22 +528,27 @@ export function AgentMonitorPanel({ agentId }: Props) {
           {hasMultiInterfaces ? (
             interfaceNames.map((ifaceName) => {
               const ifaceData = buildInterfaceData(metrics, ifaceName);
+              const linkSpeed = getInterfaceSpeed(metrics, ifaceName);
               return (
                 <div key={ifaceName} className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                     <Network className="w-3 h-3" /> Rede — {ifaceName}
+                    {linkSpeed != null && (
+                      <span className="text-muted-foreground/70">({formatLinkSpeed(linkSpeed)})</span>
+                    )}
                   </p>
                   <div className="h-48 w-full">
                     {ifaceData.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={ifaceData}>
+                        <AreaChart data={ifaceData}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                           <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                          <YAxis tickFormatter={(v) => formatBytes(v).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                          <YAxis tickFormatter={(v: number) => formatBytes(Math.abs(v)).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                           <Tooltip content={<NetworkTooltip />} labelFormatter={(v) => v} />
-                          <Line type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" strokeWidth={1.5} dot={false} name="Enviado" />
-                          <Line type="monotone" dataKey="recvRate" stroke="hsl(173, 80%, 40%)" strokeWidth={1.5} dot={false} name="Recebido" />
-                        </LineChart>
+                          <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} />
+                          <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Enviado" />
+                          <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Recebido" />
+                        </AreaChart>
                       </ResponsiveContainer>
                     ) : (
                       <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
@@ -552,14 +567,15 @@ export function AgentMonitorPanel({ agentId }: Props) {
               <div className="h-48 w-full">
                 {legacyNetworkData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={legacyNetworkData}>
+                    <AreaChart data={legacyNetworkData}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                       <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                      <YAxis tickFormatter={(v) => formatBytes(v).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                      <YAxis tickFormatter={(v: number) => formatBytes(Math.abs(v)).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                       <Tooltip content={<NetworkTooltip />} labelFormatter={(v) => v} />
-                      <Line type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" strokeWidth={1.5} dot={false} name="Enviado" />
-                      <Line type="monotone" dataKey="recvRate" stroke="hsl(173, 80%, 40%)" strokeWidth={1.5} dot={false} name="Recebido" />
-                    </LineChart>
+                      <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} />
+                      <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Enviado" />
+                      <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Recebido" />
+                    </AreaChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
