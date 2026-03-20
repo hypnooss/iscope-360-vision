@@ -1,40 +1,25 @@
 
 
-## Plano: Substituir cards de status por informações do sistema
+## Plano: Corrigir cards de info do sistema mostrando "—"
 
-### Contexto
-Os 4 cards do topo (CPU, RAM, Disco, Uptime) perderam seus valores após a atualização do monitor. Como CPU, RAM e Disco já são exibidos nos gráficos abaixo, vamos substituir os cards por informações de sistema.
+### Causa raiz
+O monitor template-driven envia métricas parciais — cada step tem seu próprio `interval_seconds`. Hostname, OS e Uptime são coletados com intervalo maior (ex: 1h), enquanto CPU/RAM/Disco são coletados a cada 30-60s. Resultado: a maioria das linhas no banco não tem `hostname`, `os_info`, `uptime_seconds` preenchidos. O código usa `latest` (última linha), que provavelmente é uma linha parcial sem esses campos.
 
-### Dados disponíveis em `agent_metrics`
-- `hostname` ✅
-- `os_info` ✅  
-- `uptime_seconds` ✅
-- IP ❌ — **não existe** na tabela `agent_metrics`
+### Solução
+Em `AgentMonitorPanel.tsx`, ao invés de usar apenas `latest` para os cards de info, buscar o valor mais recente de cada campo escaneando de trás para frente:
 
-### Sobre o IP
-O campo IP não está disponível nas métricas coletadas. Para incluí-lo seria necessário:
-1. Adicionar a coleta de IP no blueprint do monitor (alteração no agente Python + migração no banco)
-2. Ou buscar de outra fonte
+```text
+// Exemplo da lógica:
+const latestHostname = findLastValue(metrics, 'hostname')
+const latestOsInfo = findLastValue(metrics, 'os_info')  
+const latestUptime = findLastValue(metrics, 'uptime_seconds')
+```
 
-**Recomendação:** Implementar os 3 cards disponíveis agora (Hostname, SO, Uptime) e adicionar o IP futuramente quando o blueprint for atualizado para coletá-lo.
-
-### Mudanças em `AgentMonitorPanel.tsx`
-
-Substituir os 4 `MetricIndicator` atuais (CPU, RAM, Disco, Uptime) por 3 cards de informação:
-
-| Card | Ícone | Dados |
-|------|-------|-------|
-| Hostname | `Monitor` | `latest.hostname` |
-| Sistema Operacional | `Cpu` | `latest.os_info` |
-| Uptime | `Clock` | `formatUptime(latest.uptime_seconds)` |
-
-- Alterar o grid de `grid-cols-2 md:grid-cols-4` para `grid-cols-1 md:grid-cols-3`
-- Remover o hostname do título do card (já que terá card próprio)
-- Remover os indicadores de cor (não são métricas de saúde)
+Criar uma função helper `findLastNonNull(metrics, field)` que itera do final para o início e retorna o primeiro valor não-null.
 
 ### Arquivo
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/agents/AgentMonitorPanel.tsx` | Substituir MetricIndicators por cards de info do sistema |
+| `src/components/agents/AgentMonitorPanel.tsx` | Adicionar helper `findLastNonNull` e usá-lo para os 3 cards de info |
 
