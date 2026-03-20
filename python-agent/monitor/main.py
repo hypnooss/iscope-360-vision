@@ -33,22 +33,29 @@ def _load_interval() -> int:
 
 def main():
     import logging
+    from logging.handlers import RotatingFileHandler
 
     logger = logging.getLogger("iscope-monitor")
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+
     # Console handler
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    # File handler
+    # File handler with rotation (1 MB, 1 backup)
     log_file = Path("/var/log/iscope-agent/monitor.log")
     log_file.parent.mkdir(parents=True, exist_ok=True)
     try:
-        fh = logging.FileHandler(str(log_file))
-        fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+        fh = RotatingFileHandler(
+            str(log_file),
+            maxBytes=1 * 1024 * 1024,
+            backupCount=1,
+        )
+        fh.setFormatter(formatter)
         logger.addHandler(fh)
     except Exception:
         pass

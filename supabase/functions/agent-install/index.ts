@@ -5,7 +5,7 @@ import { getCorsHeaders } from '../_shared/cors.ts';
 
 const PROJECT_REF = "akbosdbyheezghieiefz";
 const API_BASE_URL = `https://${PROJECT_REF}.supabase.co/functions/v1`;
-const RELEASE_BASE_URL = `https://${PROJECT_REF}.supabase.co/storage/v1/object/public/agent-releases`;
+// RELEASE_BASE_URL removed — bucket is private, use get_signed_url() instead
 const SUPABASE_URL = `https://${PROJECT_REF}.supabase.co`;
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrYm9zZGJ5aGVlemdoaWVpZWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTEyODAsImV4cCI6MjA4NTE4NzI4MH0.9n-nUenSCwYIGztsfgVAbgis9wEakQDKX3Oe2xBiNvo";
 
@@ -16,7 +16,7 @@ function script(): string {
 set -euo pipefail
 
 API_BASE_URL="${API_BASE_URL}"
-RELEASE_BASE_URL="${RELEASE_BASE_URL}"
+// Downloads use signed URLs via get_signed_url() — no public storage URL needed
 SUPABASE_URL="${SUPABASE_URL}"
 SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}"
 
@@ -699,12 +699,13 @@ download_release() {
     echo "  Agent:      \$LOCAL_AGENT"
     echo "  Supervisor: \$LOCAL_SUPERVISOR"
 
-    # --- Limpar e extrair (preservando venv, .env, logs) ---
+    # --- Limpar e extrair (preservando venv, .env, logs, requirements.txt) ---
     find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 \\
       ! -name 'venv' \\
       ! -name '.env' \\
       ! -name 'storage' \\
       ! -name 'logs' \\
+      ! -name 'requirements.txt' \\
       -exec rm -rf {} + 2>/dev/null || true
 
     echo "Extraindo pacote do Agent..."
@@ -797,12 +798,13 @@ download_release() {
     exit 1
   fi
 
-  # --- Limpar e extrair (preservando venv, .env, logs) ---
+  # --- Limpar e extrair (preservando venv, .env, logs, requirements.txt) ---
   find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 \\
     ! -name 'venv' \\
     ! -name '.env' \\
     ! -name 'storage' \\
     ! -name 'logs' \\
+    ! -name 'requirements.txt' \\
     -exec rm -rf {} + 2>/dev/null || true
 
   echo "Extraindo pacote do Agent..."

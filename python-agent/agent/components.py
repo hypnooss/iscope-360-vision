@@ -27,7 +27,7 @@ class ComponentManager:
     CERT_DIR = Path("/var/lib/iscope-agent/certs")
     CERT_FILE = CERT_DIR / "m365.crt"
     KEY_FILE = CERT_DIR / "m365.key"
-    THUMBPRINT_FILE = CERT_DIR / "m365.thumbprint"
+    THUMBPRINT_FILE = CERT_DIR / "thumbprint.txt"
     PFX_FILE = CERT_DIR / "m365.pfx"
 
     def __init__(self, logger):
