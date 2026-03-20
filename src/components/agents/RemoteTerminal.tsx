@@ -288,6 +288,12 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
       if (status === "SUBSCRIBED") {
         setChannelReady(true);
         setConnecting(false);
+        // Send wake event to instantly trigger the Supervisor's RealtimeShell
+        channel.send({
+          type: "broadcast",
+          event: "wake",
+          payload: { timestamp: Date.now() },
+        });
       }
     });
 
