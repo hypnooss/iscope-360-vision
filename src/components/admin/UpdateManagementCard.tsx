@@ -15,22 +15,21 @@ interface UpdateManagementCardProps {
   userId?: string;
 }
 
-interface OutdatedAgent {
+interface AgentBasicInfo {
   name: string;
+  client: string;
+}
+
+interface OutdatedAgent extends AgentBasicInfo {
   version: string;
-  client: string;
 }
 
-interface OutdatedSupervisor {
-  name: string;
+interface OutdatedSupervisor extends AgentBasicInfo {
   supervisorVersion: string;
-  client: string;
 }
 
-interface OutdatedMonitor {
-  name: string;
+interface OutdatedMonitor extends AgentBasicInfo {
   monitorVersion: string;
-  client: string;
 }
 
 export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
@@ -63,8 +62,8 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
 
   // Stats
   const [agentStats, setAgentStats] = useState<{ total: number; upToDate: number; outdated: OutdatedAgent[] }>({ total: 0, upToDate: 0, outdated: [] });
-  const [supervisorStats, setSupervisorStats] = useState<{ total: number; upToDate: number; outdated: OutdatedSupervisor[]; withoutSupervisor: number }>({ total: 0, upToDate: 0, outdated: [], withoutSupervisor: 0 });
-  const [monitorStats, setMonitorStats] = useState<{ total: number; upToDate: number; outdated: OutdatedMonitor[]; withoutMonitor: number }>({ total: 0, upToDate: 0, outdated: [], withoutMonitor: 0 });
+  const [supervisorStats, setSupervisorStats] = useState<{ total: number; upToDate: number; outdated: OutdatedSupervisor[]; withoutSupervisor: number; withoutSupervisorList: AgentBasicInfo[] }>({ total: 0, upToDate: 0, outdated: [], withoutSupervisor: 0, withoutSupervisorList: [] });
+  const [monitorStats, setMonitorStats] = useState<{ total: number; upToDate: number; outdated: OutdatedMonitor[]; withoutMonitor: number; withoutMonitorList: AgentBasicInfo[] }>({ total: 0, upToDate: 0, outdated: [], withoutMonitor: 0, withoutMonitorList: [] });
 
   const initialLoadDone = useRef(false);
 
@@ -145,11 +144,13 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
 
         // Supervisor stats
         const agentsWithSupervisor = agents.filter((a) => a.supervisor_version);
+        const agentsWithoutSupervisor = agents.filter((a) => !a.supervisor_version);
         const supUpToDate = latestSupVer ? agentsWithSupervisor.filter((a) => a.supervisor_version === latestSupVer).length : agentsWithSupervisor.length;
         const supOutdated = latestSupVer
           ? agentsWithSupervisor.filter((a) => a.supervisor_version !== latestSupVer).map((a) => ({ name: a.name, supervisorVersion: a.supervisor_version || 'N/A', client: (a.clients as any)?.name || 'Sem cliente' }))
           : [];
-        setSupervisorStats({ total: agentsWithSupervisor.length, upToDate: supUpToDate, outdated: supOutdated, withoutSupervisor: agents.length - agentsWithSupervisor.length });
+        const withoutSupervisorList = agentsWithoutSupervisor.map((a) => ({ name: a.name, client: (a.clients as any)?.name || 'Sem cliente' }));
+        setSupervisorStats({ total: agentsWithSupervisor.length, upToDate: supUpToDate, outdated: supOutdated, withoutSupervisor: agentsWithoutSupervisor.length, withoutSupervisorList });
 
         // Monitor stats — get latest monitor_version per agent from agent_metrics
         const agentIds = agents.map((a) => a.id);
@@ -177,14 +178,20 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
             }
           });
 
+          const withoutMonitorList = agents
+            .filter((a) => !latestByAgent.has(a.id))
+            .map((a) => ({ name: a.name, client: (a.clients as any)?.name || 'Sem cliente' }));
+
           setMonitorStats({
             total: latestByAgent.size,
             upToDate: monUpToDate,
             outdated: monOutdated,
             withoutMonitor: agents.length - latestByAgent.size,
+            withoutMonitorList,
           });
         } else {
-          setMonitorStats({ total: 0, upToDate: 0, outdated: [], withoutMonitor: agents?.length || 0 });
+          const withoutMonitorList = agents?.map((a) => ({ name: a.name, client: (a.clients as any)?.name || 'Sem cliente' })) || [];
+          setMonitorStats({ total: 0, upToDate: 0, outdated: [], withoutMonitor: agents?.length || 0, withoutMonitorList });
         }
       }
     } catch (error) {
@@ -466,12 +473,27 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
           )}
           {renderStatusSection('Supervisors', supervisorLatestVersion, 'Sup', supervisorStats.total, supervisorStats.upToDate, supervisorStats.outdated, 'supervisorVersion', supervisorColors,
             supervisorStats.withoutSupervisor > 0 ? (
-              <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border">
-                <Info className="w-5 h-5 text-muted-foreground" />
-                <div>
-                  <p className="font-medium text-muted-foreground">{supervisorStats.withoutSupervisor} sem Supervisor</p>
-                  <p className="text-xs text-muted-foreground">Agentes legados (modelo antigo)</p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border">
+                  <Info className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium text-muted-foreground">{supervisorStats.withoutSupervisor} sem Supervisor</p>
+                    <p className="text-xs text-muted-foreground">Agentes legados (modelo antigo)</p>
+                  </div>
                 </div>
+                {supervisorStats.withoutSupervisorList.length > 0 && (
+                  <ScrollArea className="h-[150px]">
+                    <ul className="space-y-1 pr-4">
+                      {supervisorStats.withoutSupervisorList.map((agent, i) => (
+                        <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
+                          <span className="w-2 h-2 rounded-full bg-muted-foreground/50" />
+                          <span>{agent.name}</span>
+                          <span className="text-muted-foreground">- {agent.client}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </ScrollArea>
+                )}
               </div>
             ) : undefined,
           )}
@@ -493,12 +515,27 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
           )}
           {renderStatusSection('Monitors', monitorLatestVersion, 'Mon', monitorStats.total, monitorStats.upToDate, monitorStats.outdated, 'monitorVersion', monitorColors,
             monitorStats.withoutMonitor > 0 ? (
-              <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border">
-                <Info className="w-5 h-5 text-muted-foreground" />
-                <div>
-                  <p className="font-medium text-muted-foreground">{monitorStats.withoutMonitor} sem Monitor</p>
-                  <p className="text-xs text-muted-foreground">Sem dados de monitoramento</p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border">
+                  <Info className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium text-muted-foreground">{monitorStats.withoutMonitor} sem Monitor</p>
+                    <p className="text-xs text-muted-foreground">Sem dados de monitoramento</p>
+                  </div>
                 </div>
+                {monitorStats.withoutMonitorList.length > 0 && (
+                  <ScrollArea className="h-[150px]">
+                    <ul className="space-y-1 pr-4">
+                      {monitorStats.withoutMonitorList.map((agent, i) => (
+                        <li key={i} className="flex items-center gap-2 text-sm flex-wrap">
+                          <span className="w-2 h-2 rounded-full bg-muted-foreground/50" />
+                          <span>{agent.name}</span>
+                          <span className="text-muted-foreground">- {agent.client}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </ScrollArea>
+                )}
               </div>
             ) : undefined,
           )}
