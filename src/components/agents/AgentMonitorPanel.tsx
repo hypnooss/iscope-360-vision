@@ -519,7 +519,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
               </p>
               <div className="h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
+                  <AreaChart data={diskLegacyChartData}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                     <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                     <YAxis domain={[0, latest?.disk_total_gb ? Math.ceil(Number(latest.disk_total_gb) * 1.05) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
