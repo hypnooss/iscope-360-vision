@@ -527,10 +527,8 @@ export function AgentMonitorPanel({ agentId }: Props) {
                     <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                     <YAxis domain={[0, latest?.disk_total_gb ? Math.ceil(Number(latest.disk_total_gb) * 1.05) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                     <Tooltip content={<AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />} labelFormatter={(v) => v} />
-                    {latest?.disk_total_gb && (
-                      <ReferenceLine y={Number(latest.disk_total_gb)} stroke="hsl(25, 95%, 53%)" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(25, 95%, 53%)" }} />
-                    )}
-                    <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
+                    <Area type="monotone" dataKey="disk_total_gb" stroke="hsl(0, 84%, 60%)" fill="hsl(0, 84%, 60%)" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
+                    <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.25} strokeWidth={1.5} dot={false} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
