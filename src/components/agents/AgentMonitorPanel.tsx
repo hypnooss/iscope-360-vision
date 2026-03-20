@@ -264,6 +264,18 @@ function buildPartitionData(metrics: AgentMetricRow[], partitionPath: string) {
   });
 }
 
+/** Scan metrics backwards to find the most recent non-null value for a field */
+function findLastNonNull<K extends keyof AgentMetricRow>(
+  metrics: AgentMetricRow[],
+  field: K,
+): AgentMetricRow[K] | null {
+  for (let i = metrics.length - 1; i >= 0; i--) {
+    const v = metrics[i][field];
+    if (v != null) return v;
+  }
+  return null;
+}
+
 interface Props {
   agentId: string;
 }
