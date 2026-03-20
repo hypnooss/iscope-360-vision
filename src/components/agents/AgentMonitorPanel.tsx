@@ -111,6 +111,14 @@ function ChartLegendTable({ series }: { series: LegendSeries[] }) {
   );
 }
 
+/** Strip kernel version from os_info — e.g. "Oracle Linux Server 9.6 6.12.0-xxx" → "Oracle Linux Server 9.6" */
+function formatOsInfo(raw: string): string {
+  const tokens = raw.split(' ');
+  const idx = tokens.findIndex(t => /^\d+\.\d+\.\d+-/.test(t));
+  if (idx > 0) return tokens.slice(0, idx).join(' ');
+  return raw;
+}
+
 function formatMB(v: number): string {
   if (v >= 1024) return `${(v / 1024).toFixed(2)} GB`;
   return `${v.toFixed(1)} MB`;

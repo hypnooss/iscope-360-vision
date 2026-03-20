@@ -126,6 +126,7 @@ export type Database = {
           disk_used_gb: number | null
           hostname: string | null
           id: string
+          ip_addresses: string[] | null
           load_avg_15m: number | null
           load_avg_1m: number | null
           load_avg_5m: number | null
@@ -153,6 +154,7 @@ export type Database = {
           disk_used_gb?: number | null
           hostname?: string | null
           id?: string
+          ip_addresses?: string[] | null
           load_avg_15m?: number | null
           load_avg_1m?: number | null
           load_avg_5m?: number | null
@@ -180,6 +182,7 @@ export type Database = {
           disk_used_gb?: number | null
           hostname?: string | null
           id?: string
+          ip_addresses?: string[] | null
           load_avg_15m?: number | null
           load_avg_1m?: number | null
           load_avg_5m?: number | null

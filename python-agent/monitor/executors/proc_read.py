@@ -218,7 +218,6 @@ class ProcReadExecutor(MonitorExecutor):
             pass
 
         try:
-            uname = platform.uname()
             distro = ""
             os_release = Path("/etc/os-release")
             if os_release.exists():
@@ -226,7 +225,12 @@ class ProcReadExecutor(MonitorExecutor):
                     if line.startswith("PRETTY_NAME="):
                         distro = line.split("=", 1)[1].strip('"')
                         break
-            data["os_info"] = f"{distro} {uname.release}".strip()
+            data["os_info"] = distro if distro else platform.platform()
+        except Exception:
+            pass
+
+        try:
+            data["ip_addresses"] = self._read_ip_addresses()
         except Exception:
             pass
 
