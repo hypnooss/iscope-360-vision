@@ -64,7 +64,7 @@ export function useAgentMetrics(agentId: string | undefined, timeRange: TimeRang
         .limit(1000);
 
       if (error) throw error;
-      return (data ?? []) as AgentMetricRow[];
+      return (data ?? []) as unknown as AgentMetricRow[];
     },
     enabled: !!agentId,
     refetchInterval: 60_000,
