@@ -1,30 +1,24 @@
 
 
-## Plano: Restaurar degradê no "Usado" e manter só linha no "Total"
+## Plano: Fixar eixo Y do disco no valor Total (estável)
+
+### Problema
+O `domain` do YAxis usa `latestPart?.total_gb` (partições) e `latest?.disk_total_gb` (legado), que dependem do último ponto de dados. Na carga inicial, `latest` pode ser `undefined` momentaneamente, fazendo o gráfico cair no `"auto"` e depois saltar quando os dados chegam — causando o comportamento das prints 1→2.
+
+### Solução
+Usar o valor máximo de `disk_total_gb` / `total_gb` de **todos** os pontos de métricas (não só o `latest`), garantindo estabilidade desde o primeiro render.
 
 ### Mudanças em `AgentMonitorPanel.tsx`
 
-**RAM (linha 472):**
-- Usado: `fill="none" fillOpacity={0}` → `fill="hsl(217, 71%, 45%)" fillOpacity={0.15}` (restaurar degradê)
-- Total (linha 471): manter como está (sem fill)
+**Disco — partições (linha 484, 504):**
+- Mudar `totalGb` de `latestPart?.total_gb ?? null` para `Math.max(...totalVals)` (já calculado na linha 485)
+- Domain: `[0, totalGb ? totalGb : "auto"]` fica o mesmo, mas agora `totalGb` é estável
 
-**Disco — partições (linha 507):**
-- Usado: `fill="none" fillOpacity={0}` → `fill="hsl(25, 95%, 53%)" fillOpacity={0.15}`
-- Total (linha 506): manter como está
-
-**Disco — legado (linha 531):**
-- Usado: `fill="none" fillOpacity={0}` → `fill="hsl(25, 95%, 53%)" fillOpacity={0.15}`
-- Total (linha 530): manter como está
-
-**YAxis Disco — partições (linha 504):**
-- `Math.ceil(totalGb)` → `totalGb` (valor exato do Total, sem arredondamento pra cima)
-
-**YAxis Disco — legado (linha 528):**
-- `Math.ceil(Number(latest.disk_total_gb))` → `Number(latest.disk_total_gb)`
-
-Resultado: "Usado" volta a ter preenchimento degradê; "Total" fica só linha sólida; eixo Y do disco bate exatamente no valor Total.
+**Disco — legado (linha 528):**
+- Calcular `diskTotalMax` a partir de todos os valores de `disk_total_gb` dos metrics
+- Usar no domain em vez de `latest?.disk_total_gb`
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/agents/AgentMonitorPanel.tsx` | 3 Areas Usado: restaurar fill; 2 YAxis disco: remover ceil |
+| `src/components/agents/AgentMonitorPanel.tsx` | Disco partições: usar max de totalVals; Disco legado: usar max de todos disk_total_gb |
 
