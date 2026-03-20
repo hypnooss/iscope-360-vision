@@ -21,6 +21,7 @@ export interface NetInterface {
   iface: string;
   bytes_sent: number;
   bytes_recv: number;
+  link_speed_mbps?: number | null;
 }
 
 export interface AgentMetricRow {

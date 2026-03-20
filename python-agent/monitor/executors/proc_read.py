@@ -149,11 +149,14 @@ class ProcReadExecutor(MonitorExecutor):
                 bytes_recv = int(rx_delta / elapsed)
                 bytes_sent = int(tx_delta / elapsed)
 
-                net_interfaces.append({
+                iface_entry: Dict[str, Any] = {
                     "iface": iface,
                     "bytes_sent": bytes_sent,
                     "bytes_recv": bytes_recv,
-                })
+                    "link_speed_mbps": self._read_link_speed(iface),
+                }
+
+                net_interfaces.append(iface_entry)
                 total_sent += bytes_sent
                 total_recv += bytes_recv
 
@@ -167,6 +170,18 @@ class ProcReadExecutor(MonitorExecutor):
             data["net_bytes_recv"] = total_recv
 
         return data
+
+    @staticmethod
+    def _read_link_speed(iface: str) -> Optional[int]:
+        """Read link speed in Mbps from /sys/class/net/<iface>/speed."""
+        try:
+            speed_path = f"/sys/class/net/{iface}/speed"
+            with open(speed_path, "r") as f:
+                speed = int(f.read().strip())
+            # Kernel returns -1 for unknown/virtual interfaces
+            return speed if speed > 0 else None
+        except Exception:
+            return None
 
     @staticmethod
     def _read_net_bytes_per_iface() -> Dict[str, Tuple[int, int]]:
