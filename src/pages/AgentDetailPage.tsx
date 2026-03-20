@@ -56,6 +56,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AgentInstallInstructions } from "@/components/agents/AgentInstallInstructions";
 import { RemoteTerminal } from "@/components/agents/RemoteTerminal";
+import { AgentMonitorPanel } from "@/components/agents/AgentMonitorPanel";
 
 interface Agent {
   id: string;
