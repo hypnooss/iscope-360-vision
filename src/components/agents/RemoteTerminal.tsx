@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Terminal as TerminalIcon, Power, PowerOff, Wifi, WifiOff, Loader2 } from "lucide-react";
+import { Terminal as TerminalIcon, Power, PowerOff, Wifi, WifiOff, Loader2, ExternalLink } from "lucide-react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
