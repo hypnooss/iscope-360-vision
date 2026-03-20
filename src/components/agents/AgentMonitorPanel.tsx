@@ -194,7 +194,9 @@ export function AgentMonitorPanel({ agentId }: Props) {
   const { data: metrics = [], isLoading } = useAgentMetrics(agentId, timeRange);
 
   const latest = metrics.length > 0 ? metrics[metrics.length - 1] : null;
-  const networkData = useMemo(() => computeNetworkRates(metrics), [metrics]);
+  const interfaceNames = useMemo(() => getInterfaceNames(metrics), [metrics]);
+  const hasMultiInterfaces = interfaceNames.length > 0;
+  const legacyNetworkData = useMemo(() => !hasMultiInterfaces ? buildLegacyNetworkData(metrics) : [], [metrics, hasMultiInterfaces]);
   const timeFmt = formatTime(timeRange);
 
   const partitionPaths = useMemo(() => getPartitionPaths(metrics), [metrics]);
