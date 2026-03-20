@@ -1,31 +1,19 @@
 
 
-## Plano: Envolver cada gráfico em um card com bordas sutis
+## Plano: Aumentar altura vertical dos gráficos
 
 ### Mudança
 
-Substituir o `<div className="space-y-2">` que envolve cada gráfico (CPU, RAM, cada Disco, cada Rede) por um card com bordas arredondadas e sutis, adicionando padding interno.
+Trocar `h-48` (192px) por `h-64` (256px) em todos os containers de gráficos do `AgentMonitorPanel.tsx`. Isso dá mais espaço vertical para que legendas com duas linhas não "esmaguem" a área do chart.
 
-### Implementação em `AgentMonitorPanel.tsx`
+### Locais (6 ocorrências em `AgentMonitorPanel.tsx`)
 
-Trocar cada wrapper de gráfico de:
-```tsx
-<div className="space-y-2">
-```
-para:
-```tsx
-<div className="space-y-2 rounded-xl border border-border/40 bg-card/50 p-4">
-```
-
-Locais afetados (todos os wrappers `space-y-2` dentro do grid de charts):
-1. **CPU** (linha 436)
-2. **RAM** (linha 455)
-3. **Disco — partições** (linha 492, dentro do `.map()`)
-4. **Disco — legado** (linha 516)
-5. **Rede — interfaces** (linha 558, dentro do `.map()`)
-6. **Rede — legado** (se existir, verificar linhas seguintes)
-
-| Arquivo | Mudança |
-|---------|---------|
-| `AgentMonitorPanel.tsx` | ~6 divs: adicionar classes `rounded-xl border border-border/40 bg-card/50 p-4` |
+| Linha aprox. | Gráfico | Mudança |
+|---|---|---|
+| 440 | CPU | `h-48` → `h-64` |
+| 459 | RAM | `h-48` → `h-64` |
+| 499 | Disco (partições) | `h-48` → `h-64` |
+| 523 | Disco (legado) | `h-48` → `h-64` |
+| 565 | Rede (interfaces) | `h-48` → `h-64` |
+| 593 | Rede (legado) | `h-48` → `h-64` |
 
