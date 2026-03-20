@@ -42,6 +42,7 @@ REQUIRED_FILES = [
     "worker_manager.py",
     "logger.py",
     "realtime_shell.py",
+    "realtime_listener.py",
 ]
 
 _VERSION_RE = re.compile(r'__version__\s*=\s*["\']([^"\']+)["\']')
