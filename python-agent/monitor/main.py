@@ -164,7 +164,7 @@ def main():
                 _save_snapshot(cumulative_snapshot)
 
                 # Send partial payload
-                _send(api, metrics, logger)
+                _send(api, cumulative_snapshot, logger)
 
             consecutive_errors = 0
 
