@@ -16,7 +16,7 @@ function script(): string {
 set -euo pipefail
 
 API_BASE_URL="${API_BASE_URL}"
-// Downloads use signed URLs via get_signed_url() — no public storage URL needed
+# Downloads use signed URLs via get-release-url — no public storage URL needed
 SUPABASE_URL="${SUPABASE_URL}"
 SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}"
 
