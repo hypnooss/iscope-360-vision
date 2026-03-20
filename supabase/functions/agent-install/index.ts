@@ -5,7 +5,7 @@ import { getCorsHeaders } from '../_shared/cors.ts';
 
 const PROJECT_REF = "akbosdbyheezghieiefz";
 const API_BASE_URL = `https://${PROJECT_REF}.supabase.co/functions/v1`;
-const RELEASE_BASE_URL = `https://${PROJECT_REF}.supabase.co/storage/v1/object/public/agent-releases`;
+// RELEASE_BASE_URL removed — bucket is private, use get_signed_url() instead
 const SUPABASE_URL = `https://${PROJECT_REF}.supabase.co`;
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrYm9zZGJ5aGVlemdoaWVpZWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTEyODAsImV4cCI6MjA4NTE4NzI4MH0.9n-nUenSCwYIGztsfgVAbgis9wEakQDKX3Oe2xBiNvo";
 
