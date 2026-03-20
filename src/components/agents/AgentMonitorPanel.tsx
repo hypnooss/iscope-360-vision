@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Cpu, HardDrive, MemoryStick, Network, Clock, Activity } from "lucide-react";
+import { Cpu, HardDrive, MemoryStick, Network, Clock, Activity, Monitor } from "lucide-react";
 import {
   AreaChart,
   Area,
