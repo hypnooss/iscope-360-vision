@@ -332,8 +332,25 @@ def main():
             logger.warning("[Supervisor] Worker service inativo! Iniciando via systemctl...")
             worker.start()
 
-        time.sleep(interval)
+        time.sleep(min(interval, 5))  # Sleep in short intervals to check shutdown flag
+        remaining = interval - 5
+        while remaining > 0 and not shutdown_requested.is_set():
+            time.sleep(min(remaining, 5))
+            remaining -= 5
 
+    # --- Graceful shutdown ---
+    logger.info("[Supervisor] Encerrando graciosamente...")
+    if wake_listener:
+        try:
+            wake_listener.stop()
+        except Exception:
+            pass
+    if realtime_shell:
+        try:
+            realtime_shell.stop()
+        except Exception:
+            pass
+    logger.info("[Supervisor] Shutdown completo.")
 
 def _handle_update(result: dict, updater: SupervisorUpdater, worker: WorkerManager,
                    current_version: Optional[str], logger):
