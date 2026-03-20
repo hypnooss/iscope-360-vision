@@ -180,5 +180,3 @@ verify_jwt = false
 [functions.agent-fix]
 verify_jwt = false
 
-[functions.upload-release]
-verify_jwt = false
