@@ -1,53 +1,45 @@
 
 
-## Causa raiz confirmada
+## Plano: Gráficos de Métricas do Monitor no Agent Detail
 
-```
-ModuleNotFoundError: No module named 'monitor'
-```
+### Resumo
 
-**Linha 46 de `supervisor/main.py`**: `from monitor.worker import MonitorWorker`
+Adicionar uma seção de monitoramento de performance na página de detalhes do agent (`/agents/:id`), logo acima do Remote Terminal, com gráficos de CPU, RAM, Disco e Rede baseados nos dados da tabela `agent_metrics`.
 
-O pacote de update do Supervisor só copia a pasta `supervisor/`. O módulo `monitor/` vive fora, em `/opt/iscope-agent/monitor/`. Se o `monitor/` não foi instalado nesse servidor (ou foi removido por algum update anterior), o Supervisor novo morre no boot.
+### O que será construído
 
-Isso é um problema de **acoplamento forte em tempo de import** com um módulo que pode não existir no ambiente.
+**1. Hook `useAgentMetrics`** (`src/hooks/useAgentMetrics.ts`)
+- Query na tabela `agent_metrics` filtrada por `agent_id`, ordenada por `collected_at`
+- Parâmetro de intervalo de tempo (1h, 6h, 24h, 7d) para limitar os dados
+- Auto-refresh a cada 60s (intervalo do monitor)
+- Retorna os dados formatados para os gráficos
 
-## Correção
+**2. Componente `AgentMonitorPanel`** (`src/components/agents/AgentMonitorPanel.tsx`)
+- Card com título "Monitoramento" e seletor de período (1h / 6h / 24h / 7d)
+- Layout em grid 2x2 com 4 gráficos:
+  - **CPU** — `cpu_percent` ao longo do tempo (AreaChart, cor por faixa de uso)
+  - **RAM** — `ram_percent` + tooltip mostrando `ram_used_mb / ram_total_mb`
+  - **Disco** — `disk_percent` + tooltip com `disk_used_gb / disk_total_gb`
+  - **Rede** — `net_bytes_sent` e `net_bytes_recv` (LineChart com 2 séries)
+- Indicadores no topo: valor atual de CPU, RAM, Disco + uptime
+- Estado vazio quando não há métricas (agent sem monitor ou recém-instalado)
 
-### 1. Tornar o import do `monitor` lazy/opcional em `supervisor/main.py`
+**3. Integração no AgentDetailPage**
+- Inserir `<AgentMonitorPanel agentId={agent.id} />` entre os cards existentes e o Remote Terminal (linha ~716)
 
-Em vez de importar `MonitorWorker` no topo do arquivo (quebrando o boot inteiro se não existir), mover para um import local com fallback:
+### Detalhes Técnicos
 
-```python
-# Linha 46: remover "from monitor.worker import MonitorWorker"
+- Reutilizar Recharts (já no projeto) com `AreaChart`, `LineChart`, `ResponsiveContainer`
+- Padrão visual consistente com os sparklines existentes (`ScoreSparkline`)
+- Tooltips com valores formatados em pt-BR
+- Conversão de bytes de rede para KB/s ou MB/s calculando delta entre pontos consecutivos
+- Cores por faixa: verde (<60%), amarelo (60-80%), vermelho (>80%)
 
-# Na função main(), onde o MonitorWorker é instanciado (~linha 98):
-try:
-    from monitor.worker import MonitorWorker
-    monitor_thread = MonitorWorker(...)
-    monitor_thread.start()
-    monitor_available = True
-except ImportError:
-    logger.warning("[Supervisor] Módulo 'monitor' não encontrado — monitoramento desativado")
-    monitor_thread = None
-    monitor_available = False
-```
+### Arquivos
 
-Fazer o mesmo para todos os usos de `monitor_thread` no loop principal (stop, update, etc.) — checar `if monitor_thread:` antes de usar.
-
-### 2. Proteger o smoke test no updater
-
-O smoke test atual já cria symlinks para `agent/` e `monitor/` se existirem. Isso já está correto. Mas o import test não testa `from monitor.worker import MonitorWorker` — se esse import fosse testado, o smoke test falharia corretamente nos servidores sem `monitor/`. Com o import agora sendo lazy, isso deixa de ser bloqueante.
-
-### 3. Incluir `monitor/` no pacote do Supervisor (opcional, longo prazo)
-
-Alternativa futura: o pacote `iscope-supervisor-<version>.tar.gz` poderia incluir `monitor/` junto, já que o Supervisor é o responsável por gerenciar o monitor. Mas isso é uma mudança de empacotamento que pode ser feita depois. A correção imediata é o import lazy.
-
-## Arquivos a editar
-
-- `python-agent/supervisor/main.py` — tornar import de `monitor.worker` lazy com try/except, proteger todos os usos de `monitor_thread` com checagem None
-
-## Resultado
-
-O Supervisor consegue subir mesmo que `monitor/` não esteja presente. O monitoramento fica desativado com um warning no log, mas o serviço não morre. Quando `monitor/` for deployado, o próximo restart do Supervisor vai encontrá-lo e ativá-lo normalmente.
+| Ação | Arquivo |
+|------|---------|
+| Criar | `src/hooks/useAgentMetrics.ts` |
+| Criar | `src/components/agents/AgentMonitorPanel.tsx` |
+| Editar | `src/pages/AgentDetailPage.tsx` |
 
