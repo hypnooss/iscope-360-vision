@@ -408,6 +408,18 @@ export function RemoteTerminal({ agentId, agentName }: RemoteTerminalProps) {
             </Badge>
           )}
           <button
+            onClick={() => {
+              const url = `/terminal/${agentId}?name=${encodeURIComponent(agentName)}`;
+              window.open(url, `terminal-${agentId}`, "width=900,height=600,menubar=no,toolbar=no");
+              // Disconnect the embedded terminal so only the pop-out owns the session
+              handleDisconnect();
+            }}
+            className="text-gray-500 hover:text-blue-400 transition-colors"
+            title="Abrir em nova janela"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+          </button>
+          <button
             onClick={handleDisconnect}
             className="text-gray-500 hover:text-red-400 transition-colors"
             title="Desconectar"
