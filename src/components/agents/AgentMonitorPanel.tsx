@@ -5,8 +5,6 @@ import { Cpu, HardDrive, MemoryStick, Network, Clock, Activity } from "lucide-re
 import {
   AreaChart,
   Area,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
