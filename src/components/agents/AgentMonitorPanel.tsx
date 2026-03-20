@@ -146,7 +146,7 @@ function MetricIndicator({
   color?: string;
 }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50">
+    <div className="flex items-center gap-2 px-3 py-3 rounded-lg bg-muted/50">
       <Icon className="w-4 h-4 text-muted-foreground" />
       <div>
         <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
@@ -261,15 +261,18 @@ function getPartitionPaths(metrics: AgentMetricRow[]): string[] {
 
 /** Build chart data for a specific partition */
 function buildPartitionData(metrics: AgentMetricRow[], partitionPath: string) {
-  return metrics.map((m) => {
-    const part = m.disk_partitions?.find((p: DiskPartition) => p.path === partitionPath);
-    return {
-      time: m.collected_at,
-      disk_used_gb: part?.used_gb ?? null,
-      disk_total_gb: part?.total_gb ?? null,
-      disk_percent: part?.percent ?? null,
-    };
-  });
+  return metrics
+    .map((m) => {
+      const part = m.disk_partitions?.find((p: DiskPartition) => p.path === partitionPath);
+      if (!part) return null;
+      return {
+        time: m.collected_at,
+        disk_used_gb: part.used_gb ?? null,
+        disk_total_gb: part.total_gb ?? null,
+        disk_percent: part.percent ?? null,
+      };
+    })
+    .filter(Boolean) as { time: string; disk_used_gb: number | null; disk_total_gb: number | null; disk_percent: number | null }[];
 }
 
 /** Scan metrics backwards to find the most recent non-null value for a field */
@@ -369,6 +372,11 @@ export function AgentMonitorPanel({ agentId }: Props) {
     time: m.collected_at,
   }));
 
+  // Filtered data per chart — template-driven collection produces separate rows per metric
+  const cpuChartData = chartData.filter((m) => m.cpu_percent != null);
+  const ramChartData = chartData.filter((m) => m.ram_used_mb != null);
+  const diskLegacyChartData = chartData.filter((m) => m.disk_used_gb != null);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6">
@@ -424,7 +432,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
             </p>
             <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
+                <AreaChart data={cpuChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                   <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
@@ -443,7 +451,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
             </p>
             <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
+                <AreaChart data={ramChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                   <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                   <YAxis
@@ -511,7 +519,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
               </p>
               <div className="h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
+                  <AreaChart data={diskLegacyChartData}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                     <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                     <YAxis domain={[0, latest?.disk_total_gb ? Math.ceil(Number(latest.disk_total_gb) * 1.05) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
