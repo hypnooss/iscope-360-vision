@@ -27,6 +27,9 @@ verify_jwt = false
 [functions.agent-install]
 verify_jwt = false
 
+[functions.agent-monitor-blueprint]
+verify_jwt = false
+
 [functions.entra-id-security-insights]
 verify_jwt = false
 
