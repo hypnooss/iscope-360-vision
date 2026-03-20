@@ -465,7 +465,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                     domain={[0, ramTotal ? Math.ceil(ramTotal) : "auto"]}
                     tick={{ fontSize: 10 }}
                     className="fill-muted-foreground"
-                    tickFormatter={(v) => v >= 1024 ? `${(v / 1024).toFixed(1)}G` : `${v}`}
+                    tickFormatter={(v) => (ramTotal ?? 0) >= 1024 ? `${(v / 1024).toFixed(1)} GB` : `${Math.round(v)} MB`}
                   />
                   <Tooltip content={<AbsoluteTooltip usedKey="ram_used_mb" totalKey="ram_total_mb" unit="MB" percentKey="ram_percent" />} labelFormatter={(v) => v} />
                   <Area type="monotone" dataKey="ram_total_mb" stroke="hsl(217, 91%, 60%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
