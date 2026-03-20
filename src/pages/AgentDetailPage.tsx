@@ -26,6 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,6 +51,9 @@ import {
   Cpu,
   Fingerprint,
   Activity,
+  Settings,
+  BarChart3,
+  Terminal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow, format } from "date-fns";
@@ -432,297 +436,317 @@ export default function AgentDetailPage() {
           </div>
         </div>
 
-        {/* Cards Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Status Card */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Activity className="w-5 h-5" />
-                Status
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Estado</span>
-                <Badge
-                  variant={status.variant === "success" ? "default" : status.variant === "destructive" ? "destructive" : "secondary"}
-                  className={
-                    status.variant === "success"
-                      ? "bg-success/10 text-success"
-                      : status.variant === "warning"
-                        ? "bg-warning/10 text-warning"
-                        : ""
-                  }
-                >
-                  {status.icon}
-                  <span className="ml-1">{status.label}</span>
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Versão Agent</span>
-                {agent.agent_version ? (
-                  <code className="text-sm bg-muted px-2 py-0.5 rounded">v{agent.agent_version}</code>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Versão Supervisor</span>
-                {(agent as any).supervisor_version ? (
-                  <code className="text-sm bg-muted px-2 py-0.5 rounded">v{(agent as any).supervisor_version}</code>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Último heartbeat</span>
-                <span className="text-sm">
-                  {agent.last_seen
-                    ? formatDistanceToNow(new Date(agent.last_seen), { locale: ptBR, addSuffix: true })
-                    : "—"}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Tabs */}
+        <Tabs defaultValue="config" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3 max-w-md">
+            <TabsTrigger value="config" className="flex items-center gap-1.5">
+              <Settings className="w-4 h-4" />
+              Configuração
+            </TabsTrigger>
+            <TabsTrigger value="monitor" className="flex items-center gap-1.5">
+              <BarChart3 className="w-4 h-4" />
+              Monitoramento
+            </TabsTrigger>
+            <TabsTrigger value="remote" className="flex items-center gap-1.5">
+              <Terminal className="w-4 h-4" />
+              Acesso Remoto
+            </TabsTrigger>
+          </TabsList>
 
-          {/* General Info Card */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Bot className="w-5 h-5" />
-                Informações Gerais
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Nome</span>
-                <span className="font-medium">{agent.name}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Cliente</span>
-                <span>{agent.clients?.name || "—"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Criado em</span>
-                <span className="text-sm">{formatDateTimeBR(agent.created_at)}</span>
-              </div>
-              <div className="space-y-2">
-                <span className="text-muted-foreground text-sm">Agent ID</span>
-                <div className="flex items-center gap-2 p-2 rounded bg-muted/30 border border-border/50">
-                  <code className="flex-1 text-xs font-mono break-all text-muted-foreground">{agent.id}</code>
-                  <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCopyId}>
-                    <Copy className="w-3 h-3" />
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Certificate Card */}
-          <Card className="glass-card lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Shield className="w-5 h-5" />
-                Certificado M365
-              </CardTitle>
-              <CardDescription>{certStatus.description}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Status do Registro</span>
-                <Badge
-                  variant={certStatus.variant === "success" ? "default" : "secondary"}
-                  className={
-                    certStatus.variant === "success"
-                      ? "bg-success/10 text-success"
-                      : certStatus.variant === "warning"
-                        ? "bg-warning/10 text-warning"
-                        : ""
-                  }
-                >
-                  {certStatus.variant === "success" ? (
-                    <ShieldCheck className="w-3 h-3 mr-1" />
-                  ) : certStatus.variant === "warning" ? (
-                    <Clock className="w-3 h-3 mr-1" />
-                  ) : (
-                    <ShieldX className="w-3 h-3 mr-1" />
-                  )}
-                  {certStatus.label}
-                </Badge>
-              </div>
-
-              {agent.certificate_thumbprint && (
-                <>
-                  <div className="space-y-2">
-                    <span className="text-muted-foreground text-sm flex items-center gap-1">
-                      <Fingerprint className="w-4 h-4" />
-                      Thumbprint (SHA-1)
+          {/* ── Configuração Tab ── */}
+          <TabsContent value="config" className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Status Card */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Activity className="w-5 h-5" />
+                    Status
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Estado</span>
+                    <Badge
+                      variant={status.variant === "success" ? "default" : status.variant === "destructive" ? "destructive" : "secondary"}
+                      className={
+                        status.variant === "success"
+                          ? "bg-success/10 text-success"
+                          : status.variant === "warning"
+                            ? "bg-warning/10 text-warning"
+                            : ""
+                      }
+                    >
+                      {status.icon}
+                      <span className="ml-1">{status.label}</span>
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Versão Agent</span>
+                    {agent.agent_version ? (
+                      <code className="text-sm bg-muted px-2 py-0.5 rounded">v{agent.agent_version}</code>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Versão Supervisor</span>
+                    {(agent as any).supervisor_version ? (
+                      <code className="text-sm bg-muted px-2 py-0.5 rounded">v{(agent as any).supervisor_version}</code>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Último heartbeat</span>
+                    <span className="text-sm">
+                      {agent.last_seen
+                        ? formatDistanceToNow(new Date(agent.last_seen), { locale: ptBR, addSuffix: true })
+                        : "—"}
                     </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* General Info Card */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Bot className="w-5 h-5" />
+                    Informações Gerais
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Nome</span>
+                    <span className="font-medium">{agent.name}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Cliente</span>
+                    <span>{agent.clients?.name || "—"}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Criado em</span>
+                    <span className="text-sm">{formatDateTimeBR(agent.created_at)}</span>
+                  </div>
+                  <div className="space-y-2">
+                    <span className="text-muted-foreground text-sm">Agent ID</span>
                     <div className="flex items-center gap-2 p-2 rounded bg-muted/30 border border-border/50">
-                      <code className="flex-1 text-xs font-mono break-all">{agent.certificate_thumbprint}</code>
-                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCopyThumbprint}>
+                      <code className="flex-1 text-xs font-mono break-all text-muted-foreground">{agent.id}</code>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCopyId}>
                         <Copy className="w-3 h-3" />
                       </Button>
                     </div>
                   </div>
+                </CardContent>
+              </Card>
 
-                  {agent.azure_certificate_key_id && (
-                    <div className="space-y-2">
-                      <span className="text-muted-foreground text-sm flex items-center gap-1">
-                        <Key className="w-4 h-4" />
-                        Azure Key ID
-                      </span>
-                      <div className="p-2 rounded bg-muted/30 border border-border/50">
-                        <code className="text-xs font-mono break-all text-muted-foreground">{agent.azure_certificate_key_id}</code>
+              {/* Certificate Card */}
+              <Card className="glass-card lg:col-span-2">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Shield className="w-5 h-5" />
+                    Certificado M365
+                  </CardTitle>
+                  <CardDescription>{certStatus.description}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Status do Registro</span>
+                    <Badge
+                      variant={certStatus.variant === "success" ? "default" : "secondary"}
+                      className={
+                        certStatus.variant === "success"
+                          ? "bg-success/10 text-success"
+                          : certStatus.variant === "warning"
+                            ? "bg-warning/10 text-warning"
+                            : ""
+                      }
+                    >
+                      {certStatus.variant === "success" ? (
+                        <ShieldCheck className="w-3 h-3 mr-1" />
+                      ) : certStatus.variant === "warning" ? (
+                        <Clock className="w-3 h-3 mr-1" />
+                      ) : (
+                        <ShieldX className="w-3 h-3 mr-1" />
+                      )}
+                      {certStatus.label}
+                    </Badge>
+                  </div>
+
+                  {agent.certificate_thumbprint && (
+                    <>
+                      <div className="space-y-2">
+                        <span className="text-muted-foreground text-sm flex items-center gap-1">
+                          <Fingerprint className="w-4 h-4" />
+                          Thumbprint (SHA-1)
+                        </span>
+                        <div className="flex items-center gap-2 p-2 rounded bg-muted/30 border border-border/50">
+                          <code className="flex-1 text-xs font-mono break-all">{agent.certificate_thumbprint}</code>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCopyThumbprint}>
+                            <Copy className="w-3 h-3" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
+
+                      {agent.azure_certificate_key_id && (
+                        <div className="space-y-2">
+                          <span className="text-muted-foreground text-sm flex items-center gap-1">
+                            <Key className="w-4 h-4" />
+                            Azure Key ID
+                          </span>
+                          <div className="p-2 rounded bg-muted/30 border border-border/50">
+                            <code className="text-xs font-mono break-all text-muted-foreground">{agent.azure_certificate_key_id}</code>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        {agent.certificate_public_key && (
+                          <Button variant="outline" size="sm" onClick={handleDownloadCertificate}>
+                            <Download className="w-4 h-4 mr-2" />
+                            Baixar Certificado Público (.pem)
+                          </Button>
+                        )}
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="text-destructive border-destructive/50 hover:bg-destructive/10"
+                          onClick={() => setDeleteCertDialogOpen(true)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Remover Certificado
+                        </Button>
+                      </div>
+                    </>
                   )}
 
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {agent.certificate_public_key && (
-                      <Button variant="outline" size="sm" onClick={handleDownloadCertificate}>
-                        <Download className="w-4 h-4 mr-2" />
-                        Baixar Certificado Público (.pem)
-                      </Button>
-                    )}
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="text-destructive border-destructive/50 hover:bg-destructive/10"
-                      onClick={() => setDeleteCertDialogOpen(true)}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Remover Certificado
-                    </Button>
-                  </div>
-                </>
-              )}
+                  {!agent.certificate_thumbprint && (
+                    <p className="text-sm text-muted-foreground">
+                      O certificado será gerado automaticamente durante a instalação do agent com suporte a M365.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
 
-              {!agent.certificate_thumbprint && (
-                <p className="text-sm text-muted-foreground">
-                  O certificado será gerado automaticamente durante a instalação do agent com suporte a M365.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Capabilities Card */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Cpu className="w-5 h-5" />
-                Capabilities
-              </CardTitle>
-              <CardDescription>Recursos disponíveis neste agent</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {capabilities.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {capabilities.map((cap, idx) => (
-                    <Badge key={idx} variant="secondary" className="text-xs">
-                      {cap}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">Nenhuma capability registrada ainda.</p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Activation Code Card */}
-          {!agent.revoked && (
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Key className="w-5 h-5" />
-                  Código de Ativação
-                </CardTitle>
-                <CardDescription>Use para instalar ou reinstalar o agent</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {agent.activation_code ? (
-                  <>
-                    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border/50">
-                      <code className="flex-1 text-sm font-mono break-all">{agent.activation_code}</code>
-                      <Button size="icon" variant="ghost" onClick={handleCopyCode}>
-                        {codeCopied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
-                      </Button>
+              {/* Capabilities Card */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Cpu className="w-5 h-5" />
+                    Capabilities
+                  </CardTitle>
+                  <CardDescription>Recursos disponíveis neste agent</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {capabilities.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {capabilities.map((cap, idx) => (
+                        <Badge key={idx} variant="secondary" className="text-xs">
+                          {cap}
+                        </Badge>
+                      ))}
                     </div>
-                    {agent.activation_code_expires_at && (
-                      <p className="text-xs text-warning flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        Expira {formatDistanceToNow(new Date(agent.activation_code_expires_at), { locale: ptBR, addSuffix: true })}
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Nenhuma capability registrada ainda.</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Activation Code Card */}
+              {!agent.revoked && (
+                <Card className="glass-card">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Key className="w-5 h-5" />
+                      Código de Ativação
+                    </CardTitle>
+                    <CardDescription>Use para instalar ou reinstalar o agent</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {agent.activation_code ? (
+                      <>
+                        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border/50">
+                          <code className="flex-1 text-sm font-mono break-all">{agent.activation_code}</code>
+                          <Button size="icon" variant="ghost" onClick={handleCopyCode}>
+                            {codeCopied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                        {agent.activation_code_expires_at && (
+                          <p className="text-xs text-warning flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            Expira {formatDistanceToNow(new Date(agent.activation_code_expires_at), { locale: ptBR, addSuffix: true })}
+                          </p>
+                        )}
+                        <AgentInstallInstructions activationCode={agent.activation_code} isSuperAgent={!agent.client_id} />
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Nenhum código ativo. Gere um novo código para reinstalar o agent.
                       </p>
                     )}
-                    <AgentInstallInstructions activationCode={agent.activation_code} isSuperAgent={!agent.client_id} />
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Nenhum código ativo. Gere um novo código para reinstalar o agent.
-                  </p>
-                )}
 
-                <Button size="sm" variant="outline" onClick={handleGenerateNewCode} disabled={generatingCode}>
-                  {generatingCode ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                  )}
-                  Gerar novo código
-                </Button>
-              </CardContent>
-            </Card>
-          )}
+                    <Button size="sm" variant="outline" onClick={handleGenerateNewCode} disabled={generatingCode}>
+                      {generatingCode ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                      )}
+                      Gerar novo código
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
 
-          {/* Actions Card */}
-          <Card className="glass-card lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                Ações
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-3">
-                {agent.last_seen && !agent.revoked && (
-                  <Button variant="outline" onClick={handleCheckComponents} disabled={checkingComponents}>
-                    {checkingComponents ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <RefreshCw className="w-4 h-4 mr-2" />
+              {/* Actions Card */}
+              <Card className="glass-card lg:col-span-2">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    Ações
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-3">
+                    {agent.last_seen && !agent.revoked && (
+                      <Button variant="outline" onClick={handleCheckComponents} disabled={checkingComponents}>
+                        {checkingComponents ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                        )}
+                        Verificar Componentes
+                      </Button>
                     )}
-                    Verificar Componentes
-                  </Button>
-                )}
 
-                {!agent.revoked && (
-                  <Button variant="destructive" onClick={() => setRevokeDialogOpen(true)}>
-                    <Ban className="w-4 h-4 mr-2" />
-                    Revogar Agent
-                  </Button>
-                )}
+                    {!agent.revoked && (
+                      <Button variant="destructive" onClick={() => setRevokeDialogOpen(true)}>
+                        <Ban className="w-4 h-4 mr-2" />
+                        Revogar Agent
+                      </Button>
+                    )}
 
-                {agent.revoked && (
-                  <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Deletar Agent
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                    {agent.revoked && (
+                      <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Deletar Agent
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
 
-        {/* Monitor Panel */}
-        <div className="mt-6">
-          <AgentMonitorPanel agentId={agent.id} />
-        </div>
+          {/* ── Monitoramento Tab ── */}
+          <TabsContent value="monitor">
+            <AgentMonitorPanel agentId={agent.id} />
+          </TabsContent>
 
-        {/* Remote Terminal - super_admin only */}
-        <div className="mt-6">
-          <RemoteTerminal agentId={agent.id} agentName={agent.name} />
-        </div>
+          {/* ── Acesso Remoto Tab ── */}
+          <TabsContent value="remote">
+            <RemoteTerminal agentId={agent.id} agentName={agent.name} />
+          </TabsContent>
+        </Tabs>
         {/* Revoke Confirmation Dialog */}
         <AlertDialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
           <AlertDialogContent>
