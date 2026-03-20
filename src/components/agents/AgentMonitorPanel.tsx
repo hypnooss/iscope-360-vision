@@ -346,7 +346,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-48 rounded-lg bg-muted animate-pulse" />
+              <div key={i} className="h-64 rounded-lg bg-muted animate-pulse" />
             ))}
           </div>
         </CardContent>
@@ -437,7 +437,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
               <Cpu className="w-3 h-3" /> CPU (%)
             </p>
-            <div className="h-48 w-full">
+            <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={cpuChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
@@ -456,7 +456,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
               <MemoryStick className="w-3 h-3" /> RAM ({(ramTotal ?? 0) >= 1024 ? "GB" : "MB"})
             </p>
-            <div className="h-48 w-full">
+            <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={ramChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
@@ -496,7 +496,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                       <span className="text-muted-foreground/70">({Number(latestPart.total_gb).toFixed(0)} GB)</span>
                     )}
                   </p>
-                  <div className="h-48 w-full">
+                  <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={partData}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
@@ -520,7 +520,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   <span className="text-muted-foreground/70">({Number(latest.disk_total_gb).toFixed(0)} GB)</span>
                 )}
               </p>
-              <div className="h-48 w-full">
+              <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={diskLegacyChartData}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
@@ -562,7 +562,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                       <span className="text-muted-foreground/70">({formatLinkSpeed(linkSpeed)})</span>
                     )}
                   </p>
-                  <div className="h-48 w-full">
+                  <div className="h-64 w-full">
                     {ifaceData.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={ifaceData}>
@@ -590,7 +590,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
               <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                 <Network className="w-3 h-3" /> Rede
               </p>
-              <div className="h-48 w-full">
+              <div className="h-64 w-full">
                 {legacyNetworkData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={legacyNetworkData}>
