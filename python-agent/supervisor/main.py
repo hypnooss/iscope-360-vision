@@ -190,7 +190,7 @@ def main():
     consecutive_errors = 0
     MAX_CONSECUTIVE_ERRORS = 10
 
-    while True:
+    while not shutdown_requested.is_set():
         interval = HEARTBEAT_INTERVAL
 
         # --- Cross-update: check if Worker updated us ---
