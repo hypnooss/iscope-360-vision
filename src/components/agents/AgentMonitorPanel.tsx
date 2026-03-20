@@ -352,12 +352,14 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   <Area
                     type="monotone"
                     dataKey="cpu_percent"
+                    name="CPU %"
                     stroke="hsl(142, 76%, 36%)"
                     fill="hsl(142, 76%, 36%)"
                     fillOpacity={0.15}
                     strokeWidth={1.5}
                     dot={false}
                   />
+                  <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
