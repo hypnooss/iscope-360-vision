@@ -468,10 +468,8 @@ export function AgentMonitorPanel({ agentId }: Props) {
                     tickFormatter={(v) => v >= 1024 ? `${(v / 1024).toFixed(1)}G` : `${v}`}
                   />
                   <Tooltip content={<AbsoluteTooltip usedKey="ram_used_mb" totalKey="ram_total_mb" unit="MB" percentKey="ram_percent" />} labelFormatter={(v) => v} />
-                  {ramTotal && (
-                    <ReferenceLine y={ramTotal} stroke="hsl(217, 91%, 60%)" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(217, 91%, 60%)" }} />
-                  )}
-                  <Area type="monotone" dataKey="ram_used_mb" stroke="hsl(217, 91%, 60%)" fill="hsl(217, 91%, 60%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="ram_total_mb" stroke="hsl(217, 91%, 60%)" fill="hsl(217, 91%, 60%)" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="ram_used_mb" stroke="hsl(217, 71%, 45%)" fill="hsl(217, 71%, 45%)" fillOpacity={0.25} strokeWidth={1.5} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
