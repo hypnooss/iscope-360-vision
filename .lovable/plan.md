@@ -1,63 +1,59 @@
 
 
-## Plano: Monitor Template-Driven (sem módulo Endpoint) — ✅ IMPLEMENTADO
+## Plano: Disco total no título + Link speed + Gráfico de rede espelhado
 
-### Resumo do que foi feito
+### 3 mudanças solicitadas
 
-1. **Executors criados em `monitor/executors/`**:
-   - `base.py` — classe base `MonitorExecutor`
-   - `proc_read.py` — parser para cpu, memory, net_interfaces, system (lógica extraída do collector.py)
-   - `statvfs.py` — coleta de disco via /proc/mounts + os.statvfs
-   - `__init__.py` — registry de executors por tipo
+1. **Disco** — Exibir tamanho total no título do gráfico (ex: "Disco — / (500 GB)")
+2. **Rede — Link speed** — Coletar velocidade do link da interface (10/100/1000 Mbps) via `/sys/class/net/<iface>/speed` e exibir no título (ex: "Rede — eth0 (1 Gbps)")
+3. **Gráfico de rede espelhado** — Enviado acima do eixo X, Recebido abaixo do eixo X, mas com labels sempre em valores positivos
 
-2. **Template "linux_server" no banco**:
-   - Enum `blueprint_executor_type` expandido com valor `monitor`
-   - `device_type` inserido: code=`linux_server`, vendor=Linux, category=server
-   - `device_blueprint` inserido com 5 steps (cpu, mem, disk, net, sys)
+### Implementação
 
-3. **Monitor refatorado (`monitor/main.py`)**:
-   - Boot: busca blueprint via Edge Function `agent-monitor-blueprint`
-   - Cache local em `/var/lib/iscope-agent/monitor_blueprint.json`
-   - Refresh do blueprint a cada 30 min
-   - Itera steps do blueprint, instancia executors, agrega resultados
-   - Fallback: se blueprint indisponível, usa `collector.py` legado
+**Etapa 1 — Collector: coletar link speed por interface**
 
-4. **Edge Function `agent-monitor-blueprint`**:
-   - GET com `?device_type=linux_server`
-   - Retorna blueprint ativo com steps
+Arquivo: `python-agent/monitor/executors/proc_read.py`
 
-5. **Version bumped para 1.1.3**
+- No `_parse_net_interfaces`, ler `/sys/class/net/<iface>/speed` para cada interface
+- Retornar `link_speed_mbps` em cada item do array `net_interfaces`:
+  ```json
+  {"iface": "eth0", "bytes_sent": 1234, "bytes_recv": 5678, "link_speed_mbps": 1000}
+  ```
+- Se não conseguir ler (interface virtual, etc.), enviar `null`
 
-### Compatibilidade
+**Etapa 2 — Frontend: tipos e helpers**
 
-- `collector.py` mantido intacto como fallback
-- Edge Function `agent-monitor` — mesmo payload (sem mudanças)
-- Frontend — sem mudanças
-- Agents antigos continuam funcionando normalmente
+Arquivo: `src/hooks/useAgentMetrics.ts`
 
----
+- Adicionar `link_speed_mbps?: number | null` ao tipo `NetInterface`
+- Alterar `buildInterfaceData` para incluir `recvRateNeg: -ni.bytes_recv` (valor negativo para o gráfico espelhado)
+- Adicionar helper `getInterfaceSpeed(metrics, ifaceName)` que retorna o último `link_speed_mbps` conhecido
+- Adicionar helper `formatLinkSpeed(mbps)` → "10 Mbps", "100 Mbps", "1 Gbps", "10 Gbps"
 
-## Plano: Intervalo de coleta por step — ✅ IMPLEMENTADO (v1.1.4)
+**Etapa 3 — Frontend: gráficos**
 
-### Resumo
+Arquivo: `src/components/agents/AgentMonitorPanel.tsx`
 
-Cada step do blueprint agora possui `interval_seconds`, permitindo frequências
-de coleta diferentes por métrica. O monitor calcula o `base_interval` como o
-menor intervalo entre todos os steps e só executa cada step quando seu timer
-individual vence.
+- **Disco**: alterar título de `Disco — /path (GB)` para `Disco — /path (usado / total GB)` incluindo o `total_gb` da última métrica
+- **Rede — título**: incluir link speed formatado: `Rede — eth0 (1 Gbps)`
+- **Gráfico espelhado**: 
+  - Usar `AreaChart` com duas `Area`: `sentRate` (positivo, acima) e `recvRateNeg` (negativo, abaixo)
+  - `YAxis` com `tickFormatter` que exibe `Math.abs(value)` formatado em bytes/s (nunca mostra negativo)
+  - Tooltip também exibe valores absolutos
+  - Cores: enviado (roxo) acima, recebido (teal) abaixo
+  - `ReferenceLine y={0}` para marcar o eixo X central
 
-### Blueprint atualizado
+### Arquivos a alterar
 
-| Step | Intervalo |
-|------|-----------|
-| cpu  | 60s       |
-| mem  | 60s       |
-| disk | 120s      |
-| net  | 30s       |
-| sys  | 3600s     |
+| Arquivo | Mudança |
+|---------|---------|
+| `python-agent/monitor/executors/proc_read.py` | Ler `/sys/class/net/<iface>/speed` |
+| `src/hooks/useAgentMetrics.ts` | Tipo `NetInterface` + helpers link speed + recvRateNeg |
+| `src/components/agents/AgentMonitorPanel.tsx` | Títulos disco/rede + gráfico espelhado |
 
-### Mudanças técnicas
+### Sem mudanças em
 
-- `monitor/main.py`: dict `last_collected_at` por step_id, `_compute_base_interval()`, envio parcial, snapshot incremental
-- `monitor/version.py`: 1.1.3 → 1.1.4
-- Migration: UPDATE do blueprint com `interval_seconds` por step
+- DB / migrations (link_speed já cabe no JSONB `net_interfaces`)
+- Edge Function (já persiste o JSONB como recebido)
+- Template/blueprint (o parser `net_interfaces` já coleta tudo)
+
