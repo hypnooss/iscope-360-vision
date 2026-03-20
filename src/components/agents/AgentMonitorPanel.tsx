@@ -485,8 +485,8 @@ export function AgentMonitorPanel({ agentId }: Props) {
               const totalVals = metrics.map((m) => m.disk_partitions?.find((p: DiskPartition) => p.path === path)?.total_gb).filter((v): v is number => v != null);
               const usedVals = metrics.map((m) => m.disk_partitions?.find((p: DiskPartition) => p.path === path)?.used_gb).filter((v): v is number => v != null);
               const diskLegend: LegendSeries[] = [
-                { color: "hsl(25, 95%, 53%)", label: `Total (${path})`, stats: computeSeriesStats(totalVals), formatValue: formatGB },
-                { color: "hsl(25, 75%, 40%)", label: `Usado (${path})`, stats: computeSeriesStats(usedVals), formatValue: formatGB },
+                { color: "hsl(0, 84%, 60%)", label: `Total (${path})`, stats: computeSeriesStats(totalVals), formatValue: formatGB },
+                { color: "hsl(25, 95%, 53%)", label: `Usado (${path})`, stats: computeSeriesStats(usedVals), formatValue: formatGB },
               ];
               return (
                 <div key={path} className="space-y-2">
