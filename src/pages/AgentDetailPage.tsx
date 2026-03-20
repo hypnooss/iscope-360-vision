@@ -714,6 +714,11 @@ export default function AgentDetailPage() {
           </Card>
         </div>
 
+        {/* Monitor Panel */}
+        <div className="mt-6">
+          <AgentMonitorPanel agentId={agent.id} />
+        </div>
+
         {/* Remote Terminal - super_admin only */}
         <div className="mt-6">
           <RemoteTerminal agentId={agent.id} agentName={agent.name} />
