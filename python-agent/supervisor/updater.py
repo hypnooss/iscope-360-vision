@@ -126,7 +126,8 @@ class SupervisorUpdater:
             response = requests.get(url, stream=True, timeout=120)
             response.raise_for_status()
 
-            tmp_file = tempfile.mktemp(suffix=".tar.gz")
+            fd, tmp_file = tempfile.mkstemp(suffix=".tar.gz")
+            os.close(fd)
             with open(tmp_file, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)

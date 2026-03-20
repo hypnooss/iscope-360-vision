@@ -148,7 +148,8 @@ class SupervisorUpdater:
             self.logger.info(f"[SupUpdater] Baixando {url}")
             resp = requests.get(url, stream=True, timeout=120)
             resp.raise_for_status()
-            tmp = tempfile.mktemp(suffix=".tar.gz")
+            fd, tmp = tempfile.mkstemp(suffix=".tar.gz")
+            os.close(fd)
             with open(tmp, "wb") as f:
                 for chunk in resp.iter_content(8192):
                     f.write(chunk)

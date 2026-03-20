@@ -110,6 +110,16 @@ def main():
         logger.critical("AGENT_API_BASE_URL não configurada. Abortando.")
         sys.exit(1)
 
+    # --- Graceful shutdown on SIGTERM ---
+    shutdown_requested = threading.Event()
+
+    def _handle_sigterm(signum, frame):
+        logger.info("[Supervisor] SIGTERM recebido — iniciando shutdown graceful...")
+        shutdown_requested.set()
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+    signal.signal(signal.SIGINT, _handle_sigterm)
+
     # --- Boot-time dependency check ---
     _ensure_dependencies(logger, WORKER_INSTALL_DIR)
 
