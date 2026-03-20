@@ -16,9 +16,11 @@ import {
 } from "recharts";
 import {
   useAgentMetrics,
-  computeNetworkRates,
   formatBytes,
   formatUptime,
+  getInterfaceNames,
+  buildInterfaceData,
+  buildLegacyNetworkData,
   type TimeRange,
   type AgentMetricRow,
   type DiskPartition,
