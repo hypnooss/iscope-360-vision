@@ -513,7 +513,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
               );
             })
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 rounded-xl border border-border/40 bg-card/50 p-4">
               <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                 <HardDrive className="w-3 h-3" /> Disco
                 {latest?.disk_total_gb != null && (
