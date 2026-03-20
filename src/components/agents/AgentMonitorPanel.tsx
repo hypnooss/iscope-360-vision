@@ -12,6 +12,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ReferenceLine,
 } from "recharts";
 import {
   useAgentMetrics,
@@ -20,6 +21,7 @@ import {
   formatUptime,
   type TimeRange,
   type AgentMetricRow,
+  type DiskPartition,
 } from "@/hooks/useAgentMetrics";
 import { format } from "date-fns";
 
@@ -71,36 +73,63 @@ function MetricIndicator({
   );
 }
 
-function PercentTooltip({
+function AbsoluteTooltip({
   active,
   payload,
   label,
   usedKey,
   totalKey,
-  usedUnit,
+  unit,
+  percentKey,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; payload: Record<string, unknown> }>;
+  label?: string;
+  usedKey: string;
+  totalKey: string;
+  unit: string;
+  percentKey: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0].payload;
+  const used = row[usedKey] as number | null;
+  const total = row[totalKey] as number | null;
+  const pct = row[percentKey] as number | null;
+  return (
+    <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-lg">
+      <p className="text-muted-foreground">{label ? format(new Date(label), "dd/MM HH:mm:ss") : ""}</p>
+      {used != null && total != null && (
+        <p className="font-semibold" style={{ color: getColor(pct) }}>
+          {Number(used).toFixed(1)} / {Number(total).toFixed(1)} {unit}
+        </p>
+      )}
+      {pct != null && (
+        <p className="text-muted-foreground">{Number(pct).toFixed(1)}%</p>
+      )}
+    </div>
+  );
+}
+
+function CpuTooltip({
+  active,
+  payload,
+  label,
 }: {
   active?: boolean;
   payload?: Array<{ value: number; payload: AgentMetricRow }>;
   label?: string;
-  usedKey: keyof AgentMetricRow;
-  totalKey: keyof AgentMetricRow;
-  usedUnit: string;
 }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
   const pct = payload[0].value;
-  const used = row[usedKey] as number | null;
-  const total = row[totalKey] as number | null;
   return (
     <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-lg">
       <p className="text-muted-foreground">{label ? format(new Date(label), "dd/MM HH:mm:ss") : ""}</p>
       <p className="font-semibold" style={{ color: getColor(pct) }}>
         {pct != null ? `${Number(pct).toFixed(1)}%` : "—"}
       </p>
-      {used != null && total != null && (
-        <p className="text-muted-foreground">
-          {Number(used).toFixed(1)} / {Number(total).toFixed(1)} {usedUnit}
-        </p>
+      {row.cpu_count != null && (
+        <p className="text-muted-foreground">{row.cpu_count} cores</p>
       )}
     </div>
   );
@@ -128,6 +157,32 @@ function NetworkTooltip({
   );
 }
 
+/** Extract unique partition paths from metrics data */
+function getPartitionPaths(metrics: AgentMetricRow[]): string[] {
+  const paths = new Set<string>();
+  for (const m of metrics) {
+    if (m.disk_partitions && Array.isArray(m.disk_partitions)) {
+      for (const p of m.disk_partitions) {
+        paths.add(p.path);
+      }
+    }
+  }
+  return Array.from(paths).sort();
+}
+
+/** Build chart data for a specific partition */
+function buildPartitionData(metrics: AgentMetricRow[], partitionPath: string) {
+  return metrics.map((m) => {
+    const part = m.disk_partitions?.find((p: DiskPartition) => p.path === partitionPath);
+    return {
+      time: m.collected_at,
+      disk_used_gb: part?.used_gb ?? null,
+      disk_total_gb: part?.total_gb ?? null,
+      disk_percent: part?.percent ?? null,
+    };
+  });
+}
+
 interface Props {
   agentId: string;
 }
@@ -139,6 +194,12 @@ export function AgentMonitorPanel({ agentId }: Props) {
   const latest = metrics.length > 0 ? metrics[metrics.length - 1] : null;
   const networkData = useMemo(() => computeNetworkRates(metrics), [metrics]);
   const timeFmt = formatTime(timeRange);
+
+  const partitionPaths = useMemo(() => getPartitionPaths(metrics), [metrics]);
+  const hasMultiPartitions = partitionPaths.length > 1;
+
+  // RAM total for reference line
+  const ramTotal = latest?.ram_total_mb != null ? Number(latest.ram_total_mb) : null;
 
   if (isLoading) {
     return (
@@ -190,6 +251,19 @@ export function AgentMonitorPanel({ agentId }: Props) {
     time: m.collected_at,
   }));
 
+  // Format indicator values
+  const cpuIndicator = latest?.cpu_percent != null
+    ? `${Number(latest.cpu_percent).toFixed(1)}%${latest.cpu_count ? ` (${latest.cpu_count} cores)` : ""}`
+    : null;
+
+  const ramIndicator = latest?.ram_used_mb != null && latest?.ram_total_mb != null
+    ? `${Number(latest.ram_used_mb).toLocaleString()} / ${Number(latest.ram_total_mb).toLocaleString()} MB (${Number(latest.ram_percent).toFixed(1)}%)`
+    : null;
+
+  const diskIndicator = latest?.disk_used_gb != null && latest?.disk_total_gb != null
+    ? `${Number(latest.disk_used_gb).toFixed(1)} / ${Number(latest.disk_total_gb).toFixed(1)} GB (${Number(latest.disk_percent).toFixed(1)}%)`
+    : null;
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -222,22 +296,19 @@ export function AgentMonitorPanel({ agentId }: Props) {
           <MetricIndicator
             icon={Cpu}
             label="CPU"
-            value={latest?.cpu_percent != null ? Number(latest.cpu_percent).toFixed(1) : null}
-            suffix="%"
+            value={cpuIndicator}
             color={getColor(latest?.cpu_percent != null ? Number(latest.cpu_percent) : null)}
           />
           <MetricIndicator
             icon={MemoryStick}
             label="RAM"
-            value={latest?.ram_percent != null ? Number(latest.ram_percent).toFixed(1) : null}
-            suffix="%"
+            value={ramIndicator}
             color={getColor(latest?.ram_percent != null ? Number(latest.ram_percent) : null)}
           />
           <MetricIndicator
             icon={HardDrive}
             label="Disco"
-            value={latest?.disk_percent != null ? Number(latest.disk_percent).toFixed(1) : null}
-            suffix="%"
+            value={diskIndicator}
             color={getColor(latest?.disk_percent != null ? Number(latest.disk_percent) : null)}
           />
           <MetricIndicator
@@ -249,7 +320,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
 
         {/* Charts grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* CPU Chart */}
+          {/* CPU Chart — stays as percentage */}
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
               <Cpu className="w-3 h-3" /> CPU (%)
@@ -266,9 +337,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                   <Tooltip
-                    content={
-                      <PercentTooltip usedKey="cpu_percent" totalKey="cpu_count" usedUnit="cores" />
-                    }
+                    content={<CpuTooltip />}
                     labelFormatter={(v) => v}
                   />
                   <Area
@@ -285,10 +354,10 @@ export function AgentMonitorPanel({ agentId }: Props) {
             </div>
           </div>
 
-          {/* RAM Chart */}
+          {/* RAM Chart — absolute MB with total reference */}
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <MemoryStick className="w-3 h-3" /> RAM (%)
+              <MemoryStick className="w-3 h-3" /> RAM (MB)
             </p>
             <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -300,16 +369,30 @@ export function AgentMonitorPanel({ agentId }: Props) {
                     tick={{ fontSize: 10 }}
                     className="fill-muted-foreground"
                   />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                  <YAxis
+                    domain={[0, ramTotal ? Math.ceil(ramTotal * 1.05) : "auto"]}
+                    tick={{ fontSize: 10 }}
+                    className="fill-muted-foreground"
+                    tickFormatter={(v) => v >= 1024 ? `${(v / 1024).toFixed(1)}G` : `${v}`}
+                  />
                   <Tooltip
                     content={
-                      <PercentTooltip usedKey="ram_used_mb" totalKey="ram_total_mb" usedUnit="MB" />
+                      <AbsoluteTooltip usedKey="ram_used_mb" totalKey="ram_total_mb" unit="MB" percentKey="ram_percent" />
                     }
                     labelFormatter={(v) => v}
                   />
+                  {ramTotal && (
+                    <ReferenceLine
+                      y={ramTotal}
+                      stroke="hsl(217, 91%, 60%)"
+                      strokeDasharray="4 4"
+                      strokeOpacity={0.5}
+                      label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(217, 91%, 60%)" }}
+                    />
+                  )}
                   <Area
                     type="monotone"
-                    dataKey="ram_percent"
+                    dataKey="ram_used_mb"
                     stroke="hsl(217, 91%, 60%)"
                     fill="hsl(217, 91%, 60%)"
                     fillOpacity={0.15}
@@ -321,41 +404,111 @@ export function AgentMonitorPanel({ agentId }: Props) {
             </div>
           </div>
 
-          {/* Disk Chart */}
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <HardDrive className="w-3 h-3" /> Disco (%)
-            </p>
-            <div className="h-48 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
-                  <XAxis
-                    dataKey="time"
-                    tickFormatter={timeFmt}
-                    tick={{ fontSize: 10 }}
-                    className="fill-muted-foreground"
-                  />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                  <Tooltip
-                    content={
-                      <PercentTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" usedUnit="GB" />
-                    }
-                    labelFormatter={(v) => v}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="disk_percent"
-                    stroke="hsl(25, 95%, 53%)"
-                    fill="hsl(25, 95%, 53%)"
-                    fillOpacity={0.15}
-                    strokeWidth={1.5}
-                    dot={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+          {/* Disk Charts — one per partition or single legacy */}
+          {hasMultiPartitions ? (
+            partitionPaths.map((path) => {
+              const partData = buildPartitionData(metrics, path);
+              const latestPart = latest?.disk_partitions?.find((p: DiskPartition) => p.path === path);
+              const totalGb = latestPart?.total_gb ?? null;
+              return (
+                <div key={path} className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                    <HardDrive className="w-3 h-3" /> Disco — {path} (GB)
+                  </p>
+                  <div className="h-48 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={partData}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
+                        <XAxis
+                          dataKey="time"
+                          tickFormatter={timeFmt}
+                          tick={{ fontSize: 10 }}
+                          className="fill-muted-foreground"
+                        />
+                        <YAxis
+                          domain={[0, totalGb ? Math.ceil(totalGb * 1.05) : "auto"]}
+                          tick={{ fontSize: 10 }}
+                          className="fill-muted-foreground"
+                        />
+                        <Tooltip
+                          content={
+                            <AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />
+                          }
+                          labelFormatter={(v) => v}
+                        />
+                        {totalGb && (
+                          <ReferenceLine
+                            y={totalGb}
+                            stroke="hsl(25, 95%, 53%)"
+                            strokeDasharray="4 4"
+                            strokeOpacity={0.5}
+                            label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(25, 95%, 53%)" }}
+                          />
+                        )}
+                        <Area
+                          type="monotone"
+                          dataKey="disk_used_gb"
+                          stroke="hsl(25, 95%, 53%)"
+                          fill="hsl(25, 95%, 53%)"
+                          fillOpacity={0.15}
+                          strokeWidth={1.5}
+                          dot={false}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <HardDrive className="w-3 h-3" /> Disco (GB)
+              </p>
+              <div className="h-48 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
+                    <XAxis
+                      dataKey="time"
+                      tickFormatter={timeFmt}
+                      tick={{ fontSize: 10 }}
+                      className="fill-muted-foreground"
+                    />
+                    <YAxis
+                      domain={[0, latest?.disk_total_gb ? Math.ceil(Number(latest.disk_total_gb) * 1.05) : "auto"]}
+                      tick={{ fontSize: 10 }}
+                      className="fill-muted-foreground"
+                    />
+                    <Tooltip
+                      content={
+                        <AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />
+                      }
+                      labelFormatter={(v) => v}
+                    />
+                    {latest?.disk_total_gb && (
+                      <ReferenceLine
+                        y={Number(latest.disk_total_gb)}
+                        stroke="hsl(25, 95%, 53%)"
+                        strokeDasharray="4 4"
+                        strokeOpacity={0.5}
+                        label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(25, 95%, 53%)" }}
+                      />
+                    )}
+                    <Area
+                      type="monotone"
+                      dataKey="disk_used_gb"
+                      stroke="hsl(25, 95%, 53%)"
+                      fill="hsl(25, 95%, 53%)"
+                      fillOpacity={0.15}
+                      strokeWidth={1.5}
+                      dot={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Network Chart */}
           <div className="space-y-1">

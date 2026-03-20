@@ -72,6 +72,7 @@ serve(async (req: Request) => {
       disk_used_gb: body.disk_used_gb ?? null,
       disk_percent: body.disk_percent ?? null,
       disk_path: body.disk_path ?? "/",
+      disk_partitions: body.disk_partitions ?? null,
       net_bytes_sent: body.net_bytes_sent ?? null,
       net_bytes_recv: body.net_bytes_recv ?? null,
       uptime_seconds: body.uptime_seconds ?? null,

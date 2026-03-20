@@ -10,6 +10,13 @@ const TIME_RANGE_MS: Record<TimeRange, number> = {
   "7d": 7 * 24 * 60 * 60 * 1000,
 };
 
+export interface DiskPartition {
+  path: string;
+  total_gb: number;
+  used_gb: number;
+  percent: number;
+}
+
 export interface AgentMetricRow {
   id: string;
   agent_id: string;
@@ -23,6 +30,7 @@ export interface AgentMetricRow {
   disk_total_gb: number | null;
   disk_used_gb: number | null;
   disk_percent: number | null;
+  disk_partitions: DiskPartition[] | null;
   net_bytes_sent: number | null;
   net_bytes_recv: number | null;
   uptime_seconds: number | null;
@@ -56,7 +64,7 @@ export function useAgentMetrics(agentId: string | undefined, timeRange: TimeRang
         .limit(1000);
 
       if (error) throw error;
-      return (data ?? []) as AgentMetricRow[];
+      return (data ?? []) as unknown as AgentMetricRow[];
     },
     enabled: !!agentId,
     refetchInterval: 60_000,

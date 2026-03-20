@@ -119,6 +119,7 @@ export type Database = {
           cpu_count: number | null
           cpu_percent: number | null
           created_at: string | null
+          disk_partitions: Json | null
           disk_path: string | null
           disk_percent: number | null
           disk_total_gb: number | null
@@ -144,6 +145,7 @@ export type Database = {
           cpu_count?: number | null
           cpu_percent?: number | null
           created_at?: string | null
+          disk_partitions?: Json | null
           disk_path?: string | null
           disk_percent?: number | null
           disk_total_gb?: number | null
@@ -169,6 +171,7 @@ export type Database = {
           cpu_count?: number | null
           cpu_percent?: number | null
           created_at?: string | null
+          disk_partitions?: Json | null
           disk_path?: string | null
           disk_percent?: number | null
           disk_total_gb?: number | null

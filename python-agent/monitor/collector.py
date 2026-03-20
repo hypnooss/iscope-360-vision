@@ -130,22 +130,86 @@ class MetricsCollector:
     # Disk
     # ------------------------------------------------------------------
 
+    # Pseudo-filesystems to skip when scanning partitions
+    _SKIP_FS = frozenset({
+        "tmpfs", "devtmpfs", "proc", "sysfs", "securityfs", "debugfs",
+        "cgroup", "cgroup2", "pstore", "mqueue", "hugetlbfs", "devpts",
+        "autofs", "binfmt_misc", "configfs", "fusectl", "tracefs",
+        "overlay", "nsfs", "fuse.lxcfs", "efivarfs", "bpf", "ramfs",
+    })
+
     def _disk(self) -> Dict[str, Any]:
-        st = os.statvfs(self._disk_path)
-        total = st.f_blocks * st.f_frsize
-        free = st.f_bavail * st.f_frsize
-        used = total - free
+        partitions = self._collect_partitions()
+        data: Dict[str, Any] = {}
 
-        total_gb = round(total / (1024 ** 3), 2)
-        used_gb = round(used / (1024 ** 3), 2)
-        pct = round((used / total) * 100, 2) if total > 0 else 0.0
+        # Keep legacy fields from "/" for backward compat
+        root = next((p for p in partitions if p["path"] == self._disk_path), None)
+        if root:
+            data["disk_total_gb"] = root["total_gb"]
+            data["disk_used_gb"] = root["used_gb"]
+            data["disk_percent"] = root["percent"]
+            data["disk_path"] = root["path"]
+        elif partitions:
+            p = partitions[0]
+            data["disk_total_gb"] = p["total_gb"]
+            data["disk_used_gb"] = p["used_gb"]
+            data["disk_percent"] = p["percent"]
+            data["disk_path"] = p["path"]
 
-        return {
-            "disk_total_gb": total_gb,
-            "disk_used_gb": used_gb,
-            "disk_percent": pct,
-            "disk_path": self._disk_path,
-        }
+        if partitions:
+            data["disk_partitions"] = partitions
+
+        return data
+
+    def _collect_partitions(self) -> list:
+        """Scan /proc/mounts for real partitions and collect metrics."""
+        seen_devs: set = set()
+        partitions: list = []
+        try:
+            with open("/proc/mounts", "r") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) < 3:
+                        continue
+                    dev, mount, fstype = parts[0], parts[1], parts[2]
+                    if fstype in self._SKIP_FS:
+                        continue
+                    if not dev.startswith("/dev/"):
+                        continue
+                    if dev in seen_devs:
+                        continue
+                    seen_devs.add(dev)
+                    try:
+                        st = os.statvfs(mount)
+                        total = st.f_blocks * st.f_frsize
+                        free = st.f_bavail * st.f_frsize
+                        used = total - free
+                        if total == 0:
+                            continue
+                        partitions.append({
+                            "path": mount,
+                            "total_gb": round(total / (1024 ** 3), 2),
+                            "used_gb": round(used / (1024 ** 3), 2),
+                            "percent": round((used / total) * 100, 2),
+                        })
+                    except Exception:
+                        continue
+        except Exception:
+            # Fallback: just the configured path
+            try:
+                st = os.statvfs(self._disk_path)
+                total = st.f_blocks * st.f_frsize
+                free = st.f_bavail * st.f_frsize
+                used = total - free
+                partitions.append({
+                    "path": self._disk_path,
+                    "total_gb": round(total / (1024 ** 3), 2),
+                    "used_gb": round(used / (1024 ** 3), 2),
+                    "percent": round((used / total) * 100, 2) if total > 0 else 0.0,
+                })
+            except Exception:
+                pass
+        return partitions
 
     # ------------------------------------------------------------------
     # Network (delta bytes/s)
