@@ -79,6 +79,7 @@ const DomainReportPreview = lazy(() => import("./pages/preview/DomainReportPrevi
 const FirewallReportPreview = lazy(() => import("./pages/preview/FirewallReportPreview"));
 const LicensingHubPage = lazy(() => import("./pages/LicensingHubPage"));
 const AccountPage = lazy(() => import("./pages/AccountPage"));
+const TerminalPopoutPage = lazy(() => import("./pages/TerminalPopoutPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
