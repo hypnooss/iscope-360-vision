@@ -11,7 +11,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-  Legend,
 } from "recharts";
 import {
   useAgentMetrics,
@@ -48,6 +47,82 @@ function formatTime(timeRange: TimeRange) {
     if (timeRange === "7d") return format(d, "dd/MM HH:mm");
     return format(d, "HH:mm");
   };
+}
+
+/* ── Stats helper ── */
+function computeSeriesStats(values: number[]): { last: number; min: number; avg: number; max: number } | null {
+  if (values.length === 0) return null;
+  const last = values[values.length - 1];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  return { last, min, avg, max };
+}
+
+/* ── Zabbix-style legend table ── */
+interface LegendSeries {
+  color: string;
+  label: string;
+  stats: { last: number; min: number; avg: number; max: number } | null;
+  formatValue: (v: number) => string;
+}
+
+function ChartLegendTable({ series }: { series: LegendSeries[] }) {
+  return (
+    <div className="bg-muted/30 rounded-md px-3 py-1.5 mt-1">
+      <table className="w-full text-[10px]">
+        <thead>
+          <tr className="text-muted-foreground">
+            <th className="text-left font-normal pb-0.5 pr-2"></th>
+            <th className="text-right font-normal pb-0.5 px-2">last</th>
+            <th className="text-right font-normal pb-0.5 px-2">min</th>
+            <th className="text-right font-normal pb-0.5 px-2">avg</th>
+            <th className="text-right font-normal pb-0.5 px-2">max</th>
+          </tr>
+        </thead>
+        <tbody>
+          {series.map((s) => (
+            <tr key={s.label}>
+              <td className="pr-2 py-0.5">
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className="inline-block w-2 h-2 rounded-[2px] shrink-0"
+                    style={{ backgroundColor: s.color }}
+                  />
+                  <span className="text-foreground font-medium">{s.label}</span>
+                </span>
+              </td>
+              <td className="text-right px-2 py-0.5 tabular-nums text-foreground">
+                {s.stats ? s.formatValue(s.stats.last) : "—"}
+              </td>
+              <td className="text-right px-2 py-0.5 tabular-nums text-muted-foreground">
+                {s.stats ? s.formatValue(s.stats.min) : "—"}
+              </td>
+              <td className="text-right px-2 py-0.5 tabular-nums text-muted-foreground">
+                {s.stats ? s.formatValue(s.stats.avg) : "—"}
+              </td>
+              <td className="text-right px-2 py-0.5 tabular-nums text-muted-foreground">
+                {s.stats ? s.formatValue(s.stats.max) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function formatMB(v: number): string {
+  if (v >= 1024) return `${(v / 1024).toFixed(2)} GB`;
+  return `${v.toFixed(1)} MB`;
+}
+
+function formatGB(v: number): string {
+  return `${v.toFixed(2)} GB`;
+}
+
+function formatPercent(v: number): string {
+  return `${v.toFixed(1)}%`;
 }
 
 function MetricIndicator({
@@ -210,6 +285,21 @@ export function AgentMonitorPanel({ agentId }: Props) {
   // RAM total for reference line
   const ramTotal = latest?.ram_total_mb != null ? Number(latest.ram_total_mb) : null;
 
+  // ── Compute legend stats ──
+  const cpuLegend = useMemo<LegendSeries[]>(() => {
+    const vals = metrics.map((m) => m.cpu_percent).filter((v): v is number => v != null);
+    return [{ color: "hsl(142, 76%, 36%)", label: "CPU %", stats: computeSeriesStats(vals), formatValue: formatPercent }];
+  }, [metrics]);
+
+  const ramLegend = useMemo<LegendSeries[]>(() => {
+    const totalVals = metrics.map((m) => m.ram_total_mb).filter((v): v is number => v != null);
+    const usedVals = metrics.map((m) => m.ram_used_mb).filter((v): v is number => v != null);
+    return [
+      { color: "hsl(217, 91%, 60%)", label: "Total", stats: computeSeriesStats(totalVals), formatValue: formatMB },
+      { color: "hsl(217, 71%, 45%)", label: "Usado", stats: computeSeriesStats(usedVals), formatValue: formatMB },
+    ];
+  }, [metrics]);
+
   if (isLoading) {
     return (
       <Card>
@@ -329,7 +419,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
 
         {/* Charts grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* CPU Chart — stays as percentage */}
+          {/* CPU Chart */}
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
               <Cpu className="w-3 h-3" /> CPU (%)
@@ -338,34 +428,17 @@ export function AgentMonitorPanel({ agentId }: Props) {
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
-                  <XAxis
-                    dataKey="time"
-                    tickFormatter={timeFmt}
-                    tick={{ fontSize: 10 }}
-                    className="fill-muted-foreground"
-                  />
+                  <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                  <Tooltip
-                    content={<CpuTooltip />}
-                    labelFormatter={(v) => v}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="cpu_percent"
-                    name="CPU %"
-                    stroke="hsl(142, 76%, 36%)"
-                    fill="hsl(142, 76%, 36%)"
-                    fillOpacity={0.15}
-                    strokeWidth={1.5}
-                    dot={false}
-                  />
-                  <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
+                  <Tooltip content={<CpuTooltip />} labelFormatter={(v) => v} />
+                  <Area type="monotone" dataKey="cpu_percent" stroke="hsl(142, 76%, 36%)" fill="hsl(142, 76%, 36%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+            <ChartLegendTable series={cpuLegend} />
           </div>
 
-          {/* RAM Chart — absolute MB with total reference */}
+          {/* RAM Chart */}
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
               <MemoryStick className="w-3 h-3" /> RAM (MB)
@@ -374,55 +447,36 @@ export function AgentMonitorPanel({ agentId }: Props) {
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
-                  <XAxis
-                    dataKey="time"
-                    tickFormatter={timeFmt}
-                    tick={{ fontSize: 10 }}
-                    className="fill-muted-foreground"
-                  />
+                  <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                   <YAxis
                     domain={[0, ramTotal ? Math.ceil(ramTotal * 1.05) : "auto"]}
                     tick={{ fontSize: 10 }}
                     className="fill-muted-foreground"
                     tickFormatter={(v) => v >= 1024 ? `${(v / 1024).toFixed(1)}G` : `${v}`}
                   />
-                  <Tooltip
-                    content={
-                      <AbsoluteTooltip usedKey="ram_used_mb" totalKey="ram_total_mb" unit="MB" percentKey="ram_percent" />
-                    }
-                    labelFormatter={(v) => v}
-                  />
+                  <Tooltip content={<AbsoluteTooltip usedKey="ram_used_mb" totalKey="ram_total_mb" unit="MB" percentKey="ram_percent" />} labelFormatter={(v) => v} />
                   {ramTotal && (
-                    <ReferenceLine
-                      y={ramTotal}
-                      stroke="hsl(217, 91%, 60%)"
-                      strokeDasharray="4 4"
-                      strokeOpacity={0.5}
-                      label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(217, 91%, 60%)" }}
-                    />
+                    <ReferenceLine y={ramTotal} stroke="hsl(217, 91%, 60%)" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(217, 91%, 60%)" }} />
                   )}
-                  <Area
-                    type="monotone"
-                    dataKey="ram_used_mb"
-                    name="Usado"
-                    stroke="hsl(217, 91%, 60%)"
-                    fill="hsl(217, 91%, 60%)"
-                    fillOpacity={0.15}
-                    strokeWidth={1.5}
-                    dot={false}
-                  />
-                  <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
+                  <Area type="monotone" dataKey="ram_used_mb" stroke="hsl(217, 91%, 60%)" fill="hsl(217, 91%, 60%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+            <ChartLegendTable series={ramLegend} />
           </div>
 
-          {/* Disk Charts — one per partition or single legacy */}
+          {/* Disk Charts */}
           {hasMultiPartitions ? (
             partitionPaths.map((path) => {
               const partData = buildPartitionData(metrics, path);
               const latestPart = latest?.disk_partitions?.find((p: DiskPartition) => p.path === path);
               const totalGb = latestPart?.total_gb ?? null;
+              const totalVals = metrics.map((m) => m.disk_partitions?.find((p: DiskPartition) => p.path === path)?.total_gb).filter((v): v is number => v != null);
+              const usedVals = metrics.map((m) => m.disk_partitions?.find((p: DiskPartition) => p.path === path)?.used_gb).filter((v): v is number => v != null);
+              const diskLegend: LegendSeries[] = [
+                { color: "hsl(25, 95%, 53%)", label: `Total (${path})`, stats: computeSeriesStats(totalVals), formatValue: formatGB },
+                { color: "hsl(25, 75%, 40%)", label: `Usado (${path})`, stats: computeSeriesStats(usedVals), formatValue: formatGB },
+              ];
               return (
                 <div key={path} className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
@@ -435,46 +489,17 @@ export function AgentMonitorPanel({ agentId }: Props) {
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={partData}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
-                        <XAxis
-                          dataKey="time"
-                          tickFormatter={timeFmt}
-                          tick={{ fontSize: 10 }}
-                          className="fill-muted-foreground"
-                        />
-                        <YAxis
-                          domain={[0, totalGb ? Math.ceil(totalGb * 1.05) : "auto"]}
-                          tick={{ fontSize: 10 }}
-                          className="fill-muted-foreground"
-                        />
-                        <Tooltip
-                          content={
-                            <AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />
-                          }
-                          labelFormatter={(v) => v}
-                        />
+                        <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                        <YAxis domain={[0, totalGb ? Math.ceil(totalGb * 1.05) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                        <Tooltip content={<AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />} labelFormatter={(v) => v} />
                         {totalGb && (
-                          <ReferenceLine
-                            y={totalGb}
-                            stroke="hsl(25, 95%, 53%)"
-                            strokeDasharray="4 4"
-                            strokeOpacity={0.5}
-                            label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(25, 95%, 53%)" }}
-                          />
+                          <ReferenceLine y={totalGb} stroke="hsl(25, 95%, 53%)" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(25, 95%, 53%)" }} />
                         )}
-                        <Area
-                          type="monotone"
-                          dataKey="disk_used_gb"
-                          name="Usado"
-                          stroke="hsl(25, 95%, 53%)"
-                          fill="hsl(25, 95%, 53%)"
-                          fillOpacity={0.15}
-                          strokeWidth={1.5}
-                          dot={false}
-                        />
-                        <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
+                        <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
+                  <ChartLegendTable series={diskLegend} />
                 </div>
               );
             })
@@ -490,54 +515,38 @@ export function AgentMonitorPanel({ agentId }: Props) {
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
-                    <XAxis
-                      dataKey="time"
-                      tickFormatter={timeFmt}
-                      tick={{ fontSize: 10 }}
-                      className="fill-muted-foreground"
-                    />
-                    <YAxis
-                      domain={[0, latest?.disk_total_gb ? Math.ceil(Number(latest.disk_total_gb) * 1.05) : "auto"]}
-                      tick={{ fontSize: 10 }}
-                      className="fill-muted-foreground"
-                    />
-                    <Tooltip
-                      content={
-                        <AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />
-                      }
-                      labelFormatter={(v) => v}
-                    />
+                    <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                    <YAxis domain={[0, latest?.disk_total_gb ? Math.ceil(Number(latest.disk_total_gb) * 1.05) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                    <Tooltip content={<AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />} labelFormatter={(v) => v} />
                     {latest?.disk_total_gb && (
-                      <ReferenceLine
-                        y={Number(latest.disk_total_gb)}
-                        stroke="hsl(25, 95%, 53%)"
-                        strokeDasharray="4 4"
-                        strokeOpacity={0.5}
-                        label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(25, 95%, 53%)" }}
-                      />
+                      <ReferenceLine y={Number(latest.disk_total_gb)} stroke="hsl(25, 95%, 53%)" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(25, 95%, 53%)" }} />
                     )}
-                    <Area
-                      type="monotone"
-                      dataKey="disk_used_gb"
-                      name="Usado"
-                      stroke="hsl(25, 95%, 53%)"
-                      fill="hsl(25, 95%, 53%)"
-                      fillOpacity={0.15}
-                      strokeWidth={1.5}
-                      dot={false}
-                    />
-                    <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
+                    <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
+              <ChartLegendTable series={(() => {
+                const totalVals = metrics.map((m) => m.disk_total_gb).filter((v): v is number => v != null);
+                const usedVals = metrics.map((m) => m.disk_used_gb).filter((v): v is number => v != null);
+                return [
+                  { color: "hsl(25, 95%, 53%)", label: "Total", stats: computeSeriesStats(totalVals), formatValue: formatGB },
+                  { color: "hsl(25, 75%, 40%)", label: "Usado", stats: computeSeriesStats(usedVals), formatValue: formatGB },
+                ];
+              })()} />
             </div>
           )}
 
-          {/* Network Charts — one per interface or single legacy */}
+          {/* Network Charts */}
           {hasMultiInterfaces ? (
             interfaceNames.map((ifaceName) => {
               const ifaceData = buildInterfaceData(metrics, ifaceName);
               const linkSpeed = getInterfaceSpeed(metrics, ifaceName);
+              const sentVals = ifaceData.map((d) => d.sentRate);
+              const recvVals = ifaceData.map((d) => d.recvRate);
+              const netLegend: LegendSeries[] = [
+                { color: "hsl(262, 83%, 58%)", label: "↑ Enviado", stats: computeSeriesStats(sentVals), formatValue: formatBytes },
+                { color: "hsl(173, 80%, 40%)", label: "↓ Recebido", stats: computeSeriesStats(recvVals), formatValue: formatBytes },
+              ];
               return (
                 <div key={ifaceName} className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
@@ -555,9 +564,8 @@ export function AgentMonitorPanel({ agentId }: Props) {
                           <YAxis tickFormatter={(v: number) => formatBytes(Math.abs(v)).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                           <Tooltip content={<NetworkTooltip />} labelFormatter={(v) => v} />
                           <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} />
-                          <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="↑ Enviado" />
-                          <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="↓ Recebido" />
-                          <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
+                          <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
+                          <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
                         </AreaChart>
                       </ResponsiveContainer>
                     ) : (
@@ -566,6 +574,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                       </div>
                     )}
                   </div>
+                  <ChartLegendTable series={netLegend} />
                 </div>
               );
             })
@@ -583,9 +592,8 @@ export function AgentMonitorPanel({ agentId }: Props) {
                       <YAxis tickFormatter={(v: number) => formatBytes(Math.abs(v)).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                       <Tooltip content={<NetworkTooltip />} labelFormatter={(v) => v} />
                       <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} />
-                      <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="↑ Enviado" />
-                      <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="↓ Recebido" />
-                      <Legend verticalAlign="top" align="right" iconType="line" wrapperStyle={{ fontSize: 10 }} />
+                      <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
+                      <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
@@ -594,6 +602,14 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   </div>
                 )}
               </div>
+              <ChartLegendTable series={(() => {
+                const sentVals = legacyNetworkData.map((d) => d.sentRate);
+                const recvVals = legacyNetworkData.map((d) => d.recvRate);
+                return [
+                  { color: "hsl(262, 83%, 58%)", label: "↑ Enviado", stats: computeSeriesStats(sentVals), formatValue: formatBytes },
+                  { color: "hsl(173, 80%, 40%)", label: "↓ Recebido", stats: computeSeriesStats(recvVals), formatValue: formatBytes },
+                ];
+              })()} />
             </div>
           )}
         </div>
