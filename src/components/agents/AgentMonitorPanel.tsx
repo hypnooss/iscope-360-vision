@@ -388,9 +388,9 @@ export function AgentMonitorPanel({ agentId }: Props) {
           ))}
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-8">
         {/* Current indicators */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
           <MetricIndicator
             icon={Cpu}
             label="CPU"
