@@ -569,14 +569,15 @@ export function AgentMonitorPanel({ agentId }: Props) {
               <div className="h-48 w-full">
                 {legacyNetworkData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={legacyNetworkData}>
+                    <AreaChart data={legacyNetworkData}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                       <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                      <YAxis tickFormatter={(v) => formatBytes(v).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                      <YAxis tickFormatter={(v: number) => formatBytes(Math.abs(v)).replace("/s", "")} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                       <Tooltip content={<NetworkTooltip />} labelFormatter={(v) => v} />
-                      <Line type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" strokeWidth={1.5} dot={false} name="Enviado" />
-                      <Line type="monotone" dataKey="recvRate" stroke="hsl(173, 80%, 40%)" strokeWidth={1.5} dot={false} name="Recebido" />
-                    </LineChart>
+                      <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} />
+                      <Area type="monotone" dataKey="sentRate" stroke="hsl(262, 83%, 58%)" fill="hsl(262, 83%, 58%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Enviado" />
+                      <Area type="monotone" dataKey="recvRateNeg" stroke="hsl(173, 80%, 40%)" fill="hsl(173, 80%, 40%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} name="Recebido" />
+                    </AreaChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
