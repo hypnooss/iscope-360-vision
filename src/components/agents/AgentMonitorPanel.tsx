@@ -264,6 +264,18 @@ function buildPartitionData(metrics: AgentMetricRow[], partitionPath: string) {
   });
 }
 
+/** Scan metrics backwards to find the most recent non-null value for a field */
+function findLastNonNull<K extends keyof AgentMetricRow>(
+  metrics: AgentMetricRow[],
+  field: K,
+): AgentMetricRow[K] | null {
+  for (let i = metrics.length - 1; i >= 0; i--) {
+    const v = metrics[i][field];
+    if (v != null) return v;
+  }
+  return null;
+}
+
 interface Props {
   agentId: string;
 }
@@ -376,17 +388,17 @@ export function AgentMonitorPanel({ agentId }: Props) {
           <MetricIndicator
             icon={Monitor}
             label="Hostname"
-            value={latest?.hostname ?? null}
+            value={findLastNonNull(metrics, 'hostname') ?? null}
           />
           <MetricIndicator
             icon={Cpu}
             label="Sistema Operacional"
-            value={latest?.os_info ?? null}
+            value={findLastNonNull(metrics, 'os_info') ?? null}
           />
           <MetricIndicator
             icon={Clock}
             label="Uptime"
-            value={latest?.uptime_seconds != null ? formatUptime(Number(latest.uptime_seconds)) : null}
+            value={(() => { const v = findLastNonNull(metrics, 'uptime_seconds'); return v != null ? formatUptime(Number(v)) : null; })()}
           />
         </div>
 
