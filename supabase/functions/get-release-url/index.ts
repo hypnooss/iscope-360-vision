@@ -13,7 +13,7 @@ serve(async (req: Request) => {
     const url = new URL(req.url);
     const filename = url.searchParams.get('file');
 
-    if (!filename || !/^iscope-(agent|supervisor|monitor)-[\w.\-]+\.tar\.gz$/.test(filename)) {
+    if (!filename || !/^(iscope-(agent|supervisor|monitor)-[\w.\-]+\.tar\.gz|requirements\.txt)$/.test(filename)) {
       return new Response(JSON.stringify({ error: 'Invalid filename' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
