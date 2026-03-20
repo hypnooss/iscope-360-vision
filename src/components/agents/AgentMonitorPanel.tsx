@@ -152,11 +152,15 @@ function NetworkTooltip({
   return (
     <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-lg">
       <p className="text-muted-foreground">{label ? format(new Date(label), "dd/MM HH:mm:ss") : ""}</p>
-      {payload.map((p) => (
-        <p key={p.dataKey} style={{ color: p.color }} className="font-semibold">
-          {p.dataKey === "sentRate" ? "↑ Enviado" : "↓ Recebido"}: {formatBytes(p.value)}
-        </p>
-      ))}
+      {payload.map((p) => {
+        const isRecv = p.dataKey === "recvRateNeg";
+        const absVal = Math.abs(p.value);
+        return (
+          <p key={p.dataKey} style={{ color: p.color }} className="font-semibold">
+            {isRecv ? "↓ Recebido" : "↑ Enviado"}: {formatBytes(absVal)}
+          </p>
+        );
+      })}
     </div>
   );
 }
