@@ -1,14 +1,16 @@
 
 
-## Plano: Mover lista "sem módulo" para depois da lista de desatualizados
+## Plano: Adicionar domínio de produção ao CORS
 
 ### Problema
-No `renderStatusSection`, o bloco `{extra}` (que contém "sem Supervisor/Monitor") aparece **antes** da lista de desatualizados. O correto é aparecer **depois**.
+O domínio `https://iscope360.precisio.io` não está na lista `ALLOWED_ORIGINS` em `supabase/functions/_shared/cors.ts`. Todas as chamadas a Edge Functions feitas a partir desse domínio são bloqueadas pelo navegador (CORS).
 
 ### Solução
-Em `renderStatusSection` (linha ~401-419), trocar a ordem: mover `{extra}` para depois do bloco `{outdated.length > 0 && ...}`.
+Adicionar `https://iscope360.precisio.io` à lista de origens permitidas.
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/admin/UpdateManagementCard.tsx` (linhas 401-419) | Mover `{extra}` de antes para depois do bloco de desatualizados |
+| `supabase/functions/_shared/cors.ts` | Adicionar `'https://iscope360.precisio.io'` ao array `ALLOWED_ORIGINS` |
+
+Após o deploy automático das Edge Functions, o erro será resolvido.
 
