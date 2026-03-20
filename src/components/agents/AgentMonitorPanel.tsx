@@ -525,7 +525,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   <AreaChart data={diskLegacyChartData}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                     <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                    <YAxis domain={[0, latest?.disk_total_gb ? Number(latest.disk_total_gb) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                    <YAxis domain={[0, (() => { const vals = metrics.map((m) => m.disk_total_gb).filter((v): v is number => v != null); return vals.length > 0 ? Math.max(...vals) : "auto"; })()]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                     <Tooltip content={<AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />} labelFormatter={(v) => v} />
                     <Area type="monotone" dataKey="disk_total_gb" stroke="hsl(0, 84%, 60%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
                     <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
