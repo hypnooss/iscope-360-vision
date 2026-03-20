@@ -442,7 +442,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                 <AreaChart data={cpuChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                   <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                  <YAxis domain={[0, (dataMax: number) => Math.max(10, Math.ceil(dataMax * 1.2))]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                   <Tooltip content={<CpuTooltip />} labelFormatter={(v) => v} />
                   <Area type="monotone" dataKey="cpu_percent" stroke="hsl(142, 76%, 36%)" fill="hsl(142, 76%, 36%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
                 </AreaChart>
@@ -468,10 +468,8 @@ export function AgentMonitorPanel({ agentId }: Props) {
                     tickFormatter={(v) => v >= 1024 ? `${(v / 1024).toFixed(1)}G` : `${v}`}
                   />
                   <Tooltip content={<AbsoluteTooltip usedKey="ram_used_mb" totalKey="ram_total_mb" unit="MB" percentKey="ram_percent" />} labelFormatter={(v) => v} />
-                  {ramTotal && (
-                    <ReferenceLine y={ramTotal} stroke="hsl(217, 91%, 60%)" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(217, 91%, 60%)" }} />
-                  )}
-                  <Area type="monotone" dataKey="ram_used_mb" stroke="hsl(217, 91%, 60%)" fill="hsl(217, 91%, 60%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="ram_total_mb" stroke="hsl(217, 91%, 60%)" fill="hsl(217, 91%, 60%)" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="ram_used_mb" stroke="hsl(217, 71%, 45%)" fill="hsl(217, 71%, 45%)" fillOpacity={0.25} strokeWidth={1.5} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -487,8 +485,8 @@ export function AgentMonitorPanel({ agentId }: Props) {
               const totalVals = metrics.map((m) => m.disk_partitions?.find((p: DiskPartition) => p.path === path)?.total_gb).filter((v): v is number => v != null);
               const usedVals = metrics.map((m) => m.disk_partitions?.find((p: DiskPartition) => p.path === path)?.used_gb).filter((v): v is number => v != null);
               const diskLegend: LegendSeries[] = [
-                { color: "hsl(25, 95%, 53%)", label: `Total (${path})`, stats: computeSeriesStats(totalVals), formatValue: formatGB },
-                { color: "hsl(25, 75%, 40%)", label: `Usado (${path})`, stats: computeSeriesStats(usedVals), formatValue: formatGB },
+                { color: "hsl(0, 84%, 60%)", label: `Total (${path})`, stats: computeSeriesStats(totalVals), formatValue: formatGB },
+                { color: "hsl(25, 95%, 53%)", label: `Usado (${path})`, stats: computeSeriesStats(usedVals), formatValue: formatGB },
               ];
               return (
                 <div key={path} className="space-y-2">
@@ -505,10 +503,8 @@ export function AgentMonitorPanel({ agentId }: Props) {
                         <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                         <YAxis domain={[0, totalGb ? Math.ceil(totalGb * 1.05) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                         <Tooltip content={<AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />} labelFormatter={(v) => v} />
-                        {totalGb && (
-                          <ReferenceLine y={totalGb} stroke="hsl(25, 95%, 53%)" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(25, 95%, 53%)" }} />
-                        )}
-                        <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
+                        <Area type="monotone" dataKey="disk_total_gb" stroke="hsl(0, 84%, 60%)" fill="hsl(0, 84%, 60%)" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
+                        <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.25} strokeWidth={1.5} dot={false} />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -531,10 +527,8 @@ export function AgentMonitorPanel({ agentId }: Props) {
                     <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                     <YAxis domain={[0, latest?.disk_total_gb ? Math.ceil(Number(latest.disk_total_gb) * 1.05) : "auto"]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                     <Tooltip content={<AbsoluteTooltip usedKey="disk_used_gb" totalKey="disk_total_gb" unit="GB" percentKey="disk_percent" />} labelFormatter={(v) => v} />
-                    {latest?.disk_total_gb && (
-                      <ReferenceLine y={Number(latest.disk_total_gb)} stroke="hsl(25, 95%, 53%)" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "Total", position: "right", fontSize: 9, fill: "hsl(25, 95%, 53%)" }} />
-                    )}
-                    <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
+                    <Area type="monotone" dataKey="disk_total_gb" stroke="hsl(0, 84%, 60%)" fill="hsl(0, 84%, 60%)" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
+                    <Area type="monotone" dataKey="disk_used_gb" stroke="hsl(25, 95%, 53%)" fill="hsl(25, 95%, 53%)" fillOpacity={0.25} strokeWidth={1.5} dot={false} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -542,8 +536,8 @@ export function AgentMonitorPanel({ agentId }: Props) {
                 const totalVals = metrics.map((m) => m.disk_total_gb).filter((v): v is number => v != null);
                 const usedVals = metrics.map((m) => m.disk_used_gb).filter((v): v is number => v != null);
                 return [
-                  { color: "hsl(25, 95%, 53%)", label: "Total", stats: computeSeriesStats(totalVals), formatValue: formatGB },
-                  { color: "hsl(25, 75%, 40%)", label: "Usado", stats: computeSeriesStats(usedVals), formatValue: formatGB },
+                  { color: "hsl(0, 84%, 60%)", label: "Total", stats: computeSeriesStats(totalVals), formatValue: formatGB },
+                  { color: "hsl(25, 95%, 53%)", label: "Usado", stats: computeSeriesStats(usedVals), formatValue: formatGB },
                 ];
               })()} />
             </div>
