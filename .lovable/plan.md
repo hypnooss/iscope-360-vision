@@ -1,76 +1,83 @@
 
 
-## Plano: Corrigir Escala de Rede + Suporte Multi-Interface
+## Plano: Monitor Template-Driven (sem módulo Endpoint)
 
-### Problema 1 — Escala errada (dupla divisão)
+### Conceito
 
-O collector Python já calcula **bytes/s** (delta bytes / elapsed seconds) antes de enviar. Porém o frontend (`computeNetworkRates`) trata os valores como contadores cumulativos e faz **outra divisão por tempo**, resultando em bytes/s² — valores ~60x menores que o real.
+Transformar o Monitor de um coletor com lógica hardcoded em um coletor genérico que busca um blueprint "linux_server" do banco de dados e executa steps usando executors internos ao módulo `monitor/`. A mesma arquitetura do Worker, mas contida no pacote monitor.
 
-Dados da API confirmam: `net_bytes_recv: 4531` (bytes/s, ~36 Kbps). O frontend calcula `(4531 - 3993) / 60 = ~9 bytes/s` — exatamente os ~9.8 KB que você vê.
+### Arquitetura
 
-### Problema 2 — Sem nome de interface
+```text
+Supabase DB
+  device_types: code="linux_server", category="server"
+  device_blueprints: collection_steps →
+    steps:
+      - {id: "cpu",  type: "proc_read", params: {parser: "cpu"}}
+      - {id: "mem",  type: "proc_read", params: {parser: "memory"}}
+      - {id: "disk", type: "statvfs",   params: {scan_mounts: true}}
+      - {id: "net",  type: "proc_read", params: {parser: "net_interfaces"}}
+      - {id: "sys",  type: "proc_read", params: {parser: "system"}}
+        │
+        │ fetch blueprint on boot (cache local)
+        ▼
+Monitor (coletor burro)
+  monitor/executors/proc_read.py  ← parsers: cpu, memory, net, uptime, etc.
+  monitor/executors/statvfs.py    ← disco via /proc/mounts + os.statvfs
+  monitor/main.py                 ← itera steps, chama executor, agrega, envia
+```
 
-O collector soma todas as interfaces em um único total (`_read_net_bytes` itera `/proc/net/dev` e soma tudo). Não há como saber qual interface gerou qual tráfego.
+### Etapas
 
-### Problema 3 — Sem suporte multi-interface
+**Etapa 1 — Executors em `monitor/executors/`**
 
-Similar ao que foi feito com `disk_partitions`, precisamos de uma coluna JSONB `net_interfaces` para armazenar dados por interface.
+Criar diretório `python-agent/monitor/executors/` com:
 
----
+| Arquivo | Função |
+|---------|--------|
+| `__init__.py` | Registry de executors por type |
+| `base.py` | Classe base `MonitorExecutor` (igual ao padrão do Worker) |
+| `proc_read.py` | Lê `/proc/*` e aplica parser nomeado (`cpu`, `memory`, `net_interfaces`, `system`) — extrai a lógica atual do `collector.py` |
+| `statvfs.py` | Coleta disco via `/proc/mounts` + `os.statvfs()` — extrai lógica do `collector.py` |
 
-### Solução em 4 etapas
+A lógica é exatamente a mesma que já existe no `collector.py`, apenas reorganizada em executors parametrizáveis. Os executors mantêm estado (deltas de CPU/rede) internamente.
 
-**Etapa 1 — Collector: coletar por interface**
+**Etapa 2 — Template "linux_server" no banco**
 
-Arquivo: `python-agent/monitor/collector.py`
+Migration SQL:
+- Adicionar `'server'` ao enum `device_category` (se não existir, já tem `'server'` no enum original)
+- Inserir `device_type` com `code='linux_server'`, `vendor='Linux'`, `category='server'`
+- Inserir `device_blueprint` com `executor_type='monitor'` (ou `'agent'`) contendo os 5 steps acima
 
-- Alterar `_network()` para retornar dados **por interface** (mantendo compatibilidade)
-- Ler `/proc/net/dev`, para cada interface (exceto `lo`), calcular delta bytes/s individual
-- Enviar novo campo `net_interfaces` como lista JSONB:
-  ```json
-  [
-    {"iface": "eth0", "bytes_sent": 1234, "bytes_recv": 5678},
-    {"iface": "eth1", "bytes_sent": 100, "bytes_recv": 200}
-  ]
-  ```
-- Manter `net_bytes_sent` e `net_bytes_recv` como soma total (backward compat)
+**Etapa 3 — Refatorar `monitor/main.py`**
 
-**Etapa 2 — DB + Edge Function: persistir net_interfaces**
+- No boot: buscar blueprint ativo de `linux_server` via Supabase (usando `api.get` ou query direto)
+- Cache local do blueprint em `/var/lib/iscope-agent/monitor_blueprint.json` (refresh a cada 30 min)
+- Loop de coleta: iterar `steps` do blueprint, instanciar executor pelo `type`, executar, agregar resultados
+- Fallback: se blueprint indisponível, usar `collector.py` atual (backward compat)
+- Bump version para 1.1.3
 
-- Migration: adicionar coluna `net_interfaces JSONB` na tabela `agent_metrics`
-- Edge Function `agent-monitor`: salvar `body.net_interfaces` no insert
+**Etapa 4 — Manter `collector.py` como fallback**
 
-**Etapa 3 — Frontend: corrigir escala e exibir por interface**
+O `collector.py` atual continua intacto como fallback. Se o Monitor não conseguir buscar o blueprint (primeiro boot, sem internet, etc.), usa coleta hardcoded.
 
-Arquivo: `src/hooks/useAgentMetrics.ts`
-- Remover `computeNetworkRates` (a dupla divisão)
-- Os dados já vêm como bytes/s, usar diretamente
-- Adicionar tipo `NetInterface` e helpers para extrair interfaces únicas
+### Arquivos a criar/alterar
 
-Arquivo: `src/components/agents/AgentMonitorPanel.tsx`
-- Se `net_interfaces` presente: renderizar um gráfico por interface (como discos)
-- Se ausente (dados antigos): fallback para gráfico único com `net_bytes_sent/recv`
-- Título de cada gráfico: `Rede — eth0`, `Rede — eth1`, etc.
-- Usar valores diretos das métricas (sem computeNetworkRates)
+| Arquivo | Ação |
+|---------|------|
+| `python-agent/monitor/executors/__init__.py` | Criar — registry |
+| `python-agent/monitor/executors/base.py` | Criar — classe base |
+| `python-agent/monitor/executors/proc_read.py` | Criar — executor /proc com parsers |
+| `python-agent/monitor/executors/statvfs.py` | Criar — executor disco |
+| `python-agent/monitor/main.py` | Alterar — buscar blueprint, iterar steps |
+| `python-agent/monitor/collector.py` | Manter inalterado (fallback) |
+| `python-agent/monitor/version.py` | 1.1.2 → 1.1.3 |
+| Migration SQL | device_type linux_server + blueprint com steps |
 
-**Etapa 4 — Bump Monitor version**
+### O que NÃO muda
 
-- `python-agent/monitor/version.py` → 1.1.2
-- Reempacotar e atualizar `system_settings`
-
-### Arquivos a alterar
-
-| Arquivo | Mudança |
-|---------|---------|
-| `python-agent/monitor/collector.py` | Coletar rede por interface, campo `net_interfaces` |
-| `python-agent/monitor/version.py` | 1.1.1 → 1.1.2 |
-| `supabase/functions/agent-monitor/index.ts` | Aceitar e persistir `net_interfaces` |
-| Migration SQL | `ALTER TABLE agent_metrics ADD COLUMN net_interfaces JSONB` |
-| `src/hooks/useAgentMetrics.ts` | Remover `computeNetworkRates`, adicionar tipos para interfaces |
-| `src/components/agents/AgentMonitorPanel.tsx` | Gráficos por interface, usar dados diretos |
-
-### Compatibilidade
-
-- Agents com monitor antigo (sem `net_interfaces`): frontend faz fallback para `net_bytes_sent/recv` em gráfico único
-- A escala será corrigida imediatamente para todos os agents (sem necessidade de update do monitor), pois a correção da dupla divisão é apenas frontend
+- Edge Function `agent-monitor` — mesmo payload
+- Tabela `agent_metrics` — mesma estrutura
+- Frontend — mesmos gráficos
+- Módulo Endpoint — fica para o futuro
 
