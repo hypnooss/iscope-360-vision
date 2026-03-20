@@ -242,3 +242,42 @@ class ProcReadExecutor(MonitorExecutor):
             pass
 
         return data
+
+    @staticmethod
+    def _read_ip_addresses() -> List[str]:
+        """Read non-loopback IPv4 addresses from /proc/net/fib_trie or fallback to socket."""
+        ips: List[str] = []
+        try:
+            import fcntl
+            import struct
+            # Read from /proc/net/dev for interface names, then use ioctl
+            with open("/proc/net/dev", "r") as f:
+                for line in f:
+                    if ":" not in line:
+                        continue
+                    iface = line.split(":")[0].strip()
+                    if iface == "lo":
+                        continue
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                        addr = socket.inet_ntoa(
+                            fcntl.ioctl(
+                                sock.fileno(),
+                                0x8915,  # SIOCGIFADDR
+                                struct.pack("256s", iface[:15].encode("utf-8")),
+                            )[20:24]
+                        )
+                        if addr and not addr.startswith("127."):
+                            ips.append(addr)
+                    except OSError:
+                        continue
+        except Exception:
+            pass
+        # Deduplicate while preserving order
+        seen: set = set()
+        result: List[str] = []
+        for ip in ips:
+            if ip not in seen:
+                seen.add(ip)
+                result.append(ip)
+        return result
