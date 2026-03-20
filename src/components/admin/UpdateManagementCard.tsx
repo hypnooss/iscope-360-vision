@@ -144,11 +144,13 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
 
         // Supervisor stats
         const agentsWithSupervisor = agents.filter((a) => a.supervisor_version);
+        const agentsWithoutSupervisor = agents.filter((a) => !a.supervisor_version);
         const supUpToDate = latestSupVer ? agentsWithSupervisor.filter((a) => a.supervisor_version === latestSupVer).length : agentsWithSupervisor.length;
         const supOutdated = latestSupVer
           ? agentsWithSupervisor.filter((a) => a.supervisor_version !== latestSupVer).map((a) => ({ name: a.name, supervisorVersion: a.supervisor_version || 'N/A', client: (a.clients as any)?.name || 'Sem cliente' }))
           : [];
-        setSupervisorStats({ total: agentsWithSupervisor.length, upToDate: supUpToDate, outdated: supOutdated, withoutSupervisor: agents.length - agentsWithSupervisor.length });
+        const withoutSupervisorList = agentsWithoutSupervisor.map((a) => ({ name: a.name, client: (a.clients as any)?.name || 'Sem cliente' }));
+        setSupervisorStats({ total: agentsWithSupervisor.length, upToDate: supUpToDate, outdated: supOutdated, withoutSupervisor: agentsWithoutSupervisor.length, withoutSupervisorList });
 
         // Monitor stats — get latest monitor_version per agent from agent_metrics
         const agentIds = agents.map((a) => a.id);
