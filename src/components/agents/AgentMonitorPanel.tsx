@@ -476,7 +476,10 @@ export function AgentMonitorPanel({ agentId }: Props) {
           ) : (
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                <HardDrive className="w-3 h-3" /> Disco (GB)
+                <HardDrive className="w-3 h-3" /> Disco
+                {latest?.disk_total_gb != null && (
+                  <span className="text-muted-foreground/70">({Number(latest.disk_total_gb).toFixed(0)} GB)</span>
+                )}
               </p>
               <div className="h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
