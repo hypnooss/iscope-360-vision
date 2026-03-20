@@ -85,7 +85,7 @@ export function getInterfaceNames(metrics: AgentMetricRow[]): string[] {
   return Array.from(names).sort();
 }
 
-/** Build chart data for a specific interface — values are already bytes/s */
+/** Build chart data for a specific interface — includes recvRateNeg for mirrored chart */
 export function buildInterfaceData(metrics: AgentMetricRow[], ifaceName: string) {
   return metrics
     .map((m) => {
@@ -95,12 +95,13 @@ export function buildInterfaceData(metrics: AgentMetricRow[], ifaceName: string)
         time: m.collected_at,
         sentRate: ni.bytes_sent,
         recvRate: ni.bytes_recv,
+        recvRateNeg: -ni.bytes_recv,
       };
     })
-    .filter(Boolean) as { time: string; sentRate: number; recvRate: number }[];
+    .filter(Boolean) as { time: string; sentRate: number; recvRate: number; recvRateNeg: number }[];
 }
 
-/** Build legacy chart data — values are already bytes/s, use directly */
+/** Build legacy chart data — includes recvRateNeg for mirrored chart */
 export function buildLegacyNetworkData(metrics: AgentMetricRow[]) {
   return metrics
     .filter((m) => m.net_bytes_sent != null && m.net_bytes_recv != null)
@@ -108,7 +109,23 @@ export function buildLegacyNetworkData(metrics: AgentMetricRow[]) {
       time: m.collected_at,
       sentRate: m.net_bytes_sent!,
       recvRate: m.net_bytes_recv!,
+      recvRateNeg: -m.net_bytes_recv!,
     }));
+}
+
+/** Get last known link speed for an interface */
+export function getInterfaceSpeed(metrics: AgentMetricRow[], ifaceName: string): number | null {
+  for (let i = metrics.length - 1; i >= 0; i--) {
+    const ni = metrics[i].net_interfaces?.find((n) => n.iface === ifaceName);
+    if (ni?.link_speed_mbps != null) return ni.link_speed_mbps;
+  }
+  return null;
+}
+
+/** Format link speed: 1000 → "1 Gbps", 100 → "100 Mbps" */
+export function formatLinkSpeed(mbps: number): string {
+  if (mbps >= 1000) return `${(mbps / 1000).toFixed(mbps % 1000 === 0 ? 0 : 1)} Gbps`;
+  return `${mbps} Mbps`;
 }
 
 export function formatBytes(bytes: number): string {
