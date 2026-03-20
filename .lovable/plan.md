@@ -1,61 +1,54 @@
 
 
-## Plano: Valores absolutos nos gráficos + suporte a múltiplas partições
+## Plano: Broadcast Wake + Terminal Pop-out
 
-### Resumo
+### Parte 1 — Conexão instantânea via Broadcast Wake
 
-Melhorar os gráficos de CPU, RAM e Disco para mostrar valores absolutos além da porcentagem, e adicionar suporte a múltiplas partições de disco no collector, backend e frontend.
+**Problema**: O Supervisor só detecta `shell_session_active` no heartbeat (até 120s de espera).
 
----
+**Solução**: O Supervisor mantém uma conexão Realtime leve permanente, escutando o evento `wake` no canal `shell:{agent_id}`. Quando a UI envia `wake`, o Supervisor inicia o RealtimeShell imediatamente.
 
-### 1. Frontend — Gráficos com valores absolutos
+**Arquivos a alterar:**
 
-**Arquivo:** `src/components/agents/AgentMonitorPanel.tsx`
+| Arquivo | Mudança |
+|---------|---------|
+| `python-agent/supervisor/main.py` | Criar e manter um "listener" Realtime permanente no loop principal. Ao receber `wake`, iniciar RealtimeShell instantaneamente (sem esperar heartbeat). |
+| `python-agent/supervisor/realtime_listener.py` | **Novo arquivo.** Classe leve que conecta ao canal `shell:{agent_id}` via WebSocket e escuta apenas o evento `wake`. Callback dispara flag que o main loop verifica. |
+| `src/components/agents/RemoteTerminal.tsx` | Após subscribir no canal, enviar evento `wake` via broadcast. Remover a dependência de `shell_session_active` para iniciar a conexão (manter apenas como fallback/cleanup). |
+| `supabase/functions/agent-heartbeat/index.ts` | Manter a lógica de `shell_session_active` → `start_realtime` como fallback (caso o listener não esteja ativo). |
 
-- **CPU**: Manter gráfico de `cpu_percent`. No indicador do topo, mostrar `cpu_percent% (N cores)`. Tooltip já mostra cores.
-- **RAM**: Trocar eixo Y de 0-100% para valores em MB. Exibir `ram_used_mb` como área preenchida com `ram_total_mb` como linha de referência (teto). Label: "RAM (MB)". Indicador do topo: `X MB / Y MB (Z%)`.
-- **Disco**: Mesmo padrão — eixo Y em GB com `disk_used_gb` como área e `disk_total_gb` como referência. Indicador: `X GB / Y GB (Z%)`.
-- **Múltiplas partições**: Se existir `disk_partitions` no dado, renderizar um gráfico separado por partição (ex: "Disco — /", "Disco — /data").
-
-### 2. Collector — Múltiplas partições
-
-**Arquivo:** `python-agent/monitor/collector.py`
-
-- Alterar `_disk()` para ler `/proc/mounts` e coletar métricas de todas as partições reais (excluindo pseudo-filesystems como tmpfs, devtmpfs, proc, sysfs, etc).
-- Retornar `disk_partitions`: lista de objetos `{path, total_gb, used_gb, percent}`.
-- Manter `disk_total_gb`, `disk_used_gb`, `disk_percent`, `disk_path` do `/` para compatibilidade.
-
-### 3. Database — Nova coluna JSONB
-
-**Migração SQL:**
-```sql
-ALTER TABLE agent_metrics 
-ADD COLUMN IF NOT EXISTS disk_partitions jsonb DEFAULT NULL;
+**Fluxo novo:**
+```text
+UI subscribe canal → UI envia "wake" → Listener recebe → Supervisor inicia RealtimeShell → "ready" → UI libera input
+Tempo estimado: ~1-3s (vs ~120s atual)
 ```
 
-Armazena array de partições: `[{"path":"/","total_gb":50,"used_gb":30,"percent":60}, ...]`
+---
 
-### 4. Edge Function — Persistir partições
+### Parte 2 — Botão Pop-out (desacoplar terminal)
 
-**Arquivo:** `supabase/functions/agent-monitor/index.ts`
+**Solução**: Usar `window.open()` para abrir o terminal numa janela independente numa rota dedicada `/terminal/:agentId`. A conexão WebSocket vive na nova janela, permitindo navegar livremente na janela principal.
 
-- Adicionar `disk_partitions: body.disk_partitions ?? null` no insert.
+**Arquivos a alterar:**
 
-### 5. Hook — Expor dados de partições
-
-**Arquivo:** `src/hooks/useAgentMetrics.ts`
-
-- Adicionar `disk_partitions` ao tipo `AgentMetricRow`.
+| Arquivo | Mudança |
+|---------|---------|
+| `src/pages/TerminalPopoutPage.tsx` | **Nova página.** Renderiza o `RemoteTerminal` em tela cheia (sem AppLayout), com fundo preto. Lê `agentId` e `agentName` dos params/query. |
+| `src/App.tsx` | Adicionar rota `/terminal/:id`. |
+| `src/components/agents/RemoteTerminal.tsx` | Adicionar botão de pop-out na title bar (ícone `ExternalLink`). Ao clicar, abre `window.open('/terminal/{agentId}?name={agentName}')` e desconecta o terminal embutido. |
 
 ---
 
-### Arquivos
+### Detalhes técnicos
 
-| Ação | Arquivo |
-|------|---------|
-| Editar | `python-agent/monitor/collector.py` |
-| Migração | `agent_metrics` — coluna `disk_partitions jsonb` |
-| Editar | `supabase/functions/agent-monitor/index.ts` |
-| Editar | `src/hooks/useAgentMetrics.ts` |
-| Editar | `src/components/agents/AgentMonitorPanel.tsx` |
+**Realtime Listener (Supervisor)**:
+- Usa `websocket-client` (já é dependência) para conectar ao Supabase Realtime
+- Escuta apenas o evento `wake` — não executa comandos
+- Thread daemon leve, reconecta automaticamente
+- Quando recebe `wake`, seta uma flag `threading.Event` que o main loop lê a cada iteração (sem esperar o heartbeat)
+
+**Pop-out**:
+- A nova janela herda a sessão do Supabase (mesmo domínio, mesmo localStorage)
+- O terminal embutido na página do agent se desconecta ao abrir o pop-out
+- A janela pop-out usa título `Terminal — {agentName}` no `document.title`
 
