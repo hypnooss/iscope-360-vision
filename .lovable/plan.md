@@ -1,76 +1,36 @@
 
 
-## Plano: Corrigir Escala de Rede + Suporte Multi-Interface
+## Plano: Monitor Template-Driven (sem módulo Endpoint) — ✅ IMPLEMENTADO
 
-### Problema 1 — Escala errada (dupla divisão)
+### Resumo do que foi feito
 
-O collector Python já calcula **bytes/s** (delta bytes / elapsed seconds) antes de enviar. Porém o frontend (`computeNetworkRates`) trata os valores como contadores cumulativos e faz **outra divisão por tempo**, resultando em bytes/s² — valores ~60x menores que o real.
+1. **Executors criados em `monitor/executors/`**:
+   - `base.py` — classe base `MonitorExecutor`
+   - `proc_read.py` — parser para cpu, memory, net_interfaces, system (lógica extraída do collector.py)
+   - `statvfs.py` — coleta de disco via /proc/mounts + os.statvfs
+   - `__init__.py` — registry de executors por tipo
 
-Dados da API confirmam: `net_bytes_recv: 4531` (bytes/s, ~36 Kbps). O frontend calcula `(4531 - 3993) / 60 = ~9 bytes/s` — exatamente os ~9.8 KB que você vê.
+2. **Template "linux_server" no banco**:
+   - Enum `blueprint_executor_type` expandido com valor `monitor`
+   - `device_type` inserido: code=`linux_server`, vendor=Linux, category=server
+   - `device_blueprint` inserido com 5 steps (cpu, mem, disk, net, sys)
 
-### Problema 2 — Sem nome de interface
+3. **Monitor refatorado (`monitor/main.py`)**:
+   - Boot: busca blueprint via Edge Function `agent-monitor-blueprint`
+   - Cache local em `/var/lib/iscope-agent/monitor_blueprint.json`
+   - Refresh do blueprint a cada 30 min
+   - Itera steps do blueprint, instancia executors, agrega resultados
+   - Fallback: se blueprint indisponível, usa `collector.py` legado
 
-O collector soma todas as interfaces em um único total (`_read_net_bytes` itera `/proc/net/dev` e soma tudo). Não há como saber qual interface gerou qual tráfego.
+4. **Edge Function `agent-monitor-blueprint`**:
+   - GET com `?device_type=linux_server`
+   - Retorna blueprint ativo com steps
 
-### Problema 3 — Sem suporte multi-interface
-
-Similar ao que foi feito com `disk_partitions`, precisamos de uma coluna JSONB `net_interfaces` para armazenar dados por interface.
-
----
-
-### Solução em 4 etapas
-
-**Etapa 1 — Collector: coletar por interface**
-
-Arquivo: `python-agent/monitor/collector.py`
-
-- Alterar `_network()` para retornar dados **por interface** (mantendo compatibilidade)
-- Ler `/proc/net/dev`, para cada interface (exceto `lo`), calcular delta bytes/s individual
-- Enviar novo campo `net_interfaces` como lista JSONB:
-  ```json
-  [
-    {"iface": "eth0", "bytes_sent": 1234, "bytes_recv": 5678},
-    {"iface": "eth1", "bytes_sent": 100, "bytes_recv": 200}
-  ]
-  ```
-- Manter `net_bytes_sent` e `net_bytes_recv` como soma total (backward compat)
-
-**Etapa 2 — DB + Edge Function: persistir net_interfaces**
-
-- Migration: adicionar coluna `net_interfaces JSONB` na tabela `agent_metrics`
-- Edge Function `agent-monitor`: salvar `body.net_interfaces` no insert
-
-**Etapa 3 — Frontend: corrigir escala e exibir por interface**
-
-Arquivo: `src/hooks/useAgentMetrics.ts`
-- Remover `computeNetworkRates` (a dupla divisão)
-- Os dados já vêm como bytes/s, usar diretamente
-- Adicionar tipo `NetInterface` e helpers para extrair interfaces únicas
-
-Arquivo: `src/components/agents/AgentMonitorPanel.tsx`
-- Se `net_interfaces` presente: renderizar um gráfico por interface (como discos)
-- Se ausente (dados antigos): fallback para gráfico único com `net_bytes_sent/recv`
-- Título de cada gráfico: `Rede — eth0`, `Rede — eth1`, etc.
-- Usar valores diretos das métricas (sem computeNetworkRates)
-
-**Etapa 4 — Bump Monitor version**
-
-- `python-agent/monitor/version.py` → 1.1.2
-- Reempacotar e atualizar `system_settings`
-
-### Arquivos a alterar
-
-| Arquivo | Mudança |
-|---------|---------|
-| `python-agent/monitor/collector.py` | Coletar rede por interface, campo `net_interfaces` |
-| `python-agent/monitor/version.py` | 1.1.1 → 1.1.2 |
-| `supabase/functions/agent-monitor/index.ts` | Aceitar e persistir `net_interfaces` |
-| Migration SQL | `ALTER TABLE agent_metrics ADD COLUMN net_interfaces JSONB` |
-| `src/hooks/useAgentMetrics.ts` | Remover `computeNetworkRates`, adicionar tipos para interfaces |
-| `src/components/agents/AgentMonitorPanel.tsx` | Gráficos por interface, usar dados diretos |
+5. **Version bumped para 1.1.3**
 
 ### Compatibilidade
 
-- Agents com monitor antigo (sem `net_interfaces`): frontend faz fallback para `net_bytes_sent/recv` em gráfico único
-- A escala será corrigida imediatamente para todos os agents (sem necessidade de update do monitor), pois a correção da dupla divisão é apenas frontend
-
+- `collector.py` mantido intacto como fallback
+- Edge Function `agent-monitor` — mesmo payload (sem mudanças)
+- Frontend — sem mudanças
+- Agents antigos continuam funcionando normalmente
