@@ -56,6 +56,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AgentInstallInstructions } from "@/components/agents/AgentInstallInstructions";
 import { RemoteTerminal } from "@/components/agents/RemoteTerminal";
+import { AgentMonitorPanel } from "@/components/agents/AgentMonitorPanel";
 
 interface Agent {
   id: string;
@@ -711,6 +712,11 @@ export default function AgentDetailPage() {
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Monitor Panel */}
+        <div className="mt-6">
+          <AgentMonitorPanel agentId={agent.id} />
         </div>
 
         {/* Remote Terminal - super_admin only */}
