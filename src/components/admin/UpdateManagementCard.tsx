@@ -178,14 +178,20 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
             }
           });
 
+          const withoutMonitorList = agents
+            .filter((a) => !latestByAgent.has(a.id))
+            .map((a) => ({ name: a.name, client: (a.clients as any)?.name || 'Sem cliente' }));
+
           setMonitorStats({
             total: latestByAgent.size,
             upToDate: monUpToDate,
             outdated: monOutdated,
             withoutMonitor: agents.length - latestByAgent.size,
+            withoutMonitorList,
           });
         } else {
-          setMonitorStats({ total: 0, upToDate: 0, outdated: [], withoutMonitor: agents?.length || 0 });
+          const withoutMonitorList = agents?.map((a) => ({ name: a.name, client: (a.clients as any)?.name || 'Sem cliente' })) || [];
+          setMonitorStats({ total: 0, upToDate: 0, outdated: [], withoutMonitor: agents?.length || 0, withoutMonitorList });
         }
       }
     } catch (error) {
