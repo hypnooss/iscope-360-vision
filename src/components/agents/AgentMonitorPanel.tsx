@@ -454,7 +454,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
           {/* RAM Chart */}
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <MemoryStick className="w-3 h-3" /> RAM (MB)
+              <MemoryStick className="w-3 h-3" /> RAM ({(ramTotal ?? 0) >= 1024 ? "GB" : "MB"})
             </p>
             <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
