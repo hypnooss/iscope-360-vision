@@ -469,7 +469,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                   />
                   <Tooltip content={<AbsoluteTooltip usedKey="ram_used_mb" totalKey="ram_total_mb" unit="MB" percentKey="ram_percent" />} labelFormatter={(v) => v} />
                   <Area type="monotone" dataKey="ram_total_mb" stroke="hsl(217, 91%, 60%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
-                  <Area type="monotone" dataKey="ram_used_mb" stroke="hsl(217, 71%, 45%)" fill="none" fillOpacity={0} strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="ram_used_mb" stroke="hsl(217, 71%, 45%)" fill="hsl(217, 71%, 45%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
