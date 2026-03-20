@@ -523,7 +523,7 @@ export function UpdateManagementCard({ userId }: UpdateManagementCardProps) {
                     <p className="text-xs text-muted-foreground">Sem dados de monitoramento</p>
                   </div>
                 </div>
-                {monitorStats.withoutMonitorList.length > 0 && (
+                {(monitorStats.withoutMonitorList?.length ?? 0) > 0 && (
                   <ScrollArea className="h-[150px]">
                     <ul className="space-y-1 pr-4">
                       {monitorStats.withoutMonitorList.map((agent, i) => (
