@@ -8,6 +8,7 @@ Lightweight process that:
 4. Handles Monitor updates (download, validate, replace, restart service)
 5. Installs system components when requested
 6. Detects supervisor_restart.flag and exits for systemd restart (cross-update)
+7. Handles SIGTERM for graceful shutdown
 """
 
 import json
