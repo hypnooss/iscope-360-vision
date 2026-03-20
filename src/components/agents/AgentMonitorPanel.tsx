@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Cpu, HardDrive, MemoryStick, Network, Clock, Activity } from "lucide-react";
@@ -69,26 +69,44 @@ interface LegendSeries {
 
 function ChartLegendTable({ series }: { series: LegendSeries[] }) {
   return (
-    <div className="flex flex-col gap-0.5 mt-1">
-      {series.map((s) => (
-        <div key={s.label} className="flex items-center gap-2 text-[10px] leading-tight">
-          <span
-            className="inline-block w-2 h-2 rounded-[2px] shrink-0"
-            style={{ backgroundColor: s.color }}
-          />
-          <span className="text-foreground font-medium min-w-[70px]">{s.label}</span>
-          {s.stats ? (
-            <span className="flex gap-3 tabular-nums text-muted-foreground">
-              <span>last: <span className="text-foreground">{s.formatValue(s.stats.last)}</span></span>
-              <span>min: {s.formatValue(s.stats.min)}</span>
-              <span>avg: {s.formatValue(s.stats.avg)}</span>
-              <span>max: {s.formatValue(s.stats.max)}</span>
-            </span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )}
-        </div>
-      ))}
+    <div className="flex flex-col items-end mt-1">
+      <div
+        className="grid gap-x-3 gap-y-0.5 text-[10px] leading-tight"
+        style={{ gridTemplateColumns: 'auto auto auto auto auto auto' }}
+      >
+        {series.map((s) => (
+          <React.Fragment key={s.label}>
+            <span
+              className="inline-block w-2 h-2 rounded-[2px] shrink-0 self-center"
+              style={{ backgroundColor: s.color }}
+            />
+            <span className="text-foreground font-medium text-left whitespace-nowrap">{s.label}</span>
+            {s.stats ? (
+              <>
+                <span className="tabular-nums text-right whitespace-nowrap text-muted-foreground">
+                  last: <span className="text-foreground">{s.formatValue(s.stats.last)}</span>
+                </span>
+                <span className="tabular-nums text-right whitespace-nowrap text-muted-foreground">
+                  min: {s.formatValue(s.stats.min)}
+                </span>
+                <span className="tabular-nums text-right whitespace-nowrap text-muted-foreground">
+                  avg: {s.formatValue(s.stats.avg)}
+                </span>
+                <span className="tabular-nums text-right whitespace-nowrap text-muted-foreground">
+                  max: {s.formatValue(s.stats.max)}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-muted-foreground">—</span>
+                <span />
+                <span />
+                <span />
+              </>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
     </div>
   );
 }
