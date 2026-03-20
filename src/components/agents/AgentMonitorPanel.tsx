@@ -555,7 +555,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                 { color: "hsl(173, 80%, 40%)", label: "↓ Recebido", stats: computeSeriesStats(recvVals), formatValue: formatBytes },
               ];
               return (
-                <div key={ifaceName} className="space-y-2">
+                <div key={ifaceName} className="space-y-2 rounded-xl border border-border/40 bg-card/50 p-4">
                   <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                     <Network className="w-3 h-3" /> Rede — {ifaceName}
                     {linkSpeed != null && (
