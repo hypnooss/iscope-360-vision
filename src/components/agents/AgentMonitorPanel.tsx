@@ -261,15 +261,18 @@ function getPartitionPaths(metrics: AgentMetricRow[]): string[] {
 
 /** Build chart data for a specific partition */
 function buildPartitionData(metrics: AgentMetricRow[], partitionPath: string) {
-  return metrics.map((m) => {
-    const part = m.disk_partitions?.find((p: DiskPartition) => p.path === partitionPath);
-    return {
-      time: m.collected_at,
-      disk_used_gb: part?.used_gb ?? null,
-      disk_total_gb: part?.total_gb ?? null,
-      disk_percent: part?.percent ?? null,
-    };
-  });
+  return metrics
+    .map((m) => {
+      const part = m.disk_partitions?.find((p: DiskPartition) => p.path === partitionPath);
+      if (!part) return null;
+      return {
+        time: m.collected_at,
+        disk_used_gb: part.used_gb ?? null,
+        disk_total_gb: part.total_gb ?? null,
+        disk_percent: part.percent ?? null,
+      };
+    })
+    .filter(Boolean) as { time: string; disk_used_gb: number | null; disk_total_gb: number | null; disk_percent: number | null }[];
 }
 
 /** Scan metrics backwards to find the most recent non-null value for a field */
