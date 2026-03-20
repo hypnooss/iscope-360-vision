@@ -69,45 +69,26 @@ interface LegendSeries {
 
 function ChartLegendTable({ series }: { series: LegendSeries[] }) {
   return (
-    <div className="bg-muted/30 rounded-md px-3 py-1.5 mt-1">
-      <table className="w-full text-[10px]">
-        <thead>
-          <tr className="text-muted-foreground">
-            <th className="text-left font-normal pb-0.5 pr-2"></th>
-            <th className="text-right font-normal pb-0.5 px-2">last</th>
-            <th className="text-right font-normal pb-0.5 px-2">min</th>
-            <th className="text-right font-normal pb-0.5 px-2">avg</th>
-            <th className="text-right font-normal pb-0.5 px-2">max</th>
-          </tr>
-        </thead>
-        <tbody>
-          {series.map((s) => (
-            <tr key={s.label}>
-              <td className="pr-2 py-0.5">
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    className="inline-block w-2 h-2 rounded-[2px] shrink-0"
-                    style={{ backgroundColor: s.color }}
-                  />
-                  <span className="text-foreground font-medium">{s.label}</span>
-                </span>
-              </td>
-              <td className="text-right px-2 py-0.5 tabular-nums text-foreground">
-                {s.stats ? s.formatValue(s.stats.last) : "—"}
-              </td>
-              <td className="text-right px-2 py-0.5 tabular-nums text-muted-foreground">
-                {s.stats ? s.formatValue(s.stats.min) : "—"}
-              </td>
-              <td className="text-right px-2 py-0.5 tabular-nums text-muted-foreground">
-                {s.stats ? s.formatValue(s.stats.avg) : "—"}
-              </td>
-              <td className="text-right px-2 py-0.5 tabular-nums text-muted-foreground">
-                {s.stats ? s.formatValue(s.stats.max) : "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="flex flex-col gap-0.5 mt-1">
+      {series.map((s) => (
+        <div key={s.label} className="flex items-center gap-2 text-[10px] leading-tight">
+          <span
+            className="inline-block w-2 h-2 rounded-[2px] shrink-0"
+            style={{ backgroundColor: s.color }}
+          />
+          <span className="text-foreground font-medium min-w-[70px]">{s.label}</span>
+          {s.stats ? (
+            <span className="flex gap-3 tabular-nums text-muted-foreground">
+              <span>last: <span className="text-foreground">{s.formatValue(s.stats.last)}</span></span>
+              <span>min: {s.formatValue(s.stats.min)}</span>
+              <span>avg: {s.formatValue(s.stats.avg)}</span>
+              <span>max: {s.formatValue(s.stats.max)}</span>
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
