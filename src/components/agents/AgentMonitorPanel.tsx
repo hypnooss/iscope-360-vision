@@ -442,7 +442,7 @@ export function AgentMonitorPanel({ agentId }: Props) {
                 <AreaChart data={cpuChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                   <XAxis dataKey="time" tickFormatter={timeFmt} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                  <YAxis domain={[0, (dataMax: number) => Math.max(10, Math.ceil(dataMax * 1.2))]} tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                   <Tooltip content={<CpuTooltip />} labelFormatter={(v) => v} />
                   <Area type="monotone" dataKey="cpu_percent" stroke="hsl(142, 76%, 36%)" fill="hsl(142, 76%, 36%)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
                 </AreaChart>
