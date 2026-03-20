@@ -1,29 +1,52 @@
 
 
-## Plano: Adicionar legendas aos gráficos
+## Plano: Legendas estilo Zabbix abaixo dos gráficos
 
-Os gráficos atualmente não possuem legendas visuais. O gráfico de rede é o mais crítico (duas áreas: Enviado/Recebido), mas legendas simples em todos os gráficos melhoram a leitura.
+Inspirado no print do Zabbix, adicionar uma tabela de legendas abaixo de cada gráfico com estatísticas resumidas (last, min, avg, max).
 
 ### Mudanças
 
 **Arquivo: `src/components/agents/AgentMonitorPanel.tsx`**
 
-Importar `Legend` do recharts e adicionar legendas inline a cada gráfico:
+1. Criar componente `ChartLegendTable` que recebe um array de séries, cada uma com: `color`, `label`, `values: { last, min, avg, max }` e `unit`. Renderiza uma mini-tabela abaixo do gráfico com colunas: cor + nome | last | min | avg | max.
 
-| Gráfico | Legenda |
-|---------|---------|
-| CPU | `CPU %` (verde) |
-| RAM | `Usado` (azul) + linha tracejada "Total" já existe |
-| Disco | `Usado` (laranja) + linha tracejada "Total" já existe |
-| Rede (espelhado) | `↑ Enviado` (roxo) + `↓ Recebido` (teal) — este é o mais importante |
+2. Calcular estatísticas a partir dos dados do gráfico usando `useMemo`:
+   - **CPU**: 1 linha — `CPU %` com last/min/avg/max do `cpu_percent`
+   - **RAM**: 2 linhas — `Total` (constante, last/min/avg/max do `ram_total_mb`) + `Usado` (last/min/avg/max do `ram_used_mb`), valores formatados em GB quando >= 1024 MB
+   - **Disco**: 2 linhas por partição — `Total` + `Usado`, em GB
+   - **Rede**: 2 linhas por interface — `↑ Enviado` e `↓ Recebido`, formatados em bytes/s
 
-Usar `<Legend>` do recharts com `formatter` customizado para exibir nomes legíveis (ex: "sentRate" → "↑ Enviado", "recvRateNeg" → "↓ Recebido"). Posicionar no topo do gráfico (`verticalAlign="top"`) com tamanho compacto (`fontSize: 10`).
+3. Mover `<Legend>` do recharts de `verticalAlign="top"` para remover completamente — substituído pela tabela customizada abaixo do gráfico.
 
-Para CPU, RAM e Disco que têm apenas uma `Area`, uma legenda simples com o nome da métrica. Para Rede com duas áreas, a legenda é essencial para distinguir enviado/recebido.
+4. Estilo da tabela: `text-[10px]`, sem bordas visíveis, com quadrado colorido 8x8 antes do nome da série. Colunas alinhadas: nome à esquerda, valores à direita. Fundo sutil `bg-muted/30` com `rounded-md` e `px-3 py-1.5`.
 
-### Arquivos a alterar
+### Exemplo visual (CPU)
+
+```text
+┌──────────────────────────────────────────────┐
+│  ■ CPU %     last: 23.4%  min: 12.1%        │
+│              avg: 18.7%   max: 45.2%         │
+└──────────────────────────────────────────────┘
+```
+
+### Exemplo visual (RAM)
+
+```text
+┌──────────────────────────────────────────────┐
+│  ■ Total      last: 3.4 GB  min: 3.4 GB     │
+│               avg: 3.4 GB   max: 3.4 GB      │
+│  ■ Usado      last: 1.2 GB  min: 1.1 GB     │
+│               avg: 1.2 GB   max: 1.2 GB      │
+└──────────────────────────────────────────────┘
+```
+
+### Helper
+
+Criar função utilitária `computeSeriesStats(values: number[])` → `{ last, min, avg, max }` para reutilizar em todos os gráficos.
+
+### Arquivo a alterar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/agents/AgentMonitorPanel.tsx` | Importar `Legend`, adicionar `<Legend>` a cada `AreaChart` com formatação customizada |
+| `src/components/agents/AgentMonitorPanel.tsx` | Remover `<Legend>`, criar `ChartLegendTable`, calcular stats, renderizar abaixo de cada gráfico |
 
