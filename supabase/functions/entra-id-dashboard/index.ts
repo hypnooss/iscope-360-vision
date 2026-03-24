@@ -56,12 +56,12 @@ async function graphGet(accessToken: string, url: string, headers?: Record<strin
   return await res.json();
 }
 
-async function graphGetAllPages(accessToken: string, url: string, maxPages = 5): Promise<any[]> {
+async function graphGetAllPages(accessToken: string, url: string, maxPages = 5, headers?: Record<string, string>): Promise<any[]> {
   const allValues: any[] = [];
   let nextLink: string | null = url;
   let page = 0;
   while (nextLink && page < maxPages) {
-    const data = await graphGet(accessToken, nextLink);
+    const data = await graphGet(accessToken, nextLink, headers);
     if (!data) break;
     allValues.push(...(data.value || []));
     nextLink = data['@odata.nextLink'] || null;
