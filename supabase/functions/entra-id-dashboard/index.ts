@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/users/$count?$filter=accountEnabled eq false", { 'ConsistencyLevel': 'eventual', 'Accept': 'text/plain' }).catch(() => null),
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/users/$count?$filter=onPremisesSyncEnabled eq true", { 'ConsistencyLevel': 'eventual', 'Accept': 'text/plain' }).catch(() => null),
       graphGet(accessToken, 'https://graph.microsoft.com/v1.0/directoryRoles?$expand=members').catch(() => ({ value: [] })),
-      graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$filter=userType eq 'member'&$top=999", 10, { 'ConsistencyLevel': 'eventual' }).catch(() => []),
+      graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=999", 10, { 'ConsistencyLevel': 'eventual' }).catch(() => []),
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$filter=createdDateTime ge ${periodStart}&$top=500&$orderby=createdDateTime desc`, 2).catch(() => []),
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
@@ -234,14 +234,17 @@ Deno.serve(async (req) => {
       console.warn('[entra-id-dashboard] Could not fetch shared mailbox data:', e);
     }
 
-    // MFA calculation — filter out shared mailboxes
-    const mfaUsersRaw = mfaRegistration || [];
-    const mfaUsers = mfaUsersRaw.filter((u: any) => {
+    // MFA calculation — filter out guests and shared mailboxes (aligned with m365-analyzer)
+    const mfaAllRaw = mfaRegistration || [];
+    const mfaGuests = mfaAllRaw.filter((u: any) => (u.userType || '').toLowerCase() === 'guest');
+    const mfaMembers = mfaAllRaw.filter((u: any) => (u.userType || '').toLowerCase() !== 'guest');
+    const mfaUsers = mfaMembers.filter((u: any) => {
       const upn = (u.userPrincipalName || '').toLowerCase();
       const name = (u.userDisplayName || '').toLowerCase().trim();
       return !sharedMailboxUpns.has(upn) && !sharedMailboxNames.has(name);
     });
-    console.log(`[entra-id-dashboard] MFA users: ${mfaUsersRaw.length} raw → ${mfaUsers.length} after excluding ${mfaUsersRaw.length - mfaUsers.length} shared mailboxes`);
+    const sharedExcluded = mfaMembers.length - mfaUsers.length;
+    console.log(`[entra-id-dashboard] MFA breakdown: ${mfaAllRaw.length} raw total, ${mfaGuests.length} guests excluded, ${mfaMembers.length} members, ${sharedExcluded} shared mailboxes excluded → ${mfaUsers.length} final`);
 
     // mfaEnabled = any registered method (aligns with hasMfa in userDetails)
     const STRONG_METHODS = ['microsoftAuthenticatorPush', 'softwareOneTimePasscode', 'hardwareOneTimePasscode', 'windowsHelloForBusiness', 'passKeyDeviceBound', 'microsoftAuthenticatorPasswordless', 'fido2'];

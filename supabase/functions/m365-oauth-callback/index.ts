@@ -474,7 +474,7 @@ Deno.serve(async (req) => {
       { permission: 'Application.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/applications?$top=1' },
       { permission: 'AuditLog.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/auditLogs/signIns?$top=1' },
       { permission: 'Policy.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/policies/authenticationMethodsPolicy' },
-      { permission: 'Reports.Read.All', endpoint: 'https://graph.microsoft.com/beta/reports/authenticationMethods/userRegistrationDetails?$top=1' },
+      { permission: 'Reports.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=1' },
       { permission: 'IdentityRiskyUser.Read.All', endpoint: 'https://graph.microsoft.com/v1.0/identityProtection/riskyUsers?$top=1' },
       { permission: 'IdentityRiskEvent.Read.All', endpoint: 'https://graph.microsoft.com/beta/identityProtection/riskDetections?$top=1' },
     ];
