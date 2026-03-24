@@ -234,14 +234,17 @@ Deno.serve(async (req) => {
       console.warn('[entra-id-dashboard] Could not fetch shared mailbox data:', e);
     }
 
-    // MFA calculation — filter out shared mailboxes
-    const mfaUsersRaw = mfaRegistration || [];
-    const mfaUsers = mfaUsersRaw.filter((u: any) => {
+    // MFA calculation — filter out guests and shared mailboxes (aligned with m365-analyzer)
+    const mfaAllRaw = mfaRegistration || [];
+    const mfaGuests = mfaAllRaw.filter((u: any) => (u.userType || '').toLowerCase() === 'guest');
+    const mfaMembers = mfaAllRaw.filter((u: any) => (u.userType || '').toLowerCase() !== 'guest');
+    const mfaUsers = mfaMembers.filter((u: any) => {
       const upn = (u.userPrincipalName || '').toLowerCase();
       const name = (u.userDisplayName || '').toLowerCase().trim();
       return !sharedMailboxUpns.has(upn) && !sharedMailboxNames.has(name);
     });
-    console.log(`[entra-id-dashboard] MFA users: ${mfaUsersRaw.length} raw → ${mfaUsers.length} after excluding ${mfaUsersRaw.length - mfaUsers.length} shared mailboxes`);
+    const sharedExcluded = mfaMembers.length - mfaUsers.length;
+    console.log(`[entra-id-dashboard] MFA breakdown: ${mfaAllRaw.length} raw total, ${mfaGuests.length} guests excluded, ${mfaMembers.length} members, ${sharedExcluded} shared mailboxes excluded → ${mfaUsers.length} final`);
 
     // mfaEnabled = any registered method (aligns with hasMfa in userDetails)
     const STRONG_METHODS = ['microsoftAuthenticatorPush', 'softwareOneTimePasscode', 'hardwareOneTimePasscode', 'windowsHelloForBusiness', 'passKeyDeviceBound', 'microsoftAuthenticatorPasswordless', 'fido2'];
