@@ -18,13 +18,12 @@ const sphereVertexShader = `
 
   uniform float uPixelRatio;
   uniform float uTime;
-  uniform float uMorph; // 0 = globe, 1 = terrain
+  uniform float uMorph; // we use uMorph as uScroll now
 
   varying float vAlpha;
   varying float vAccent;
   varying float vRim;
   varying vec3 vNormal;
-  varying float vMorph;
 
   void main() {
     vec3 sphereNormal = normalize(position);
@@ -33,49 +32,33 @@ const sphereVertexShader = `
     float breathe = sin(uTime * 0.25 + aSeed * 6.28318) * 0.008;
     vec3 displaced = position + sphereNormal * breathe;
 
-    // Terrain position with time-based wave + drift animation
-    vec3 terrainPos = aPlanePos;
-    terrainPos.x += sin(uTime * 0.15 + aSeed * 6.28) * 0.12;
-    terrainPos.z += cos(uTime * 0.1 + aSeed * 4.0) * 0.08;
-    terrainPos.y += sin(uTime * 0.3 + aPlanePos.x * 0.5) * 0.12;
-    terrainPos.y += cos(uTime * 0.2 + aPlanePos.z * 0.4) * 0.08;
-
-    // Morph between sphere and terrain
-    vec3 finalPos = mix(displaced, terrainPos, uMorph);
-
-    vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
+    vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-    // Rim glow - Fresnel effect (fade out during morph)
+    // Rim glow - Fresnel effect
     vec3 viewDir = normalize(-mvPosition.xyz);
     float dotNV = abs(dot(sphereNormal, viewDir));
-    vRim = pow(1.0 - dotNV, 2.8) * (1.0 - uMorph);
+    vRim = pow(1.0 - dotNV, 2.8);
 
-    // Back-face culling via alpha (disabled during terrain mode)
-    float frontFade = mix(
-      smoothstep(-0.3, 0.6, sphereNormal.z),
-      1.0,
-      uMorph
-    );
+    // Back-face culling via alpha 
+    float frontFade = smoothstep(-0.3, 0.6, sphereNormal.z);
 
-    // Core suppression: fade out during morph
-    float coreFade = mix(
-      mix(0.35, 1.0, pow(max(vRim, 0.001), 0.3)),
-      0.7,
-      uMorph
-    );
-    vAlpha = aAlpha * frontFade * coreFade;
+    // Core suppression
+    float coreFade = mix(0.35, 1.0, pow(max(vRim, 0.001), 0.3));
+    
+    // Globally reduce opacity heavily on scroll to shift focus to content
+    float scrollFade = mix(1.0, 0.15, uMorph);
+    
+    vAlpha = aAlpha * frontFade * coreFade * scrollFade;
 
-    // Accent color zone (reduce during morph for uniform terrain color)
+    // Accent color zone
     float magentaZone = smoothstep(-0.2, 0.8, position.x) * smoothstep(-0.2, 0.7, -position.y);
-    vAccent = clamp(magentaZone + vRim * 0.15, 0.0, 1.0) * (1.0 - uMorph * 0.5);
+    vAccent = clamp(magentaZone + vRim * 0.15, 0.0, 1.0);
     vNormal = sphereNormal;
-    vMorph = uMorph;
 
     // Point size with distance attenuation
     float distanceScale = 28.0 / max(-mvPosition.z, 0.001);
-    float morphSize = mix(1.0, 0.8, uMorph); // slightly smaller in terrain
-    gl_PointSize = clamp(aSize * distanceScale * uPixelRatio * morphSize, 0.5, 2.2);
+    gl_PointSize = clamp(aSize * distanceScale * uPixelRatio, 0.5, 2.5);
   }
 `;
 
@@ -87,7 +70,6 @@ const sphereFragmentShader = `
   varying float vAccent;
   varying float vRim;
   varying vec3 vNormal;
-  varying float vMorph;
 
   void main() {
     vec4 tex = texture2D(uPointTexture, gl_PointCoord);
@@ -104,12 +86,8 @@ const sphereFragmentShader = `
     // Magenta accent in bottom-right
     color = mix(color, magenta, vAccent * 0.7);
 
-    // Rim brightening (fades with morph)
-    color += vec3(0.12, 0.28, 0.5) * vRim * 0.35;
-
-    // In terrain mode, shift toward a more uniform cyan-blue
-    vec3 terrainColor = mix(deepBlue * 1.2, cyan * 0.9, 0.5 + vNormal.y * 0.3);
-    color = mix(color, terrainColor, vMorph * 0.6);
+    // Rim brightening 
+    color += vec3(0.12, 0.28, 0.5) * vRim * 0.4;
 
     gl_FragColor = vec4(color, vAlpha) * tex;
   }
@@ -129,8 +107,8 @@ const haloVertexShader = `
     vec3 displaced = position * (1.0 + sin(uTime * 0.18 + position.y * 2.5) * 0.008);
     vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    // Fade out halo during morph
-    vAlpha = aAlpha * (1.0 - uMorph);
+    // Fade out halo quickly on scroll
+    vAlpha = aAlpha * mix(1.0, 0.0, clamp(uMorph * 2.5, 0.0, 1.0));
     float distanceScale = 28.0 / max(-mvPosition.z, 0.001);
     gl_PointSize = clamp(aSize * distanceScale * uPixelRatio, 0.6, 3.0);
   }
@@ -339,15 +317,14 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     let frameId = 0;
     const start = performance.now();
 
-    // Camera base values
-    const CAM_BASE_Z = 7.0;
-    const CAM_BASE_Y = 0;
+    // Camera targets for Maze HQ Zoom Out Effect
+    const CAM_BASE_Z = 6.2;       // Huge in foreground
+    const CAM_BASE_Y = 0.0;
     const CAM_BASE_ROT_X = 0;
 
-    // Terrain camera targets
-    const CAM_TERRAIN_Z = 9.0;
-    const CAM_TERRAIN_Y = 1.2;
-    const CAM_TERRAIN_ROT_X = -0.25; // gentle look down at terrain
+    const CAM_SCROLLED_Z = 20.0;  // Zoomed way out
+    const CAM_SCROLLED_Y = 12.0;  // Moved massively up (pushes globe down)
+    const CAM_SCROLLED_ROT_X = -0.3; // Tilts down at the distant globe
 
     const tick = () => {
       const elapsed = (performance.now() - start) * 0.001;
@@ -356,30 +333,27 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
 
       // Calculate morph from scroll
       const vh = window.innerHeight || 1;
-      const scrollProgress = Math.min(scrollY / vh, 2.0);
+      const scrollRaw = Math.max(0, Math.min(1, scrollY / (vh * 1.5)));
+      const scrollProgress = easeInOutCubic(scrollRaw);
 
-      // Morph starts at 20% scroll, fully terrain at 80%
-      const morphRaw = Math.max(0, Math.min(1, (scrollProgress - 0.2) / 0.6));
-      const morph = easeInOutCubic(morphRaw);
+      sphereMaterial.uniforms.uMorph.value = scrollProgress;
+      haloMaterial.uniforms.uMorph.value = scrollProgress;
 
-      sphereMaterial.uniforms.uMorph.value = morph;
-      haloMaterial.uniforms.uMorph.value = morph;
-
-      // Rotation: Y keeps spinning, X tilts for terrain perspective
-      sphere.rotation.y = elapsed * ROTATION_SPEED * (1.0 - morph * 0.7); // slow down in terrain
+      // Rotation keeps spinning smoothly
+      sphere.rotation.y = elapsed * ROTATION_SPEED;
       halo.rotation.y = sphere.rotation.y * 1.015;
 
-      // Tilt: subtle oscillation in globe mode, fixed downward tilt in terrain
+      // Tilt oscillation based on time, mixed with the downward tilt of scroll
       const globeTiltX = Math.sin(elapsed * 0.12) * 0.035;
-      sphere.rotation.x = globeTiltX * (1.0 - morph) + CAM_TERRAIN_ROT_X * morph * 0.3;
+      sphere.rotation.x = globeTiltX * (1.0 - scrollProgress) + CAM_SCROLLED_ROT_X * scrollProgress;
       halo.rotation.x = sphere.rotation.x;
 
-      // Camera transitions smoothly
-      camera.position.z = CAM_BASE_Z + (CAM_TERRAIN_Z - CAM_BASE_Z) * morph;
-      camera.position.y = CAM_BASE_Y + (CAM_TERRAIN_Y - CAM_BASE_Y) * morph;
-      camera.rotation.x = CAM_BASE_ROT_X + (CAM_TERRAIN_ROT_X - CAM_BASE_ROT_X) * morph;
+      // Camera transitions deeply away
+      camera.position.z = CAM_BASE_Z + (CAM_SCROLLED_Z - CAM_BASE_Z) * scrollProgress;
+      camera.position.y = CAM_BASE_Y + (CAM_SCROLLED_Y - CAM_BASE_Y) * scrollProgress;
+      camera.rotation.x = CAM_BASE_ROT_X + (CAM_SCROLLED_ROT_X - CAM_BASE_ROT_X) * scrollProgress;
 
-      // Position: globe stays centered (no Y displacement like before)
+      // Keep base position
       sphere.position.y = BASE_Y;
       halo.position.y = BASE_Y;
 

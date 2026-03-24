@@ -7,7 +7,7 @@ import { Header } from '@/components/Header';
 import { NetworkAnimation } from '@/components/NetworkAnimation';
 import { ScrollDownIndicator } from '@/components/landing/ScrollDownIndicator';
 import { Button } from '@/components/ui/button';
-import { motion, useInView } from 'framer-motion';
+import { motion, useInView, useScroll, useTransform } from 'framer-motion';
 import {
   ArrowRight, Shield, Network, Eye, Zap,
   Quote, Scan, BarChart3, FileSearch, ShieldCheck,
@@ -48,8 +48,7 @@ function Section({ children, className = '', id }: { children: React.ReactNode; 
   );
 }
 
-/* ── Reveal — CSS transition that cleans up transform after animation
-     so backdrop-filter on children can reach the fixed WebGL canvas ── */
+/* ── Reveal — Smooth spring-like reveal matching Maze HQ aesthetics ── */
 function Reveal({ children, className = '', delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true, amount: 0.15 });
@@ -57,7 +56,7 @@ function Reveal({ children, className = '', delay = 0 }: { children: React.React
 
   useEffect(() => {
     if (isInView && !done) {
-      const t = setTimeout(() => setDone(true), 900 + delay * 1000);
+      const t = setTimeout(() => setDone(true), 1200 + delay * 1000);
       return () => clearTimeout(t);
     }
   }, [isInView, done, delay]);
@@ -68,8 +67,8 @@ function Reveal({ children, className = '', delay = 0 }: { children: React.React
       className={className}
       style={{
         opacity: isInView ? 1 : 0,
-        transform: done ? undefined : isInView ? 'translateY(0px)' : 'translateY(40px)',
-        transition: `opacity 0.8s cubic-bezier(0.22,1,0.36,1) ${delay}s, transform 0.8s cubic-bezier(0.22,1,0.36,1) ${delay}s`,
+        transform: done ? undefined : isInView ? 'translateY(0px) scale(1)' : 'translateY(45px) scale(0.97)',
+        transition: `opacity 1.0s cubic-bezier(0.16, 1, 0.3, 1) ${delay}s, transform 1.0s cubic-bezier(0.16, 1, 0.3, 1) ${delay}s`,
       }}
     >
       {children}
@@ -81,6 +80,8 @@ function Reveal({ children, className = '', delay = 0 }: { children: React.React
 const Index = () => {
   const { user, loading, mfaRequired, mfaEnrolled } = useAuth();
   const navigate = useNavigate();
+  const { scrollY } = useScroll();
+  const canvasOpacity = useTransform(scrollY, [0, 1600, 2400], [1, 1, 0]);
 
   useEffect(() => {
     if (!loading && user) {
@@ -104,9 +105,9 @@ const Index = () => {
     <div className="min-h-screen text-foreground flex flex-col relative">
       <Header />
 
-      <div className="fixed inset-0 z-0 pointer-events-none">
+      <motion.div style={{ opacity: canvasOpacity }} className="fixed inset-0 z-0 pointer-events-none">
         <NetworkAnimation className="w-full h-full" />
-      </div>
+      </motion.div>
 
       <main className="flex-1 relative">
         <section id="hero" data-section className="h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
