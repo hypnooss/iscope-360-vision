@@ -127,54 +127,63 @@ detect_os() {
   fi
 }
 
-choose_python() {
-  local candidates=("python3.11" "python3.10" "python3.9" "python3.8" "python3")
-  local c
-  for c in "\${candidates[@]}"; do
-    if command -v "$c" >/dev/null 2>&1; then
-      PYTHON_BIN="$c"
-      return 0
-    fi
-  done
-  # Fallback: check SCL (Software Collections) paths for CentOS/RHEL 7
-  local scl_paths=(
-    "/opt/rh/rh-python311/root/usr/bin/python3.11"
-    "/opt/rh/rh-python39/root/usr/bin/python3.9"
-    "/opt/rh/rh-python38/root/usr/bin/python3.8"
+inject_scl_paths() {
+  local scl_dirs=(
+    "/opt/rh/rh-python311/root/usr/bin"
+    "/opt/rh/rh-python39/root/usr/bin"
+    "/opt/rh/rh-python38/root/usr/bin"
   )
-  local sp
-  for sp in "\${scl_paths[@]}"; do
-    if [[ -x "$sp" ]]; then
-      PYTHON_BIN="$sp"
-      echo "[✓] Python encontrado via SCL: $sp"
-      return 0
+  local d
+  for d in "\${scl_dirs[@]}"; do
+    if [[ -d "$d" ]] && [[ ":\$PATH:" != *":$d:"* ]]; then
+      export PATH="$d:\$PATH"
     fi
   done
+}
+
+choose_python() {
+  local MIN_MAJOR=3
+  local MIN_MINOR=8
+  local candidates=("python3.11" "python3.10" "python3.9" "python3.8" "python3")
+  local best_bin="" best_maj=0 best_min=0
+  local c bin_path ver maj min
+
+  for c in "\${candidates[@]}"; do
+    bin_path="\$(command -v "$c" 2>/dev/null || true)"
+    [[ -z "\$bin_path" ]] && continue
+
+    ver="\$("\$bin_path" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || true)"
+    [[ -z "\$ver" ]] && continue
+
+    maj="\${ver%%.*}"
+    min="\${ver#*.}"
+
+    if [[ "\$maj" -lt "\$MIN_MAJOR" ]] || [[ "\$maj" -eq "\$MIN_MAJOR" && "\$min" -lt "\$MIN_MINOR" ]]; then
+      echo "[!] \$bin_path é Python \$ver — ignorado (mínimo \$MIN_MAJOR.\$MIN_MINOR)"
+      continue
+    fi
+
+    if [[ "\$maj" -gt "\$best_maj" ]] || [[ "\$maj" -eq "\$best_maj" && "\$min" -gt "\$best_min" ]]; then
+      best_bin="\$bin_path"
+      best_maj="\$maj"
+      best_min="\$min"
+    fi
+  done
+
+  if [[ -n "\$best_bin" ]]; then
+    PYTHON_BIN="\$best_bin"
+    echo "[✓] Python selecionado: \$best_bin (\$best_maj.\$best_min)"
+    return 0
+  fi
+
   return 1
 }
 
 require_python_min_version() {
-  # Require Python >= 3.9
   if [[ -z "\${PYTHON_BIN:-}" ]]; then
-    echo "Erro: não consegui localizar Python no sistema."
-    echo "Instale python39 e tente novamente. Ex.: sudo dnf install -y python39 python39-pip"
-    exit 1
-  fi
-
-  local ver
-  ver="\$($PYTHON_BIN -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || true)"
-  local maj min
-  maj="\${ver%%.*}"
-  min="\${ver#*.}"
-
-  if [[ -z "\${maj:-}" || -z "\${min:-}" ]]; then
-    echo "Erro: falha ao detectar versão do Python usando '$PYTHON_BIN'."
-    exit 1
-  fi
-
-  if [[ "$maj" -lt 3 || ( "$maj" -eq 3 && "$min" -lt 9 ) ]]; then
-    echo "Erro: Python >= 3.9 é obrigatório. Detectado: $ver ($PYTHON_BIN)"
-    echo "Oracle Linux/RHEL 8: sudo dnf install -y python39 python39-pip"
+    echo "Erro: não consegui localizar Python >= 3.8 no sistema."
+    echo "CentOS 7: sudo yum install -y centos-release-scl && sudo yum install -y rh-python38 rh-python38-python-pip"
+    echo "RHEL/Oracle 8+: sudo dnf install -y python39 python39-pip"
     exit 1
   fi
 }
