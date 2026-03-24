@@ -81,7 +81,11 @@ const Index = () => {
   const { user, loading, mfaRequired, mfaEnrolled } = useAuth();
   const navigate = useNavigate();
   const { scrollY } = useScroll();
-  const canvasOpacity = useTransform(scrollY, [0, 1600, 2400], [1, 1, 0]);
+  
+  // Maze HQ Scroll curve: Fades early, scales down, and descends physically.
+  const canvasOpacity = useTransform(scrollY, [0, 700], [1, 0]);
+  const canvasScale = useTransform(scrollY, [0, 700], [1, 0.65]);
+  const canvasY = useTransform(scrollY, [0, 700], ['0%', '25%']);
 
   useEffect(() => {
     if (!loading && user) {
@@ -105,7 +109,7 @@ const Index = () => {
     <div className="min-h-screen text-foreground flex flex-col relative">
       <Header />
 
-      <motion.div style={{ opacity: canvasOpacity }} className="fixed inset-0 z-0 pointer-events-none">
+      <motion.div style={{ opacity: canvasOpacity, scale: canvasScale, y: canvasY }} className="fixed inset-0 z-0 pointer-events-none origin-center">
         <NetworkAnimation className="w-full h-full" />
       </motion.div>
 

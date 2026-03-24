@@ -5,20 +5,18 @@ interface NetworkAnimationProps {
   className?: string;
 }
 
-const PARTICLE_COUNT = 22000;
+const PARTICLE_COUNT = 24000;
 const HALO_COUNT = 3000;
-const ROTATION_SPEED = 0.008;
+const ROTATION_SPEED = 0.025;
 const MAX_PIXEL_RATIO = 1.25;
 
 const sphereVertexShader = `
   attribute float aAlpha;
   attribute float aSize;
   attribute float aSeed;
-  attribute vec3 aPlanePos;
 
   uniform float uPixelRatio;
   uniform float uTime;
-  uniform float uMorph; // we use uMorph as uScroll now
 
   varying float vAlpha;
   varying float vAccent;
@@ -43,13 +41,11 @@ const sphereVertexShader = `
     // Back-face culling via alpha 
     float frontFade = smoothstep(-0.3, 0.6, sphereNormal.z);
 
-    // Core suppression
-    float coreFade = mix(0.35, 1.0, pow(max(vRim, 0.001), 0.3));
+    // Core density
+    float coreFade = mix(0.4, 1.0, pow(max(vRim, 0.001), 0.3));
     
-    // Globally reduce opacity heavily on scroll to shift focus to content
-    float scrollFade = mix(1.0, 0.15, uMorph);
-    
-    vAlpha = aAlpha * frontFade * coreFade * scrollFade;
+    // Pristine bright globe
+    vAlpha = aAlpha * frontFade * coreFade;
 
     // Accent color zone
     float magentaZone = smoothstep(-0.2, 0.8, position.x) * smoothstep(-0.2, 0.7, -position.y);
@@ -58,14 +54,12 @@ const sphereVertexShader = `
 
     // Point size with distance attenuation
     float distanceScale = 28.0 / max(-mvPosition.z, 0.001);
-    gl_PointSize = clamp(aSize * distanceScale * uPixelRatio, 0.5, 2.5);
+    gl_PointSize = clamp(aSize * distanceScale * uPixelRatio, 0.5, 2.8);
   }
 `;
 
 const sphereFragmentShader = `
   uniform sampler2D uPointTexture;
-  uniform float uMorph;
-
   varying float vAlpha;
   varying float vAccent;
   varying float vRim;
@@ -74,20 +68,20 @@ const sphereFragmentShader = `
   void main() {
     vec4 tex = texture2D(uPointTexture, gl_PointCoord);
 
-    // MazeHQ-style color palette
-    vec3 cyan    = vec3(0.08, 0.75, 0.92);
-    vec3 deepBlue = vec3(0.06, 0.22, 0.65);
-    vec3 magenta = vec3(0.65, 0.08, 0.85);
+    // MazeHQ-style vibrant palette
+    vec3 cyan    = vec3(0.08, 0.85, 0.95);
+    vec3 deepBlue = vec3(0.06, 0.22, 0.85);
+    vec3 magenta = vec3(0.75, 0.08, 0.95);
 
     // Vertical gradient: deep blue at bottom -> cyan at top
     float verticalMix = smoothstep(-1.0, 0.9, vNormal.y);
     vec3 color = mix(deepBlue, cyan, verticalMix);
 
     // Magenta accent in bottom-right
-    color = mix(color, magenta, vAccent * 0.7);
+    color = mix(color, magenta, vAccent * 0.8);
 
     // Rim brightening 
-    color += vec3(0.12, 0.28, 0.5) * vRim * 0.4;
+    color += vec3(0.12, 0.35, 0.7) * vRim * 0.5;
 
     gl_FragColor = vec4(color, vAlpha) * tex;
   }
@@ -99,7 +93,6 @@ const haloVertexShader = `
 
   uniform float uPixelRatio;
   uniform float uTime;
-  uniform float uMorph;
 
   varying float vAlpha;
 
@@ -107,10 +100,9 @@ const haloVertexShader = `
     vec3 displaced = position * (1.0 + sin(uTime * 0.18 + position.y * 2.5) * 0.008);
     vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    // Fade out halo quickly on scroll
-    vAlpha = aAlpha * mix(1.0, 0.0, clamp(uMorph * 2.5, 0.0, 1.0));
+    vAlpha = aAlpha;
     float distanceScale = 28.0 / max(-mvPosition.z, 0.001);
-    gl_PointSize = clamp(aSize * distanceScale * uPixelRatio, 0.6, 3.0);
+    gl_PointSize = clamp(aSize * distanceScale * uPixelRatio, 0.6, 3.5);
   }
 `;
 
@@ -120,7 +112,7 @@ const haloFragmentShader = `
 
   void main() {
     vec4 tex = texture2D(uPointTexture, gl_PointCoord);
-    vec3 haloColor = vec3(0.06, 0.55, 0.88);
+    vec3 haloColor = vec3(0.06, 0.65, 0.98);
     gl_FragColor = vec4(haloColor, vAlpha) * tex;
   }
 `;
@@ -147,7 +139,6 @@ function createPointTexture() {
 function createSphereGeometry(count: number) {
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
-  const planePositions = new Float32Array(count * 3);
   const alphas = new Float32Array(count);
   const sizes = new Float32Array(count);
   const seeds = new Float32Array(count);
@@ -164,25 +155,12 @@ function createSphereGeometry(count: number) {
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
 
-    // Terrain plane positions - wide XZ spread with wavy Y
-    const seed = Math.random();
-    const px = (seed * 2 - 1) * 8.0;
-    const pz = (Math.random() * 2 - 1) * 6.0;
-    const py = Math.sin(px * 0.8) * Math.cos(pz * 0.6) * 0.3
-             + Math.sin(px * 1.5 + pz * 0.9) * 0.15
-             + Math.cos(pz * 1.2) * 0.1;
-
-    planePositions[i * 3] = px;
-    planePositions[i * 3 + 1] = py;
-    planePositions[i * 3 + 2] = pz;
-
-    alphas[i] = 0.4 + Math.random() * 0.5;
-    sizes[i] = 0.7 + Math.random() * 1.0;
-    seeds[i] = seed;
+    alphas[i] = 0.5 + Math.random() * 0.5;
+    sizes[i] = 0.8 + Math.random() * 1.2;
+    seeds[i] = Math.random();
   }
 
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("aPlanePos", new THREE.BufferAttribute(planePositions, 3));
   geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
   geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
   geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
@@ -206,19 +184,14 @@ function createHaloGeometry(count: number) {
     positions[i * 3] = radius * sinPhi * Math.cos(theta);
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
-    alphas[i] = 0.02 + Math.random() * 0.06;
-    sizes[i] = 0.8 + Math.random() * 1.2;
+    alphas[i] = 0.03 + Math.random() * 0.07;
+    sizes[i] = 0.9 + Math.random() * 1.5;
   }
 
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
   geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
   return geometry;
-}
-
-// Smooth easing for morph transitions
-function easeInOutCubic(t: number): number {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
 export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
@@ -230,12 +203,12 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
-    camera.position.z = 7.0;
+    camera.position.z = 6.2;
 
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
       antialias: false,
-      powerPreference: "low-power",
+      powerPreference: "high-performance",
       premultipliedAlpha: true,
     });
 
@@ -259,8 +232,7 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
       uniforms: {
         uPointTexture: { value: pointTexture },
         uPixelRatio: { value: Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO) },
-        uTime: { value: 0 },
-        uMorph: { value: 0 },
+        uTime: { value: 0 }
       },
     });
 
@@ -273,8 +245,7 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
       uniforms: {
         uPointTexture: { value: pointTexture },
         uPixelRatio: { value: Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO) },
-        uTime: { value: 0 },
-        uMorph: { value: 0 },
+        uTime: { value: 0 }
       },
     });
 
@@ -284,19 +255,13 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     const GLOBE_SCALE = 3.8;
     sphere.scale.setScalar(GLOBE_SCALE);
     halo.scale.setScalar(GLOBE_SCALE * 1.04);
-
-    const BASE_Y = -0.25;
-    sphere.position.y = BASE_Y;
-    halo.position.y = BASE_Y;
+    
+    // Position centrally. 
+    sphere.position.y = 0;
+    halo.position.y = 0;
 
     scene.add(sphere);
     scene.add(halo);
-
-    // Scroll state
-    let scrollY = 0;
-    const onScroll = () => { scrollY = window.scrollY; };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    scrollY = window.scrollY;
 
     const resize = () => {
       const width = Math.max(container.clientWidth, 1);
@@ -317,48 +282,22 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     let frameId = 0;
     const start = performance.now();
 
-    // Camera targets for Maze HQ Zoom Out Effect
-    const CAM_BASE_Z = 6.2;       // Huge in foreground
-    const CAM_BASE_Y = 0.0;
-    const CAM_BASE_ROT_X = 0;
-
-    const CAM_SCROLLED_Z = 20.0;  // Zoomed way out
-    const CAM_SCROLLED_Y = 12.0;  // Moved massively up (pushes globe down)
-    const CAM_SCROLLED_ROT_X = -0.3; // Tilts down at the distant globe
-
     const tick = () => {
       const elapsed = (performance.now() - start) * 0.001;
+      
       sphereMaterial.uniforms.uTime.value = elapsed;
       haloMaterial.uniforms.uTime.value = elapsed;
 
-      // Calculate morph from scroll
-      const vh = window.innerHeight || 1;
-      const scrollRaw = Math.max(0, Math.min(1, scrollY / (vh * 1.5)));
-      const scrollProgress = easeInOutCubic(scrollRaw);
-
-      sphereMaterial.uniforms.uMorph.value = scrollProgress;
-      haloMaterial.uniforms.uMorph.value = scrollProgress;
-
-      // Rotation keeps spinning smoothly
+      // Uninterrupted cinematic rotation
       sphere.rotation.y = elapsed * ROTATION_SPEED;
       halo.rotation.y = sphere.rotation.y * 1.015;
 
-      // Tilt oscillation based on time, mixed with the downward tilt of scroll
+      // Subtle organic tilt
       const globeTiltX = Math.sin(elapsed * 0.12) * 0.035;
-      sphere.rotation.x = globeTiltX * (1.0 - scrollProgress) + CAM_SCROLLED_ROT_X * scrollProgress;
+      sphere.rotation.x = globeTiltX;
       halo.rotation.x = sphere.rotation.x;
 
-      // Camera transitions deeply away
-      camera.position.z = CAM_BASE_Z + (CAM_SCROLLED_Z - CAM_BASE_Z) * scrollProgress;
-      camera.position.y = CAM_BASE_Y + (CAM_SCROLLED_Y - CAM_BASE_Y) * scrollProgress;
-      camera.rotation.x = CAM_BASE_ROT_X + (CAM_SCROLLED_ROT_X - CAM_BASE_ROT_X) * scrollProgress;
-
-      // Keep base position
-      sphere.position.y = BASE_Y;
-      halo.position.y = BASE_Y;
-
       renderer.render(scene, camera);
-
       frameId = window.requestAnimationFrame(tick);
     };
 
@@ -367,7 +306,6 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     return () => {
       window.cancelAnimationFrame(frameId);
       window.removeEventListener("resize", resize);
-      window.removeEventListener("scroll", onScroll);
       sphereGeometry.dispose();
       haloGeometry.dispose();
       sphereMaterial.dispose();
