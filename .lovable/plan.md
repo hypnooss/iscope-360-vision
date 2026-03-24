@@ -1,28 +1,51 @@
 
-
-## Plano: Ajustar requirements.txt para compatibilidade com Python 3.8
+## Plano: Forçar atualização do `requirements.txt` no fluxo de repair/install
 
 ### Diagnóstico
-O Python 3.8 do SCL agora é detectado corretamente. Porém, algumas dependências no `requirements.txt` exigem Python 3.9+:
+O erro persistiu porque o script **não está usando o `requirements.txt` novo do bucket**.
 
-- **`dnspython>=2.7.0`** — versão 2.7+ requer Python 3.9+. A última compatível com 3.8 é **2.6.1**
-- Outras dependências podem ter o mesmo problema (ex: `pysnmp>=6.0.0`, `requests>=2.31.0`, `certifi>=2024.2.2`)
+Pelo código atual do `agent-fix`:
+- ele faz `find ... ! -name 'requirements.txt'`, ou seja, **preserva o arquivo antigo** em `/opt/iscope-agent/requirements.txt`
+- depois **só baixa do storage se o arquivo não existir**
+- no seu log, não apareceu a mensagem `requirements.txt não encontrado após extração — baixando do storage...`, então o fallback **não rodou**
 
-### Solução
-Ajustar os limites de versão no `requirements.txt` para serem compatíveis com Python 3.8:
+Ou seja: mesmo com o bucket atualizado, o repair continua reutilizando o `requirements.txt` velho local, que ainda contém `dnspython>=2.7.0`.
 
-| Pacote | Atual | Novo |
-|--------|-------|------|
-| `dnspython` | `>=2.7.0` | `>=2.4.0,<2.7.0` |
+### O que vou ajustar
+1. **`agent-fix`**
+   - parar de preservar `requirements.txt` antigo durante a limpeza
+   - sempre garantir que o arquivo final usado no venv seja o mais novo:
+     - priorizar o `requirements.txt` extraído do pacote, ou
+     - baixar do storage e sobrescrever quando necessário
+   - adicionar log explícito mostrando de onde veio o `requirements.txt`
 
-Os demais pacotes (`requests`, `certifi`, `pyjwt`, `paramiko`, `pysnmp`, `schedule`, `urllib3`, `websocket-client`) têm versões compatíveis com Python 3.8 nos ranges atuais, pois o pip já listou `requests` até 2.27.1 antes (esse era o erro com Python 3.6, não 3.8 — com 3.8, requests 2.31+ está disponível).
+2. **`agent-install`**
+   - aplicar a mesma correção para evitar instalações novas herdando um `requirements.txt` velho
 
-### Arquivo alterado
+3. **`super-agent-install`**
+   - alinhar o comportamento com os outros scripts para evitar inconsistência entre install/fix/super-install
 
-| Arquivo | Mudança |
-|---------|---------|
-| `python-agent/requirements.txt` | `dnspython>=2.7.0` → `dnspython>=2.4.0,<2.7.0` |
+### Arquivos a ajustar
+- `supabase/functions/agent-fix/index.ts`
+- `supabase/functions/agent-install/index.ts`
+- `supabase/functions/super-agent-install/index.ts`
 
-### Observação
-O `requirements.txt` também precisa ser atualizado no **storage bucket** (`agent-releases`) como fallback, pois o `agent-fix` pode baixá-lo de lá se não estiver incluído nos pacotes tar.gz. Após a alteração no código, será necessário fazer upload do novo `requirements.txt` para o bucket.
+### Estratégia
+```text
+1. Limpar sem preservar requirements.txt
+2. Extrair os tar.gz
+3. Validar se INSTALL_DIR/requirements.txt existe
+4. Se faltar, baixar do bucket
+5. Logar qual arquivo será usado
+6. Criar venv e instalar dependências
+```
 
+### Melhoria extra recomendada
+Além disso, vou adicionar uma validação de conteúdo antes do `pip install`, por exemplo:
+- checar se o arquivo final ainda contém `dnspython>=2.7.0`
+- se contiver, abortar com mensagem clara dizendo que o pacote/bucket ainda está desatualizado
+
+Isso evita ficar preso em loop com erro de PyPI quando o problema real é arquivo antigo.
+
+### Resultado esperado
+Depois dessa mudança, o `agent-fix` vai realmente usar o `requirements.txt` compatível com Python 3.8, em vez de reaproveitar a cópia local antiga. Isso deve eliminar o erro atual do `dnspython>=2.7.0`.
