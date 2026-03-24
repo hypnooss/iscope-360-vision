@@ -1,19 +1,28 @@
-## Plano: Priorizar Python do SCL via PATH e seleção por versão
 
-### Status: ✅ Implementado
 
-### O que foi feito
+## Plano: Ajustar requirements.txt para compatibilidade com Python 3.8
 
-1. **`inject_scl_paths()`** — prepende `/opt/rh/rh-python3{8,9,11}/root/usr/bin` ao `$PATH`
-2. **`choose_python()` refatorado** — testa cada candidato, lê a versão real via `sys.version_info`, ignora versões < 3.8, e seleciona a mais recente compatível
-3. **Mínimo baixado para 3.8** — alinhado com `requirements.txt` e com o SCL disponível no CentOS 7
-4. **`agent-fix`** — agora valida versão antes de recriar o venv (antes não validava)
-5. **Logs melhorados** — mostra caminho + versão do Python selecionado, e motivo de rejeição dos incompatíveis
+### Diagnóstico
+O Python 3.8 do SCL agora é detectado corretamente. Porém, algumas dependências no `requirements.txt` exigem Python 3.9+:
 
-### Arquivos alterados
+- **`dnspython>=2.7.0`** — versão 2.7+ requer Python 3.9+. A última compatível com 3.8 é **2.6.1**
+- Outras dependências podem ter o mesmo problema (ex: `pysnmp>=6.0.0`, `requests>=2.31.0`, `certifi>=2024.2.2`)
+
+### Solução
+Ajustar os limites de versão no `requirements.txt` para serem compatíveis com Python 3.8:
+
+| Pacote | Atual | Novo |
+|--------|-------|------|
+| `dnspython` | `>=2.7.0` | `>=2.4.0,<2.7.0` |
+
+Os demais pacotes (`requests`, `certifi`, `pyjwt`, `paramiko`, `pysnmp`, `schedule`, `urllib3`, `websocket-client`) têm versões compatíveis com Python 3.8 nos ranges atuais, pois o pip já listou `requests` até 2.27.1 antes (esse era o erro com Python 3.6, não 3.8 — com 3.8, requests 2.31+ está disponível).
+
+### Arquivo alterado
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/agent-fix/index.ts` | `inject_scl_paths()` + `choose_python()` com validação de versão |
-| `supabase/functions/agent-install/index.ts` | Idem + `require_python_min_version()` simplificado |
-| `supabase/functions/super-agent-install/index.ts` | Idem |
+| `python-agent/requirements.txt` | `dnspython>=2.7.0` → `dnspython>=2.4.0,<2.7.0` |
+
+### Observação
+O `requirements.txt` também precisa ser atualizado no **storage bucket** (`agent-releases`) como fallback, pois o `agent-fix` pode baixá-lo de lá se não estiver incluído nos pacotes tar.gz. Após a alteração no código, será necessário fazer upload do novo `requirements.txt` para o bucket.
+
