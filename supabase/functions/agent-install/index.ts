@@ -136,6 +136,20 @@ choose_python() {
       return 0
     fi
   done
+  # Fallback: check SCL (Software Collections) paths for CentOS/RHEL 7
+  local scl_paths=(
+    "/opt/rh/rh-python311/root/usr/bin/python3.11"
+    "/opt/rh/rh-python39/root/usr/bin/python3.9"
+    "/opt/rh/rh-python38/root/usr/bin/python3.8"
+  )
+  local sp
+  for sp in "\${scl_paths[@]}"; do
+    if [[ -x "$sp" ]]; then
+      PYTHON_BIN="$sp"
+      echo "[✓] Python encontrado via SCL: $sp"
+      return 0
+    fi
+  done
   return 1
 }
 
