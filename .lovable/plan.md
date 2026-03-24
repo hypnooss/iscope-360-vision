@@ -1,68 +1,19 @@
-
-
 ## Plano: Priorizar Python do SCL via PATH e seleção por versão
 
-### Diagnóstico
-O problema não é só “encontrar” o Python do SCL. Hoje os scripts:
+### Status: ✅ Implementado
 
-- verificam primeiro `python3` no `PATH`
-- só depois tentam o caminho absoluto do SCL
-- no `agent-fix`, nem validam a versão mínima antes de criar o venv
+### O que foi feito
 
-No CentOS 7 isso é perigoso, porque pode existir um `python3` antigo no `PATH` e ele acaba sendo escolhido antes do Python 3.8 do SCL. Isso explica por que o erro continuou mesmo após instalar `rh-python38`.
+1. **`inject_scl_paths()`** — prepende `/opt/rh/rh-python3{8,9,11}/root/usr/bin` ao `$PATH`
+2. **`choose_python()` refatorado** — testa cada candidato, lê a versão real via `sys.version_info`, ignora versões < 3.8, e seleciona a mais recente compatível
+3. **Mínimo baixado para 3.8** — alinhado com `requirements.txt` e com o SCL disponível no CentOS 7
+4. **`agent-fix`** — agora valida versão antes de recriar o venv (antes não validava)
+5. **Logs melhorados** — mostra caminho + versão do Python selecionado, e motivo de rejeição dos incompatíveis
 
-### Melhor abordagem
-Sim: faz sentido ajustar o `PATH`, mas não como solução isolada. O ideal é combinar 3 coisas:
-
-1. **Pré-adicionar paths SCL conhecidos ao `PATH`**
-2. **Escolher o Python pela versão real**, não só pelo nome do binário
-3. **Validar e logar explicitamente qual Python/version foi selecionado**
-
-### O que será alterado
+### Arquivos alterados
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/agent-fix/index.ts` | Inserir paths SCL no `PATH`, selecionar Python compatível e validar versão antes do venv |
-| `supabase/functions/agent-install/index.ts` | Mesmo ajuste para instalação nova |
-| `supabase/functions/super-agent-install/index.ts` | Mesmo ajuste para super-agent |
-| `python-agent/requirements.txt` | Revisar se o mínimo real exige `>=3.8` ou `>=3.9`, para alinhar com os scripts |
-
-### Estratégia de implementação
-1. Criar uma rotina para **prepend** no `PATH` destes diretórios, se existirem:
-   - `/opt/rh/rh-python311/root/usr/bin`
-   - `/opt/rh/rh-python39/root/usr/bin`
-   - `/opt/rh/rh-python38/root/usr/bin`
-
-2. Refatorar `choose_python()` para:
-   - testar cada candidato
-   - ler a versão real (`major.minor`)
-   - aceitar apenas versões compatíveis
-   - preferir a mais nova compatível
-
-3. No `agent-fix`, adicionar a mesma validação que já existe nos instaladores, para impedir recriar o venv com Python antigo.
-
-4. Melhorar os logs para mostrar algo como:
-   - caminho do binário escolhido
-   - versão detectada
-   - motivo da rejeição de binários antigos
-
-### Resultado esperado
-Após o ajuste, em CentOS 7 com `rh-python38` instalado, o script deve usar o Python do SCL automaticamente, sem depender de `scl enable`, e sem cair no `python3` antigo do sistema.
-
-## Detalhe técnico
-Hoje a ordem de seleção favorece o primeiro `python3` encontrado no ambiente. O plano corrige isso mudando a lógica de “achar um executável” para “achar um executável compatível”.
-
-Fluxo esperado:
-
-```text
-1. Adiciona binários SCL ao PATH
-2. Testa python3.11 / 3.10 / 3.9 / 3.8 / python3
-3. Lê a versão real de cada um
-4. Ignora os incompatíveis
-5. Usa o melhor compatível
-6. Só então cria o venv e instala requirements
-```
-
-### Observação importante
-Se o projeto realmente suporta Python 3.8, os scripts não devem continuar exigindo `>=3.9`, senão o `agent-install` e `super-agent-install` ainda poderão falhar mesmo com o SCL funcionando. Por isso a revisão do requisito mínimo precisa ser feita junto.
-
+| `supabase/functions/agent-fix/index.ts` | `inject_scl_paths()` + `choose_python()` com validação de versão |
+| `supabase/functions/agent-install/index.ts` | Idem + `require_python_min_version()` simplificado |
+| `supabase/functions/super-agent-install/index.ts` | Idem |
