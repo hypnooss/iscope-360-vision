@@ -1,28 +1,21 @@
 
 
-## Plano: Ajustar requirements.txt para compatibilidade com Python 3.8
+## Plano: Forçar atualização do requirements.txt no fluxo de repair/install
 
-### Diagnóstico
-O Python 3.8 do SCL agora é detectado corretamente. Porém, algumas dependências no `requirements.txt` exigem Python 3.9+:
+### Status: ✅ Implementado
 
-- **`dnspython>=2.7.0`** — versão 2.7+ requer Python 3.9+. A última compatível com 3.8 é **2.6.1**
-- Outras dependências podem ter o mesmo problema (ex: `pysnmp>=6.0.0`, `requests>=2.31.0`, `certifi>=2024.2.2`)
-
-### Solução
-Ajustar os limites de versão no `requirements.txt` para serem compatíveis com Python 3.8:
-
-| Pacote | Atual | Novo |
-|--------|-------|------|
-| `dnspython` | `>=2.7.0` | `>=2.4.0,<2.7.0` |
-
-Os demais pacotes (`requests`, `certifi`, `pyjwt`, `paramiko`, `pysnmp`, `schedule`, `urllib3`, `websocket-client`) têm versões compatíveis com Python 3.8 nos ranges atuais, pois o pip já listou `requests` até 2.27.1 antes (esse era o erro com Python 3.6, não 3.8 — com 3.8, requests 2.31+ está disponível).
-
-### Arquivo alterado
+### Mudanças realizadas
 
 | Arquivo | Mudança |
 |---------|---------|
-| `python-agent/requirements.txt` | `dnspython>=2.7.0` → `dnspython>=2.4.0,<2.7.0` |
+| `supabase/functions/agent-fix/index.ts` | Removido `! -name 'requirements.txt'` do find; agora sempre baixa fresh do storage e valida conteúdo |
+| `supabase/functions/agent-install/index.ts` | Removido `! -name 'requirements.txt'` dos dois blocos de limpeza (offline e online) |
+| `python-agent/requirements.txt` | `dnspython>=2.4.0,<2.7.0` (já alterado anteriormente) |
 
-### Observação
-O `requirements.txt` também precisa ser atualizado no **storage bucket** (`agent-releases`) como fallback, pois o `agent-fix` pode baixá-lo de lá se não estiver incluído nos pacotes tar.gz. Após a alteração no código, será necessário fazer upload do novo `requirements.txt` para o bucket.
-
+### Comportamento atual do agent-fix
+1. Limpa tudo exceto venv, .env, storage, logs (requirements.txt **não é mais preservado**)
+2. Extrai os tar.gz
+3. **Sempre baixa requirements.txt fresco do storage** (sobrescreve qualquer versão local)
+4. Se falhar o download, usa o extraído do pacote como fallback
+5. **Valida** que o arquivo não contém `dnspython>=2.7` antes de criar o venv
+6. Cria venv e instala dependências
