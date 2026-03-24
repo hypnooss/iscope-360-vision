@@ -842,9 +842,10 @@ download_release() {
 
 setup_venv() {
   echo "Configurando ambiente Python (venv)..."
+  inject_scl_paths
   if ! choose_python; then
-    echo "Erro: Python não encontrado após instalar dependências."
-    echo "Tente: sudo dnf install -y python39 python39-pip"
+    echo "Erro: Python >= 3.8 não encontrado após instalar dependências."
+    echo "CentOS 7: sudo yum install -y centos-release-scl && sudo yum install -y rh-python38 rh-python38-python-pip"
     exit 1
   fi
 

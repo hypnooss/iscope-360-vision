@@ -673,8 +673,9 @@ download_release() {
 
 setup_venv() {
   echo "Configurando ambiente Python (venv)..."
+  inject_scl_paths
   if ! choose_python; then
-    echo "Erro: Python não encontrado após instalar dependências."
+    echo "Erro: Python >= 3.8 não encontrado após instalar dependências."
     exit 1
   fi
 
