@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/users/$count?$filter=accountEnabled eq false", { 'ConsistencyLevel': 'eventual', 'Accept': 'text/plain' }).catch(() => null),
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/users/$count?$filter=onPremisesSyncEnabled eq true", { 'ConsistencyLevel': 'eventual', 'Accept': 'text/plain' }).catch(() => null),
       graphGet(accessToken, 'https://graph.microsoft.com/v1.0/directoryRoles?$expand=members').catch(() => ({ value: [] })),
-      graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$filter=userType eq 'member'&$top=999").catch(() => []),
+      graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$filter=userType eq 'member'&$top=999", 10, { 'ConsistencyLevel': 'eventual' }).catch(() => []),
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$filter=createdDateTime ge ${periodStart}&$top=500&$orderby=createdDateTime desc`, 2).catch(() => []),
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
