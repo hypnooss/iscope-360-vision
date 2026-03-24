@@ -1,28 +1,19 @@
+## Plano: Priorizar Python do SCL via PATH e seleção por versão
 
+### Status: ✅ Implementado
 
-## Plano: Suporte a Python via SCL no agent-fix, agent-install e super-agent-install
+### O que foi feito
 
-### Problema
-O CentOS 7 com SCL instala Python 3.8 em `/opt/rh/rh-python38/root/usr/bin/python3.8`, fora do PATH. A funcao `choose_python()` so verifica o PATH padrao, entao nao encontra o Python instalado via SCL.
+1. **`inject_scl_paths()`** — prepende `/opt/rh/rh-python3{8,9,11}/root/usr/bin` ao `$PATH`
+2. **`choose_python()` refatorado** — testa cada candidato, lê a versão real via `sys.version_info`, ignora versões < 3.8, e seleciona a mais recente compatível
+3. **Mínimo baixado para 3.8** — alinhado com `requirements.txt` e com o SCL disponível no CentOS 7
+4. **`agent-fix`** — agora valida versão antes de recriar o venv (antes não validava)
+5. **Logs melhorados** — mostra caminho + versão do Python selecionado, e motivo de rejeição dos incompatíveis
 
-### Solucao
-Atualizar `choose_python()` nos 3 scripts para tambem verificar caminhos SCL conhecidos:
+### Arquivos alterados
 
-| Arquivo | Mudanca |
+| Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/agent-fix/index.ts` | Expandir `choose_python()` com caminhos SCL |
-| `supabase/functions/agent-install/index.ts` | Idem |
+| `supabase/functions/agent-fix/index.ts` | `inject_scl_paths()` + `choose_python()` com validação de versão |
+| `supabase/functions/agent-install/index.ts` | Idem + `require_python_min_version()` simplificado |
 | `supabase/functions/super-agent-install/index.ts` | Idem |
-
-### Detalhe tecnico
-
-A funcao `choose_python()` passara a verificar, alem dos candidatos no PATH, os seguintes caminhos absolutos SCL:
-
-```
-/opt/rh/rh-python38/root/usr/bin/python3.8
-/opt/rh/rh-python39/root/usr/bin/python3.9
-/opt/rh/rh-python311/root/usr/bin/python3.11
-```
-
-Se encontrar um desses, usara o caminho absoluto como `PYTHON_BIN`. Isso resolve o problema sem precisar ativar o SCL (`scl enable`), ja que o venv e criado com o caminho direto do binario.
-
