@@ -56,12 +56,12 @@ async function graphGet(accessToken: string, url: string, headers?: Record<strin
   return await res.json();
 }
 
-async function graphGetAllPages(accessToken: string, url: string, maxPages = 5): Promise<any[]> {
+async function graphGetAllPages(accessToken: string, url: string, maxPages = 5, headers?: Record<string, string>): Promise<any[]> {
   const allValues: any[] = [];
   let nextLink: string | null = url;
   let page = 0;
   while (nextLink && page < maxPages) {
-    const data = await graphGet(accessToken, nextLink);
+    const data = await graphGet(accessToken, nextLink, headers);
     if (!data) break;
     allValues.push(...(data.value || []));
     nextLink = data['@odata.nextLink'] || null;
@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/users/$count?$filter=accountEnabled eq false", { 'ConsistencyLevel': 'eventual', 'Accept': 'text/plain' }).catch(() => null),
       graphGet(accessToken, "https://graph.microsoft.com/v1.0/users/$count?$filter=onPremisesSyncEnabled eq true", { 'ConsistencyLevel': 'eventual', 'Accept': 'text/plain' }).catch(() => null),
       graphGet(accessToken, 'https://graph.microsoft.com/v1.0/directoryRoles?$expand=members').catch(() => ({ value: [] })),
-      graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$filter=userType eq 'member'&$top=999").catch(() => []),
+      graphGetAllPages(accessToken, "https://graph.microsoft.com/v1.0/reports/authenticationMethods/userRegistrationDetails?$filter=userType eq 'member'&$top=999", 10, { 'ConsistencyLevel': 'eventual' }).catch(() => []),
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/signIns?$filter=createdDateTime ge ${periodStart}&$top=500&$orderby=createdDateTime desc`, 2).catch(() => []),
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
       graphGetAllPages(accessToken, `https://graph.microsoft.com/v1.0/auditLogs/directoryAudits?$filter=activityDateTime ge ${periodStart}&$top=500&$orderby=activityDateTime desc`, 2).catch(() => []),
