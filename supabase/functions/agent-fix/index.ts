@@ -221,20 +221,36 @@ fi
 rm -f "$TMP_AGENT" "$TMP_SUP" "$TMP_MONITOR"
 ok "Pacotes extraídos em $INSTALL_DIR"
 
-# Fallback: download requirements.txt from storage if missing
-if [[ ! -f "$INSTALL_DIR/requirements.txt" ]]; then
-  log "requirements.txt não encontrado após extração — baixando do storage..."
-  URL_REQ="$(get_signed_url "requirements.txt")"
-  if [[ -n "$URL_REQ" ]]; then
-    if curl -sS "$CURL_FAIL" -L "$URL_REQ" -o "$INSTALL_DIR/requirements.txt"; then
-      ok "requirements.txt baixado do storage"
-    else
-      warn "Falha ao baixar requirements.txt do storage"
-    fi
+# Always download fresh requirements.txt from storage to avoid stale local copies
+log "Baixando requirements.txt atualizado do storage..."
+URL_REQ="$(get_signed_url "requirements.txt")"
+if [[ -n "$URL_REQ" ]]; then
+  if curl -sS "$CURL_FAIL" -L "$URL_REQ" -o "$INSTALL_DIR/requirements.txt"; then
+    ok "requirements.txt baixado do storage (sobrescreveu qualquer versão anterior)"
   else
-    warn "requirements.txt não encontrado no storage"
+    warn "Falha ao baixar requirements.txt do storage"
+    if [[ ! -f "$INSTALL_DIR/requirements.txt" ]]; then
+      fail "requirements.txt não disponível (nem no pacote, nem no storage)"
+      exit 1
+    fi
+    warn "Usando requirements.txt extraído do pacote como fallback"
   fi
+else
+  warn "requirements.txt não encontrado no storage"
+  if [[ ! -f "$INSTALL_DIR/requirements.txt" ]]; then
+    fail "requirements.txt não disponível (nem no pacote, nem no storage)"
+    exit 1
+  fi
+  warn "Usando requirements.txt extraído do pacote como fallback"
 fi
+
+# Validate requirements.txt for known incompatibilities
+if grep -qE 'dnspython>=2\\.7' "$INSTALL_DIR/requirements.txt" 2>/dev/null; then
+  fail "requirements.txt contém dnspython>=2.7.0 (incompatível com Python 3.8)"
+  fail "Atualize o requirements.txt no bucket agent-releases e tente novamente"
+  exit 1
+fi
+ok "requirements.txt validado"
 
 log "Módulos instalados:"
 for mod in agent supervisor monitor; do
