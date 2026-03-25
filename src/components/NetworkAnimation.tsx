@@ -33,13 +33,15 @@ const sphereVertexShader = `
 
     // 2) TERRAIN LOGIC (Wavy data lines)
     vec3 terrainPos = aPlanePos;
-    // Huge, rolling ocean of data waves spreading into the horizon
     float wave1 = sin(terrainPos.x * 0.08 + uTime * 0.15) * 2.5;
     float wave2 = cos(terrainPos.z * 0.05 - uTime * 0.1) * 2.0;
     float wave3 = sin((terrainPos.x + terrainPos.z) * 0.03 + uTime * 0.05) * 3.0;
     
-    terrainPos.y += wave1 + wave2 + wave3 - 12.0;
+    terrainPos.y += wave1 + wave2 + wave3 - 10.0;
     terrainPos.x += sin(uTime * 0.1 + aSeed * 5.0) * 0.5;
+
+    // DIVIDIR por 3.8 (GLOBE_SCALE) impede que a escala global empurre nosso chão calculado para fora da câmera!
+    terrainPos /= 3.8;
 
     // MORPH
     vec3 finalPos = mix(displacedGlobe, terrainPos, uMorph);
@@ -52,25 +54,26 @@ const sphereVertexShader = `
     float dotNV = abs(dot(sphereNormal, viewDir));
     vRim = pow(1.0 - dotNV, 2.8) * (1.0 - uMorph * 0.5);
 
-    // Fade culling slightly in terrain mode
     float frontFade = mix(smoothstep(-0.3, 0.6, sphereNormal.z), 1.0, uMorph);
     float coreFade = mix(0.4, 1.0, pow(max(vRim, 0.001), 0.3));
+    
+    // Impede que o globo perca brilho original em modo terreno, fortalecendo a iluminação de base
+    coreFade = mix(coreFade, 0.95, uMorph);
 
     vAlpha = aAlpha * frontFade * coreFade;
 
-    // Accent logic (preserve some magenta streaks in terrain)
     float magentaZoneGlobe = smoothstep(-0.2, 0.8, position.x) * smoothstep(-0.2, 0.7, -position.y);
-    float magentaZoneTerrain = sin(terrainPos.x * 0.5 + terrainPos.z * 0.2) * 0.5 + 0.5;
+    float magentaZoneTerrain = sin(terrainPos.x * 3.8 * 0.5 + terrainPos.z * 3.8 * 0.2) * 0.5 + 0.5;
     
     float accentMix = mix(magentaZoneGlobe + vRim * 0.15, magentaZoneTerrain * 0.8, uMorph);
     vAccent = clamp(accentMix, 0.0, 1.0);
     
     vNormal = mix(sphereNormal, vec3(0.0, 1.0, 0.0), uMorph);
 
-    float distanceScale = 28.0 / max(-mvPosition.z, 0.001);
-    
-    float targetSize = mix(2.6, 1.6, uMorph);
-    gl_PointSize = clamp(aSize * distanceScale * uPixelRatio, 0.5, targetSize);
+    // Ajuste super dinâmico na escala de distância dos pontos (pontos distantes ficavam minúsculos e sumiam por serem pequenos demais pro pixel do monitor)
+    float dynDistanceScale = mix(28.0, 90.0, uMorph) / pow(max(-mvPosition.z, 0.001), mix(1.0, 0.65, uMorph));
+    float targetSize = mix(2.6, 4.0, uMorph);
+    gl_PointSize = clamp(aSize * dynDistanceScale * uPixelRatio, 0.8, targetSize);
   }
 `;
 
