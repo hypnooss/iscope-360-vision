@@ -14,11 +14,6 @@ const sphereVertexShader = `
   attribute float aAlpha;
   attribute float aSize;
   attribute float aSeed;
-  attribute vec3 aPlanePos;
-
-  uniform float uPixelRatio;
-  uniform float uTime;
-  uniform float uMorph;
 
   uniform float uPixelRatio;
   uniform float uTime;
