@@ -20,71 +20,83 @@ const sphereVertexShader = `
   uniform float uTime;
   uniform float uMorph;
 
+  uniform float uPixelRatio;
+  uniform float uTime;
+  uniform float uMorph;
+
   varying float vAlpha;
   varying float vAccent;
   varying float vRim;
   varying vec3 vNormal;
 
-  void main() {
-    // 1) SPHERE LOGIC
-    vec3 sphereNormal = normalize(position);
-    float breathe = sin(uTime * 0.25 + aSeed * 6.28318) * 0.01;
-    vec3 displacedGlobe = position + sphereNormal * breathe;
+    void main() {
+      // O Insight Genial do Usuário: A geometria NEVER muda! Ela é sempre o Globo!
+      // Em vez de morfar para um plano reto defeituoso, a câmera apenas desaba num rasante na órbita!
+      
+      vec3 sphereNormal = normalize(position);
+      
+      // O Jiggle (Dança caótica): Partículas vibram aleatoriamente de forma esférica (rotacionando sutilmente na longitude)
+      // Só ativamos a dança caótica alta de perto (modo "terreno"), senão o globo no espaço parece abelhas
+      float jiggleRadius = mix(0.01, 0.08, uMorph);
+      float jiggleAng = sin(uTime * (0.3 + aSeed * 0.5) + aSeed * 100.0) * jiggleRadius;
+      
+      // Matriz simples de rotação no eixo Y (arrasta a partícula levemente pela linha do equador local)
+      float s = sin(jiggleAng);
+      float c = cos(jiggleAng);
+      vec3 jiggledPos = vec3(position.x * c - position.z * s, position.y, position.x * s + position.z * c);
 
-    // 2) TERRAIN LOGIC (Linhas Contínuas Horizontais Sólidas)
-    vec3 terrainPos = aPlanePos;
-    terrainPos.y = -6.0; // The floor is a perfect table
-    
-    // MAZE HQ SECRET: The wave is a geometric displacement on Z (Depth) of horizontal rows!
-    // Amplitudes monstruosas para rasgar o chão perfeitamente quando visto de cima.
-    float fX = aPlanePos.x / 3.8;
-    float topo1 = sin(fX * 0.15) * 60.0;
-    float topo2 = cos(fX * 0.08) * 80.0;
-    
-    terrainPos.z += mix(0.0, topo1 + topo2, uMorph);
-    
-    // O terreno não se move NADA de lugar! Quem se move sutilmente são as partículas ao longo do próprio trilho.
-    // E elas vão e voltam em velocidades e distâncias totalmente aleatórias por partícula (usando aSeed).
-    float jiggleSpeed = 0.3 + aSeed * 0.7;
-    float jiggleDistance = 1.0 + aSeed * 2.0;
-    float particleJiggle = sin(uTime * jiggleSpeed + aSeed * 100.0) * jiggleDistance;
-    
-    terrainPos.x += mix(0.0, particleJiggle, uMorph);
-    
-    terrainPos /= 3.8;
+      // O "respiro" natural do globo
+      float breathe = sin(uTime * 0.25 + aSeed * 6.28318) * mix(0.05, 0.01, uMorph);
+      vec3 finalPos = jiggledPos + sphereNormal * breathe;
+      
+      vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
+      gl_Position = projectionMatrix * mvPosition;
 
-    // MORPH
-    vec3 finalPos = mix(displacedGlobe, terrainPos, uMorph);
+      // MAZE HQ ZIG-ZAG FIELD (Alpha Mapping Topológico OBRIGATÓRIO na Superfície do planeta)
+      // Mapeamos a latitude (Y) e longitude (X/Z) da esfera para criar rios de luz!
+      float lat = asin(sphereNormal.y);     // Latitude -pi/2 a pi/2
+      float lon = atan(sphereNormal.x, sphereNormal.z); // Longitude -pi a pi
+      
+      // Ondas eletromagnéticas serpenteando como anéis ao redor do planeta!
+      // Como cruzamos latitude * longitude, as linhas zigzagueiam brutalmente!
+      float topoField = sin(lat * 35.0 + lon * 8.0) * 1.5
+                      + cos(lat * 18.0 - lon * 12.0) * 1.5;
+                      
+      float contour = fract(topoField);
+      
+      // A mágica: só 20% das partículas num rio de 1.0 se acenderão, o resto fica escuro
+      float lineIntensity = smoothstep(0.35, 0.5, contour) - smoothstep(0.5, 0.65, contour);
 
-    vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
-    gl_Position = projectionMatrix * mvPosition;
+      // ILLUMINATION & CULLING
+      vec3 viewDir = normalize(-mvPosition.xyz);
+      float dotNV = abs(dot(sphereNormal, viewDir));
+      vRim = pow(1.0 - dotNV, 2.8);
+      
+      float frontFade = mix(smoothstep(-0.3, 0.6, sphereNormal.z), 1.0, uMorph);
+      float coreFade = mix(0.4, 1.0, pow(max(vRim, 0.001), 0.3));
+      
+      // Quando colamos o drone na superfície (uMorph=1), a base apaga (poeira espacial 0.05) 
+      // e o rio topográfico explode em neon (4.0) ditando a forma das linhas majestosas no horizonte
+      float terrainGlow = mix(0.05, 4.0, lineIntensity);
+      coreFade = mix(coreFade, terrainGlow, uMorph);
 
-    // COLOR SHADING LOGIC
-    vec3 viewDir = normalize(-mvPosition.xyz);
-    float dotNV = abs(dot(sphereNormal, viewDir));
-    vRim = pow(1.0 - dotNV, 2.8);
-    float frontFade = mix(smoothstep(-0.3, 0.6, sphereNormal.z), 1.0, uMorph);
-    float coreFade = mix(0.4, 1.0, pow(max(vRim, 0.001), 0.3));
-    
-    // As partículas acendem vibrantes quando em modo terreno (nenhuma vira poeira, todas formam os rios visíveis)
-    coreFade = mix(coreFade, 1.8, uMorph);
+      vAlpha = aAlpha * frontFade * coreFade;
 
-    vAlpha = aAlpha * frontFade * coreFade;
+      // COLOR ACCENT (O rosa neon vs o Turquesa)
+      float accentBase = smoothstep(-0.2, 0.8, position.x) * smoothstep(-0.2, 0.7, -position.y);
+      float accentMix = mix(accentBase + vRim * 0.15, accentBase + lineIntensity * 0.6, uMorph);
+      vAccent = clamp(accentMix, 0.0, 1.0);
+      
+      vNormal = sphereNormal; // Preserva a normal curva para o shading esférico perfeito
 
-    float magentaZoneGlobe = smoothstep(-0.2, 0.8, position.x) * smoothstep(-0.2, 0.7, -position.y);
-    float magentaZoneTerrain = sin(terrainPos.x * 3.8 * 0.5 + terrainPos.z * 3.8 * 0.2) * 0.5 + 0.5;
-    
-    float accentMix = mix(magentaZoneGlobe + vRim * 0.15, magentaZoneTerrain * 0.8, uMorph);
-    vAccent = clamp(accentMix, 0.0, 1.0);
-    
-    vNormal = mix(sphereNormal, vec3(0.0, 1.0, 0.0), uMorph);
-
-    // Escala monstruosa e superdinâmica: Atenuação bruta faz o primeiro plano inchar gloriosamente
-    float dynDistanceScale = mix(28.0, 180.0, uMorph) / max(-mvPosition.z, 0.001);
-    float targetSize = mix(2.6, 20.0, uMorph);
-    
-    gl_PointSize = clamp(aSize * dynDistanceScale * uPixelRatio, 0.1, targetSize);
-  }
+      // EFEITO MACRO-DISTANCE: A câmera voa pra TÃO PERTO que os pontos estouram a tela
+      float dynDistanceScale = mix(28.0, 240.0, uMorph) / max(-mvPosition.z, 0.001);
+      
+      // Partículas escuras ficam minúsculas como areia, as da linha viram faróis colossais
+      float targetSize = mix(2.6, mix(1.0, 32.0, lineIntensity), uMorph);
+      
+      gl_PointSize = clamp(aSize * dynDistanceScale * uPixelRatio, 0.1, targetSize);
+    }
 `;
 
 const sphereFragmentShader = `
@@ -166,41 +178,20 @@ function createPointTexture() {
 function createSphereGeometry(count: number) {
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
-  const planePositions = new Float32Array(count * 3);
   const alphas = new Float32Array(count);
   const sizes = new Float32Array(count);
   const seeds = new Float32Array(count);
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
 
   for (let i = 0; i < count; i++) {
-    const t = (i + 0.5) / count;
-    const theta = goldenAngle * i;
-    const phi = Math.acos(1 - 2 * t);
-    const radius = 1 + (Math.random() - 0.5) * 0.012;
-    const sinPhi = Math.sin(phi);
+    // Esfera aleatória perfeitamente clássica do Print 2 distribuída por volume de área polar
+    const theta = Math.random() * 2 * Math.PI;
+    const phi = Math.acos(1 - 2 * Math.random());
+    const radius = 1.0 + (Math.random() - 0.5) * 0.012;
 
+    const sinPhi = Math.sin(phi);
     positions[i * 3] = radius * sinPhi * Math.cos(theta);
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
-
-    // Strings Horizontais Inquebráveis (sem aliasing) para desenharmos as rodovias topográficas puras
-    const numRows = 160; 
-    const particlesPerRow = Math.floor(count / numRows); // ~175 partículas encadeadas coladíssimas
-    
-    const particleIndex = i % particlesPerRow; 
-    const rowIndex = Math.floor(i / particlesPerRow);
-    
-    // Z: De muito próximo (-10) até um horizonte estupidamente distante (-380) para dar suporte às curvas colossais
-    const zProgress = rowIndex / numRows;
-    const pz = 10.0 - Math.pow(zProgress, 0.8) * 380.0; 
-    
-    // X: Largura descomunal espalhando as partículas da corda da extrema esquerda para a direita (-380 a +380)
-    const xProgress = particleIndex / particlesPerRow;
-    const px = (xProgress * 2.0 - 1.0) * 380.0; 
-    
-    planePositions[i * 3] = px;
-    planePositions[i * 3 + 1] = 0.0;
-    planePositions[i * 3 + 2] = pz;
 
     alphas[i] = 0.4 + Math.random() * 0.6;
     sizes[i] = 0.8 + Math.random() * 1.2;
@@ -208,7 +199,6 @@ function createSphereGeometry(count: number) {
   }
 
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("aPlanePos", new THREE.BufferAttribute(planePositions, 3));
   geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
   geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
   geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
@@ -344,11 +334,12 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     const CAM_BASE_Y = 0.0;
     const CAM_BASE_ROT_X = 0;
 
-    // Câmera Zênite/Elevada: Sobe 16 metros para os céus e inclina 16 GRAUS para baixo.
-    // Pelo ângulo de cima e empinando o nariz, vemos todo o terreno se desenhando aos nossos pés!
-    const CAM_TERRAIN_Z = 35.0; 
-    const CAM_TERRAIN_Y = 16.0; 
-    const CAM_TERRAIN_ROT_X = -0.28;
+    // O MERGULHO RASANTE ÉPICO NA SUPERFÍCIE DO PLANETA (MASTERS OF CINEMATOGRAPHY)
+    // Raio do globo é 3.8. Câmera desaba rente ao "Polo Norte" em Y=4.8 (apenas 1 unidade acima da crosta!)
+    // Rot_X = -0.05 espia quase reto pela curvatura suave da testa do globo perdendo de vista no fundo! Horizonte Infinito!
+    const CAM_TERRAIN_Z = 7.0; 
+    const CAM_TERRAIN_Y = 4.8; 
+    const CAM_TERRAIN_ROT_X = -0.05;
 
     const tick = () => {
       const elapsed = (performance.now() - start) * 0.001;
