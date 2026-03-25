@@ -31,16 +31,17 @@ const sphereVertexShader = `
     float breathe = sin(uTime * 0.25 + aSeed * 6.28318) * 0.01;
     vec3 displacedGlobe = position + sphereNormal * breathe;
 
-    // 2) TERRAIN LOGIC    // Majestic continuous macroscopic macroscopic rolling hills (Baixa frequência, altas curvas)
+    // 2) TERRAIN LOGIC (Vias planificadas com o horizonte perfeitamente reto e infinito)
     vec3 terrainPos = aPlanePos;
-    float wave1 = sin(terrainPos.x * 0.035 + uTime * 0.15) * 3.5;
-    float wave2 = cos(terrainPos.z * 0.025 - uTime * 0.1) * 3.0;
-    float wave3 = sin((terrainPos.x + terrainPos.z) * 0.015 + uTime * 0.05) * 2.5;
     
-    terrainPos.y += wave1 + wave2 + wave3 - 6.0;
+    // O terreno é 100% plano na vertical (-6.0) para formar um horizonte de piso reto que some!
+    terrainPos.y = -6.0;
     
-    // Sem drift caótico em X para que o terreno forme trilhas/linhas sólidas!
-    terrainPos.x += mix(sin(uTime * 0.1 + aSeed * 5.0) * 0.5, 0.0, uMorph);
+    // O efeito de "onda" (zig-zag) do Maze HQ não sobe nem desce, ele escorrega TUDO *horizontalmente* (X) baseando-se na distância Z
+    float zigzag1 = sin(terrainPos.z * 0.05 - uTime * 1.5) * 5.0;
+    float zigzag2 = cos(terrainPos.z * 0.02 + uTime * 0.8) * 4.0;
+    
+    terrainPos.x += mix(0.0, zigzag1 + zigzag2, uMorph);
 
     // DIVIDIR por 3.8 (GLOBE_SCALE) impede que a escala global empurre nosso chão calculado para fora da câmera!
     terrainPos /= 3.8;
@@ -175,19 +176,19 @@ function createSphereGeometry(count: number) {
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
 
-    // Continuous solid data strips extending from behind the camera to infinity
-    const numLines = 85;
-    const particlesPerLine = Math.floor(count / numLines);
+    // Continuous data "lanes/highways" strictly ordered from camera to horizon
+    const numLanes = 120;
+    const particlesPerLane = Math.floor(count / numLanes);
     
-    const lineIndex = i % numLines; 
-    const colIndex = Math.floor(i / numLines);
+    const laneIndex = i % numLanes; 
+    const depthIndex = Math.floor(i / numLanes);
     
-    // Z: Exponential distribution to pack more resolution near the camera and stretch into the extreme horizon
-    const zProgress = lineIndex / numLines;
+    // Z: Smooth linear dots forming UNBROKEN continuous paths into the deep horizon
+    const zProgress = depthIndex / particlesPerLane;
     const pz = 25.0 - Math.pow(zProgress, 0.85) * 250.0; 
     
-    // X: Strictly ordered from Left to Right to form an unbroken continuous solid line instead of random dots
-    const xProgress = colIndex / particlesPerLine;
+    // X: Discrete fan of lanes spanning perfectly tight across the floor
+    const xProgress = laneIndex / numLanes;
     const px = (xProgress * 2.0 - 1.0) * 240.0;
     
     planePositions[i * 3] = px;
