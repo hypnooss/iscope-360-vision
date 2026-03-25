@@ -33,13 +33,13 @@ const sphereVertexShader = `
 
     // 2) TERRAIN LOGIC (Wavy data lines)
     vec3 terrainPos = aPlanePos;
-    // Creates the distinct ridges seen in Maze HQ
-    float wave1 = sin(terrainPos.x * 0.4 + uTime * 0.4) * 0.6;
-    float wave2 = cos(terrainPos.z * 0.3 - uTime * 0.3) * 0.4;
-    float wave3 = sin((terrainPos.x + terrainPos.z) * 0.2 + uTime * 0.2) * 0.5;
+    // Huge, rolling ocean of data waves spreading into the horizon
+    float wave1 = sin(terrainPos.x * 0.08 + uTime * 0.15) * 2.5;
+    float wave2 = cos(terrainPos.z * 0.05 - uTime * 0.1) * 2.0;
+    float wave3 = sin((terrainPos.x + terrainPos.z) * 0.03 + uTime * 0.05) * 3.0;
     
-    terrainPos.y += wave1 + wave2 + wave3 - 4.5;
-    terrainPos.x += sin(uTime * 0.2 + aSeed * 10.0) * 0.3;
+    terrainPos.y += wave1 + wave2 + wave3 - 12.0;
+    terrainPos.x += sin(uTime * 0.1 + aSeed * 5.0) * 0.5;
 
     // MORPH
     vec3 finalPos = mix(displacedGlobe, terrainPos, uMorph);
@@ -170,11 +170,15 @@ function createSphereGeometry(count: number) {
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
 
-    // Distinct Wavy Lines
-    const numLines = 80;
+    // Distinct Wavy Lines stretching vastly into the vanishing point
+    const numLines = 140;
     const lineIndex = i % numLines; 
-    const pz = ((lineIndex / numLines) * 2.0 - 1.0) * 16.0; 
-    const px = (Math.random() * 2.0 - 1.0) * 24.0;
+    
+    // Z stretches from very close (10.0) to extremely far horizon (-140.0)
+    const pz = 10.0 - (lineIndex / numLines) * 150.0; 
+    
+    // X handles width, must be gigantic to fill screen sides at the far horizon
+    const px = (Math.random() * 2.0 - 1.0) * 120.0;
     
     planePositions[i * 3] = px;
     planePositions[i * 3 + 1] = 0.0;
@@ -322,9 +326,10 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     const CAM_BASE_Y = 0.0;
     const CAM_BASE_ROT_X = 0;
 
-    const CAM_TERRAIN_Z = 12.0; 
+    // Cinematic camera angle: sits slightly above the landscape and looks far into the horizon
+    const CAM_TERRAIN_Z = 25.0; 
     const CAM_TERRAIN_Y = 5.0; 
-    const CAM_TERRAIN_ROT_X = -0.3;
+    const CAM_TERRAIN_ROT_X = -0.15;
 
     const tick = () => {
       const elapsed = (performance.now() - start) * 0.001;
