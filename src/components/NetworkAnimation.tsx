@@ -31,31 +31,25 @@ const sphereVertexShader = `
     float breathe = sin(uTime * 0.25 + aSeed * 6.28318) * 0.01;
     vec3 displacedGlobe = position + sphereNormal * breathe;
 
-    // 2) TERRAIN LOGIC (Flat Matrix Grid)
+    // 2) TERRAIN LOGIC (Linhas Contínuas Horizontais Sólidas)
     vec3 terrainPos = aPlanePos;
     terrainPos.y = -6.0; // The floor is a perfect table
     
-    // MAZE HQ SECRET: The lines are NOT physical wiggles of the geometry.
-    // They are a 2D topographical field painted with LIGHT.
-    // The points exist everywhere on a dense grid, but only light up when they sit on a contour line!
-    // A frequency in Z translates directly to horizontal lines (Left to Right)
+    // MAZE HQ SECRET: The wave is a geometric displacement on Z (Depth) of horizontal rows!
+    // Amplitudes monstruosas para rasgar o chão perfeitamente quando visto de cima.
     float fX = aPlanePos.x / 3.8;
-    float fZ = aPlanePos.z / 3.8;
+    float topo1 = sin(fX * 0.15) * 60.0;
+    float topo2 = cos(fX * 0.08) * 80.0;
     
-    // Magnetic Topographic Field formula (dominates Z to form horizontal waves running left-to-right)
-    float field = sin(fZ * 0.25 + fX * 0.08) * 2.0
-                + cos(fZ * 0.12 - fX * 0.06) * 1.5
-                + sin(fZ * 0.05) * 2.0;
-                
-    float contour = fract(field);
+    terrainPos.z += mix(0.0, topo1 + topo2, uMorph);
     
-    // The river of light: Peaks cleanly at 0.5 contour lines
-    float lineIntensity = smoothstep(0.2, 0.5, contour) - smoothstep(0.5, 0.8, contour);
+    // O terreno não se move NADA de lugar! Quem se move sutilmente são as partículas ao longo do próprio trilho.
+    // E elas vão e voltam em velocidades e distâncias totalmente aleatórias por partícula (usando aSeed).
+    float jiggleSpeed = 0.3 + aSeed * 0.7;
+    float jiggleDistance = 1.0 + aSeed * 2.0;
+    float particleJiggle = sin(uTime * jiggleSpeed + aSeed * 100.0) * jiggleDistance;
     
-    // As partículas "deslizam/vibram" milimetricamente na faixa X delas.
-    // Como os rios de luz estão GRAVADOS nas coordenadas estáticas (aPlanePos),
-    // o deslize delas as faz atravessar o rio de luz acendendo e apagando organicamente!
-    terrainPos.x += mix(0.0, sin(uTime * 0.3 + aSeed * 10.0) * 4.0, uMorph);
+    terrainPos.x += mix(0.0, particleJiggle, uMorph);
     
     terrainPos /= 3.8;
 
@@ -68,15 +62,12 @@ const sphereVertexShader = `
     // COLOR SHADING LOGIC
     vec3 viewDir = normalize(-mvPosition.xyz);
     float dotNV = abs(dot(sphereNormal, viewDir));
-    vRim = pow(1.0 - dotNV, 2.8) * (1.0 - uMorph * 0.5);
-
+    vRim = pow(1.0 - dotNV, 2.8);
     float frontFade = mix(smoothstep(-0.3, 0.6, sphereNormal.z), 1.0, uMorph);
     float coreFade = mix(0.4, 1.0, pow(max(vRim, 0.001), 0.3));
     
-    // Em modo Terrain, o brilho core do ponto é quase apagado (0.1 poeira),
-    // mas os que tocam o 'rio de luz' explodem de brilho como neon (2.0)
-    float terrainPulse = mix(0.1, 2.0, lineIntensity);
-    coreFade = mix(coreFade, terrainPulse, uMorph);
+    // As partículas acendem vibrantes quando em modo terreno (nenhuma vira poeira, todas formam os rios visíveis)
+    coreFade = mix(coreFade, 1.8, uMorph);
 
     vAlpha = aAlpha * frontFade * coreFade;
 
@@ -88,10 +79,9 @@ const sphereVertexShader = `
     
     vNormal = mix(sphereNormal, vec3(0.0, 1.0, 0.0), uMorph);
 
-    // Escala monstruosa: Pontos próximos que tocam o rio incham até absurdos 24px (Blob effect) para criar a aproximação cinemática
-    float dynDistanceScale = mix(28.0, 140.0, uMorph) / max(-mvPosition.z, 0.001);
-    float terrainDotSize = mix(1.0, 24.0, lineIntensity);
-    float targetSize = mix(2.6, terrainDotSize, uMorph);
+    // Escala monstruosa e superdinâmica: Atenuação bruta faz o primeiro plano inchar gloriosamente
+    float dynDistanceScale = mix(28.0, 180.0, uMorph) / max(-mvPosition.z, 0.001);
+    float targetSize = mix(2.6, 20.0, uMorph);
     
     gl_PointSize = clamp(aSize * dynDistanceScale * uPixelRatio, 0.1, targetSize);
   }
@@ -193,21 +183,20 @@ function createSphereGeometry(count: number) {
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
 
-    // Grid Matricial Ultra Denso - o chão vira uma placa com pontos espremidos lado a lado
-    // Em vez de desenhar curvas fisicamente, os 28.000 pontos estão plantados igual mato, cobrindo o visor todo.
-    const numCols = 180; // 180 Colunas cravadas (Left to Right)
-    const numRows = Math.floor(count / numCols); // ~155 Linhas de Profundidade cravadas
+    // Strings Horizontais Inquebráveis (sem aliasing) para desenharmos as rodovias topográficas puras
+    const numRows = 160; 
+    const particlesPerRow = Math.floor(count / numRows); // ~175 partículas encadeadas coladíssimas
     
-    const colIndex = i % numCols; 
-    const rowIndex = Math.floor(i / numCols);
+    const particleIndex = i % particlesPerRow; 
+    const rowIndex = Math.floor(i / particlesPerRow);
     
-    // Z: 300 unidades de profundidade densas para não deixar o horizonte esvaziar
+    // Z: De muito próximo (-10) até um horizonte estupidamente distante (-380) para dar suporte às curvas colossais
     const zProgress = rowIndex / numRows;
-    const pz = 24.0 - Math.pow(zProgress, 0.8) * 300.0; 
+    const pz = 10.0 - Math.pow(zProgress, 0.8) * 380.0; 
     
-    // X: Largura concentrada (-180 a +180) para garantir que a densidade seja máxima DENTRO do quadro da câmera
-    const xProgress = colIndex / numCols;
-    const px = (xProgress * 2.0 - 1.0) * 180.0; 
+    // X: Largura descomunal espalhando as partículas da corda da extrema esquerda para a direita (-380 a +380)
+    const xProgress = particleIndex / particlesPerRow;
+    const px = (xProgress * 2.0 - 1.0) * 380.0; 
     
     planePositions[i * 3] = px;
     planePositions[i * 3 + 1] = 0.0;
@@ -355,10 +344,11 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     const CAM_BASE_Y = 0.0;
     const CAM_BASE_ROT_X = 0;
 
-    // Câmera muito mais ALTA (10 metros) e inclinada violentamente para baixo para ter a verdadeira visão top-down panorâmica das curvas cruzando da esquerda pra direita!
-    const CAM_TERRAIN_Z = 30.0; 
-    const CAM_TERRAIN_Y = 10.0; 
-    const CAM_TERRAIN_ROT_X = -0.16;
+    // Câmera Zênite/Elevada: Sobe 16 metros para os céus e inclina 16 GRAUS para baixo.
+    // Pelo ângulo de cima e empinando o nariz, vemos todo o terreno se desenhando aos nossos pés!
+    const CAM_TERRAIN_Z = 35.0; 
+    const CAM_TERRAIN_Y = 16.0; 
+    const CAM_TERRAIN_ROT_X = -0.28;
 
     const tick = () => {
       const elapsed = (performance.now() - start) * 0.001;
@@ -373,7 +363,8 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
       sphereMaterial.uniforms.uMorph.value = morph;
       haloMaterial.uniforms.uMorph.value = morph;
 
-      sphere.rotation.y = elapsed * ROTATION_SPEED * (1.0 - morph * 0.8);
+      // O GOLPE FINAL: Zera a rotação do globo 100% no modo terreno para que o topográfico não gire nas diagonais
+      sphere.rotation.y = elapsed * ROTATION_SPEED * (1.0 - morph);
       halo.rotation.y = sphere.rotation.y * 1.015;
 
       const globeTiltX = Math.sin(elapsed * 0.12) * 0.035;
