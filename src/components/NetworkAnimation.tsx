@@ -10,19 +10,16 @@ export function NetworkAnimation(props: { className?: string }) {
     if (!container) return;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 3000);
     
-    // Câmera perfeitamente posicionada para olhar as faixas no chão (Top-Down panorâmico)
-    camera.position.set(0, 10, 30);
-    camera.rotation.x = -0.15;
+    // Câmera no alto lá atrás, olhando firmemente para as faixas
+    camera.position.set(0, 40, 100);
+    camera.rotation.x = -0.25;
 
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.domElement.style.width = "100%";
-    renderer.domElement.style.height = "100%";
     container.appendChild(renderer.domElement);
 
-    // Geometria pura: 40.000 pontos em vias horizontais
     const count = 40000;
     const positions = new Float32Array(count * 3);
     const alphas = new Float32Array(count);
@@ -36,7 +33,7 @@ export function NetworkAnimation(props: { className?: string }) {
       const depthIndex = Math.floor(i / numLanes);
       
       const zProgress = depthIndex / particlesPerLane;
-      const pz = 25.0 - Math.pow(zProgress, 0.8) * 800.0;
+      const pz = 50.0 - Math.pow(zProgress, 0.8) * 800.0;
       
       const laneProgress = laneIndex / numLanes;
       const basePx = (laneProgress * 2.0 - 1.0) * 600.0;
@@ -51,7 +48,7 @@ export function NetworkAnimation(props: { className?: string }) {
       positions[i * 3 + 2] = pz;
       
       alphas[i] = 0.5 + Math.random() * 0.5;
-      sizes[i] = 0.8 + Math.random() * 1.5;
+      sizes[i] = 1.0 + Math.random() * 2.0;
     }
 
     const geometry = new THREE.BufferGeometry();
@@ -71,7 +68,7 @@ export function NetworkAnimation(props: { className?: string }) {
       "  gl_Position = projectionMatrix * mvPosition;",
       "  vAlpha = aAlpha;",
       "  float distanceScale = 140.0 / max(-mvPosition.z, 0.001);",
-      "  gl_PointSize = clamp(aSize * distanceScale, 0.1, 28.0);",
+      "  gl_PointSize = clamp(aSize * distanceScale, 2.0, 32.0);",
       "}"
     ].join("\\n");
 
@@ -82,8 +79,7 @@ export function NetworkAnimation(props: { className?: string }) {
       "  vec2 coord = gl_PointCoord - vec2(0.5);",
       "  float dist = length(coord);",
       "  if (dist > 0.5) discard;",
-      "  float glow = 1.0 - (dist * 2.0);",
-      "  glow = smoothstep(0.0, 1.0, glow);",
+      "  float glow = smoothstep(1.0, 0.0, dist * 2.0);",
       "  vec3 cyan = vec3(0.08, 0.75, 0.95);",
       "  vec3 magenta = vec3(0.75, 0.08, 0.95);",
       "  float colorMix = sin(vPos.x * 0.02 + vPos.z * 0.01) * 0.5 + 0.5;",
@@ -104,8 +100,8 @@ export function NetworkAnimation(props: { className?: string }) {
     scene.add(points);
 
     const resize = () => {
-      const width = Math.max(container.clientWidth, 1);
-      const height = Math.max(container.clientHeight, 1);
+      const width = window.innerWidth;
+      const height = window.innerHeight;
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
@@ -131,5 +127,12 @@ export function NetworkAnimation(props: { className?: string }) {
     };
   }, []);
 
-  return <div ref={containerRef} className={"pointer-events-none " + className} />;
+  // Forçando o fill de tela com div styles injetados no inline, sem depender da className crua que pode estar corrompida.
+  return (
+    <div 
+      ref={containerRef} 
+      className={"pointer-events-none z-[-1] " + className} 
+      style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: -1 }}
+    />
+  );
 }
