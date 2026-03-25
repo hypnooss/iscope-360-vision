@@ -31,14 +31,16 @@ const sphereVertexShader = `
     float breathe = sin(uTime * 0.25 + aSeed * 6.28318) * 0.01;
     vec3 displacedGlobe = position + sphereNormal * breathe;
 
-    // 2) TERRAIN LOGIC (Wavy data lines)
+    // 2) TERRAIN LOGIC    // Majestic continuous macroscopic macroscopic rolling hills (Baixa frequência, altas curvas)
     vec3 terrainPos = aPlanePos;
-    float wave1 = sin(terrainPos.x * 0.08 + uTime * 0.15) * 2.5;
-    float wave2 = cos(terrainPos.z * 0.05 - uTime * 0.1) * 2.0;
-    float wave3 = sin((terrainPos.x + terrainPos.z) * 0.03 + uTime * 0.05) * 3.0;
+    float wave1 = sin(terrainPos.x * 0.035 + uTime * 0.15) * 3.5;
+    float wave2 = cos(terrainPos.z * 0.025 - uTime * 0.1) * 3.0;
+    float wave3 = sin((terrainPos.x + terrainPos.z) * 0.015 + uTime * 0.05) * 2.5;
     
-    terrainPos.y += wave1 + wave2 + wave3 - 10.0;
-    terrainPos.x += sin(uTime * 0.1 + aSeed * 5.0) * 0.5;
+    terrainPos.y += wave1 + wave2 + wave3 - 6.0;
+    
+    // Sem drift caótico em X para que o terreno forme trilhas/linhas sólidas!
+    terrainPos.x += mix(sin(uTime * 0.1 + aSeed * 5.0) * 0.5, 0.0, uMorph);
 
     // DIVIDIR por 3.8 (GLOBE_SCALE) impede que a escala global empurre nosso chão calculado para fora da câmera!
     terrainPos /= 3.8;
@@ -57,8 +59,8 @@ const sphereVertexShader = `
     float frontFade = mix(smoothstep(-0.3, 0.6, sphereNormal.z), 1.0, uMorph);
     float coreFade = mix(0.4, 1.0, pow(max(vRim, 0.001), 0.3));
     
-    // Impede que o globo perca brilho original em modo terreno, fortalecendo a iluminação de base
-    coreFade = mix(coreFade, 0.95, uMorph);
+    // Impede que o globo perca brilho original em modo terreno, fortalecendo a iluminação de base para um verde/cyan neon
+    coreFade = mix(coreFade, 1.5, uMorph);
 
     vAlpha = aAlpha * frontFade * coreFade;
 
@@ -70,10 +72,10 @@ const sphereVertexShader = `
     
     vNormal = mix(sphereNormal, vec3(0.0, 1.0, 0.0), uMorph);
 
-    // Ajuste super dinâmico na escala de distância dos pontos (pontos distantes ficavam minúsculos e sumiam por serem pequenos demais pro pixel do monitor)
-    float dynDistanceScale = mix(28.0, 90.0, uMorph) / pow(max(-mvPosition.z, 0.001), mix(1.0, 0.65, uMorph));
-    float targetSize = mix(2.6, 4.0, uMorph);
-    gl_PointSize = clamp(aSize * dynDistanceScale * uPixelRatio, 0.8, targetSize);
+    // Ajuste super dinâmico na escala de distância dos pontos: partículas absurdamente colossais na base da tela viram poeira macia atrás
+    float dynDistanceScale = mix(28.0, 110.0, uMorph) / max(-mvPosition.z, 0.001);
+    float targetSize = mix(2.6, 20.0, uMorph);
+    gl_PointSize = clamp(aSize * dynDistanceScale * uPixelRatio, 0.1, targetSize);
   }
 `;
 
@@ -173,15 +175,20 @@ function createSphereGeometry(count: number) {
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
 
-    // Distinct Wavy Lines stretching vastly into the vanishing point
-    const numLines = 140;
+    // Continuous solid data strips extending from behind the camera to infinity
+    const numLines = 85;
+    const particlesPerLine = Math.floor(count / numLines);
+    
     const lineIndex = i % numLines; 
+    const colIndex = Math.floor(i / numLines);
     
-    // Z stretches from very close (10.0) to extremely far horizon (-140.0)
-    const pz = 10.0 - (lineIndex / numLines) * 150.0; 
+    // Z: Exponential distribution to pack more resolution near the camera and stretch into the extreme horizon
+    const zProgress = lineIndex / numLines;
+    const pz = 25.0 - Math.pow(zProgress, 0.85) * 250.0; 
     
-    // X handles width, must be gigantic to fill screen sides at the far horizon
-    const px = (Math.random() * 2.0 - 1.0) * 120.0;
+    // X: Strictly ordered from Left to Right to form an unbroken continuous solid line instead of random dots
+    const xProgress = colIndex / particlesPerLine;
+    const px = (xProgress * 2.0 - 1.0) * 240.0;
     
     planePositions[i * 3] = px;
     planePositions[i * 3 + 1] = 0.0;
@@ -329,10 +336,10 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     const CAM_BASE_Y = 0.0;
     const CAM_BASE_ROT_X = 0;
 
-    // Cinematic camera angle: sits slightly above the landscape and looks far into the horizon
-    const CAM_TERRAIN_Z = 25.0; 
-    const CAM_TERRAIN_Y = 5.0; 
-    const CAM_TERRAIN_ROT_X = -0.15;
+    // Cinematic floor: low altitude, looking flat into the deep horizon for that true "highway" feel
+    const CAM_TERRAIN_Z = 24.0; // Sits right at the very first massive particles!
+    const CAM_TERRAIN_Y = 2.5; // Down low!
+    const CAM_TERRAIN_ROT_X = -0.05;
 
     const tick = () => {
       const elapsed = (performance.now() - start) * 0.001;
