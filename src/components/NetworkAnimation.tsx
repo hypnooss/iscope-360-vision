@@ -31,17 +31,21 @@ const sphereVertexShader = `
     float breathe = sin(uTime * 0.25 + aSeed * 6.28318) * 0.01;
     vec3 displacedGlobe = position + sphereNormal * breathe;
 
-    // 2) TERRAIN LOGIC (Vias planificadas com o horizonte perfeitamente reto e infinito)
+    // 2) TERRAIN LOGIC (Topographic Map lines drawn rigidly on a flat floor)
     vec3 terrainPos = aPlanePos;
     
-    // O terreno é 100% plano na vertical (-6.0) para formar um horizonte de piso reto que some!
+    // O terreno é 100% plano na vertical (-6.0) e NUNCA sobe ou desce = horizonte navalha.
     terrainPos.y = -6.0;
     
-    // O efeito de "onda" (zig-zag) do Maze HQ não sobe nem desce, ele escorrega TUDO *horizontalmente* (X) baseando-se na distância Z
-    float zigzag1 = sin(terrainPos.z * 0.05 - uTime * 1.5) * 5.0;
-    float zigzag2 = cos(terrainPos.z * 0.02 + uTime * 0.8) * 4.0;
+    // Um movimento de "deslize e pulso" extremamente suave contido DENTRO das próprias linhas.
+    terrainPos.x += mix(0.0, sin(uTime * 0.2 + aSeed * 10.0) * 1.5, uMorph);
     
-    terrainPos.x += mix(0.0, zigzag1 + zigzag2, uMorph);
+    // O chão DESENHADO em formato de ondas, curvando na PROFUNDIDADE (Z) baseando-se no X!
+    // Sem 'uTime' perturbando a curvatura, garantindo que o desenho fique congelado com o aspecto de "trilhas em topografia".
+    float topograph1 = sin(terrainPos.x * 0.02) * 15.0;
+    float topograph2 = cos(terrainPos.x * 0.012) * 22.0;
+    
+    terrainPos.z += mix(0.0, topograph1 + topograph2, uMorph);
 
     // DIVIDIR por 3.8 (GLOBE_SCALE) impede que a escala global empurre nosso chão calculado para fora da câmera!
     terrainPos /= 3.8;
@@ -176,20 +180,20 @@ function createSphereGeometry(count: number) {
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
 
-    // Continuous data "lanes/highways" strictly ordered from camera to horizon
-    const numLanes = 120;
-    const particlesPerLane = Math.floor(count / numLanes);
+    // Horizontal parallel dot-strings (Latitude Contours) like a Topographic map
+    const numRows = 110;
+    const particlesPerRow = Math.floor(count / numRows);
     
-    const laneIndex = i % numLanes; 
-    const depthIndex = Math.floor(i / numLanes);
+    const particleIndex = i % particlesPerRow; 
+    const rowIndex = Math.floor(i / particlesPerRow);
     
-    // Z: Smooth linear dots forming UNBROKEN continuous paths into the deep horizon
-    const zProgress = depthIndex / particlesPerLane;
-    const pz = 25.0 - Math.pow(zProgress, 0.85) * 250.0; 
+    // Z: Distributes the distinct horizontal rows progressively towards the horizon
+    const zProgress = rowIndex / numRows;
+    const pz = 25.0 - Math.pow(zProgress, 0.8) * 250.0; 
     
-    // X: Discrete fan of lanes spanning perfectly tight across the floor
-    const xProgress = laneIndex / numLanes;
-    const px = (xProgress * 2.0 - 1.0) * 240.0;
+    // X: Perfectly orders the dots sequentially from left to right to build an unbreakable horizontal thread
+    const xProgress = particleIndex / particlesPerRow;
+    const px = (xProgress * 2.0 - 1.0) * 280.0;
     
     planePositions[i * 3] = px;
     planePositions[i * 3 + 1] = 0.0;
