@@ -41,9 +41,9 @@ const sphereVertexShader = `
     terrainPos.x += mix(0.0, sin(uTime * 0.2 + aSeed * 10.0) * 1.5, uMorph);
     
     // O chão DESENHADO em formato de ondas, curvando na PROFUNDIDADE (Z) baseando-se no X!
-    // Sem 'uTime' perturbando a curvatura, garantindo que o desenho fique congelado com o aspecto de "trilhas em topografia".
-    float topograph1 = sin(terrainPos.x * 0.02) * 15.0;
-    float topograph2 = cos(terrainPos.x * 0.012) * 22.0;
+    // Amplitudes NUCLEARES para garantir que as curvas formem varreduras imensas e desenhem o zig-zag com alta visibilidade!
+    float topograph1 = sin(terrainPos.x * 0.012) * 85.0;
+    float topograph2 = cos(terrainPos.x * 0.007) * 115.0;
     
     terrainPos.z += mix(0.0, topograph1 + topograph2, uMorph);
 
@@ -181,7 +181,7 @@ function createSphereGeometry(count: number) {
     positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
 
     // Horizontal parallel dot-strings (Latitude Contours) like a Topographic map
-    const numRows = 110;
+    const numRows = 140; // Maior resolução
     const particlesPerRow = Math.floor(count / numRows);
     
     const particleIndex = i % particlesPerRow; 
@@ -189,11 +189,11 @@ function createSphereGeometry(count: number) {
     
     // Z: Distributes the distinct horizontal rows progressively towards the horizon
     const zProgress = rowIndex / numRows;
-    const pz = 25.0 - Math.pow(zProgress, 0.8) * 250.0; 
+    const pz = 15.0 - Math.pow(zProgress, 0.8) * 350.0; // Malha mais extensa (-350) para comportar as curvas massivas
     
     // X: Perfectly orders the dots sequentially from left to right to build an unbreakable horizontal thread
     const xProgress = particleIndex / particlesPerRow;
-    const px = (xProgress * 2.0 - 1.0) * 280.0;
+    const px = (xProgress * 2.0 - 1.0) * 350.0; // Alargado para os lados para as curvas intensas não revelarem os cantos
     
     planePositions[i * 3] = px;
     planePositions[i * 3 + 1] = 0.0;
@@ -342,9 +342,9 @@ export function NetworkAnimation({ className = "" }: NetworkAnimationProps) {
     const CAM_BASE_ROT_X = 0;
 
     // Cinematic floor: low altitude, looking flat into the deep horizon for that true "highway" feel
-    const CAM_TERRAIN_Z = 24.0; // Sits right at the very first massive particles!
-    const CAM_TERRAIN_Y = 2.5; // Down low!
-    const CAM_TERRAIN_ROT_X = -0.05;
+    const CAM_TERRAIN_Z = 24.0; 
+    const CAM_TERRAIN_Y = 6.0; // Levantamos o "queixo" da câmera 3 metros para conseguir olhar por CIMA das faixas topográficas
+    const CAM_TERRAIN_ROT_X = -0.12; // E inclinamos levemente pra baixo para podermos testemunhar as curvas gigantescas
 
     const tick = () => {
       const elapsed = (performance.now() - start) * 0.001;
