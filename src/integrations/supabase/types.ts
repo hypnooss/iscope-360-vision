@@ -736,6 +736,79 @@ export type Database = {
           },
         ]
       }
+      api_jobs: {
+        Row: {
+          api_key_id: string | null
+          client_id: string
+          completed_at: string | null
+          created_at: string
+          current_step: string | null
+          domain_id: string | null
+          error_message: string | null
+          expires_at: string | null
+          id: string
+          job_type: string
+          metadata: Json | null
+          started_at: string | null
+          status: string
+          steps: Json
+        }
+        Insert: {
+          api_key_id?: string | null
+          client_id: string
+          completed_at?: string | null
+          created_at?: string
+          current_step?: string | null
+          domain_id?: string | null
+          error_message?: string | null
+          expires_at?: string | null
+          id?: string
+          job_type?: string
+          metadata?: Json | null
+          started_at?: string | null
+          status?: string
+          steps?: Json
+        }
+        Update: {
+          api_key_id?: string | null
+          client_id?: string
+          completed_at?: string | null
+          created_at?: string
+          current_step?: string | null
+          domain_id?: string | null
+          error_message?: string | null
+          expires_at?: string | null
+          id?: string
+          job_type?: string
+          metadata?: Json | null
+          started_at?: string | null
+          status?: string
+          steps?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_jobs_api_key_id_fkey"
+            columns: ["api_key_id"]
+            isOneToOne: false
+            referencedRelation: "api_access_keys"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "api_jobs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "api_jobs_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "external_domains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attack_surface_schedules: {
         Row: {
           client_id: string

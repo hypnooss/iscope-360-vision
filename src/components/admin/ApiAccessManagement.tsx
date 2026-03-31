@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ApiKeyGenerateDialog } from './ApiKeyGenerateDialog';
 import { ApiAccessLogsTable } from './ApiAccessLogsTable';
-import { Loader2, Plus, RefreshCw, Ban, Trash2, Copy, ChevronDown, Terminal, Globe } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Ban, Trash2, Copy, ChevronDown, Terminal, Globe, GitBranch } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import {
@@ -34,22 +34,55 @@ interface ApiKey {
   created_at: string;
 }
 
+interface ApiJob {
+  id: string;
+  job_type: string;
+  status: string;
+  steps: any[];
+  current_step: string | null;
+  domain_id: string | null;
+  metadata: any;
+  error_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
 const SCOPE_LABELS: Record<string, string> = {
   'external_domain:read': 'Leitura',
   'external_domain:write': 'Cadastro',
   'external_domain:report': 'Relatório',
   'external_domain:analyze': 'Análise',
+  'external_domain:pipeline': 'Pipeline',
   'external_domain:subdomains': 'Subdomínios',
   'external_domain:certificates': 'Certificados',
 };
 
+const STEP_STATUS_COLORS: Record<string, string> = {
+  pending: 'bg-muted text-muted-foreground',
+  running: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  completed: 'bg-green-500/20 text-green-400 border-green-500/30',
+  failed: 'bg-destructive/20 text-destructive border-destructive/30',
+};
+
+const JOB_STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+  queued: 'outline',
+  running: 'default',
+  completed: 'default',
+  failed: 'destructive',
+  partial: 'secondary',
+};
+
 export function ApiAccessManagement() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [jobs, setJobs] = useState<ApiJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [jobsLoading, setJobsLoading] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [jobsOpen, setJobsOpen] = useState(false);
 
   useEffect(() => {
     loadKeys();
@@ -68,6 +101,28 @@ export function ApiAccessManagement() {
       setLoading(false);
     }
   };
+
+  const loadJobs = async () => {
+    setJobsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('api_jobs')
+        .select('id, job_type, status, steps, current_step, domain_id, metadata, error_message, created_at, started_at, completed_at')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      setJobs((data as any[]) || []);
+    } catch (err) {
+      console.error('Error loading jobs:', err);
+      toast.error('Erro ao carregar jobs');
+    } finally {
+      setJobsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (jobsOpen) loadJobs();
+  }, [jobsOpen]);
 
   const handleRevoke = async (id: string) => {
     setActionLoading(id);
@@ -233,6 +288,108 @@ export function ApiAccessManagement() {
         </CardContent>
       </Card>
 
+      {/* Jobs / Pipeline */}
+      <Collapsible open={jobsOpen} onOpenChange={setJobsOpen}>
+        <Card className="border-border/50">
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/20 transition-colors">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <GitBranch className="w-5 h-5" />
+                    Jobs / Pipeline
+                  </CardTitle>
+                  <CardDescription>Pipelines de análise criados via API</CardDescription>
+                </div>
+                <ChevronDown className={`w-5 h-5 transition-transform ${jobsOpen ? 'rotate-180' : ''}`} />
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent>
+              {jobsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : jobs.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-sm text-muted-foreground">Nenhum job registrado</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex justify-end">
+                    <Button variant="outline" size="sm" onClick={loadJobs} disabled={jobsLoading}>
+                      <RefreshCw className={`w-4 h-4 mr-2 ${jobsLoading ? 'animate-spin' : ''}`} />
+                      Atualizar
+                    </Button>
+                  </div>
+                  <div className="rounded-md border overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Domínio</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Steps</TableHead>
+                          <TableHead>Criado em</TableHead>
+                          <TableHead>Duração</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {jobs.map((job) => (
+                          <TableRow key={job.id}>
+                            <TableCell className="font-mono text-xs">
+                              {job.metadata?.domain || '—'}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {job.job_type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={JOB_STATUS_VARIANT[job.status] || 'outline'} className="text-xs">
+                                {job.status === 'queued' && 'Na fila'}
+                                {job.status === 'running' && 'Executando'}
+                                {job.status === 'completed' && 'Concluído'}
+                                {job.status === 'failed' && 'Falhou'}
+                                {job.status === 'partial' && 'Parcial'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-1">
+                                {(job.steps || []).map((step: any, i: number) => (
+                                  <Badge
+                                    key={i}
+                                    variant="outline"
+                                    className={`text-xs ${STEP_STATUS_COLORS[step.status] || ''}`}
+                                  >
+                                    {step.name}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {format(new Date(job.created_at), 'dd/MM/yy HH:mm')}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {job.completed_at && job.started_at
+                                ? `${Math.round((new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000)}s`
+                                : job.started_at
+                                  ? 'Em andamento...'
+                                  : '—'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+
       {/* API Documentation */}
       <Card className="border-border/50">
         <CardHeader>
@@ -280,6 +437,16 @@ export function ApiAccessManagement() {
                 title: 'Disparar análise',
                 scope: 'external_domain:analyze',
                 curl: `curl -X POST -H "X-API-Key: isk_SUA_CHAVE" \\\n  ${gatewayBase}/v1/domains/{domain_id}/analyze`,
+              },
+              {
+                title: 'Criar pipeline completo',
+                scope: 'external_domain:pipeline',
+                curl: `curl -X POST -H "X-API-Key: isk_SUA_CHAVE" \\\n  -H "Content-Type: application/json" \\\n  -d '{"domain":"example.com","steps":["register","compliance","analyzer","email_report"],"email_to":"x@y.com"}' \\\n  ${gatewayBase}/v1/pipeline`,
+              },
+              {
+                title: 'Consultar status do job',
+                scope: 'external_domain:pipeline',
+                curl: `curl -H "X-API-Key: isk_SUA_CHAVE" \\\n  ${gatewayBase}/v1/jobs/{job_id}`,
               },
             ].map((example) => (
               <div key={example.title} className="border rounded-lg p-3 space-y-2">

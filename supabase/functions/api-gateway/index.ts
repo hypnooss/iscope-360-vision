@@ -20,6 +20,18 @@ async function sha256(text: string): Promise<string> {
     .join("");
 }
 
+const VALID_STEPS = ["register", "compliance", "analyzer", "email_report"];
+const DEFAULT_STEPS = ["register", "compliance"];
+
+function buildStepsArray(stepNames: string[], metadata: any): any[] {
+  return stepNames.map((name, i) => ({
+    name,
+    status: "pending",
+    ...(i > 0 ? { depends_on: stepNames[i - 1] } : {}),
+    ...(name === "email_report" && metadata?.email_to ? { params: { to: metadata.email_to } } : {}),
+  }));
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -61,7 +73,6 @@ Deno.serve(async (req) => {
     // Parse route
     const url = new URL(req.url);
     const pathParts = url.pathname.replace(/^\/api-gateway\/?/, "").split("/").filter(Boolean);
-    // Expected: v1/domains, v1/domains/:id/report, v1/domains/:id/analyze
 
     if (pathParts[0] !== "v1") {
       statusCode = 404;
@@ -71,6 +82,93 @@ Deno.serve(async (req) => {
     const resource = pathParts[1];
     const resourceId = pathParts[2];
     const subResource = pathParts[3];
+
+    // === PIPELINE ===
+    if (resource === "pipeline" && !resourceId && req.method === "POST") {
+      if (!data.scopes.includes("external_domain:pipeline")) {
+        statusCode = 403;
+        return respond({ error: "Scope external_domain:pipeline required", code: "INSUFFICIENT_SCOPE" }, 403);
+      }
+
+      let body: any;
+      try {
+        body = await req.json();
+      } catch {
+        statusCode = 400;
+        return respond({ error: "Invalid JSON body", code: "BAD_REQUEST" }, 400);
+      }
+
+      const domainName = (body.domain || "").trim().toLowerCase();
+      if (!domainName || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domainName)) {
+        statusCode = 400;
+        return respond({ error: "Invalid domain format", code: "INVALID_DOMAIN" }, 400);
+      }
+
+      const requestedSteps: string[] = body.steps || DEFAULT_STEPS;
+      if (!Array.isArray(requestedSteps) || requestedSteps.length === 0) {
+        statusCode = 400;
+        return respond({ error: "Steps must be a non-empty array", code: "INVALID_STEPS" }, 400);
+      }
+      for (const s of requestedSteps) {
+        if (!VALID_STEPS.includes(s)) {
+          statusCode = 400;
+          return respond({ error: `Invalid step: ${s}. Valid: ${VALID_STEPS.join(", ")}`, code: "INVALID_STEP" }, 400);
+        }
+      }
+
+      const metadata: any = { domain: domainName };
+      if (body.agent_id) metadata.agent_id = body.agent_id;
+      if (body.email_to) metadata.email_to = body.email_to;
+      if (body.webhook_url) metadata.webhook_url = body.webhook_url;
+
+      const steps = buildStepsArray(requestedSteps, metadata);
+
+      const { data: job, error: jobErr } = await adminClient
+        .from("api_jobs")
+        .insert({
+          api_key_id: data.id,
+          client_id: data.client_id,
+          job_type: requestedSteps.length === VALID_STEPS.length ? "full_pipeline" : "custom",
+          status: "queued",
+          steps,
+          metadata,
+        })
+        .select("id, status, steps, created_at")
+        .single();
+
+      if (jobErr) throw jobErr;
+
+      statusCode = 202;
+      return respond({
+        job_id: job.id,
+        status: job.status,
+        steps: requestedSteps,
+        message: "Pipeline enfileirado com sucesso",
+      }, 202);
+    }
+
+    // === JOBS ===
+    if (resource === "jobs" && resourceId && req.method === "GET") {
+      if (!data.scopes.includes("external_domain:pipeline")) {
+        statusCode = 403;
+        return respond({ error: "Scope external_domain:pipeline required", code: "INSUFFICIENT_SCOPE" }, 403);
+      }
+
+      const { data: job, error: jErr } = await adminClient
+        .from("api_jobs")
+        .select("id, job_type, status, steps, current_step, domain_id, metadata, error_message, created_at, started_at, completed_at")
+        .eq("id", resourceId)
+        .eq("client_id", data.client_id)
+        .maybeSingle();
+
+      if (jErr) throw jErr;
+      if (!job) {
+        statusCode = 404;
+        return respond({ error: "Job not found", code: "NOT_FOUND" }, 404);
+      }
+
+      return respond({ job });
+    }
 
     // === DOMAINS ===
     if (resource === "domains") {
@@ -95,7 +193,6 @@ Deno.serve(async (req) => {
           return respond({ error: "Invalid domain format", code: "INVALID_DOMAIN" }, 400);
         }
 
-        // Check duplicate
         const { data: existing } = await adminClient
           .from("external_domains")
           .select("id")
@@ -108,7 +205,6 @@ Deno.serve(async (req) => {
           return respond({ error: "Domain already exists in this workspace", code: "DUPLICATE_DOMAIN", domain_id: existing.id }, 409);
         }
 
-        // Validate agent belongs to client if provided
         let agentId = body.agent_id || null;
         if (agentId) {
           const { data: agent } = await adminClient
@@ -165,7 +261,6 @@ Deno.serve(async (req) => {
           return respond({ error: "Scope external_domain:report required", code: "INSUFFICIENT_SCOPE" }, 403);
         }
 
-        // Verify domain belongs to client
         const { data: domain } = await adminClient
           .from("external_domains")
           .select("id")
@@ -215,7 +310,6 @@ Deno.serve(async (req) => {
           return respond({ error: "Domain not found", code: "NOT_FOUND" }, 404);
         }
 
-        // Create analysis record
         const { data: analysis, error: aErr } = await adminClient
           .from("external_domain_analysis_history")
           .insert({
@@ -228,7 +322,6 @@ Deno.serve(async (req) => {
 
         if (aErr) throw aErr;
 
-        // Create agent task if agent assigned
         if (domain.agent_id) {
           await adminClient.from("agent_tasks").insert({
             agent_id: domain.agent_id,
@@ -256,7 +349,6 @@ Deno.serve(async (req) => {
     statusCode = 500;
     return respond({ error: "Internal server error" }, 500);
   } finally {
-    // Log access
     if (keyRecord) {
       const url = new URL(req.url);
       try {
