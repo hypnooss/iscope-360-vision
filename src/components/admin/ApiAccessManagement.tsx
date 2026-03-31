@@ -36,6 +36,7 @@ interface ApiKey {
 
 const SCOPE_LABELS: Record<string, string> = {
   'external_domain:read': 'Leitura',
+  'external_domain:write': 'Cadastro',
   'external_domain:report': 'Relatório',
   'external_domain:analyze': 'Análise',
   'external_domain:subdomains': 'Subdomínios',

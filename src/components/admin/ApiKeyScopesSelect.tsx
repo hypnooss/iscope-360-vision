@@ -3,6 +3,7 @@ import { Label } from '@/components/ui/label';
 
 const AVAILABLE_SCOPES = [
   { value: 'external_domain:read', label: 'Domínios: Leitura', description: 'Listar domínios e status' },
+  { value: 'external_domain:write', label: 'Domínios: Cadastro', description: 'Cadastrar novos domínios no workspace' },
   { value: 'external_domain:report', label: 'Domínios: Relatório', description: 'Obter relatório de análise completo' },
   { value: 'external_domain:analyze', label: 'Domínios: Análise', description: 'Disparar nova análise' },
   { value: 'external_domain:subdomains', label: 'Domínios: Subdomínios', description: 'Listar subdomínios enumerados' },
