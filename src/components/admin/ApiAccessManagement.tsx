@@ -36,6 +36,7 @@ interface ApiKey {
 
 const SCOPE_LABELS: Record<string, string> = {
   'external_domain:read': 'Leitura',
+  'external_domain:write': 'Cadastro',
   'external_domain:report': 'Relatório',
   'external_domain:analyze': 'Análise',
   'external_domain:subdomains': 'Subdomínios',
@@ -264,6 +265,11 @@ export function ApiAccessManagement() {
                 title: 'Listar domínios',
                 scope: 'external_domain:read',
                 curl: `curl -H "X-API-Key: isk_SUA_CHAVE" \\\n  ${gatewayBase}/v1/domains`,
+              },
+              {
+                title: 'Cadastrar domínio',
+                scope: 'external_domain:write',
+                curl: `curl -X POST -H "X-API-Key: isk_SUA_CHAVE" \\\n  -H "Content-Type: application/json" \\\n  -d '{"domain": "example.com"}' \\\n  ${gatewayBase}/v1/domains`,
               },
               {
                 title: 'Obter relatório',

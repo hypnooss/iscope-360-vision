@@ -74,6 +74,73 @@ Deno.serve(async (req) => {
 
     // === DOMAINS ===
     if (resource === "domains") {
+      // POST /v1/domains — create domain
+      if (!resourceId && req.method === "POST") {
+        if (!data.scopes.includes("external_domain:write")) {
+          statusCode = 403;
+          return respond({ error: "Scope external_domain:write required", code: "INSUFFICIENT_SCOPE" }, 403);
+        }
+
+        let body: any;
+        try {
+          body = await req.json();
+        } catch {
+          statusCode = 400;
+          return respond({ error: "Invalid JSON body", code: "BAD_REQUEST" }, 400);
+        }
+
+        const domainName = (body.domain || "").trim().toLowerCase();
+        if (!domainName || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domainName)) {
+          statusCode = 400;
+          return respond({ error: "Invalid domain format", code: "INVALID_DOMAIN" }, 400);
+        }
+
+        // Check duplicate
+        const { data: existing } = await adminClient
+          .from("external_domains")
+          .select("id")
+          .eq("client_id", data.client_id)
+          .eq("domain", domainName)
+          .maybeSingle();
+
+        if (existing) {
+          statusCode = 409;
+          return respond({ error: "Domain already exists in this workspace", code: "DUPLICATE_DOMAIN", domain_id: existing.id }, 409);
+        }
+
+        // Validate agent belongs to client if provided
+        let agentId = body.agent_id || null;
+        if (agentId) {
+          const { data: agent } = await adminClient
+            .from("agents")
+            .select("id")
+            .eq("id", agentId)
+            .eq("client_id", data.client_id)
+            .maybeSingle();
+          if (!agent) {
+            statusCode = 400;
+            return respond({ error: "Agent not found or does not belong to this workspace", code: "INVALID_AGENT" }, 400);
+          }
+        }
+
+        const { data: newDomain, error: insertErr } = await adminClient
+          .from("external_domains")
+          .insert({
+            client_id: data.client_id,
+            domain: domainName,
+            name: domainName,
+            agent_id: agentId,
+            status: "pending",
+          })
+          .select("id, domain, status, created_at")
+          .single();
+
+        if (insertErr) throw insertErr;
+
+        statusCode = 201;
+        return respond({ domain: newDomain }, 201);
+      }
+
       // GET /v1/domains — list domains
       if (!resourceId && req.method === "GET") {
         if (!data.scopes.includes("external_domain:read")) {
