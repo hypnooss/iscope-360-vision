@@ -267,6 +267,11 @@ export function ApiAccessManagement() {
                 curl: `curl -H "X-API-Key: isk_SUA_CHAVE" \\\n  ${gatewayBase}/v1/domains`,
               },
               {
+                title: 'Cadastrar domínio',
+                scope: 'external_domain:write',
+                curl: `curl -X POST -H "X-API-Key: isk_SUA_CHAVE" \\\n  -H "Content-Type: application/json" \\\n  -d '{"domain": "example.com"}' \\\n  ${gatewayBase}/v1/domains`,
+              },
+              {
                 title: 'Obter relatório',
                 scope: 'external_domain:report',
                 curl: `curl -H "X-API-Key: isk_SUA_CHAVE" \\\n  ${gatewayBase}/v1/domains/{domain_id}/report`,
