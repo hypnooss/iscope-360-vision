@@ -183,3 +183,9 @@ verify_jwt = false
 [functions.agent-fix]
 verify_jwt = false
 
+[functions.api-access-keys]
+verify_jwt = false
+
+[functions.api-gateway]
+verify_jwt = false
+
