@@ -10,12 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Save, CheckCircle, AlertCircle, RefreshCw, Bot, Key, Layers, Shield } from 'lucide-react';
+import { Loader2, Save, CheckCircle, AlertCircle, RefreshCw, Bot, Key, Layers, Shield, Globe } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ModulesManagement } from '@/components/admin/ModulesManagement';
 import { M365PermissionsManagement } from '@/components/admin/M365PermissionsManagement';
 import { UpdateManagementCard } from '@/components/admin/UpdateManagementCard';
+import { ApiAccessManagement } from '@/components/admin/ApiAccessManagement';
 
 interface ApiKeyStatus {
   name: string;
@@ -176,6 +177,7 @@ export default function SettingsPage() {
             <TabsTrigger value="api-keys" className="gap-2"><Key className="w-4 h-4" />Chaves de API</TabsTrigger>
             <TabsTrigger value="modules" className="gap-2"><Layers className="w-4 h-4" />Módulos</TabsTrigger>
             <TabsTrigger value="m365" className="gap-2"><Shield className="w-4 h-4" />Microsoft 365</TabsTrigger>
+            <TabsTrigger value="api-iscope" className="gap-2"><Globe className="w-4 h-4" />API iScope</TabsTrigger>
           </TabsList>
 
           {/* API Keys Tab */}
@@ -250,6 +252,7 @@ export default function SettingsPage() {
 
           <TabsContent value="modules"><ModulesManagement /></TabsContent>
           <TabsContent value="m365"><M365PermissionsManagement /></TabsContent>
+          <TabsContent value="api-iscope"><ApiAccessManagement /></TabsContent>
 
           <TabsContent value="agents" className="space-y-6">
             {/* Card 1: Update Management (extracted component) */}
