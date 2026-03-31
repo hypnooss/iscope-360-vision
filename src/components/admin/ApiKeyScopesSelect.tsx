@@ -6,6 +6,7 @@ const AVAILABLE_SCOPES = [
   { value: 'external_domain:write', label: 'Domínios: Cadastro', description: 'Cadastrar novos domínios no workspace' },
   { value: 'external_domain:report', label: 'Domínios: Relatório', description: 'Obter relatório de análise completo' },
   { value: 'external_domain:analyze', label: 'Domínios: Análise', description: 'Disparar nova análise' },
+  { value: 'external_domain:pipeline', label: 'Domínios: Pipeline', description: 'Criar e consultar pipelines de análise completos' },
   { value: 'external_domain:subdomains', label: 'Domínios: Subdomínios', description: 'Listar subdomínios enumerados' },
   { value: 'external_domain:certificates', label: 'Domínios: Certificados', description: 'Dados de certificados SSL/TLS' },
 ];
