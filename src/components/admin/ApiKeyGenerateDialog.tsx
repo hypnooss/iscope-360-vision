@@ -55,13 +55,6 @@ export function ApiKeyGenerateDialog({ open, onOpenChange, onGenerated }: ApiKey
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('api-access-keys', {
-        method: 'POST',
-        body: { name, client_id: clientId, scopes, expires_at: expiresAt || null },
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      // Handle the nested response from functions.invoke
       const queryParams = new URLSearchParams({ action: 'generate' });
       const { data: genData, error: genError } = await supabase.functions.invoke(
         `api-access-keys?${queryParams.toString()}`,
