@@ -252,6 +252,7 @@ export default function SettingsPage() {
 
           <TabsContent value="modules"><ModulesManagement /></TabsContent>
           <TabsContent value="m365"><M365PermissionsManagement /></TabsContent>
+          <TabsContent value="api-iscope"><ApiAccessManagement /></TabsContent>
 
           <TabsContent value="agents" className="space-y-6">
             {/* Card 1: Update Management (extracted component) */}
