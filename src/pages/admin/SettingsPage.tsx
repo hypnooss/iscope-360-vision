@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { ModulesManagement } from '@/components/admin/ModulesManagement';
 import { M365PermissionsManagement } from '@/components/admin/M365PermissionsManagement';
 import { UpdateManagementCard } from '@/components/admin/UpdateManagementCard';
+import { ApiAccessManagement } from '@/components/admin/ApiAccessManagement';
 
 interface ApiKeyStatus {
   name: string;
