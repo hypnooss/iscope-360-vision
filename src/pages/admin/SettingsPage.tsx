@@ -177,6 +177,7 @@ export default function SettingsPage() {
             <TabsTrigger value="api-keys" className="gap-2"><Key className="w-4 h-4" />Chaves de API</TabsTrigger>
             <TabsTrigger value="modules" className="gap-2"><Layers className="w-4 h-4" />Módulos</TabsTrigger>
             <TabsTrigger value="m365" className="gap-2"><Shield className="w-4 h-4" />Microsoft 365</TabsTrigger>
+            <TabsTrigger value="api-iscope" className="gap-2"><Globe className="w-4 h-4" />API iScope</TabsTrigger>
           </TabsList>
 
           {/* API Keys Tab */}
