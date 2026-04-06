@@ -85,12 +85,12 @@ export function AttackSurfaceScanDialog({ open, onOpenChange, clientId, onStartS
 
   const totalIPs = useMemo(() => {
     if (!preview) return 0;
-    let count = selectedDNS.size;
+    let count = filteredDNS.filter(t => selectedDNS.has(t.ip)).length;
     for (const idx of selectedFW) {
       count += preview.firewall[idx]?.expanded_ips.length ?? 0;
     }
     return count;
-  }, [preview, selectedDNS, selectedFW]);
+  }, [preview, filteredDNS, selectedDNS, selectedFW]);
 
   const selectAll = () => {
     if (!preview) return;
@@ -132,7 +132,7 @@ export function AttackSurfaceScanDialog({ open, onOpenChange, clientId, onStartS
     if (!preview) return;
     const ips: { ip: string; source: 'dns' | 'firewall'; label: string }[] = [];
 
-    for (const t of preview.dns) {
+    for (const t of filteredDNS) {
       if (selectedDNS.has(t.ip)) {
         ips.push({ ip: t.ip, source: 'dns', label: t.label });
       }
