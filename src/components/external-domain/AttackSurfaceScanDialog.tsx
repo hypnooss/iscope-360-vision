@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Globe, Server, Loader2, Play, AlertTriangle, CheckSquare, Square } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
@@ -11,6 +12,8 @@ import { cn } from '@/lib/utils';
 interface DNSTarget {
   ip: string;
   label: string;
+  domain_id: string;
+  domain_name: string;
 }
 
 interface FirewallTarget {
@@ -20,7 +23,13 @@ interface FirewallTarget {
   expanded_ips: string[];
 }
 
+interface DomainInfo {
+  id: string;
+  name: string;
+}
+
 interface PreviewData {
+  domains: DomainInfo[];
   dns: DNSTarget[];
   firewall: FirewallTarget[];
 }
@@ -39,19 +48,21 @@ export function AttackSurfaceScanDialog({ open, onOpenChange, clientId, onStartS
   const [error, setError] = useState<string | null>(null);
   const [selectedDNS, setSelectedDNS] = useState<Set<string>>(new Set());
   const [selectedFW, setSelectedFW] = useState<Set<number>>(new Set());
+  const [domainFilter, setDomainFilter] = useState<string>('all');
 
   useEffect(() => {
     if (!open || !clientId) return;
     setLoading(true);
     setError(null);
     setPreview(null);
+    setDomainFilter('all');
 
     supabase.functions.invoke('attack-surface-preview', { body: { client_id: clientId } })
       .then(({ data, error: err }) => {
         if (err) { setError(err.message); return; }
         const d = data as PreviewData;
+        if (!d.domains) d.domains = [];
         setPreview(d);
-        // Select all by default
         setSelectedDNS(new Set(d.dns.map(t => t.ip)));
         setSelectedFW(new Set(d.firewall.map((_, i) => i)));
       })
@@ -59,8 +70,18 @@ export function AttackSurfaceScanDialog({ open, onOpenChange, clientId, onStartS
       .finally(() => setLoading(false));
   }, [open, clientId]);
 
-  const totalTargets = (preview?.dns.length ?? 0) + (preview?.firewall.length ?? 0);
-  const selectedCount = selectedDNS.size + selectedFW.size;
+  const filteredDNS = useMemo(() => {
+    if (!preview) return [];
+    if (domainFilter === 'all') return preview.dns;
+    return preview.dns.filter(t => t.domain_id === domainFilter);
+  }, [preview, domainFilter]);
+
+  const totalTargets = filteredDNS.length + (preview?.firewall.length ?? 0);
+
+  const selectedCount = useMemo(() => {
+    const dnsCount = filteredDNS.filter(t => selectedDNS.has(t.ip)).length;
+    return dnsCount + selectedFW.size;
+  }, [filteredDNS, selectedDNS, selectedFW]);
 
   const totalIPs = useMemo(() => {
     if (!preview) return 0;
@@ -73,12 +94,21 @@ export function AttackSurfaceScanDialog({ open, onOpenChange, clientId, onStartS
 
   const selectAll = () => {
     if (!preview) return;
-    setSelectedDNS(new Set(preview.dns.map(t => t.ip)));
+    setSelectedDNS(prev => {
+      const next = new Set(prev);
+      for (const t of filteredDNS) next.add(t.ip);
+      return next;
+    });
     setSelectedFW(new Set(preview.firewall.map((_, i) => i)));
   };
 
   const deselectAll = () => {
-    setSelectedDNS(new Set());
+    if (!preview) return;
+    setSelectedDNS(prev => {
+      const next = new Set(prev);
+      for (const t of filteredDNS) next.delete(t.ip);
+      return next;
+    });
     setSelectedFW(new Set());
   };
 
@@ -120,6 +150,8 @@ export function AttackSurfaceScanDialog({ open, onOpenChange, clientId, onStartS
     onStartScan(ips);
   };
 
+  const showDomainFilter = (preview?.domains?.length ?? 0) > 1;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
@@ -150,7 +182,23 @@ export function AttackSurfaceScanDialog({ open, onOpenChange, clientId, onStartS
 
         {preview && !loading && (
           <>
-            {/* Bulk actions + counter */}
+            {showDomainFilter && (
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-muted-foreground" />
+                <Select value={domainFilter} onValueChange={setDomainFilter}>
+                  <SelectTrigger className="w-[280px]">
+                    <SelectValue placeholder="Filtrar por domínio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os domínios</SelectItem>
+                    {preview.domains.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="flex items-center justify-between border-b border-border pb-2">
               <span className="text-sm text-muted-foreground">
                 {selectedCount} de {totalTargets} alvos selecionados ({totalIPs} IPs)
@@ -166,16 +214,15 @@ export function AttackSurfaceScanDialog({ open, onOpenChange, clientId, onStartS
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-              {/* DNS Section */}
-              {preview.dns.length > 0 && (
+              {filteredDNS.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <Globe className="w-4 h-4 text-teal-400" />
                     <span className="text-sm font-semibold">DNS</span>
-                    <Badge variant="outline" className="text-xs">{preview.dns.length}</Badge>
+                    <Badge variant="outline" className="text-xs">{filteredDNS.length}</Badge>
                   </div>
                   <div className="space-y-1">
-                    {preview.dns.map(t => (
+                    {filteredDNS.map(t => (
                       <label
                         key={t.ip}
                         className={cn(
@@ -190,13 +237,15 @@ export function AttackSurfaceScanDialog({ open, onOpenChange, clientId, onStartS
                         />
                         <span className="text-sm font-mono">{t.ip}</span>
                         <span className="text-xs text-muted-foreground truncate">{t.label}</span>
+                        {showDomainFilter && domainFilter === 'all' && (
+                          <Badge variant="secondary" className="text-[10px] ml-auto shrink-0">{t.domain_name}</Badge>
+                        )}
                       </label>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Firewall Section */}
               {preview.firewall.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-2">
@@ -237,7 +286,7 @@ export function AttackSurfaceScanDialog({ open, onOpenChange, clientId, onStartS
                 </div>
               )}
 
-              {preview.dns.length === 0 && preview.firewall.length === 0 && (
+              {filteredDNS.length === 0 && preview.firewall.length === 0 && (
                 <div className="text-sm text-muted-foreground text-center py-8">
                   Nenhum alvo encontrado. Certifique-se de ter domínios e firewalls analisados.
                 </div>
