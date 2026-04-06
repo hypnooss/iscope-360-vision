@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 
 import { getCorsHeaders } from '../_shared/cors.ts';
 
-// ── IP helpers (same as run-attack-surface-queue) ───────────────────────────
+// ── IP helpers ──────────────────────────────────────────────────────────────
 
 function isPrivateIP(ip: string): boolean {
   const parts = ip.split('.').map(Number)
@@ -62,6 +62,8 @@ function expandSubnet(ipField: string): { ips: string[]; subnet: string | null }
 interface DNSTarget {
   ip: string
   label: string
+  domain_id: string
+  domain_name: string
 }
 
 interface FirewallTarget {
@@ -71,9 +73,14 @@ interface FirewallTarget {
   expanded_ips: string[]
 }
 
+interface DomainInfo {
+  id: string
+  name: string
+}
+
 // ── Extract IPs from domain analyses ────────────────────────────────────────
 
-function extractDomainTargets(reportData: any, domainName: string): DNSTarget[] {
+function extractDomainTargets(reportData: any, domainName: string, domainId: string): DNSTarget[] {
   const targets: DNSTarget[] = []
   const seen = new Set<string>()
   if (!reportData) return targets
@@ -84,7 +91,7 @@ function extractDomainTargets(reportData: any, domainName: string): DNSTarget[] 
         for (const ip of sub.ips) {
           if (typeof ip === 'string' && !seen.has(ip) && !isPrivateIP(ip)) {
             seen.add(ip)
-            targets.push({ ip, label: sub.subdomain || domainName })
+            targets.push({ ip, label: sub.subdomain || domainName, domain_id: domainId, domain_name: domainName })
           }
         }
       }
@@ -99,7 +106,7 @@ function extractDomainTargets(reportData: any, domainName: string): DNSTarget[] 
           const ip = addr.ip || addr.value
           if (ip && !seen.has(ip) && !isPrivateIP(ip)) {
             seen.add(ip)
-            targets.push({ ip, label: sub.subdomain || sub.hostname || domainName })
+            targets.push({ ip, label: sub.subdomain || sub.hostname || domainName, domain_id: domainId, domain_name: domainName })
           }
         }
       }
@@ -117,7 +124,7 @@ function extractDomainTargets(reportData: any, domainName: string): DNSTarget[] 
           for (const key of ['ip', 'address']) {
             if (obj[key] && typeof obj[key] === 'string' && !seen.has(obj[key]) && !isPrivateIP(obj[key])) {
               seen.add(obj[key])
-              targets.push({ ip: obj[key], label: obj.hostname || obj.name || domainName })
+              targets.push({ ip: obj[key], label: obj.hostname || obj.name || domainName, domain_id: domainId, domain_name: domainName })
             }
           }
           for (const k of Object.keys(obj)) searchObj(obj[k], depth + 1)
@@ -153,7 +160,6 @@ function extractFirewallTargets(stepResults: any[], firewallName: string): Firew
       const publicIPs = expandedIPs.filter(eip => eip !== '0.0.0.0' && !isPrivateIP(eip))
       if (publicIPs.length === 0) continue
 
-      // Deduplicate
       const newIPs = publicIPs.filter(eip => !seen.has(eip))
       for (const eip of newIPs) seen.add(eip)
       if (newIPs.length === 0) continue
@@ -199,6 +205,7 @@ Deno.serve(async (req) => {
 
     const dnsTargets: DNSTarget[] = []
     const seenDNS = new Set<string>()
+    const domainsList: DomainInfo[] = []
 
     for (const domain of (domains || [])) {
       const { data: analyses } = await supabase
@@ -210,12 +217,17 @@ Deno.serve(async (req) => {
         .limit(1)
 
       if (analyses?.[0]?.report_data) {
-        const extracted = extractDomainTargets(analyses[0].report_data, domain.domain)
+        const extracted = extractDomainTargets(analyses[0].report_data, domain.domain, domain.id)
+        let domainHasTargets = false
         for (const t of extracted) {
           if (!seenDNS.has(t.ip)) {
             seenDNS.add(t.ip)
             dnsTargets.push(t)
+            domainHasTargets = true
           }
+        }
+        if (domainHasTargets) {
+          domainsList.push({ id: domain.id, name: domain.domain })
         }
       }
     }
@@ -249,8 +261,7 @@ Deno.serve(async (req) => {
         if (stepResults && stepResults.length > 0) {
           const fwTargets = extractFirewallTargets(stepResults, fw.name)
           for (const ft of fwTargets) {
-            // Check for overlap with DNS
-          const filteredIPs = ft.expanded_ips.filter(eip => !seenDNS.has(eip))
+            const filteredIPs = ft.expanded_ips.filter(eip => !seenDNS.has(eip))
             if (filteredIPs.length > 0) {
               firewallTargets.push({ ...ft, expanded_ips: filteredIPs })
             }
@@ -258,7 +269,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Add cloud_public_ip if available and not already included
       if (fw.cloud_public_ip && !isPrivateIP(fw.cloud_public_ip) && !seenDNS.has(fw.cloud_public_ip)) {
         const alreadyIncluded = firewallTargets.some(ft => ft.expanded_ips.includes(fw.cloud_public_ip));
         if (!alreadyIncluded) {
@@ -273,6 +283,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(JSON.stringify({
+      domains: domainsList,
       dns: dnsTargets,
       firewall: firewallTargets,
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
