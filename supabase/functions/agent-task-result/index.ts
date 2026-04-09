@@ -5275,22 +5275,54 @@ serve(async (req: Request) => {
 
         console.log(`Compliance result saved: score=${score}, checks=${complianceResult.checks.length}, alert created`);
       } else if (task.target_type === 'external_domain') {
-        console.log(`Saving external domain history for domain_id=${task.target_id} (score=${score})`);
+        const pipelineAnalysisId = (task.payload as Record<string, unknown>)?.analysis_id as string | undefined;
+        console.log(`Saving external domain history for domain_id=${task.target_id} (score=${score}, pipeline_analysis_id=${pipelineAnalysisId || 'none'})`);
 
-        const { data: historyData, error: historyError } = await supabase
-          .from('external_domain_analysis_history')
-          .insert({
-            domain_id: task.target_id,
-            score: score,
-            report_data: historyReportData,
-            source: 'agent',
-            status: 'completed',
-            started_at: task.started_at || new Date().toISOString(),
-            completed_at: new Date().toISOString(),
-            execution_time_ms: task.execution_time_ms || null,
-          })
-          .select('id')
-          .single();
+        let historyData: { id: string } | null = null;
+        let historyError: unknown = null;
+
+        if (pipelineAnalysisId) {
+          // Pipeline created an analysis record — UPDATE it instead of inserting a new one
+          const { data, error } = await supabase
+            .from('external_domain_analysis_history')
+            .update({
+              score: score,
+              report_data: historyReportData,
+              source: 'agent',
+              status: 'completed',
+              started_at: task.started_at || new Date().toISOString(),
+              completed_at: new Date().toISOString(),
+              execution_time_ms: task.execution_time_ms || null,
+            })
+            .eq('id', pipelineAnalysisId)
+            .select('id')
+            .single();
+          historyData = data;
+          historyError = error;
+          if (error) {
+            console.warn(`Failed to update pipeline analysis ${pipelineAnalysisId}, falling back to insert:`, error);
+          }
+        }
+
+        // Fallback: insert new record if no pipeline analysis_id or update failed
+        if (!historyData) {
+          const { data, error } = await supabase
+            .from('external_domain_analysis_history')
+            .insert({
+              domain_id: task.target_id,
+              score: score,
+              report_data: historyReportData,
+              source: 'agent',
+              status: 'completed',
+              started_at: task.started_at || new Date().toISOString(),
+              completed_at: new Date().toISOString(),
+              execution_time_ms: task.execution_time_ms || null,
+            })
+            .select('id')
+            .single();
+          historyData = data;
+          historyError = error;
+        }
 
         if (historyError) {
           console.error('Failed to save external domain analysis history:', historyError);

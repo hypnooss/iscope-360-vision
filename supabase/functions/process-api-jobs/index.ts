@@ -200,17 +200,25 @@ async function pollCompliance(admin: any, job: any, step: any): Promise<"complet
       return "failed";
     }
   } else {
-    // Fallback: check latest completed analysis for this domain
+    // Fallback: check latest completed analysis for this domain created after step started
     const { data: latest } = await admin
       .from("external_domain_analysis_history")
       .select("id, status, score")
       .eq("domain_id", domainId)
       .eq("status", "completed")
+      .gte("created_at", step.started_at || "2000-01-01")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (latest && new Date(step.started_at) < new Date()) {
+    if (latest) {
+      // Also update the original pipeline record if it exists
+      if (analysisId && latest.id !== analysisId) {
+        await admin
+          .from("external_domain_analysis_history")
+          .update({ status: "completed", score: latest.score, completed_at: new Date().toISOString() })
+          .eq("id", analysisId);
+      }
       step.status = "completed";
       step.completed_at = new Date().toISOString();
       step.result = { analysis_id: latest.id, score: latest.score, status: "completed" };
