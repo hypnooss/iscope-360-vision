@@ -112,9 +112,14 @@ Deno.serve(async (req) => {
             nextStep.result = result;
             await admin.from("api_jobs").update({ steps }).eq("id", job.id);
           } else {
-            nextStep.status = "completed";
+            // Check if the sync step reported an internal failure
+            const stepFailed = result?.status === "email_failed" || result?.status === "email_error";
+            nextStep.status = stepFailed ? "failed" : "completed";
             nextStep.completed_at = new Date().toISOString();
             nextStep.result = result;
+            if (stepFailed) {
+              nextStep.error = result?.error || "Step reported failure";
+            }
 
             if (nextStep.name === "register" && result?.domain_id) {
               await admin.from("api_jobs").update({
