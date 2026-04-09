@@ -80,6 +80,7 @@ const FirewallReportPreview = lazy(() => import("./pages/preview/FirewallReportP
 const LicensingHubPage = lazy(() => import("./pages/LicensingHubPage"));
 const AccountPage = lazy(() => import("./pages/AccountPage"));
 const TerminalPopoutPage = lazy(() => import("./pages/TerminalPopoutPage"));
+const UnsubscribePage = lazy(() => import("./pages/Unsubscribe"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -204,6 +205,9 @@ const App = () => (
                   {/* Preview routes (temporary) */}
                   <Route path="/preview/domain-report" element={<DomainReportPreview />} />
                   <Route path="/preview/firewall-report" element={<FirewallReportPreview />} />
+
+                  {/* Unsubscribe */}
+                  <Route path="/unsubscribe" element={<UnsubscribePage />} />
 
                   {/* Catch-all */}
                   <Route path="*" element={<NotFound />} />
