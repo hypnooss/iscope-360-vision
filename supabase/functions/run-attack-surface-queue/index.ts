@@ -186,9 +186,10 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceKey)
 
-    // Read optional client_id and selected_ips from request body
+    // Read optional client_id, domain_id, and selected_ips from request body
     const body = await req.json().catch(() => ({}))
     const targetClientId = body.client_id
+    const targetDomainId = body.domain_id
     const selectedIps: { ip: string; source: string; label: string }[] | undefined = body.selected_ips
 
     let clients: any[]
