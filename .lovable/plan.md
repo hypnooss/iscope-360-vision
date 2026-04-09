@@ -1,100 +1,46 @@
 
 
-## Problema
+## Problem
 
-Os steps `analyzer` e `email_report` no `process-api-jobs` são **placeholders** que não executam nada:
+The pipeline's `compliance` step is stuck at `running` because of a mismatch between how the pipeline creates an analysis record and how the agent writes results:
 
-```text
-stepAnalyzer  → return { status: "placeholder" }
-stepEmailReport → return { status: "placeholder" }
-```
+1. **Pipeline** creates an analysis record with `source: 'api_pipeline'`, `status: 'pending'` (ID: `ec52d157...`)
+2. **Agent** completes the task but creates a **new** analysis record with `source: 'agent'`, `status: 'completed'` (ID: `e0679f72...`)
+3. **Polling** checks the original record (`ec52d157`) by ID — it stays `pending` forever because the agent never touches it
 
-Além disso, o `stepCompliance` marca-se como "completed" imediatamente após criar a `agent_task`, mas a análise real (feita pelo agent Python) demora minutos. O `stepAnalyzer` precisa **esperar** essa análise terminar antes de prosseguir.
+The agent's `agent-task-result` function (line 5280) always **inserts** a new record with `source: 'agent'` instead of updating the existing pipeline record.
 
-## Fluxo Correto
+## Fix
 
-```text
-register → compliance (cria agent_task + aguarda conclusão) → analyzer (attack surface scoped ao domínio) → email_report (envia PDF por email)
-```
+Two changes are needed:
 
-## Plano de Implementação
+### 1. Update `agent-task-result/index.ts` — Use existing analysis record when available
 
-### 1. Refatorar `stepCompliance` — Aguardar conclusão da análise
+When the agent task's payload contains an `analysis_id` (set by the pipeline at line 385), the agent-task-result handler should **update** that existing record instead of inserting a new one.
 
-Atualmente cria a task e retorna imediatamente. Mudar para:
-- Criar a agent_task (como já faz)
-- Retornar `analysis_id` mas **não** marcar como completed de imediato
-- No loop principal do `process-api-jobs`, ao encontrar um step `compliance` em estado `running`, fazer **polling** no banco: verificar se a `external_domain_analysis_history` com source `agent` para aquele `domain_id` tem `status = 'completed'`
-- Se completou → marcar step como `completed`
-- Se falhou → marcar step como `failed`
-- Se ainda pendente → não fazer nada (o cron roda de novo em 1 minuto)
+**At line ~5277** in `agent-task-result/index.ts`:
+- Check if `task.payload?.analysis_id` exists
+- If yes: UPDATE the existing record (`status: 'completed'`, score, report_data, etc.)
+- If no: INSERT a new record as before (backward-compatible with non-pipeline triggers)
 
-Isso evita bloqueio da Edge Function e respeita o timeout.
+### 2. Harden `pollCompliance` fallback in `process-api-jobs/index.ts`
 
-### 2. Implementar `stepAnalyzer` — Attack Surface scoped ao domínio
+Update the fallback branch (lines 202-219) to also check for any completed analysis with `source: 'agent'` created **after** the step started — this handles cases where the agent doesn't update the pipeline record (edge case/race condition).
 
-Em vez de chamar `attack-surface-scan` (que escaneia TODOS os domínios do workspace), o analyzer no pipeline deve:
-- Buscar os IPs apenas do domínio específico do job (`job.domain_id`)
-- Usar a mesma lógica de `extractDomainIPs` e enriquecimento (Shodan/Censys/InternetDB)
-- Salvar resultado num `attack_surface_snapshots` vinculado ao domínio
-- Também aguardar polling (o scan pode demorar), similar ao compliance
+**At line ~203**:
+- Query for latest completed analysis for the domain created after `step.started_at`
+- Also update the original pipeline analysis record to `completed` (cleanup)
 
-Abordagem: chamar internamente a Edge Function `attack-surface-scan` passando `client_id` + um novo parâmetro `domain_id` para filtrar. Ou implementar inline no process-api-jobs chamando a function via fetch com o parâmetro adicional.
+### 3. Fix stale data — Update the stuck job
 
-**Modificação em `attack-surface-scan/index.ts`:**
-- Aceitar parâmetro opcional `domain_id` no body
-- Se presente, filtrar apenas IPs daquele domínio em vez de todos do workspace
-- Ignorar firewalls quando `domain_id` estiver presente
-
-### 3. Implementar `stepEmailReport` — Enviar relatório por email
-
-Usar a infraestrutura de email transacional (domínio `domainsecurity.online` já verificado):
-- Scaffold transactional email
-- Criar template de email com resumo do relatório (score, findings críticos)
-- Enviar para o endereço em `step.params.to`
-- Incluir link para o relatório completo no dashboard
-
-### 4. Lógica de polling no loop principal
-
-Modificar o loop de `process-api-jobs` para lidar com steps que são `running` e precisam de polling:
-- Se step está `running` e é `compliance`: verificar se análise completou
-- Se step está `running` e é `analyzer`: verificar se snapshot completou
-- Se step está `running` e é `email_report`: executar envio (síncrono, rápido)
+After deploying, manually update the stuck analysis record `ec52d157` to `completed` using the data from the agent's completed record `e0679f72`, so the current pipeline can progress.
 
 ---
 
-### Arquivos Modificados
+### Files Modified
 
-| Arquivo | Mudança |
+| File | Change |
 |---|---|
-| `supabase/functions/process-api-jobs/index.ts` | Refatorar compliance para polling async, implementar analyzer (chama attack-surface-scan com domain_id), implementar email_report (chama transactional email) |
-| `supabase/functions/attack-surface-scan/index.ts` | Aceitar parâmetro opcional `domain_id` para filtrar IPs de um domínio específico |
-| `supabase/functions/_shared/email-templates/` | Template de email do relatório (via scaffold) |
-| Nova edge function de email transacional | Scaffold via ferramenta |
-
-### Detalhes Técnicos
-
-**Polling no compliance:**
-```text
-step.status === "running"
-  → query analysis_history WHERE domain_id = X AND source = 'agent' AND status = 'completed'
-  → se encontrou: step.status = "completed", step.result = { analysis_id, score }
-  → se analysis.status = 'failed': step.status = "failed"
-  → senão: noop (cron retry em 1 min)
-```
-
-**Analyzer scoped:**
-```text
-fetch(attack-surface-scan, { client_id, domain_id })
-  → attack-surface-scan filtra: WHERE domain_id = X (em vez de todos)
-  → retorna snapshot_id
-  → polling: snapshot.status === 'completed'?
-```
-
-**Email report:**
-```text
-Busca último report_data do domain
-Gera HTML com score, categorias, findings críticos
-Envia via email transacional para step.params.to
-```
+| `supabase/functions/agent-task-result/index.ts` | Check `payload.analysis_id` and UPDATE instead of INSERT when present |
+| `supabase/functions/process-api-jobs/index.ts` | Improve `pollCompliance` fallback to find agent-created completed analyses |
 
