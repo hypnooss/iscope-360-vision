@@ -738,6 +738,7 @@ export type Database = {
       }
       api_jobs: {
         Row: {
+          access_token: string | null
           api_key_id: string | null
           client_id: string
           completed_at: string | null
@@ -754,6 +755,7 @@ export type Database = {
           steps: Json
         }
         Insert: {
+          access_token?: string | null
           api_key_id?: string | null
           client_id: string
           completed_at?: string | null
@@ -770,6 +772,7 @@ export type Database = {
           steps?: Json
         }
         Update: {
+          access_token?: string | null
           api_key_id?: string | null
           client_id?: string
           completed_at?: string | null
