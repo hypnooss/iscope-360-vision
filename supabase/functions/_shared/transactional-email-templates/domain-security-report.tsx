@@ -1,6 +1,6 @@
 import * as React from 'npm:react@18.3.1'
 import {
-  Body, Container, Head, Heading, Html, Preview, Text, Section, Row, Column, Hr, Button, Link,
+  Body, Container, Head, Heading, Html, Preview, Text, Section, Row, Column, Hr, Button,
 } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
 
@@ -42,17 +42,17 @@ const DomainSecurityReportEmail = ({
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return '#22c55e'
-    if (score >= 60) return '#eab308'
-    if (score >= 40) return '#f97316'
-    return '#ef4444'
+  // For DEMO: mask the second digit of scores
+  const maskScore = (score: number) => {
+    const str = String(score)
+    if (str.length === 1) return str[0] + '•'
+    return str[0] + '•'
   }
 
   return (
     <Html lang="pt-BR" dir="ltr">
       <Head />
-      <Preview>Relatório de Segurança — {domain} — Score: {complianceScore}/100</Preview>
+      <Preview>Relatório de Segurança — {domain} — Análise concluída</Preview>
       <Body style={main}>
         <Container style={container}>
           {/* Header */}
@@ -62,6 +62,14 @@ const DomainSecurityReportEmail = ({
           </Section>
 
           <Section style={content}>
+            {/* DEMO Banner */}
+            <Section style={demoBanner}>
+              <Text style={demoBannerText}>📊 RELATÓRIO DEMO</Text>
+              <Text style={demoBannerSubtext}>
+                Versão resumida — dados parcialmente ofuscados
+              </Text>
+            </Section>
+
             <Heading style={h1}>Relatório de Segurança</Heading>
             <Text style={domainLabel}>Domínio analisado</Text>
             <Text style={domainValue}>{domain}</Text>
@@ -69,21 +77,21 @@ const DomainSecurityReportEmail = ({
 
             <Hr style={divider} />
 
-            {/* Scores */}
+            {/* Scores — partially masked */}
             <Text style={sectionTitle}>Pontuações</Text>
             <Section>
               <Row>
                 <Column style={scoreCard}>
                   <Text style={scoreLabel}>Compliance</Text>
-                  <Text style={{ ...scoreValue, color: getScoreColor(complianceScore) }}>
-                    {complianceScore}
+                  <Text style={scoreValueMasked}>
+                    {maskScore(complianceScore)}
                   </Text>
                   <Text style={scoreUnit}>/100</Text>
                 </Column>
                 <Column style={scoreCard}>
                   <Text style={scoreLabel}>Attack Surface</Text>
-                  <Text style={{ ...scoreValue, color: getScoreColor(attackSurfaceScore) }}>
-                    {attackSurfaceScore}
+                  <Text style={scoreValueMasked}>
+                    {maskScore(attackSurfaceScore)}
                   </Text>
                   <Text style={scoreUnit}>/100</Text>
                 </Column>
@@ -92,7 +100,7 @@ const DomainSecurityReportEmail = ({
 
             <Hr style={divider} />
 
-            {/* Findings */}
+            {/* Findings — show totals only */}
             <Text style={sectionTitle}>Findings ({totalFindings})</Text>
             <Section>
               <Row>
@@ -117,38 +125,48 @@ const DomainSecurityReportEmail = ({
 
             <Hr style={divider} />
 
-            {/* Network Stats */}
+            {/* Network Stats — masked */}
             <Text style={sectionTitle}>Superfície de Rede</Text>
             <Section style={statsGrid}>
               <Row>
                 <Column style={statItem}>
-                  <Text style={statValue}>{totalIPs}</Text>
+                  <Text style={statValueMasked}>{totalIPs > 0 ? '•' : '0'}</Text>
                   <Text style={statLabel}>IPs</Text>
                 </Column>
                 <Column style={statItem}>
-                  <Text style={statValue}>{openPorts}</Text>
+                  <Text style={statValueMasked}>{openPorts > 0 ? '•' : '0'}</Text>
                   <Text style={statLabel}>Portas Abertas</Text>
                 </Column>
                 <Column style={statItem}>
-                  <Text style={statValue}>{services}</Text>
+                  <Text style={statValueMasked}>{services > 0 ? '•' : '0'}</Text>
                   <Text style={statLabel}>Serviços</Text>
                 </Column>
                 <Column style={statItem}>
-                  <Text style={statValue}>{cves}</Text>
+                  <Text style={statValueMasked}>{cves > 0 ? '•' : '0'}</Text>
                   <Text style={statLabel}>CVEs</Text>
                 </Column>
               </Row>
             </Section>
 
+            <Hr style={divider} />
+
+            {/* Blur overlay message */}
+            <Section style={blurMessage}>
+              <Text style={blurMessageText}>
+                🔒 Detalhes completos, guias de correção e dados de rede estão disponíveis no relatório completo em PDF.
+              </Text>
+            </Section>
+
+            {/* CTA */}
             {reportUrl && (
-              <>
-                <Hr style={divider} />
-                <Section style={{ textAlign: 'center' as const, padding: '10px 0 20px' }}>
-                  <Button style={ctaButton} href={reportUrl}>
-                    Ver Relatório Completo
-                  </Button>
-                </Section>
-              </>
+              <Section style={{ textAlign: 'center' as const, padding: '16px 0 24px' }}>
+                <Button style={ctaButton} href={reportUrl}>
+                  📄 Baixar Relatório Completo (PDF)
+                </Button>
+                <Text style={ctaSubtext}>
+                  Link válido por 7 dias. O relatório completo inclui guias de correção detalhados.
+                </Text>
+              </Section>
             )}
           </Section>
 
@@ -170,8 +188,8 @@ const DomainSecurityReportEmail = ({
 export const template = {
   component: DomainSecurityReportEmail,
   subject: (data: Record<string, any>) =>
-    `Relatório de Segurança — ${data.domain || 'Domínio'} — Score: ${data.complianceScore ?? 0}/100`,
-  displayName: 'Domain Security Report',
+    `Relatório de Segurança — ${data.domain || 'Domínio'} — Análise concluída`,
+  displayName: 'Domain Security Report (DEMO)',
   previewData: {
     domain: 'example.com',
     complianceScore: 72,
@@ -179,7 +197,7 @@ export const template = {
     analysisDate: '2026-04-09T14:30:00Z',
     findings: { critical: 2, high: 5, medium: 8, low: 12 },
     network: { totalIPs: 4, openPorts: 12, services: 8, cves: 3 },
-    reportUrl: 'https://iscope360.precisio.io/reports/example',
+    reportUrl: 'https://iscope360.precisio.io/report/demo-token',
   },
 } satisfies TemplateEntry
 
@@ -219,6 +237,28 @@ const headerSubtitle = {
 const content = {
   padding: '28px 32px',
   backgroundColor: '#f8fafc',
+}
+
+const demoBanner = {
+  backgroundColor: '#fef3c7',
+  borderRadius: '6px',
+  padding: '12px 16px',
+  marginBottom: '20px',
+  textAlign: 'center' as const,
+  border: '1px solid #fbbf24',
+}
+
+const demoBannerText = {
+  fontSize: '14px',
+  fontWeight: '700' as const,
+  color: '#92400e',
+  margin: '0',
+}
+
+const demoBannerSubtext = {
+  fontSize: '12px',
+  color: '#a16207',
+  margin: '4px 0 0',
 }
 
 const h1 = {
@@ -279,12 +319,14 @@ const scoreLabel = {
   margin: '0 0 4px',
 }
 
-const scoreValue = {
+const scoreValueMasked = {
   fontSize: '36px',
   fontWeight: '700' as const,
   fontFamily: "'JetBrains Mono', 'Courier New', monospace",
   margin: '0',
   lineHeight: '1',
+  color: '#94a3b8',
+  letterSpacing: '2px',
 }
 
 const scoreUnit = {
@@ -324,10 +366,10 @@ const statItem = {
   width: '25%',
 }
 
-const statValue = {
+const statValueMasked = {
   fontSize: '20px',
   fontWeight: '700' as const,
-  color: '#0f172a',
+  color: '#94a3b8',
   fontFamily: "'JetBrains Mono', 'Courier New', monospace",
   margin: '0',
   lineHeight: '1',
@@ -339,15 +381,37 @@ const statLabel = {
   margin: '4px 0 0',
 }
 
+const blurMessage = {
+  backgroundColor: '#f1f5f9',
+  borderRadius: '6px',
+  padding: '16px',
+  border: '1px dashed #cbd5e1',
+  textAlign: 'center' as const,
+}
+
+const blurMessageText = {
+  fontSize: '13px',
+  color: '#475569',
+  margin: '0',
+  lineHeight: '1.5',
+}
+
 const ctaButton = {
   backgroundColor: '#0f172a',
   color: '#ffffff',
-  padding: '12px 28px',
+  padding: '14px 32px',
   borderRadius: '6px',
-  fontSize: '14px',
-  fontWeight: '600' as const,
+  fontSize: '15px',
+  fontWeight: '700' as const,
   textDecoration: 'none',
   display: 'inline-block' as const,
+}
+
+const ctaSubtext = {
+  fontSize: '11px',
+  color: '#94a3b8',
+  margin: '12px 0 0',
+  textAlign: 'center' as const,
 }
 
 const footer = {

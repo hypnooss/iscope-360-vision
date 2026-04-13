@@ -538,6 +538,14 @@ async function stepEmailReport(admin: any, job: any, step: any): Promise<any> {
     }
   }
 
+  // Generate access token for public report page
+  const accessToken = crypto.randomUUID();
+  await admin.from("api_jobs").update({ access_token: accessToken }).eq("id", job.id);
+
+  // Build report URL
+  const appUrl = metadata.app_url || "https://iscope-teste.lovable.app";
+  const reportUrl = `${appUrl}/report/${accessToken}`;
+
   // Try to send via transactional email if available
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -565,6 +573,7 @@ async function stepEmailReport(admin: any, job: any, step: any): Promise<any> {
             services: attackSummary.services || 0,
             cves: attackSummary.cves || 0,
           },
+          reportUrl,
         },
       }),
     });
@@ -572,10 +581,10 @@ async function stepEmailReport(admin: any, job: any, step: any): Promise<any> {
     if (!emailResponse.ok) {
       const errBody = await emailResponse.text();
       console.error(`Email send failed: ${errBody}`);
-      // Don't fail the entire step — report was generated, just email failed
       return {
         status: "email_failed",
         error: errBody,
+        reportUrl,
         report: { complianceScore, attackSurfaceScore, findings: { critical, high, medium, low } },
       };
     }
@@ -584,6 +593,7 @@ async function stepEmailReport(admin: any, job: any, step: any): Promise<any> {
     return {
       status: "sent",
       email_to: emailTo,
+      reportUrl,
       report: { complianceScore, attackSurfaceScore, findings: { critical, high, medium, low } },
       email_result: emailResult,
     };
@@ -592,6 +602,7 @@ async function stepEmailReport(admin: any, job: any, step: any): Promise<any> {
     return {
       status: "email_error",
       error: emailErr.message,
+      reportUrl,
       report: { complianceScore, attackSurfaceScore, findings: { critical, high, medium, low } },
     };
   }
