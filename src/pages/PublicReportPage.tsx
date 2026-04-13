@@ -156,8 +156,7 @@ export default function PublicReportPage() {
     await downloadPDF(
       <ExternalDomainPDF
         report={report}
-        domainName={domainName}
-        analysisDate={analysisData?.created_at}
+        domainInfo={{ name: domainName, domain: domainName }}
       />,
       filename
     );
