@@ -1,34 +1,40 @@
 
-Diagnóstico: o pipeline terminou, mas o passo `email_report` não enviou nada. O último job salvo no banco mostra `email_failed` com erro `401: Invalid Token or Protected Header formatting`. Além disso, nesta base atual não existem as tabelas/RPCs da infraestrutura de app emails (`email_send_log`, `email_send_state`, `suppressed_emails`, `email_unsubscribe_tokens`, `enqueue_email`) e também não existe cron `process-email-queue`. Ou seja: hoje há 2 bloqueios reais — a chamada protegida para o sender está falhando antes de executar, e a fila de emails nem está provisionada nesta instância.
 
-Plano de correção:
+## Diagnóstico — O que falta no Supabase para o email funcionar
 
-1. Reprovisionar a infraestrutura de app emails nesta instância
-- Criar a infraestrutura gerenciada de emails na base atual
-- Confirmar criação das tabelas, RPCs da fila e do dispatcher agendado
-- Garantir que o processador da fila exista e esteja ativo
+O domínio `notify.domainsecurity.online` está **verificado e ativo**. As Edge Functions (`send-transactional-email`, `handle-email-unsubscribe`, etc.) já existem no código. Porém, **toda a infraestrutura de banco de dados necessária está ausente**:
 
-2. Corrigir a autenticação entre `process-api-jobs` e `send-transactional-email`
-- Ajustar o `stepEmailReport` para usar um caminho de invocação compatível com a proteção atual da função
-- Se necessário, alinhar a configuração da função de envio com esse padrão
-- Redeploy das funções envolvidas após o ajuste
+### O que está faltando
 
-3. Corrigir o status do pipeline para não mascarar falhas de email
-- Hoje o engine marca qualquer step síncrono como `completed`, mesmo quando o resultado interno é `email_failed`
-- Vou fazer o `email_report` marcar o step como falho quando o envio não for enfileirado/enviado corretamente
-- Assim a UI deixa de mostrar o pipeline “verde” quando o email não saiu
+| Componente | Status |
+|---|---|
+| Tabela `email_send_log` | ❌ Não existe |
+| Tabela `email_send_state` | ❌ Não existe |
+| Tabela `suppressed_emails` | ❌ Não existe |
+| Tabela `email_unsubscribe_tokens` | ❌ Não existe |
+| Extensão `pgmq` | ❌ Não instalada |
+| Filas pgmq (`auth_emails`, `transactional_emails`) | ❌ Não existem |
+| RPCs (`enqueue_email`, `read_email_batch`, `delete_email`, `move_to_dlq`) | ❌ Não existem |
+| Vault secret `email_queue_service_role_key` | ❌ Não existe |
+| Cron job `process-email-queue` | ❌ Não existe |
+| Edge Function `process-email-queue` | ❌ Não deployada |
 
-4. Validar ponta a ponta
-- Rodar um novo pipeline
-- Confirmar que o passo `email_report` registra envio/enfileiramento corretamente
-- Confirmar que a fila é drenada pelo dispatcher
-- Verificar inbox do destinatário e o log de emails
-- Se vocês também dependem do ambiente publicado/live, fazer publish novamente para garantir a infraestrutura de produção
+**Resumo**: O pipeline chama `send-transactional-email`, que tenta chamar `enqueue_email` para colocar o email na fila — mas a RPC não existe, então falha silenciosamente. Mesmo que a RPC existisse, não há cron job para drenar a fila e efetivamente enviar os emails.
 
-Arquivos/áreas que devem entrar na implementação:
-- `supabase/functions/process-api-jobs/index.ts`
-- `supabase/functions/send-transactional-email/index.ts`
-- Configuração/deploy das Edge Functions de email
-- Infraestrutura gerenciada de app emails na base Supabase atual
+### Plano de correção
 
-Observação importante: pelos erros observados, isso não está parecendo problema de template nem do endereço do destinatário; a falha acontece antes da entrega real do email.
+1. **Chamar `setup_email_infra`** — cria automaticamente todas as tabelas, extensão pgmq, filas, RPCs, vault secret e cron job
+2. **Deployer `process-email-queue`** — a Edge Function que drena a fila e envia os emails de fato
+3. **Re-deployer `send-transactional-email`** — para garantir que o código mais recente está ativo
+4. **Verificar** que o cron job `process-email-queue` foi criado e está rodando a cada 5 segundos
+
+Nenhuma mudança de código é necessária — apenas provisionar a infraestrutura que deveria ter sido criada nas tentativas anteriores (que aparentemente falharam ou não foram executadas).
+
+### Arquivos/componentes envolvidos
+
+| Ação | Detalhe |
+|---|---|
+| `setup_email_infra` (tool) | Cria toda a infra de banco |
+| Deploy `process-email-queue` | Edge Function do dispatcher |
+| Deploy `send-transactional-email` | Re-deploy para garantir versão atual |
+
