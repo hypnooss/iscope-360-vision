@@ -125,6 +125,22 @@ export function ApiAccessManagement() {
     if (jobsOpen) loadJobs();
   }, [jobsOpen]);
 
+  const handleResendReport = async (jobId: string) => {
+    setResendLoading(jobId);
+    try {
+      const { data, error } = await supabase.functions.invoke('resend-pipeline-report', {
+        body: { job_id: jobId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Report reenviado para ${data.email_to}`);
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao reenviar report');
+    } finally {
+      setResendLoading(null);
+    }
+  };
+
   const handleRevoke = async (id: string) => {
     setActionLoading(id);
     try {
