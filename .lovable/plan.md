@@ -1,19 +1,40 @@
 
 
-## Plano — Mostrar valores completos no email demo
+## Plano — Botão de reenvio de email report na tabela de Jobs/Pipeline
 
-O email atual mascara os scores (ex: `7•/100`) e os dados de rede (mostra apenas `•`). O usuário quer que o email mostre os **valores reais completos** — scores, findings e stats de rede — para que o destinatário veja a gravidade e fique curioso para baixar o PDF.
+### Resumo
+
+Adicionar um botão "Reenviar Report" em cada linha de job concluído na tabela de Jobs/Pipeline (`ApiAccessManagement.tsx`). Ao clicar, o sistema re-executa a lógica de `stepEmailReport` — gerando novo `access_token` e reenviando o email com os dados atualizados.
 
 ### Alterações
 
-**Arquivo**: `supabase/functions/_shared/transactional-email-templates/domain-security-report.tsx`
+**1. Criar Edge Function `resend-pipeline-report`**
 
-1. **Remover `maskScore`** — exibir o score real (ex: `72/100` em vez de `7•/100`)
-2. **Scores**: trocar `scoreValueMasked` por estilo com cor real (verde/amarelo/vermelho conforme valor)
-3. **Network stats**: mostrar valores reais (`totalIPs`, `openPorts`, `services`, `cves`) em vez de `•`
-4. **Manter o banner DEMO** e a mensagem de blur — mas agora o CTA fica mais forte porque o destinatário vê os números reais e quer os detalhes/correções
+Arquivo: `supabase/functions/resend-pipeline-report/index.ts`
 
-O restante do email (banner demo, CTA, footer) permanece igual.
+- Recebe `{ job_id }` no body
+- Valida que o job existe e está `completed`
+- Reutiliza a mesma lógica de `stepEmailReport`: busca domain, analysis, snapshot, gera novo `access_token`, monta `templateData` e chama `send-transactional-email`
+- Usa uma nova `idempotencyKey` (ex: `resend-report-${job_id}-${Date.now()}`) para permitir reenvios múltiplos
+- Requer auth (service_role ou JWT de admin)
 
-**Deploy**: `deploy_edge_functions(["send-transactional-email"])` após a edição.
+**2. Atualizar `ApiAccessManagement.tsx`**
+
+- Adicionar coluna "Ações" na tabela de Jobs
+- Para jobs com `status === 'completed'` e que possuem step `email_report`, mostrar botão com ícone `Mail` (lucide) + tooltip "Reenviar Report"
+- Ao clicar, chama `supabase.functions.invoke('resend-pipeline-report', { body: { job_id } })`
+- Mostra loading no botão durante o envio, toast de sucesso/erro após
+
+### Detalhes técnicos
+
+- A Edge Function extrai `email_to` do `metadata.email_to` do job (mesmo campo usado originalmente)
+- O `access_token` é regenerado a cada reenvio para invalidar links anteriores
+- A idempotency key inclui timestamp para não ser bloqueada como duplicata
+
+### Arquivos
+
+| Arquivo | Ação |
+|---|---|
+| `supabase/functions/resend-pipeline-report/index.ts` | Novo |
+| `src/components/admin/ApiAccessManagement.tsx` | Atualizar — adicionar coluna Ações com botão reenviar |
 
