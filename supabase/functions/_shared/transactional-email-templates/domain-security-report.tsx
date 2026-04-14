@@ -4,7 +4,7 @@ import {
 } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
 
-const SITE_NAME = "Precisio"
+const SITE_NAME = "Domain Security"
 
 interface DomainSecurityReportProps {
   domain?: string
