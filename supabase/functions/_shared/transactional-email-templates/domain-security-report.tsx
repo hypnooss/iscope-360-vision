@@ -42,11 +42,11 @@ const DomainSecurityReportEmail = ({
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 
-  // For DEMO: mask the second digit of scores
-  const maskScore = (score: number) => {
-    const str = String(score)
-    if (str.length === 1) return str[0] + '•'
-    return str[0] + '•'
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return '#22c55e'
+    if (score >= 60) return '#eab308'
+    if (score >= 40) return '#f97316'
+    return '#ef4444'
   }
 
   return (
@@ -83,15 +83,15 @@ const DomainSecurityReportEmail = ({
               <Row>
                 <Column style={scoreCard}>
                   <Text style={scoreLabel}>Compliance</Text>
-                  <Text style={scoreValueMasked}>
-                    {maskScore(complianceScore)}
+                  <Text style={{ ...scoreValue, color: getScoreColor(complianceScore) }}>
+                    {complianceScore}
                   </Text>
                   <Text style={scoreUnit}>/100</Text>
                 </Column>
                 <Column style={scoreCard}>
                   <Text style={scoreLabel}>Attack Surface</Text>
-                  <Text style={scoreValueMasked}>
-                    {maskScore(attackSurfaceScore)}
+                  <Text style={{ ...scoreValue, color: getScoreColor(attackSurfaceScore) }}>
+                    {attackSurfaceScore}
                   </Text>
                   <Text style={scoreUnit}>/100</Text>
                 </Column>
@@ -130,19 +130,19 @@ const DomainSecurityReportEmail = ({
             <Section style={statsGrid}>
               <Row>
                 <Column style={statItem}>
-                  <Text style={statValueMasked}>{totalIPs > 0 ? '•' : '0'}</Text>
+                  <Text style={statValue}>{totalIPs}</Text>
                   <Text style={statLabel}>IPs</Text>
                 </Column>
                 <Column style={statItem}>
-                  <Text style={statValueMasked}>{openPorts > 0 ? '•' : '0'}</Text>
+                  <Text style={statValue}>{openPorts}</Text>
                   <Text style={statLabel}>Portas Abertas</Text>
                 </Column>
                 <Column style={statItem}>
-                  <Text style={statValueMasked}>{services > 0 ? '•' : '0'}</Text>
+                  <Text style={statValue}>{services}</Text>
                   <Text style={statLabel}>Serviços</Text>
                 </Column>
                 <Column style={statItem}>
-                  <Text style={statValueMasked}>{cves > 0 ? '•' : '0'}</Text>
+                  <Text style={{ ...statValue, color: cves > 0 ? '#ef4444' : '#22c55e' }}>{cves}</Text>
                   <Text style={statLabel}>CVEs</Text>
                 </Column>
               </Row>
@@ -319,13 +319,12 @@ const scoreLabel = {
   margin: '0 0 4px',
 }
 
-const scoreValueMasked = {
+const scoreValue = {
   fontSize: '36px',
   fontWeight: '700' as const,
   fontFamily: "'JetBrains Mono', 'Courier New', monospace",
   margin: '0',
   lineHeight: '1',
-  color: '#94a3b8',
   letterSpacing: '2px',
 }
 
@@ -366,10 +365,10 @@ const statItem = {
   width: '25%',
 }
 
-const statValueMasked = {
+const statValue = {
   fontSize: '20px',
   fontWeight: '700' as const,
-  color: '#94a3b8',
+  color: '#0f172a',
   fontFamily: "'JetBrains Mono', 'Courier New', monospace",
   margin: '0',
   lineHeight: '1',
