@@ -351,6 +351,7 @@ export function ApiAccessManagement() {
                           <TableHead>Criado em</TableHead>
                           <TableHead>Duração</TableHead>
                           <TableHead className="w-[80px]">Ações</TableHead>
+                        </TableRow>
                       </TableHeader>
                       <TableBody>
                         {jobs.map((job) => (
