@@ -81,6 +81,7 @@ export function ApiAccessManagement() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [resendLoading, setResendLoading] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [jobsOpen, setJobsOpen] = useState(false);
 
