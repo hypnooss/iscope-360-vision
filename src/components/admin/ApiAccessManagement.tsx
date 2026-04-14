@@ -350,7 +350,7 @@ export function ApiAccessManagement() {
                           <TableHead>Steps</TableHead>
                           <TableHead>Criado em</TableHead>
                           <TableHead>Duração</TableHead>
-                        </TableRow>
+                          <TableHead className="w-[80px]">Ações</TableHead>
                       </TableHeader>
                       <TableBody>
                         {jobs.map((job) => (
@@ -394,6 +394,24 @@ export function ApiAccessManagement() {
                                 : job.started_at
                                   ? 'Em andamento...'
                                   : '—'}
+                            </TableCell>
+                            <TableCell>
+                              {(job.status === 'completed' || job.status === 'partial') &&
+                                (job.steps || []).some((s: any) => s.name === 'email_report') && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleResendReport(job.id)}
+                                    disabled={resendLoading === job.id}
+                                    title="Reenviar Report"
+                                  >
+                                    {resendLoading === job.id ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Mail className="w-4 h-4" />
+                                    )}
+                                  </Button>
+                                )}
                             </TableCell>
                           </TableRow>
                         ))}
