@@ -1,8 +1,8 @@
-import { useEffect, useState, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Loader2, FileDown, ShieldAlert, Globe, Radar } from 'lucide-react';
+import { Loader2, FileDown, ShieldAlert, Globe, Radar, CheckCircle2 } from 'lucide-react';
 import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
 import { ExternalDomainPDFDemo } from '@/components/pdf/ExternalDomainPDFDemo';
 import { SurfaceAnalyzerPDFDemo } from '@/components/pdf/SurfaceAnalyzerPDFDemo';
@@ -95,12 +95,18 @@ const parseSnapshot = (row: Record<string, unknown>): AttackSurfaceSnapshot => (
 
 export default function PublicReportPage() {
   const { token } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [jobData, setJobData] = useState<any>(null);
   const [domainName, setDomainName] = useState<string>('');
   const [analysisData, setAnalysisData] = useState<any>(null);
   const [surfaceSnapshot, setSurfaceSnapshot] = useState<AttackSurfaceSnapshot | null>(null);
+  const [autoDownloadState, setAutoDownloadState] = useState<'idle' | 'generating' | 'done'>('idle');
+  const autoDownloadTriggered = useRef(false);
+
+  const downloadParam = searchParams.get('download');
+  const isAutoDownload = downloadParam === 'compliance' || downloadParam === 'surface';
 
   const { downloadPDF, isGenerating } = usePDFDownload();
 
@@ -130,7 +136,6 @@ export default function PublicReportPage() {
 
       setJobData(job);
 
-      // Fetch domain info + analysis + attack surface in parallel
       const promises: Promise<void>[] = [];
 
       if (job.domain_id) {
@@ -158,7 +163,6 @@ export default function PublicReportPage() {
         );
       }
 
-      // Fetch attack surface snapshot for this client
       if (job.client_id) {
         promises.push(
           (supabase
@@ -190,7 +194,7 @@ export default function PublicReportPage() {
 
   const handleDownloadCompliance = async () => {
     if (!report) return;
-    const filename = `iscope360-compliance-${sanitizePDFFilename(domainName)}-${getPDFDateString()}.pdf`;
+    const filename = `domainsecurity-compliance-${sanitizePDFFilename(domainName)}-${getPDFDateString()}.pdf`;
     await downloadPDF(
       <ExternalDomainPDFDemo
         report={report}
@@ -203,7 +207,7 @@ export default function PublicReportPage() {
   const handleDownloadSurface = async () => {
     if (!surfaceSnapshot) return;
     const dateStr = formatDateTimeBR(new Date(surfaceSnapshot.created_at));
-    const filename = `iscope360-surface-${sanitizePDFFilename(domainName)}-${getPDFDateString()}.pdf`;
+    const filename = `domainsecurity-surface-${sanitizePDFFilename(domainName)}-${getPDFDateString()}.pdf`;
     await downloadPDF(
       <SurfaceAnalyzerPDFDemo
         snapshot={surfaceSnapshot}
@@ -214,6 +218,61 @@ export default function PublicReportPage() {
     );
   };
 
+  // Auto-download trigger
+  useEffect(() => {
+    if (!isAutoDownload || loading || autoDownloadTriggered.current) return;
+
+    const canDownloadCompliance = downloadParam === 'compliance' && report;
+    const canDownloadSurface = downloadParam === 'surface' && surfaceSnapshot;
+
+    if (canDownloadCompliance || canDownloadSurface) {
+      autoDownloadTriggered.current = true;
+      setAutoDownloadState('generating');
+
+      const doDownload = async () => {
+        try {
+          if (canDownloadCompliance) {
+            await handleDownloadCompliance();
+          } else if (canDownloadSurface) {
+            await handleDownloadSurface();
+          }
+          setAutoDownloadState('done');
+        } catch {
+          setAutoDownloadState('idle');
+        }
+      };
+      doDownload();
+    }
+  }, [loading, report, surfaceSnapshot, downloadParam, isAutoDownload]);
+
+  // ── Auto-download UI ──
+  if (isAutoDownload && !error) {
+    if (loading || autoDownloadState === 'generating') {
+      return (
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto" />
+            <p className="text-lg font-medium text-foreground">Gerando seu relatório...</p>
+            <p className="text-sm text-muted-foreground">Aguarde, o download iniciará automaticamente.</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (autoDownloadState === 'done') {
+      return (
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto" />
+            <p className="text-lg font-medium text-foreground">Download iniciado!</p>
+            <p className="text-sm text-muted-foreground">Verifique sua pasta de downloads.</p>
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // ── Loading state ──
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -237,9 +296,9 @@ export default function PublicReportPage() {
     );
   }
 
+  // ── Fallback UI (no download param) ──
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <div className="bg-card border-b">
         <div className="max-w-3xl mx-auto px-4 py-6">
           <div className="flex items-center gap-3 mb-4">
@@ -247,8 +306,8 @@ export default function PublicReportPage() {
               <Globe className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground">iScope360</h1>
-              <p className="text-sm text-muted-foreground">Domain Security Report</p>
+              <h1 className="text-lg font-bold text-foreground">Domain Security</h1>
+              <p className="text-sm text-muted-foreground">Relatório de Segurança</p>
             </div>
           </div>
 
@@ -277,19 +336,16 @@ export default function PublicReportPage() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="max-w-3xl mx-auto px-4 py-8">
         {(report || surfaceSnapshot) ? (
           <div className="space-y-6">
-            {/* Compliance PDF Download */}
             {report && (
               <div className="bg-card border rounded-lg p-6 text-center space-y-4">
                 <h2 className="text-lg font-semibold text-foreground">
-                  📄 Relatório de Compliance de Domínio
+                  Relatório de Compliance de Domínio
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   Inclui resumo executivo, infraestrutura DNS e mapa de superfície.
-                  O relatório completo contém guias de correção e plano de ação detalhado.
                 </p>
                 <Button
                   onClick={handleDownloadCompliance}
@@ -307,15 +363,13 @@ export default function PublicReportPage() {
               </div>
             )}
 
-            {/* Surface Analyzer PDF Download */}
             {surfaceSnapshot && (
               <div className="bg-card border rounded-lg p-6 text-center space-y-4">
                 <h2 className="text-lg font-semibold text-foreground">
-                  🔍 Relatório de Superfície de Ataque
+                  Relatório de Superfície de Ataque
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   Análise de IPs expostos, portas abertas, serviços e vulnerabilidades (CVEs).
-                  A versão completa inclui detalhes de cada serviço e CVE encontrada.
                 </p>
                 <div className="flex gap-4 justify-center text-sm text-muted-foreground mb-2">
                   <span>{surfaceSnapshot.summary.total_ips} IPs</span>
@@ -340,7 +394,6 @@ export default function PublicReportPage() {
               </div>
             )}
 
-            {/* Summary Cards */}
             {report && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {report.categories.map((cat) => (
@@ -364,11 +417,10 @@ export default function PublicReportPage() {
         )}
       </div>
 
-      {/* Footer */}
       <div className="border-t bg-muted/30 py-6">
         <div className="max-w-3xl mx-auto px-4 text-center">
           <p className="text-xs text-muted-foreground">
-            © {new Date().getFullYear()} Precisio · iScope360 · Todos os direitos reservados
+            © {new Date().getFullYear()} Domain Security · Todos os direitos reservados
           </p>
         </div>
       </div>
