@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { formatDateTimeBR } from '@/lib/dateUtils';
-import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, View, Text, StyleSheet, Svg, Path } from '@react-pdf/renderer';
 import {
   colors,
   typography,
@@ -20,7 +20,6 @@ import type { CategorySummary } from './sections';
 import { CategoryConfig, getCategoryConfig } from '@/hooks/useCategoryConfig';
 import { severityToPriority } from './data/explanatoryContent';
 
-// Reuse types from the full PDF
 interface ComplianceCategory {
   name: string;
   passRate: number;
@@ -85,117 +84,90 @@ interface ExternalDomainPDFDemoProps {
 }
 
 const pageStyles = StyleSheet.create({
-  page: {
-    ...baseStyles.page,
-    paddingBottom: 60,
-  },
-  content: {
-    flex: 1,
-  },
+  page: { ...baseStyles.page, paddingBottom: 60 },
+  content: { flex: 1 },
 });
 
+// Obfuscation styles — improved blur effect
 const obfuscatedStyles = StyleSheet.create({
-  wrapper: {
-    position: 'relative',
-    minHeight: 500,
-  },
-  blurredContent: {
-    opacity: 0.06,
-  },
-  blurredLine: {
-    height: 10,
-    backgroundColor: '#94A3B8',
-    borderRadius: 3,
-    marginBottom: 8,
-    marginHorizontal: 16,
-  },
-  blurredLineShort: {
-    height: 10,
-    backgroundColor: '#94A3B8',
-    borderRadius: 3,
-    marginBottom: 8,
-    marginHorizontal: 16,
-    width: '60%',
-  },
-  blurredBlock: {
-    height: 60,
-    backgroundColor: '#CBD5E1',
-    borderRadius: 6,
-    marginBottom: 12,
-    marginHorizontal: 16,
-  },
+  wrapper: { position: 'relative', minHeight: 500 },
+  blurredContent: { opacity: 0.18 },
   overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
   },
   overlayBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    padding: 32,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: colors.primary,
-    maxWidth: 360,
+    backgroundColor: '#FFFFFF', borderRadius: 8, padding: 32,
+    alignItems: 'center', borderWidth: 2, borderColor: colors.primary, maxWidth: 360,
   },
-  lockIcon: {
-    fontSize: 28,
-    marginBottom: 12,
+  overlayDemoTag: {
+    fontSize: 11, fontWeight: 700, color: colors.primary,
+    letterSpacing: 2, marginBottom: 8,
   },
   overlayTitle: {
-    fontSize: typography.heading,
-    fontFamily: typography.bold,
-    color: colors.primary,
-    marginBottom: 8,
-    textAlign: 'center',
+    fontSize: typography.heading, fontWeight: 700,
+    color: colors.primary, marginBottom: 8, textAlign: 'center',
   },
   overlaySubtitle: {
-    fontSize: typography.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 1.5,
+    fontSize: typography.body, color: colors.textSecondary,
+    textAlign: 'center', lineHeight: 1.5,
   },
   sectionTitle: {
-    fontSize: typography.subheading,
-    fontFamily: typography.bold,
-    color: '#CBD5E1',
-    marginBottom: 12,
-    marginHorizontal: 16,
+    fontSize: typography.subheading, fontWeight: 700,
+    color: '#64748B', marginBottom: 12, marginHorizontal: 16,
   },
 });
 
-/** Renders a fake blurred page representing obfuscated content */
+const LockIcon: React.FC = () => (
+  <Svg viewBox="0 0 24 24" width={24} height={24}>
+    <Path
+      d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9z"
+      fill={colors.primary}
+    />
+  </Svg>
+);
+
+/** Simulated blurred line with varying widths */
+const BlurLine: React.FC<{ width?: string }> = ({ width = '100%' }) => (
+  <View style={{ height: 8, backgroundColor: '#334155', borderRadius: 2, marginBottom: 6, marginHorizontal: 16, width }} />
+);
+
+const BlurBlock: React.FC = () => (
+  <View style={{ height: 50, backgroundColor: '#475569', borderRadius: 6, marginBottom: 10, marginHorizontal: 16 }} />
+);
+
+/** Renders a realistic blurred page representing obfuscated content */
 const ObfuscatedPage: React.FC<{ title: string }> = ({ title }) => (
   <Page size="A4" style={pageStyles.page}>
     <View style={obfuscatedStyles.wrapper}>
       <View style={obfuscatedStyles.blurredContent}>
         <Text style={obfuscatedStyles.sectionTitle}>{title}</Text>
-        {/* Simulated content blocks */}
-        <View style={obfuscatedStyles.blurredBlock} />
-        <View style={obfuscatedStyles.blurredLine} />
-        <View style={obfuscatedStyles.blurredLineShort} />
-        <View style={obfuscatedStyles.blurredLine} />
-        <View style={obfuscatedStyles.blurredBlock} />
-        <View style={obfuscatedStyles.blurredLine} />
-        <View style={obfuscatedStyles.blurredLineShort} />
-        <View style={obfuscatedStyles.blurredLine} />
-        <View style={obfuscatedStyles.blurredBlock} />
-        <View style={obfuscatedStyles.blurredLine} />
-        <View style={obfuscatedStyles.blurredLineShort} />
+        <BlurBlock />
+        <BlurLine width="90%" />
+        <BlurLine width="55%" />
+        <BlurLine width="75%" />
+        <BlurBlock />
+        <BlurLine width="85%" />
+        <BlurLine width="40%" />
+        <BlurLine width="70%" />
+        <BlurBlock />
+        <BlurLine width="60%" />
+        <BlurLine width="45%" />
+        <BlurLine width="80%" />
+        <BlurBlock />
+        <BlurLine width="50%" />
+        <BlurLine width="65%" />
       </View>
       <View style={obfuscatedStyles.overlay}>
         <View style={obfuscatedStyles.overlayBox}>
-          <Text style={obfuscatedStyles.lockIcon}>🔒</Text>
+          <LockIcon />
+          <Text style={obfuscatedStyles.overlayDemoTag}>VERSAO DEMO</Text>
           <Text style={obfuscatedStyles.overlayTitle}>
-            Conteúdo disponível na versão completa
+            Conteudo disponivel na versao completa
           </Text>
           <Text style={obfuscatedStyles.overlaySubtitle}>
-            Adquira o relatório completo para acessar o guia detalhado de correções, subdomínios descobertos e plano de ação.
+            Adquira o relatorio completo para acessar o guia detalhado de correcoes, subdominios descobertos e plano de acao.
           </Text>
         </View>
       </View>
@@ -265,19 +237,19 @@ export const ExternalDomainPDFDemo: React.FC<ExternalDomainPDFDemoProps> = ({
 
   return (
     <Document
-      title={`iScope 360 - ${domainInfo.name} (Demo)`}
+      title={`Precisio - ${domainInfo.name} (Demo)`}
       author="Precisio Analytics"
-      subject="Relatório de Análise de Domínio Externo (Demo)"
+      subject="Relatorio de Analise de Dominio Externo (Demo)"
     >
       {/* PAGE 1: Executive Summary - FULL */}
       <Page size="A4" style={pageStyles.page}>
         <View style={pageStyles.content}>
           <PDFHeader
-            title="iScope 360"
+            title="Precisio"
             subtitle={domainInfo.clientName}
             target={domainInfo.domain}
             date={dateString}
-            reportType="Análise de Domínio Externo"
+            reportType="Analise de Dominio Externo"
             logoBase64={logoBase64}
           />
           <PDFHowToRead />
@@ -312,10 +284,10 @@ export const ExternalDomainPDFDemo: React.FC<ExternalDomainPDFDemoProps> = ({
       </Page>
 
       {/* OBFUSCATED PAGES */}
-      <ObfuscatedPage title="Subdomínios Descobertos" />
-      <ObfuscatedPage title="Guia de Correções" />
-      <ObfuscatedPage title="Verificações Aprovadas" />
-      <ObfuscatedPage title="Plano de Ação" />
+      <ObfuscatedPage title="Subdominios Descobertos" />
+      <ObfuscatedPage title="Guia de Correcoes" />
+      <ObfuscatedPage title="Verificacoes Aprovadas" />
+      <ObfuscatedPage title="Plano de Acao" />
     </Document>
   );
 };
