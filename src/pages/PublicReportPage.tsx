@@ -2,10 +2,13 @@ import { useEffect, useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Loader2, FileDown, ShieldAlert, Globe } from 'lucide-react';
+import { Loader2, FileDown, ShieldAlert, Globe, Radar } from 'lucide-react';
 import { usePDFDownload, sanitizePDFFilename, getPDFDateString } from '@/hooks/usePDFDownload';
-import { ExternalDomainPDF } from '@/components/pdf/ExternalDomainPDF';
+import { ExternalDomainPDFDemo } from '@/components/pdf/ExternalDomainPDFDemo';
+import { SurfaceAnalyzerPDFDemo } from '@/components/pdf/SurfaceAnalyzerPDFDemo';
+import { formatDateTimeBR } from '@/lib/dateUtils';
 import type { ComplianceCategory, ComplianceReport } from '@/types/compliance';
+import type { AttackSurfaceSnapshot } from '@/hooks/useAttackSurfaceData';
 
 // ── Helpers ──
 
@@ -75,6 +78,19 @@ const normalizeReportData = (raw: Record<string, unknown>, createdAt?: string): 
   };
 };
 
+const parseSnapshot = (row: Record<string, unknown>): AttackSurfaceSnapshot => ({
+  id: row.id as string,
+  client_id: row.client_id as string,
+  status: (row.status as string) ?? 'pending',
+  source_ips: (Array.isArray(row.source_ips) ? row.source_ips : []) as any,
+  results: (row.results ?? {}) as any,
+  cve_matches: (Array.isArray(row.cve_matches) ? row.cve_matches : []) as any,
+  summary: (row.summary ?? { total_ips: 0, open_ports: 0, services: 0, cves: 0 }) as any,
+  score: row.score as number | null,
+  created_at: row.created_at as string,
+  completed_at: row.completed_at as string | null,
+});
+
 // ── Main Page ──
 
 export default function PublicReportPage() {
@@ -84,6 +100,7 @@ export default function PublicReportPage() {
   const [jobData, setJobData] = useState<any>(null);
   const [domainName, setDomainName] = useState<string>('');
   const [analysisData, setAnalysisData] = useState<any>(null);
+  const [surfaceSnapshot, setSurfaceSnapshot] = useState<AttackSurfaceSnapshot | null>(null);
 
   const { downloadPDF, isGenerating } = usePDFDownload();
 
@@ -98,7 +115,6 @@ export default function PublicReportPage() {
 
   const fetchReportData = async () => {
     try {
-      // Fetch job by access_token — using anon key (no auth needed)
       const { data: job, error: jobErr } = await supabase
         .from('api_jobs')
         .select('id, domain_id, metadata, status, steps, client_id')
@@ -114,30 +130,50 @@ export default function PublicReportPage() {
 
       setJobData(job);
 
-      // Fetch domain info
+      // Fetch domain info + analysis + attack surface in parallel
+      const promises: Promise<void>[] = [];
+
       if (job.domain_id) {
-        const { data: domain } = await supabase
-          .from('external_domains')
-          .select('domain')
-          .eq('id', job.domain_id)
-          .maybeSingle();
-        if (domain) setDomainName(domain.domain);
+        promises.push(
+          supabase
+            .from('external_domains')
+            .select('domain')
+            .eq('id', job.domain_id)
+            .maybeSingle()
+            .then(({ data }) => { if (data) setDomainName(data.domain); })
+        );
+
+        promises.push(
+          supabase
+            .from('external_domain_analysis_history')
+            .select('id, score, report_data, created_at')
+            .eq('domain_id', job.domain_id)
+            .eq('status', 'completed')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+            .then(({ data }) => { if (data) setAnalysisData(data); })
+        );
       }
 
-      // Fetch latest analysis for this domain
-      if (job.domain_id) {
-        const { data: analysis } = await supabase
-          .from('external_domain_analysis_history')
-          .select('id, score, report_data, created_at')
-          .eq('domain_id', job.domain_id)
-          .eq('status', 'completed')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (analysis) setAnalysisData(analysis);
+      // Fetch attack surface snapshot for this client
+      if (job.client_id) {
+        promises.push(
+          (supabase
+            .from('attack_surface_snapshots' as any)
+            .select('*')
+            .eq('client_id', job.client_id)
+            .eq('status', 'completed')
+            .order('created_at', { ascending: false })
+            .limit(1) as any)
+            .then(({ data }: any) => {
+              const rows = (data as any[]) || [];
+              if (rows.length > 0) setSurfaceSnapshot(parseSnapshot(rows[0]));
+            })
+        );
       }
 
+      await Promise.all(promises);
       setLoading(false);
     } catch (err) {
       setError('Erro ao carregar relatório.');
@@ -150,13 +186,27 @@ export default function PublicReportPage() {
     return normalizeReportData(analysisData.report_data, analysisData.created_at);
   }, [analysisData]);
 
-  const handleDownload = async () => {
+  const handleDownloadCompliance = async () => {
     if (!report) return;
-    const filename = `iscope360-${sanitizePDFFilename(domainName)}-${getPDFDateString()}.pdf`;
+    const filename = `iscope360-compliance-${sanitizePDFFilename(domainName)}-${getPDFDateString()}.pdf`;
     await downloadPDF(
-      <ExternalDomainPDF
+      <ExternalDomainPDFDemo
         report={report}
         domainInfo={{ name: domainName, domain: domainName }}
+      />,
+      filename
+    );
+  };
+
+  const handleDownloadSurface = async () => {
+    if (!surfaceSnapshot) return;
+    const dateStr = formatDateTimeBR(new Date(surfaceSnapshot.created_at));
+    const filename = `iscope360-surface-${sanitizePDFFilename(domainName)}-${getPDFDateString()}.pdf`;
+    await downloadPDF(
+      <SurfaceAnalyzerPDFDemo
+        snapshot={surfaceSnapshot}
+        domainName={domainName}
+        dateString={dateStr}
       />,
       filename
     );
@@ -227,46 +277,83 @@ export default function PublicReportPage() {
 
       {/* Content */}
       <div className="max-w-3xl mx-auto px-4 py-8">
-        {report ? (
+        {(report || surfaceSnapshot) ? (
           <div className="space-y-6">
-            {/* Download Button */}
-            <div className="bg-card border rounded-lg p-6 text-center space-y-4">
-              <h2 className="text-lg font-semibold text-foreground">
-                📄 Relatório Completo Disponível
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                O relatório completo inclui todas as verificações detalhadas, 
-                guias de correção passo a passo e análise da superfície de ataque.
-              </p>
-              <Button
-                onClick={handleDownload}
-                disabled={isGenerating}
-                size="lg"
-                className="gap-2"
-              >
-                {isGenerating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileDown className="h-4 w-4" />
-                )}
-                {isGenerating ? 'Gerando PDF...' : 'Baixar PDF Completo'}
-              </Button>
-            </div>
+            {/* Compliance PDF Download */}
+            {report && (
+              <div className="bg-card border rounded-lg p-6 text-center space-y-4">
+                <h2 className="text-lg font-semibold text-foreground">
+                  📄 Relatório de Compliance de Domínio
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Inclui resumo executivo, infraestrutura DNS e mapa de superfície.
+                  O relatório completo contém guias de correção e plano de ação detalhado.
+                </p>
+                <Button
+                  onClick={handleDownloadCompliance}
+                  disabled={isGenerating}
+                  size="lg"
+                  className="gap-2"
+                >
+                  {isGenerating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileDown className="h-4 w-4" />
+                  )}
+                  {isGenerating ? 'Gerando PDF...' : 'Baixar PDF Compliance (Demo)'}
+                </Button>
+              </div>
+            )}
+
+            {/* Surface Analyzer PDF Download */}
+            {surfaceSnapshot && (
+              <div className="bg-card border rounded-lg p-6 text-center space-y-4">
+                <h2 className="text-lg font-semibold text-foreground">
+                  🔍 Relatório de Superfície de Ataque
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Análise de IPs expostos, portas abertas, serviços e vulnerabilidades (CVEs).
+                  A versão completa inclui detalhes de cada serviço e CVE encontrada.
+                </p>
+                <div className="flex gap-4 justify-center text-sm text-muted-foreground mb-2">
+                  <span>{surfaceSnapshot.summary.total_ips} IPs</span>
+                  <span>{surfaceSnapshot.summary.open_ports} Portas</span>
+                  <span>{surfaceSnapshot.summary.services} Serviços</span>
+                  <span>{surfaceSnapshot.summary.cves} CVEs</span>
+                </div>
+                <Button
+                  onClick={handleDownloadSurface}
+                  disabled={isGenerating}
+                  size="lg"
+                  variant="outline"
+                  className="gap-2"
+                >
+                  {isGenerating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Radar className="h-4 w-4" />
+                  )}
+                  {isGenerating ? 'Gerando PDF...' : 'Baixar PDF Surface Analyzer (Demo)'}
+                </Button>
+              </div>
+            )}
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {report.categories.map((cat) => (
-                <div key={cat.name} className="bg-card border rounded-lg p-3 text-center">
-                  <p className="text-xs text-muted-foreground mb-1 truncate">{cat.name}</p>
-                  <p className="text-lg font-bold text-foreground">
-                    {cat.passRate >= 0 ? `${cat.passRate}%` : 'N/A'}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {cat.checks.length} checks
-                  </p>
-                </div>
-              ))}
-            </div>
+            {report && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {report.categories.map((cat) => (
+                  <div key={cat.name} className="bg-card border rounded-lg p-3 text-center">
+                    <p className="text-xs text-muted-foreground mb-1 truncate">{cat.name}</p>
+                    <p className="text-lg font-bold text-foreground">
+                      {cat.passRate >= 0 ? `${cat.passRate}%` : 'N/A'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {cat.checks.length} checks
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center py-12">
