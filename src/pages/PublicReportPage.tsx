@@ -135,24 +135,26 @@ export default function PublicReportPage() {
 
       if (job.domain_id) {
         promises.push(
-          supabase
-            .from('external_domains')
-            .select('domain')
-            .eq('id', job.domain_id)
-            .maybeSingle()
-            .then(({ data }) => { if (data) setDomainName(data.domain); })
+          Promise.resolve(
+            supabase
+              .from('external_domains')
+              .select('domain')
+              .eq('id', job.domain_id)
+              .maybeSingle()
+          ).then(({ data }) => { if (data) setDomainName(data.domain); })
         );
 
         promises.push(
-          supabase
-            .from('external_domain_analysis_history')
-            .select('id, score, report_data, created_at')
-            .eq('domain_id', job.domain_id)
-            .eq('status', 'completed')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-            .then(({ data }) => { if (data) setAnalysisData(data); })
+          Promise.resolve(
+            supabase
+              .from('external_domain_analysis_history')
+              .select('id, score, report_data, created_at')
+              .eq('domain_id', job.domain_id)
+              .eq('status', 'completed')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          ).then(({ data }) => { if (data) setAnalysisData(data); })
         );
       }
 
