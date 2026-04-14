@@ -4,7 +4,7 @@ import {
 } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
 
-const SITE_NAME = "iScope360"
+const SITE_NAME = "Precisio"
 
 interface DomainSecurityReportProps {
   domain?: string
@@ -49,6 +49,9 @@ const DomainSecurityReportEmail = ({
     return '#ef4444'
   }
 
+  const complianceUrl = reportUrl ? `${reportUrl}?download=compliance` : undefined
+  const surfaceUrl = reportUrl ? `${reportUrl}?download=surface` : undefined
+
   return (
     <Html lang="pt-BR" dir="ltr">
       <Head />
@@ -58,27 +61,27 @@ const DomainSecurityReportEmail = ({
           {/* Header */}
           <Section style={header}>
             <Text style={logoText}>{SITE_NAME}</Text>
-            <Text style={headerSubtitle}>Domain Security Report</Text>
+            <Text style={headerSubtitle}>Relatório de Segurança de Domínio</Text>
           </Section>
 
           <Section style={content}>
             {/* DEMO Banner */}
             <Section style={demoBanner}>
-              <Text style={demoBannerText}>📊 RELATÓRIO DEMO</Text>
+              <Text style={demoBannerText}>RELATORIO DEMO</Text>
               <Text style={demoBannerSubtext}>
-                Versão resumida — dados parcialmente ofuscados
+                Versao resumida — dados parcialmente ofuscados
               </Text>
             </Section>
 
-            <Heading style={h1}>Relatório de Segurança</Heading>
-            <Text style={domainLabel}>Domínio analisado</Text>
+            <Heading style={h1}>Resultado da Analise</Heading>
+            <Text style={domainLabel}>Dominio analisado</Text>
             <Text style={domainValue}>{domain}</Text>
-            <Text style={dateText}>Análise realizada em {formattedDate}</Text>
+            <Text style={dateText}>Analise realizada em {formattedDate}</Text>
 
             <Hr style={divider} />
 
-            {/* Scores — partially masked */}
-            <Text style={sectionTitle}>Pontuações</Text>
+            {/* Scores */}
+            <Text style={sectionTitle}>Pontuacoes</Text>
             <Section>
               <Row>
                 <Column style={scoreCard}>
@@ -89,7 +92,7 @@ const DomainSecurityReportEmail = ({
                   <Text style={scoreUnit}>/100</Text>
                 </Column>
                 <Column style={scoreCard}>
-                  <Text style={scoreLabel}>Attack Surface</Text>
+                  <Text style={scoreLabel}>Superficie de Ataque</Text>
                   <Text style={{ ...scoreValue, color: getScoreColor(attackSurfaceScore) }}>
                     {attackSurfaceScore}
                   </Text>
@@ -100,7 +103,7 @@ const DomainSecurityReportEmail = ({
 
             <Hr style={divider} />
 
-            {/* Findings — show totals only */}
+            {/* Findings */}
             <Text style={sectionTitle}>Findings ({totalFindings})</Text>
             <Section>
               <Row>
@@ -125,8 +128,8 @@ const DomainSecurityReportEmail = ({
 
             <Hr style={divider} />
 
-            {/* Network Stats — masked */}
-            <Text style={sectionTitle}>Superfície de Rede</Text>
+            {/* Network Stats */}
+            <Text style={sectionTitle}>Superficie de Rede</Text>
             <Section style={statsGrid}>
               <Row>
                 <Column style={statItem}>
@@ -139,7 +142,7 @@ const DomainSecurityReportEmail = ({
                 </Column>
                 <Column style={statItem}>
                   <Text style={statValue}>{services}</Text>
-                  <Text style={statLabel}>Serviços</Text>
+                  <Text style={statLabel}>Servicos</Text>
                 </Column>
                 <Column style={statItem}>
                   <Text style={{ ...statValue, color: cves > 0 ? '#ef4444' : '#22c55e' }}>{cves}</Text>
@@ -153,18 +156,25 @@ const DomainSecurityReportEmail = ({
             {/* Blur overlay message */}
             <Section style={blurMessage}>
               <Text style={blurMessageText}>
-                🔒 Detalhes completos, guias de correção e dados de rede estão disponíveis no relatório completo em PDF.
+                Detalhes completos, guias de correcao e dados de rede estao disponiveis nos relatorios completos em PDF.
               </Text>
             </Section>
 
-            {/* CTA */}
+            {/* Two CTA buttons */}
             {reportUrl && (
-              <Section style={{ textAlign: 'center' as const, padding: '16px 0 24px' }}>
-                <Button style={ctaButton} href={reportUrl}>
-                  📄 Baixar Relatório Completo (PDF)
+              <Section style={{ textAlign: 'center' as const, padding: '16px 0 8px' }}>
+                <Button style={ctaButtonPrimary} href={complianceUrl}>
+                  Ver Relatorio Compliance (Demo)
+                </Button>
+              </Section>
+            )}
+            {reportUrl && (
+              <Section style={{ textAlign: 'center' as const, padding: '8px 0 24px' }}>
+                <Button style={ctaButtonSecondary} href={surfaceUrl}>
+                  Ver Relatorio Surface Analyzer (Demo)
                 </Button>
                 <Text style={ctaSubtext}>
-                  Link válido por 7 dias. O relatório completo inclui guias de correção detalhados.
+                  Link valido por 7 dias. Os relatorios completos incluem guias de correcao detalhados.
                 </Text>
               </Section>
             )}
@@ -173,10 +183,10 @@ const DomainSecurityReportEmail = ({
           {/* Footer */}
           <Section style={footer}>
             <Text style={footerText}>
-              Este relatório foi gerado automaticamente pelo {SITE_NAME}.
+              Este relatorio foi gerado automaticamente pelo {SITE_NAME}.
             </Text>
             <Text style={footerText}>
-              © {new Date().getFullYear()} Precisio · Todos os direitos reservados
+              © {new Date().getFullYear()} {SITE_NAME} · Todos os direitos reservados
             </Text>
           </Section>
         </Container>
@@ -197,7 +207,7 @@ export const template = {
     analysisDate: '2026-04-09T14:30:00Z',
     findings: { critical: 2, high: 5, medium: 8, low: 12 },
     network: { totalIPs: 4, openPorts: 12, services: 8, cves: 3 },
-    reportUrl: 'https://iscope360.precisio.io/report/demo-token',
+    reportUrl: 'https://iscope-teste.lovable.app/report/demo-token',
   },
 } satisfies TemplateEntry
 
@@ -395,8 +405,19 @@ const blurMessageText = {
   lineHeight: '1.5',
 }
 
-const ctaButton = {
+const ctaButtonPrimary = {
   backgroundColor: '#0f172a',
+  color: '#ffffff',
+  padding: '14px 32px',
+  borderRadius: '6px',
+  fontSize: '15px',
+  fontWeight: '700' as const,
+  textDecoration: 'none',
+  display: 'inline-block' as const,
+}
+
+const ctaButtonSecondary = {
+  backgroundColor: '#334155',
   color: '#ffffff',
   padding: '14px 32px',
   borderRadius: '6px',
