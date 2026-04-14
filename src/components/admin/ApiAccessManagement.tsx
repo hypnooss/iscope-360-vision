@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ApiKeyGenerateDialog } from './ApiKeyGenerateDialog';
 import { ApiAccessLogsTable } from './ApiAccessLogsTable';
-import { Loader2, Plus, RefreshCw, Ban, Trash2, Copy, ChevronDown, Terminal, Globe, GitBranch } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Ban, Trash2, Copy, ChevronDown, Terminal, Globe, GitBranch, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import {
