@@ -271,7 +271,7 @@ export const SurfaceAnalyzerPDFDemo: React.FC<SurfaceAnalyzerPDFDemoProps> = ({
                     <Text style={s.cveBadgeText}>{(cve.severity || 'N/A').toUpperCase()}</Text>
                   </View>
                   <Text style={s.cveId}>{cve.cve_id}</Text>
-                  <Text style={s.cveTitle} numberOfLines={1}>{cve.title || 'Sem titulo'}</Text>
+                  <Text style={s.cveTitle}>{cve.title || 'Sem titulo'}</Text>
                   <Text style={[s.cveScore, { color: getSeverityColor(cve.severity) }]}>
                     {cve.score != null ? cve.score.toFixed(1) : '-'}
                   </Text>
