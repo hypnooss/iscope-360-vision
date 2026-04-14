@@ -1,40 +1,35 @@
 
 
-## Plano — Botão de reenvio de email report na tabela de Jobs/Pipeline
+## Plano — Visualizador de Logs dos Jobs/Pipeline
 
 ### Resumo
 
-Adicionar um botão "Reenviar Report" em cada linha de job concluído na tabela de Jobs/Pipeline (`ApiAccessManagement.tsx`). Ao clicar, o sistema re-executa a lógica de `stepEmailReport` — gerando novo `access_token` e reenviando o email com os dados atualizados.
+Criar um componente `PipelineJobDetail` (Sheet/Dialog) que abre ao clicar num botão "Ver Detalhes" na linha do job, mostrando timeline dos steps com status, timestamps, duração, resultados e erros.
 
 ### Alterações
 
-**1. Criar Edge Function `resend-pipeline-report`**
+**1. Novo componente `src/components/admin/PipelineJobDetail.tsx`**
 
-Arquivo: `supabase/functions/resend-pipeline-report/index.ts`
+- Sheet lateral que recebe o objeto `ApiJob` completo
+- Header: domínio, tipo, status geral, erro (se houver)
+- Timeline vertical dos steps:
+  - Ícone por status (CheckCircle verde, XCircle vermelho, Loader azul, Clock cinza)
+  - Nome do step, status, timestamps (`started_at`, `completed_at`), duração calculada
+  - Se step tem `result` (ex: `domain_id`, `analysis_id`, `snapshot_id`, `score`), mostrar em badges/mono
+  - Se step tem `error`, mostrar em bloco vermelho
+- Seção metadata: `email_to`, `agent_id`, `domain`, `job_id`
 
-- Recebe `{ job_id }` no body
-- Valida que o job existe e está `completed`
-- Reutiliza a mesma lógica de `stepEmailReport`: busca domain, analysis, snapshot, gera novo `access_token`, monta `templateData` e chama `send-transactional-email`
-- Usa uma nova `idempotencyKey` (ex: `resend-report-${job_id}-${Date.now()}`) para permitir reenvios múltiplos
-- Requer auth (service_role ou JWT de admin)
+**2. Atualizar `src/components/admin/ApiAccessManagement.tsx`**
 
-**2. Atualizar `ApiAccessManagement.tsx`**
-
-- Adicionar coluna "Ações" na tabela de Jobs
-- Para jobs com `status === 'completed'` e que possuem step `email_report`, mostrar botão com ícone `Mail` (lucide) + tooltip "Reenviar Report"
-- Ao clicar, chama `supabase.functions.invoke('resend-pipeline-report', { body: { job_id } })`
-- Mostra loading no botão durante o envio, toast de sucesso/erro após
-
-### Detalhes técnicos
-
-- A Edge Function extrai `email_to` do `metadata.email_to` do job (mesmo campo usado originalmente)
-- O `access_token` é regenerado a cada reenvio para invalidar links anteriores
-- A idempotency key inclui timestamp para não ser bloqueada como duplicata
+- Adicionar state `selectedJob: ApiJob | null`
+- Na coluna Ações, adicionar botão com ícone `Eye` (lucide) para todos os jobs
+- Ao clicar, seta `selectedJob` e abre o `PipelineJobDetail`
+- Import do `Eye` do lucide-react
 
 ### Arquivos
 
 | Arquivo | Ação |
 |---|---|
-| `supabase/functions/resend-pipeline-report/index.ts` | Novo |
-| `src/components/admin/ApiAccessManagement.tsx` | Atualizar — adicionar coluna Ações com botão reenviar |
+| `src/components/admin/PipelineJobDetail.tsx` | Novo |
+| `src/components/admin/ApiAccessManagement.tsx` | Atualizar — botão ver detalhes + state |
 
