@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     // Fetch tenant
     const { data: tenant, error: tenantError } = await supabase
       .from('m365_tenants')
-      .select('id, display_name, tenant_domain, tenant_id, client_id')
+      .select('id, display_name, tenant_domain, tenant_id, client_id, spo_domain')
       .eq('id', tenant_record_id)
       .single();
 
@@ -210,6 +210,7 @@ Deno.serve(async (req) => {
           tenant_display_name: tenant.display_name,
           tenant_domain: tenant.tenant_domain,
           tenant_id: tenant.tenant_id,
+          spo_domain: tenant.spo_domain,
           snapshot_id: snapshot.id,
           period_start: periodStart,
           period_end: now,
