@@ -7,7 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ApiKeyGenerateDialog } from './ApiKeyGenerateDialog';
 import { ApiAccessLogsTable } from './ApiAccessLogsTable';
-import { Loader2, Plus, RefreshCw, Ban, Trash2, Copy, ChevronDown, Terminal, Globe, GitBranch, Mail } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Ban, Trash2, Copy, ChevronDown, Terminal, Globe, GitBranch, Mail, Eye } from 'lucide-react';
+import { PipelineJobDetail } from './PipelineJobDetail';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import {
@@ -84,6 +85,7 @@ export function ApiAccessManagement() {
   const [resendLoading, setResendLoading] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [jobsOpen, setJobsOpen] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<ApiJob | null>(null);
 
   useEffect(() => {
     loadKeys();
@@ -397,22 +399,32 @@ export function ApiAccessManagement() {
                                   : '—'}
                             </TableCell>
                             <TableCell>
-                              {(job.status === 'completed' || job.status === 'partial') &&
-                                (job.steps || []).some((s: any) => s.name === 'email_report') && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleResendReport(job.id)}
-                                    disabled={resendLoading === job.id}
-                                    title="Reenviar Report"
-                                  >
-                                    {resendLoading === job.id ? (
-                                      <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : (
-                                      <Mail className="w-4 h-4" />
-                                    )}
-                                  </Button>
-                                )}
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setSelectedJob(job)}
+                                  title="Ver Detalhes"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                                {(job.status === 'completed' || job.status === 'partial') &&
+                                  (job.steps || []).some((s: any) => s.name === 'email_report') && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleResendReport(job.id)}
+                                      disabled={resendLoading === job.id}
+                                      title="Reenviar Report"
+                                    >
+                                      {resendLoading === job.id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : (
+                                        <Mail className="w-4 h-4" />
+                                      )}
+                                    </Button>
+                                  )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -526,6 +538,12 @@ export function ApiAccessManagement() {
         open={generateOpen}
         onOpenChange={setGenerateOpen}
         onGenerated={loadKeys}
+      />
+
+      <PipelineJobDetail
+        job={selectedJob}
+        open={!!selectedJob}
+        onOpenChange={(o) => !o && setSelectedJob(null)}
       />
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
