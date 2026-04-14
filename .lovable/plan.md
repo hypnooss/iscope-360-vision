@@ -1,51 +1,46 @@
 
 
-## Plano — Download direto no email + Renomear header
+## Análise — Erro "Current site is not a tenant administration site"
 
-### Contexto
+### Causa Raiz
 
-Os PDFs demo são gerados **client-side** com `@react-pdf/renderer` (não é possível gerar em Edge Functions Deno). Portanto, a página `/report/:token` continua necessária como motor de geração, mas será transformada numa página de **auto-download** — sem a UI intermediária visível.
+O Agent PowerShell executa `Get-SPOTenant` (step `spo_tenant_quota`) para obter a quota de armazenamento do SharePoint. Para isso, precisa conectar na URL `https://<spo_domain>-admin.sharepoint.com`.
 
-### Alterações
+O problema está em `trigger-m365-analyzer/index.ts`:
 
-**1. PublicReportPage — Auto-download sem UI intermediária**
+1. **Select incompleto** (linha 39): busca `tenant_domain` mas **não busca `spo_domain`** da tabela `m365_tenants`
+2. **Payload sem `spo_domain`** (linhas 209-229): envia apenas `tenant_domain` (ex: `deployitgroup.mail.onmicrosoft.com`) ao Agent
+3. O Agent tenta usar `tenant_domain` para construir a URL admin do SPO, gerando algo como `https://deployitgroup.mail-admin.sharepoint.com` — que não é um site de administração válido
 
-Arquivo: `src/pages/PublicReportPage.tsx`
+A tabela `m365_tenants` já possui o campo `spo_domain` correto (ex: `deployitgroup`), populado no onboarding via `verifiedDomains`.
 
-- Detectar query param `?download=compliance` ou `?download=surface` na URL
-- Quando presente, após carregar os dados, auto-disparar o download do PDF correspondente (chamar `handleDownloadCompliance` ou `handleDownloadSurface` automaticamente)
-- Mostrar apenas uma tela minimalista com "Gerando seu relatório..." + spinner enquanto o PDF é gerado, e "Download iniciado!" após
-- Sem header "iScope360", sem cards, sem a UI atual — apenas o feedback do download
-- Se nenhum `download` param estiver presente, manter a página atual como fallback (mas trocar "iScope360" por "Domain Security" e "Precisio" no footer)
+### Correção
 
-**2. Email — Trocar "Precisio" por "Domain Security"**
+**Arquivo**: `supabase/functions/trigger-m365-analyzer/index.ts`
 
-Arquivo: `supabase/functions/_shared/transactional-email-templates/domain-security-report.tsx`
+1. Adicionar `spo_domain` ao `select` do tenant (linha 39)
+2. Incluir `spo_domain` no `payload` da task (após `tenant_id`, linha 212)
 
-- Alterar `SITE_NAME` de `"Precisio"` para `"Domain Security"`
-- Os links continuam apontando para `/report/:token?download=compliance` e `?download=surface` — mas agora o usuário verá apenas o download automático, sem a página intermediária
+```
+// Linha 39 — adicionar spo_domain
+.select('id, display_name, tenant_domain, tenant_id, client_id, spo_domain')
 
-**3. Limpar referências "iScope360" na página pública**
+// Payload — adicionar campo
+payload: {
+  ...
+  tenant_id: tenant.tenant_id,
+  spo_domain: tenant.spo_domain,   // ← NOVO
+  snapshot_id: snapshot.id,
+  ...
+}
+```
 
-Arquivo: `src/pages/PublicReportPage.tsx`
-
-- Trocar "iScope360" no header por "Domain Security"
-- Trocar "Precisio · iScope360" no footer por "Domain Security"
-- Trocar prefixo dos filenames de PDF de `iscope360-` para `domainsecurity-`
-
-**4. Deploy**
-
-- Redeploy `send-transactional-email` após alterar o template de email
-
-### Resultado
-
-O destinatário clica no botão do email → abre uma página que **automaticamente gera e baixa o PDF** → vê apenas "Gerando seu relatório..." sem nenhuma UI de branding intermediária. Experiência de download direto.
+Após o deploy, o Agent receberá o `spo_domain` correto e construirá a URL `https://deployitgroup-admin.sharepoint.com` — resolvendo o erro.
 
 ### Arquivos
 
 | Arquivo | Ação |
 |---|---|
-| `domain-security-report.tsx` | SITE_NAME → "Domain Security" |
-| `src/pages/PublicReportPage.tsx` | Auto-download + limpar branding |
-| Deploy | `send-transactional-email` |
+| `supabase/functions/trigger-m365-analyzer/index.ts` | Adicionar `spo_domain` ao select e payload |
+| Deploy | `trigger-m365-analyzer` |
 
