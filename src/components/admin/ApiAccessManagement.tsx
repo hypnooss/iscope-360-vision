@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ApiKeyGenerateDialog } from './ApiKeyGenerateDialog';
 import { ApiAccessLogsTable } from './ApiAccessLogsTable';
-import { Loader2, Plus, RefreshCw, Ban, Trash2, Copy, ChevronDown, Terminal, Globe, GitBranch } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Ban, Trash2, Copy, ChevronDown, Terminal, Globe, GitBranch, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import {
@@ -81,6 +81,7 @@ export function ApiAccessManagement() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [resendLoading, setResendLoading] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [jobsOpen, setJobsOpen] = useState(false);
 
@@ -123,6 +124,22 @@ export function ApiAccessManagement() {
   useEffect(() => {
     if (jobsOpen) loadJobs();
   }, [jobsOpen]);
+
+  const handleResendReport = async (jobId: string) => {
+    setResendLoading(jobId);
+    try {
+      const { data, error } = await supabase.functions.invoke('resend-pipeline-report', {
+        body: { job_id: jobId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Report reenviado para ${data.email_to}`);
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao reenviar report');
+    } finally {
+      setResendLoading(null);
+    }
+  };
 
   const handleRevoke = async (id: string) => {
     setActionLoading(id);
@@ -333,6 +350,7 @@ export function ApiAccessManagement() {
                           <TableHead>Steps</TableHead>
                           <TableHead>Criado em</TableHead>
                           <TableHead>Duração</TableHead>
+                          <TableHead className="w-[80px]">Ações</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -377,6 +395,24 @@ export function ApiAccessManagement() {
                                 : job.started_at
                                   ? 'Em andamento...'
                                   : '—'}
+                            </TableCell>
+                            <TableCell>
+                              {(job.status === 'completed' || job.status === 'partial') &&
+                                (job.steps || []).some((s: any) => s.name === 'email_report') && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleResendReport(job.id)}
+                                    disabled={resendLoading === job.id}
+                                    title="Reenviar Report"
+                                  >
+                                    {resendLoading === job.id ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Mail className="w-4 h-4" />
+                                    )}
+                                  </Button>
+                                )}
                             </TableCell>
                           </TableRow>
                         ))}
