@@ -5,6 +5,8 @@ import {
 import type { TemplateEntry } from './registry.ts'
 
 const SITE_NAME = "Domain Security"
+const BRAND_BLUE = '#2563EB'
+const BRAND_DARK = '#1e293b'
 
 interface DomainSecurityReportProps {
   domain?: string
@@ -43,10 +45,10 @@ const DomainSecurityReportEmail = ({
   })
 
   const getScoreColor = (score: number) => {
-    if (score >= 80) return '#22c55e'
-    if (score >= 60) return '#eab308'
-    if (score >= 40) return '#f97316'
-    return '#ef4444'
+    if (score >= 80) return '#16a34a'
+    if (score >= 60) return '#ca8a04'
+    if (score >= 40) return '#ea580c'
+    return '#dc2626'
   }
 
   const complianceUrl = reportUrl ? `${reportUrl}?download=compliance` : undefined
@@ -60,28 +62,43 @@ const DomainSecurityReportEmail = ({
         <Container style={container}>
           {/* Header */}
           <Section style={header}>
-            <Text style={logoText}>{SITE_NAME}</Text>
+            <table cellPadding="0" cellSpacing="0" style={{ width: '100%' }}>
+              <tr>
+                <td style={{ verticalAlign: 'middle' }}>
+                  <table cellPadding="0" cellSpacing="0">
+                    <tr>
+                      <td style={{ verticalAlign: 'middle', paddingRight: '12px' }}>
+                        <div style={shieldIcon}>🛡️</div>
+                      </td>
+                      <td style={{ verticalAlign: 'middle' }}>
+                        <Text style={logoText}>{SITE_NAME}</Text>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
             <Text style={headerSubtitle}>Relatório de Segurança de Domínio</Text>
           </Section>
 
           <Section style={content}>
             {/* DEMO Banner */}
             <Section style={demoBanner}>
-              <Text style={demoBannerText}>RELATORIO DEMO</Text>
+              <Text style={demoBannerText}>RELATÓRIO DEMO</Text>
               <Text style={demoBannerSubtext}>
-                Versao resumida — dados parcialmente ofuscados
+                Versão resumida — dados parcialmente ofuscados
               </Text>
             </Section>
 
-            <Heading style={h1}>Resultado da Analise</Heading>
-            <Text style={domainLabel}>Dominio analisado</Text>
+            <Heading style={h1}>Resultado da Análise</Heading>
+            <Text style={domainLabel}>Domínio analisado</Text>
             <Text style={domainValue}>{domain}</Text>
-            <Text style={dateText}>Analise realizada em {formattedDate}</Text>
+            <Text style={dateText}>Análise realizada em {formattedDate}</Text>
 
             <Hr style={divider} />
 
             {/* Scores */}
-            <Text style={sectionTitle}>Pontuacoes</Text>
+            <Text style={sectionTitle}>Pontuações</Text>
             <Section>
               <Row>
                 <Column style={scoreCard}>
@@ -91,8 +108,9 @@ const DomainSecurityReportEmail = ({
                   </Text>
                   <Text style={scoreUnit}>/100</Text>
                 </Column>
+                <Column style={{ width: '12px' }}>&nbsp;</Column>
                 <Column style={scoreCard}>
-                  <Text style={scoreLabel}>Superficie de Ataque</Text>
+                  <Text style={scoreLabel}>Superfície de Ataque</Text>
                   <Text style={{ ...scoreValue, color: getScoreColor(attackSurfaceScore) }}>
                     {attackSurfaceScore}
                   </Text>
@@ -108,19 +126,19 @@ const DomainSecurityReportEmail = ({
             <Section>
               <Row>
                 <Column style={findingBadge}>
-                  <Text style={{ ...findingCount, color: '#ef4444' }}>{critical}</Text>
+                  <Text style={{ ...findingCount, color: '#dc2626' }}>{critical}</Text>
                   <Text style={findingLabel}>Critical</Text>
                 </Column>
                 <Column style={findingBadge}>
-                  <Text style={{ ...findingCount, color: '#f97316' }}>{high}</Text>
+                  <Text style={{ ...findingCount, color: '#ea580c' }}>{high}</Text>
                   <Text style={findingLabel}>High</Text>
                 </Column>
                 <Column style={findingBadge}>
-                  <Text style={{ ...findingCount, color: '#eab308' }}>{medium}</Text>
+                  <Text style={{ ...findingCount, color: '#ca8a04' }}>{medium}</Text>
                   <Text style={findingLabel}>Medium</Text>
                 </Column>
                 <Column style={findingBadge}>
-                  <Text style={{ ...findingCount, color: '#22c55e' }}>{low}</Text>
+                  <Text style={{ ...findingCount, color: '#16a34a' }}>{low}</Text>
                   <Text style={findingLabel}>Low</Text>
                 </Column>
               </Row>
@@ -129,23 +147,23 @@ const DomainSecurityReportEmail = ({
             <Hr style={divider} />
 
             {/* Network Stats */}
-            <Text style={sectionTitle}>Superficie de Rede</Text>
-            <Section style={statsGrid}>
+            <Text style={sectionTitle}>Superfície de Rede</Text>
+            <Section>
               <Row>
                 <Column style={statItem}>
-                  <Text style={statValue}>{totalIPs}</Text>
+                  <Text style={statValueStyle}>{totalIPs}</Text>
                   <Text style={statLabel}>IPs</Text>
                 </Column>
                 <Column style={statItem}>
-                  <Text style={statValue}>{openPorts}</Text>
+                  <Text style={statValueStyle}>{openPorts}</Text>
                   <Text style={statLabel}>Portas Abertas</Text>
                 </Column>
                 <Column style={statItem}>
-                  <Text style={statValue}>{services}</Text>
-                  <Text style={statLabel}>Servicos</Text>
+                  <Text style={statValueStyle}>{services}</Text>
+                  <Text style={statLabel}>Serviços</Text>
                 </Column>
                 <Column style={statItem}>
-                  <Text style={{ ...statValue, color: cves > 0 ? '#ef4444' : '#22c55e' }}>{cves}</Text>
+                  <Text style={{ ...statValueStyle, color: cves > 0 ? '#dc2626' : '#16a34a' }}>{cves}</Text>
                   <Text style={statLabel}>CVEs</Text>
                 </Column>
               </Row>
@@ -153,28 +171,28 @@ const DomainSecurityReportEmail = ({
 
             <Hr style={divider} />
 
-            {/* Blur overlay message */}
-            <Section style={blurMessage}>
-              <Text style={blurMessageText}>
-                Detalhes completos, guias de correcao e dados de rede estao disponiveis nos relatorios completos em PDF.
+            {/* Info message */}
+            <Section style={infoBox}>
+              <Text style={infoBoxText}>
+                Detalhes completos, guias de correção e dados de rede estão disponíveis nos relatórios completos em PDF.
               </Text>
             </Section>
 
-            {/* Two CTA buttons */}
+            {/* CTA buttons */}
             {reportUrl && (
               <Section style={{ textAlign: 'center' as const, padding: '16px 0 8px' }}>
                 <Button style={ctaButtonPrimary} href={complianceUrl}>
-                  Ver Relatorio Compliance (Demo)
+                  Baixar Relatório Compliance (Demo)
                 </Button>
               </Section>
             )}
             {reportUrl && (
               <Section style={{ textAlign: 'center' as const, padding: '8px 0 24px' }}>
                 <Button style={ctaButtonSecondary} href={surfaceUrl}>
-                  Ver Relatorio Surface Analyzer (Demo)
+                  Baixar Relatório Surface Analyzer (Demo)
                 </Button>
                 <Text style={ctaSubtext}>
-                  Link valido por 7 dias. Os relatorios completos incluem guias de correcao detalhados.
+                  Link válido por 7 dias. Os relatórios completos incluem guias de correção detalhados.
                 </Text>
               </Section>
             )}
@@ -183,7 +201,7 @@ const DomainSecurityReportEmail = ({
           {/* Footer */}
           <Section style={footer}>
             <Text style={footerText}>
-              Este relatorio foi gerado automaticamente pelo {SITE_NAME}.
+              Este relatório foi gerado automaticamente pelo {SITE_NAME}.
             </Text>
             <Text style={footerText}>
               © {new Date().getFullYear()} {SITE_NAME} · Todos os direitos reservados
@@ -221,66 +239,74 @@ const main = {
 const container = {
   maxWidth: '600px',
   margin: '0 auto',
+  border: '1px solid #e5e7eb',
+  borderRadius: '12px',
+  overflow: 'hidden' as const,
 }
 
 const header = {
-  backgroundColor: '#0f172a',
-  padding: '24px 32px',
-  borderRadius: '8px 8px 0 0',
+  backgroundColor: '#ffffff',
+  padding: '28px 32px 16px',
+  borderBottom: '1px solid #e5e7eb',
+}
+
+const shieldIcon = {
+  fontSize: '28px',
+  lineHeight: '1',
 }
 
 const logoText = {
-  color: '#38bdf8',
+  color: BRAND_DARK,
   fontSize: '22px',
   fontWeight: '700' as const,
-  fontFamily: "'JetBrains Mono', 'Courier New', monospace",
   margin: '0',
   letterSpacing: '-0.5px',
 }
 
 const headerSubtitle = {
-  color: '#94a3b8',
+  color: '#64748b',
   fontSize: '13px',
-  margin: '4px 0 0',
+  margin: '8px 0 0',
 }
 
 const content = {
   padding: '28px 32px',
-  backgroundColor: '#f8fafc',
+  backgroundColor: '#ffffff',
 }
 
 const demoBanner = {
-  backgroundColor: '#fef3c7',
-  borderRadius: '6px',
+  backgroundColor: '#eff6ff',
+  borderRadius: '8px',
   padding: '12px 16px',
-  marginBottom: '20px',
+  marginBottom: '24px',
   textAlign: 'center' as const,
-  border: '1px solid #fbbf24',
+  border: `1px solid ${BRAND_BLUE}33`,
 }
 
 const demoBannerText = {
-  fontSize: '14px',
+  fontSize: '13px',
   fontWeight: '700' as const,
-  color: '#92400e',
+  color: BRAND_BLUE,
   margin: '0',
+  letterSpacing: '1px',
 }
 
 const demoBannerSubtext = {
   fontSize: '12px',
-  color: '#a16207',
+  color: '#3b82f6',
   margin: '4px 0 0',
 }
 
 const h1 = {
-  fontSize: '20px',
+  fontSize: '22px',
   fontWeight: '700' as const,
-  color: '#0f172a',
+  color: BRAND_DARK,
   margin: '0 0 16px',
 }
 
 const domainLabel = {
   fontSize: '11px',
-  color: '#64748b',
+  color: '#94a3b8',
   textTransform: 'uppercase' as const,
   letterSpacing: '1px',
   margin: '0 0 4px',
@@ -289,26 +315,25 @@ const domainLabel = {
 const domainValue = {
   fontSize: '18px',
   fontWeight: '600' as const,
-  color: '#0f172a',
-  fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+  color: BRAND_BLUE,
   margin: '0 0 8px',
 }
 
 const dateText = {
   fontSize: '13px',
-  color: '#64748b',
+  color: '#94a3b8',
   margin: '0',
 }
 
 const divider = {
-  borderColor: '#e2e8f0',
-  margin: '20px 0',
+  borderColor: '#f1f5f9',
+  margin: '24px 0',
 }
 
 const sectionTitle = {
-  fontSize: '14px',
+  fontSize: '13px',
   fontWeight: '600' as const,
-  color: '#0f172a',
+  color: '#64748b',
   textTransform: 'uppercase' as const,
   letterSpacing: '0.5px',
   margin: '0 0 12px',
@@ -316,113 +341,104 @@ const sectionTitle = {
 
 const scoreCard = {
   textAlign: 'center' as const,
-  padding: '12px 8px',
-  backgroundColor: '#ffffff',
-  borderRadius: '6px',
-  border: '1px solid #e2e8f0',
-  width: '50%',
+  padding: '16px 12px',
+  backgroundColor: '#f8fafc',
+  borderRadius: '10px',
+  border: '1px solid #e5e7eb',
 }
 
 const scoreLabel = {
   fontSize: '12px',
   color: '#64748b',
-  margin: '0 0 4px',
+  margin: '0 0 6px',
 }
 
 const scoreValue = {
   fontSize: '36px',
-  fontWeight: '700' as const,
-  fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+  fontWeight: '800' as const,
   margin: '0',
   lineHeight: '1',
-  letterSpacing: '2px',
 }
 
 const scoreUnit = {
   fontSize: '12px',
   color: '#94a3b8',
-  margin: '2px 0 0',
+  margin: '4px 0 0',
 }
 
 const findingBadge = {
   textAlign: 'center' as const,
-  padding: '8px 4px',
+  padding: '10px 4px',
   width: '25%',
 }
 
 const findingCount = {
   fontSize: '24px',
-  fontWeight: '700' as const,
-  fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+  fontWeight: '800' as const,
   margin: '0',
   lineHeight: '1',
 }
 
 const findingLabel = {
   fontSize: '11px',
-  color: '#64748b',
-  margin: '4px 0 0',
+  color: '#94a3b8',
+  margin: '6px 0 0',
   textTransform: 'uppercase' as const,
-}
-
-const statsGrid = {
-  padding: '0',
 }
 
 const statItem = {
   textAlign: 'center' as const,
-  padding: '8px 4px',
+  padding: '10px 4px',
   width: '25%',
 }
 
-const statValue = {
+const statValueStyle = {
   fontSize: '20px',
   fontWeight: '700' as const,
-  color: '#0f172a',
-  fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+  color: BRAND_DARK,
   margin: '0',
   lineHeight: '1',
 }
 
 const statLabel = {
   fontSize: '11px',
-  color: '#64748b',
-  margin: '4px 0 0',
+  color: '#94a3b8',
+  margin: '6px 0 0',
 }
 
-const blurMessage = {
-  backgroundColor: '#f1f5f9',
-  borderRadius: '6px',
+const infoBox = {
+  backgroundColor: '#f8fafc',
+  borderRadius: '8px',
   padding: '16px',
-  border: '1px dashed #cbd5e1',
+  border: '1px solid #e5e7eb',
   textAlign: 'center' as const,
 }
 
-const blurMessageText = {
+const infoBoxText = {
   fontSize: '13px',
-  color: '#475569',
+  color: '#64748b',
   margin: '0',
   lineHeight: '1.5',
 }
 
 const ctaButtonPrimary = {
-  backgroundColor: '#0f172a',
+  backgroundColor: BRAND_BLUE,
   color: '#ffffff',
   padding: '14px 32px',
-  borderRadius: '6px',
+  borderRadius: '8px',
   fontSize: '15px',
-  fontWeight: '700' as const,
+  fontWeight: '600' as const,
   textDecoration: 'none',
   display: 'inline-block' as const,
 }
 
 const ctaButtonSecondary = {
-  backgroundColor: '#334155',
+  backgroundColor: '#1e40af',
   color: '#ffffff',
   padding: '14px 32px',
-  borderRadius: '6px',
+  borderRadius: '8px',
   fontSize: '15px',
-  fontWeight: '700' as const,
+  fontWeight: '600' as const,
   textDecoration: 'none',
   display: 'inline-block' as const,
 }
@@ -436,8 +452,7 @@ const ctaSubtext = {
 
 const footer = {
   padding: '20px 32px',
-  backgroundColor: '#f1f5f9',
-  borderRadius: '0 0 8px 8px',
+  backgroundColor: '#f8fafc',
 }
 
 const footerText = {
