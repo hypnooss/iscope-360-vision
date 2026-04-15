@@ -1,46 +1,36 @@
 
 
-## Análise — Erro "Current site is not a tenant administration site"
+## Plano — Atualizar remetente e redesign visual do email
 
-### Causa Raiz
+### 1. Corrigir nome do remetente
 
-O Agent PowerShell executa `Get-SPOTenant` (step `spo_tenant_quota`) para obter a quota de armazenamento do SharePoint. Para isso, precisa conectar na URL `https://<spo_domain>-admin.sharepoint.com`.
+**Arquivo**: `supabase/functions/send-transactional-email/index.ts`
 
-O problema está em `trigger-m365-analyzer/index.ts`:
+- Linha 8: trocar `SITE_NAME = "iscope-teste"` para `SITE_NAME = "Domain Security"`
+- Isso corrige o `From: Domain Security <noreply@notify.domainsecurity.online>`
 
-1. **Select incompleto** (linha 39): busca `tenant_domain` mas **não busca `spo_domain`** da tabela `m365_tenants`
-2. **Payload sem `spo_domain`** (linhas 209-229): envia apenas `tenant_domain` (ex: `deployitgroup.mail.onmicrosoft.com`) ao Agent
-3. O Agent tenta usar `tenant_domain` para construir a URL admin do SPO, gerando algo como `https://deployitgroup.mail-admin.sharepoint.com` — que não é um site de administração válido
+### 2. Redesign visual do email para acompanhar a landing page
 
-A tabela `m365_tenants` já possui o campo `spo_domain` correto (ex: `deployitgroup`), populado no onboarding via `verifiedDomains`.
+**Arquivo**: `supabase/functions/_shared/transactional-email-templates/domain-security-report.tsx`
 
-### Correção
+Baseado no segundo print (landing page Domain Security), o email deve adotar:
 
-**Arquivo**: `supabase/functions/trigger-m365-analyzer/index.ts`
+- **Header**: fundo branco (não dark), com ícone de escudo azul (#2563EB) + "Domain Security" em azul escuro (#1e293b), tipografia moderna Inter/sans-serif (não monospace)
+- **Cores primárias**: azul (#2563EB) como cor principal, tons de cinza (#64748b, #94a3b8) para texto secundário
+- **Botões CTA**: azul (#2563EB) com border-radius arredondado, igual ao "Solicite uma Demo" da landing
+- **Layout geral**: fundo branco limpo, cards com bordas suaves, sem fundo escuro no header
+- **Footer**: clean, cinza claro, texto discreto
+- **Scores e badges**: manter o conteúdo mas com visual mais clean e alinhado ao azul da marca
 
-1. Adicionar `spo_domain` ao `select` do tenant (linha 39)
-2. Incluir `spo_domain` no `payload` da task (após `tenant_id`, linha 212)
+### 3. Deploy
 
-```
-// Linha 39 — adicionar spo_domain
-.select('id, display_name, tenant_domain, tenant_id, client_id, spo_domain')
-
-// Payload — adicionar campo
-payload: {
-  ...
-  tenant_id: tenant.tenant_id,
-  spo_domain: tenant.spo_domain,   // ← NOVO
-  snapshot_id: snapshot.id,
-  ...
-}
-```
-
-Após o deploy, o Agent receberá o `spo_domain` correto e construirá a URL `https://deployitgroup-admin.sharepoint.com` — resolvendo o erro.
+- Redeploy `send-transactional-email`
 
 ### Arquivos
 
-| Arquivo | Ação |
+| Arquivo | Acao |
 |---|---|
-| `supabase/functions/trigger-m365-analyzer/index.ts` | Adicionar `spo_domain` ao select e payload |
-| Deploy | `trigger-m365-analyzer` |
+| `send-transactional-email/index.ts` | `SITE_NAME` → "Domain Security" |
+| `domain-security-report.tsx` | Redesign completo alinhado a landing page |
+| Deploy | `send-transactional-email` |
 
