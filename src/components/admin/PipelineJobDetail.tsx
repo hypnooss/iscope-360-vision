@@ -1,6 +1,7 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, Loader2, Clock, AlertTriangle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { CheckCircle, XCircle, Loader2, Clock, AlertTriangle, RotateCcw } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface ApiJob {
@@ -21,6 +22,8 @@ interface PipelineJobDetailProps {
   job: ApiJob | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onRetry?: (jobId: string) => void;
+  retryLoading?: string | null;
 }
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
@@ -49,7 +52,7 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
-export function PipelineJobDetail({ job, open, onOpenChange }: PipelineJobDetailProps) {
+export function PipelineJobDetail({ job, open, onOpenChange, onRetry, retryLoading }: PipelineJobDetailProps) {
   if (!job) return null;
 
   const steps = job.steps || [];
@@ -58,7 +61,25 @@ export function PipelineJobDetail({ job, open, onOpenChange }: PipelineJobDetail
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-[480px] sm:max-w-[480px] overflow-y-auto">
         <SheetHeader className="mb-6">
-          <SheetTitle className="text-lg">Detalhes do Job</SheetTitle>
+          <div className="flex items-center justify-between">
+            <SheetTitle className="text-lg">Detalhes do Job</SheetTitle>
+            {job.status === 'failed' && onRetry && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onRetry(job.id)}
+                disabled={retryLoading === job.id}
+                className="ml-2"
+              >
+                {retryLoading === job.id ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                )}
+                Tentar Novamente
+              </Button>
+            )}
+          </div>
         </SheetHeader>
 
         {/* Header info */}
