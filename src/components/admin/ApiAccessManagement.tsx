@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ApiKeyGenerateDialog } from './ApiKeyGenerateDialog';
 import { ApiAccessLogsTable } from './ApiAccessLogsTable';
-import { Loader2, Plus, RefreshCw, Ban, Trash2, Copy, ChevronDown, Terminal, Globe, GitBranch, Mail, Eye } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Ban, Trash2, Copy, ChevronDown, Terminal, Globe, GitBranch, Mail, Eye, RotateCcw } from 'lucide-react';
 import { PipelineJobDetail } from './PipelineJobDetail';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -83,6 +83,7 @@ export function ApiAccessManagement() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [resendLoading, setResendLoading] = useState<string | null>(null);
+  const [retryLoading, setRetryLoading] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [jobsOpen, setJobsOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<ApiJob | null>(null);
@@ -140,6 +141,23 @@ export function ApiAccessManagement() {
       toast.error(err.message || 'Erro ao reenviar report');
     } finally {
       setResendLoading(null);
+    }
+  };
+
+  const handleRetryJob = async (jobId: string) => {
+    setRetryLoading(jobId);
+    try {
+      const { data, error } = await supabase.functions.invoke('retry-pipeline-job', {
+        body: { job_id: jobId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success('Job reenfileirado com sucesso');
+      await loadJobs();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao reenviar job');
+    } finally {
+      setRetryLoading(null);
     }
   };
 
@@ -408,6 +426,21 @@ export function ApiAccessManagement() {
                                 >
                                   <Eye className="w-4 h-4" />
                                 </Button>
+                                {job.status === 'failed' && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleRetryJob(job.id)}
+                                      disabled={retryLoading === job.id}
+                                      title="Tentar Novamente"
+                                    >
+                                      {retryLoading === job.id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : (
+                                        <RotateCcw className="w-4 h-4 text-warning" />
+                                      )}
+                                    </Button>
+                                  )}
                                 {(job.status === 'completed' || job.status === 'partial') &&
                                   (job.steps || []).some((s: any) => s.name === 'email_report') && (
                                     <Button
@@ -544,6 +577,8 @@ export function ApiAccessManagement() {
         job={selectedJob}
         open={!!selectedJob}
         onOpenChange={(o) => !o && setSelectedJob(null)}
+        onRetry={handleRetryJob}
+        retryLoading={retryLoading}
       />
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>

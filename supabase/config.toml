@@ -29,6 +29,8 @@ project_id = "akbosdbyheezghieiefz"
     verify_jwt = false
   [functions.resend-pipeline-report]
     verify_jwt = false
+  [functions.retry-pipeline-job]
+    verify_jwt = false
   [functions.attack-surface-preview]
     verify_jwt = false
   [functions.attack-surface-rescan-ip]
