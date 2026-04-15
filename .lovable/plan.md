@@ -1,36 +1,51 @@
 
 
-## Plano — Atualizar remetente e redesign visual do email
+## Plano — Botão "Retry" para Jobs com Falha no Pipeline
 
-### 1. Corrigir nome do remetente
+### Resumo
 
-**Arquivo**: `supabase/functions/send-transactional-email/index.ts`
+Adicionar um botão de retry na tabela de jobs e no painel de detalhes, que reseta o job para reprocessamento pelo cron existente (`process-api-jobs`). Também criar uma Edge Function `retry-pipeline-job` para fazer o reset de forma segura no backend.
 
-- Linha 8: trocar `SITE_NAME = "iscope-teste"` para `SITE_NAME = "Domain Security"`
-- Isso corrige o `From: Domain Security <noreply@notify.domainsecurity.online>`
+### Como funciona
 
-### 2. Redesign visual do email para acompanhar a landing page
+Quando o admin clica em "Retry":
+1. A Edge Function reseta o job: status volta para `queued`, limpa `error_message`, `completed_at`, e reseta os steps que falharam (e seus dependentes) para `pending`
+2. O cron `process-api-jobs` pega o job novamente e continua do ponto onde parou
 
-**Arquivo**: `supabase/functions/_shared/transactional-email-templates/domain-security-report.tsx`
+### Alterações
 
-Baseado no segundo print (landing page Domain Security), o email deve adotar:
+**1. Nova Edge Function `retry-pipeline-job`**
 
-- **Header**: fundo branco (não dark), com ícone de escudo azul (#2563EB) + "Domain Security" em azul escuro (#1e293b), tipografia moderna Inter/sans-serif (não monospace)
-- **Cores primárias**: azul (#2563EB) como cor principal, tons de cinza (#64748b, #94a3b8) para texto secundário
-- **Botões CTA**: azul (#2563EB) com border-radius arredondado, igual ao "Solicite uma Demo" da landing
-- **Layout geral**: fundo branco limpo, cards com bordas suaves, sem fundo escuro no header
-- **Footer**: clean, cinza claro, texto discreto
-- **Scores e badges**: manter o conteúdo mas com visual mais clean e alinhado ao azul da marca
+- Valida auth + admin role
+- Recebe `job_id`, busca o job
+- Só permite retry se status = `failed`
+- Reseta: `status → queued`, limpa `error_message`, `completed_at`
+- Percorre `steps[]`: steps com status `failed` voltam para `pending` (limpa `error`, `started_at`, `completed_at`, `result`). Steps que dependem de um step falhado também voltam para `pending`
+- Steps `completed` permanecem intactos (não refaz trabalho já feito)
 
-### 3. Deploy
+**2. Atualizar `ApiAccessManagement.tsx`**
 
-- Redeploy `send-transactional-email`
+- Adicionar `handleRetryJob(jobId)` que chama `retry-pipeline-job`
+- Na coluna Ações, mostrar botão com ícone `RotateCcw` (lucide) quando `job.status === 'failed'`
+- State `retryLoading` para feedback visual
+
+**3. Atualizar `PipelineJobDetail.tsx`**
+
+- Adicionar botão "Tentar Novamente" no header do sheet quando o job estiver com status `failed`
+- Receber callback `onRetry` como prop
+
+**4. Config + Deploy**
+
+- Adicionar `retry-pipeline-job` ao `supabase/config.toml` com `verify_jwt = false`
+- Deploy da função
 
 ### Arquivos
 
-| Arquivo | Acao |
+| Arquivo | Ação |
 |---|---|
-| `send-transactional-email/index.ts` | `SITE_NAME` → "Domain Security" |
-| `domain-security-report.tsx` | Redesign completo alinhado a landing page |
-| Deploy | `send-transactional-email` |
+| `supabase/functions/retry-pipeline-job/index.ts` | Novo |
+| `supabase/config.toml` | Adicionar entry |
+| `src/components/admin/ApiAccessManagement.tsx` | Botão retry + handler |
+| `src/components/admin/PipelineJobDetail.tsx` | Botão retry no detail |
+| Deploy | `retry-pipeline-job` |
 
